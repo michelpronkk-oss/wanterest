@@ -1,6 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import type { Database, Json, UsageLedgerRow, UsageType, WorkspaceEntitlementRow } from "@/server/db/database.types";
+import type { Database } from "@/server/db/database.types";
+import type {
+  JsonObject,
+  UsageLedgerRow,
+  UsageType,
+  WorkspaceEntitlementRow,
+} from "@/server/db/database.helpers";
 import { AppError } from "@/server/lib/errors";
 import type { EntitlementValue } from "./entitlement.schemas";
 
@@ -45,19 +51,20 @@ export async function consumeUsage(
     usageType: UsageType;
     amount: number;
     idempotencyKey: string;
-    sourceMetadata: Record<string, unknown>;
+    sourceMetadata: JsonObject;
     traceId?: string;
   },
 ): Promise<UsageLedgerRow> {
-  const { data, error } = await client.rpc("consume_usage", {
+  const args: Database["public"]["Functions"]["consume_usage"]["Args"] = {
     p_workspace_id: input.workspaceId,
     p_usage_type: input.usageType,
     p_amount: input.amount,
     p_idempotency_key: input.idempotencyKey,
-    p_source_metadata: input.sourceMetadata as Json,
-    p_actor_user_id: null,
-    p_trace_id: input.traceId ?? null,
-  });
+    p_source_metadata: input.sourceMetadata,
+  };
+  if (input.traceId !== undefined) args.p_trace_id = input.traceId;
+
+  const { data, error } = await client.rpc("consume_usage", args);
   if (error) {
     if (error.code === "22003" || error.message.includes("usage_limit_exceeded")) {
       throw new AppError("USAGE_LIMIT_EXCEEDED", "The workspace usage limit was reached.");
@@ -79,10 +86,12 @@ export async function getUsageTotals(
   workspaceId: string,
   periodStart?: string,
 ): Promise<Array<{ usage_type: UsageType; amount: number }>> {
-  const { data, error } = await client.rpc("get_usage_totals", {
+  const args: Database["public"]["Functions"]["get_usage_totals"]["Args"] = {
     p_workspace_id: workspaceId,
-    p_period_start: periodStart ?? null,
-  });
+  };
+  if (periodStart !== undefined) args.p_period_start = periodStart;
+
+  const { data, error } = await client.rpc("get_usage_totals", args);
   if (error) throw providerFailure("Usage totals could not be loaded.", error.message);
   return data ?? [];
 }

@@ -522,6 +522,13 @@ Phase 1 applies the same rule to audit actor provenance: `audit_log` stores an o
 `workspace_members (workspace_id, id)`, so an audit event cannot pair a workspace with a
 membership from another workspace.
 
+The deployed Phase 1 application audit contract currently requires both `workspace_id` and
+`actor_user_id`: every exposed Phase 1 audit operation is an authenticated, workspace-scoped
+operation. The nullable database columns remain intentional for future global or system audit
+events, but exposing those cases through the application requires a forward migration that
+changes the RPC contract and its authorization rules; callers must not send `null` to the
+current RPC for required arguments.
+
 The same pattern applies to product snapshots, profiles, strategies, matches, observations,
 snapshots, gaps, drifts, actions, experiments, and billing rows. Join tables use composite FKs
 to both workspace-owned parents. Global parents such as `conversation_id` use ordinary FKs,

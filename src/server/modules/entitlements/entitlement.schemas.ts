@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { jsonObjectSchema } from "../../db/database.helpers";
+
 export const capabilitySchema = z.string().regex(/^[a-z][a-z0-9_]*$/);
 export const workspaceIdSchema = z.string().uuid();
 export const usageTypeSchema = z.enum([
@@ -15,7 +17,7 @@ export const consumeUsageInputSchema = z.object({
   usageType: usageTypeSchema,
   amount: z.number().int().positive().max(1_000_000),
   idempotencyKey: z.string().trim().min(1).max(200),
-  sourceMetadata: z.record(z.string(), z.unknown()).default({}),
+  sourceMetadata: jsonObjectSchema.default({}),
   traceId: z.string().trim().max(120).optional(),
 });
 

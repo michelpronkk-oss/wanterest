@@ -8,8 +8,7 @@ create table if not exists public.workspaces (
   created_by uuid not null references auth.users(id) on delete restrict,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now()),
-  unique (slug),
-  unique (id, id)
+  unique (slug)
 );
 
 create table if not exists public.workspace_members (

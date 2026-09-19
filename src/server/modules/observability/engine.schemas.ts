@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { jsonObjectSchema } from "../../db/database.helpers";
+
 export const engineTypeSchema = z.enum([
   "profile",
   "classifier",
@@ -17,7 +19,7 @@ export const registerEngineVersionInputSchema = z.object({
   model: z.string().trim().max(120).nullable().optional(),
   promptVersion: z.string().trim().max(120).nullable().optional(),
   configHash: z.string().trim().max(200).nullable().optional(),
-  metadata: z.record(z.string(), z.unknown()).default({}),
+  metadata: jsonObjectSchema.default({}),
 });
 
 export type RegisterEngineVersionInput = z.infer<typeof registerEngineVersionInputSchema>;

@@ -1,11 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import type { Database } from "@/server/db/database.types";
 import type {
-  Database,
   WorkspaceMemberRole,
   WorkspaceMemberRow,
   WorkspaceRow,
-} from "@/server/db/database.types";
+} from "@/server/db/database.helpers";
 import { AppError } from "@/server/lib/errors";
 
 type Client = SupabaseClient<Database>;

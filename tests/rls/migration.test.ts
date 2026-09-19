@@ -33,6 +33,7 @@ describe("Phase 1 RLS and integrity migration contract", () => {
 
   it("contains the database integrity and atomic usage primitives", () => {
     expect(migration).toContain("unique (workspace_id, id)");
+    expect(migration).not.toContain("unique (id, id)");
     expect(migration).toContain("foreign key (workspace_id, actor_membership_id)");
     expect(migration).toContain("pg_advisory_xact_lock");
     expect(migration).toContain("usage_limit_exceeded");

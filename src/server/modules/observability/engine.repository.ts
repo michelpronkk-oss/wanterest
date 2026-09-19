@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import type { Database, EngineVersionRow } from "@/server/db/database.types";
+import type { Database } from "@/server/db/database.types";
+import type { EngineVersionRow } from "@/server/db/database.helpers";
 import { AppError } from "@/server/lib/errors";
 import type { RegisterEngineVersionInput } from "./engine.schemas";
 
