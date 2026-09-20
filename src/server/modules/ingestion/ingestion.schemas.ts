@@ -4,6 +4,7 @@ import { sourceKeySchema, timestampSchema } from "../../providers/source/contrac
 
 export const replayInputSchema = z.object({
   sourceKey: sourceKeySchema.optional(),
+  rawSourceItemIds: z.array(z.string().uuid()).max(500).optional(),
   from: timestampSchema.optional(),
   to: timestampSchema.optional(),
   normalizationVersion: z.string().trim().min(1).max(120),

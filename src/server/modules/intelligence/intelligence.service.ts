@@ -11,10 +11,21 @@ function json(value: unknown): Json { return jsonValueSchema.parse(value); }
 function asStrings(value: Json): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; }
 function normalizeText(value: string): string { return value.replace(/\s+/g, " ").trim(); }
 
-export type SignalFilters = { minimumScore?: number; intentType?: string; sourceKey?: string; lifecycleStatus?: string; from?: string; to?: string };
+export type SignalFilters = {
+  minimumScore?: number;
+  intentType?: string;
+  sourceKey?: string;
+  lifecycleStatus?: string;
+  from?: string;
+  to?: string;
+  /** Maximum number of scored signals returned to a consumer. */
+  limit?: number;
+  /** Offset into the backend-ranked result set. */
+  offset?: number;
+};
 export type SignalReadModel = {
   signalId: string; workspaceId: string; productId: string; productMatchId: string; conversationId: string; source: string;
-  canonicalUrl: string | null; publishedAt: string | null; intentType: string; opportunityScore: number; matchPercent: number;
+  canonicalUrl: string | null; publishedAt: string | null; createdAt: string; intentType: string; opportunityScore: number; matchPercent: number;
   excerpt: string; whyItMatters: string; tags: string[]; buyerLanguage: string[]; painThemes: string[]; lifecycleStatus: string;
   feedbackState: { saved: boolean; dismissed: boolean; relevant: boolean | null; opened: boolean; contacted: boolean; converted: boolean };
   evidence: { signalEvidenceNodeId: string; evaluationId: string; rankingId: string; conversationEvidenceNodeId: string; sourceItemId: string; demandProfileEvidenceNodeId: string };
@@ -173,7 +184,10 @@ export class IntelligenceService {
       if (filters.to && (row.published_at ?? row.created_at) > filters.to) continue;
       result.push(await this.signalReadModel(row));
     }
-    return result.sort((a, b) => b.opportunityScore - a.opportunityScore);
+    const ranked = result.sort((a, b) => b.opportunityScore - a.opportunityScore);
+    const limit = Math.min(Math.max(Math.trunc(filters.limit ?? 50), 1), 100);
+    const offset = Math.max(Math.trunc(filters.offset ?? 0), 0);
+    return ranked.slice(offset, offset + limit);
   }
 
   async getSignal(workspaceId: string, signalId: string): Promise<SignalReadModel> {
@@ -213,6 +227,6 @@ export class IntelligenceService {
     const profile = evaluation ? await this.repository.getDemandProfileById(evaluation.demand_profile_id) : null;
     const savedState = latestState(["saved", "dismissed"]);
     const relevanceState = latestState(["relevant", "not_relevant"]);
-    return { signalId: row.id, workspaceId: row.workspace_id, productId: row.product_id, productMatchId: row.product_match_id, conversationId: row.conversation_id, source: row.source_key, canonicalUrl: row.canonical_url, publishedAt: row.published_at, intentType: row.intent_type, opportunityScore: (await this.repository.getRankingById(row.match_ranking_id))?.opportunity_score ?? 0, matchPercent: Math.round(((evaluation?.match_confidence ?? 0) * 100)), excerpt: row.excerpt, whyItMatters: row.why_it_matters, tags: asStrings(row.tags), buyerLanguage: asStrings(row.buyer_language), painThemes: asStrings(row.pain_themes), lifecycleStatus: row.lifecycle_status, feedbackState: { saved: savedState === "saved", dismissed: savedState === "dismissed", relevant: relevanceState === "relevant" ? true : relevanceState === "not_relevant" ? false : null, opened: Boolean(latest("opened")), contacted: Boolean(latest("contacted")), converted: Boolean(latest("converted")) }, evidence: { signalEvidenceNodeId: row.evidence_node_id, evaluationId: row.product_match_evaluation_id, rankingId: row.match_ranking_id, conversationEvidenceNodeId: conversation?.evidence_node_id ?? "", sourceItemId: source?.id ?? "", demandProfileEvidenceNodeId: profile?.evidence_node_id ?? "" } };
+    return { signalId: row.id, workspaceId: row.workspace_id, productId: row.product_id, productMatchId: row.product_match_id, conversationId: row.conversation_id, source: row.source_key, canonicalUrl: row.canonical_url, publishedAt: row.published_at, createdAt: row.created_at, intentType: row.intent_type, opportunityScore: (await this.repository.getRankingById(row.match_ranking_id))?.opportunity_score ?? 0, matchPercent: Math.round(((evaluation?.match_confidence ?? 0) * 100)), excerpt: row.excerpt, whyItMatters: row.why_it_matters, tags: asStrings(row.tags), buyerLanguage: asStrings(row.buyer_language), painThemes: asStrings(row.pain_themes), lifecycleStatus: row.lifecycle_status, feedbackState: { saved: savedState === "saved", dismissed: savedState === "dismissed", relevant: relevanceState === "relevant" ? true : relevanceState === "not_relevant" ? false : null, opened: Boolean(latest("opened")), contacted: Boolean(latest("contacted")), converted: Boolean(latest("converted")) }, evidence: { signalEvidenceNodeId: row.evidence_node_id, evaluationId: row.product_match_evaluation_id, rankingId: row.match_ranking_id, conversationEvidenceNodeId: conversation?.evidence_node_id ?? "", sourceItemId: source?.id ?? "", demandProfileEvidenceNodeId: profile?.evidence_node_id ?? "" } };
   }
 }

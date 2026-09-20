@@ -24,6 +24,8 @@ import { contentHash, deterministicUuid, normalizedUrl, sha256Json } from "./has
 import { replayInputSchema, type ReplayInput } from "./ingestion.schemas";
 import type { IngestionRepository } from "./ingestion.repository";
 
+export type SourceControlGate = { assertDiscoverable(sourceKey: string): Promise<void> };
+
 const environment = process.env.NODE_ENV === "production" ? "production" : process.env.NODE_ENV === "test" ? "test" : "development";
 
 function timestamp(): string {
@@ -48,6 +50,7 @@ export type DiscoveryResult = {
   rawInserted: number;
   rawDuplicates: number;
   rejected: number;
+  rawSourceItemIds: string[];
   nextCursor?: string;
   diagnostics: string[];
 };
@@ -71,10 +74,12 @@ export class IngestionService {
   constructor(
     private readonly repository: IngestionRepository,
     private readonly registry = createSourceRegistry(),
+    private readonly sourceControl?: SourceControlGate,
   ) {}
 
   async discoverSource(sourceKey: string, rawRequest: unknown, traceId = getTraceId()): Promise<DiscoveryResult> {
     const request = sourceDiscoveryRequestSchema.parse(rawRequest);
+    if (this.sourceControl) await this.sourceControl.assertDiscoverable(sourceKey);
     const adapter = this.adapter(sourceKey);
     const requestHash = sha256Json({ sourceKey, request });
     const idempotencyKey = `discover:${sourceKey}:${requestHash}`;
@@ -93,6 +98,7 @@ export class IngestionService {
       let rawInserted = 0;
       let rawDuplicates = 0;
       let rejected = 0;
+      const rawSourceItemIds: string[] = [];
       const diagnostics = [...page.diagnostics.messages];
       for (const envelope of page.items) {
         const parsed = rawSourceItemEnvelopeSchema.safeParse(envelope);
@@ -104,6 +110,7 @@ export class IngestionService {
         const raw = parsed.data;
         const payloadHash = sha256Json(raw.payload);
         const rawId = deterministicUuid(`raw:${raw.sourceKey}:${raw.externalId}:${payloadHash}`);
+        rawSourceItemIds.push(rawId);
         const evidenceNodeId = deterministicUuid(`evidence:raw_source_item:${rawId}`);
         const before = await this.repository.getRawSourceItem(rawId);
         const input: RawSourceItemInsert = {
@@ -137,6 +144,7 @@ export class IngestionService {
         rawInserted,
         rawDuplicates,
         rejected,
+        rawSourceItemIds,
         nextCursor: page.nextCursor,
         diagnostics,
       };
@@ -338,22 +346,40 @@ export class IngestionService {
   }
 
   async replay(rawInput: unknown): Promise<{ normalized: number; canonicalized: number; failed: number; rawItems: number }> {
+    const result = await this.replayDetailed(rawInput);
+    return { normalized: result.normalized, canonicalized: result.canonicalized, failed: result.failed, rawItems: result.rawItems };
+  }
+
+  async replayDetailed(rawInput: unknown): Promise<{
+    normalized: number;
+    canonicalized: number;
+    failed: number;
+    rawItems: number;
+    normalizedSourceItemIds: string[];
+    canonicalizedConversationIds: string[];
+  }> {
     const input: ReplayInput = replayInputSchema.parse(rawInput);
-    const rawItems = await this.repository.listRawSourceItems({ sourceKey: input.sourceKey, from: input.from, to: input.to, limit: input.limit });
+    const rawItems = input.rawSourceItemIds
+      ? (await Promise.all(input.rawSourceItemIds.map((id) => this.repository.getRawSourceItem(id)))).filter((item): item is NonNullable<typeof item> => Boolean(item))
+      : await this.repository.listRawSourceItems({ sourceKey: input.sourceKey, from: input.from, to: input.to, limit: input.limit });
     let normalized = 0;
     let canonicalized = 0;
     let failed = 0;
+    const normalizedSourceItemIds: string[] = [];
+    const canonicalizedConversationIds: string[] = [];
     for (const raw of rawItems) {
       try {
         const normalization = await this.normalizeRawSourceItem(raw.id, input.normalizationVersion, input.traceId);
         normalized += 1;
-        await this.canonicalizeSourceItem(normalization.sourceItemId, input.canonicalizationVersion, input.traceId);
+        normalizedSourceItemIds.push(normalization.sourceItemId);
+        const canonicalization = await this.canonicalizeSourceItem(normalization.sourceItemId, input.canonicalizationVersion, input.traceId);
         canonicalized += 1;
+        canonicalizedConversationIds.push(canonicalization.conversationId);
       } catch {
         failed += 1;
       }
     }
-    return { normalized, canonicalized, failed, rawItems: rawItems.length };
+    return { normalized, canonicalized, failed, rawItems: rawItems.length, normalizedSourceItemIds, canonicalizedConversationIds };
   }
 
   async healthCheck(sourceKey: string): Promise<SourceHealthContract> {

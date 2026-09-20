@@ -10,6 +10,8 @@ export type WorkspaceEntitlementRow = PublicTables["workspace_entitlements"]["Ro
 export type UsageLedgerRow = PublicTables["usage_ledger"]["Row"];
 export type AuditLogRow = PublicTables["audit_log"]["Row"];
 export type EngineVersionRow = PublicTables["engine_versions"]["Row"];
+export type EngineVersionInsert = PublicTables["engine_versions"]["Insert"];
+export type EngineVersionUpdate = PublicTables["engine_versions"]["Update"];
 
 export type JobRunRow = PublicTables["job_runs"]["Row"];
 export type JobRunInsert = PublicTables["job_runs"]["Insert"];
@@ -133,6 +135,33 @@ export type DigestUpdate = PublicTables["digests"]["Update"];
 export type DigestItemRow = PublicTables["digest_items"]["Row"];
 export type DigestItemInsert = PublicTables["digest_items"]["Insert"];
 export type DigestItemUpdate = PublicTables["digest_items"]["Update"];
+
+// Phase 7 persistence aliases are direct projections of the regenerated
+// Supabase schema. Domain modules validate stricter contracts separately.
+export type ExperimentRow = PublicTables["experiments"]["Row"];
+export type ExperimentInsert = PublicTables["experiments"]["Insert"];
+export type ExperimentUpdate = PublicTables["experiments"]["Update"];
+export type ExperimentVariantRow = PublicTables["experiment_variants"]["Row"];
+export type ExperimentVariantInsert = PublicTables["experiment_variants"]["Insert"];
+export type ExperimentVariantUpdate = PublicTables["experiment_variants"]["Update"];
+export type ExperimentAssignmentRow = PublicTables["experiment_assignments"]["Row"];
+export type ExperimentAssignmentInsert = PublicTables["experiment_assignments"]["Insert"];
+export type ExperimentAssignmentUpdate = PublicTables["experiment_assignments"]["Update"];
+export type ExperimentEventRow = PublicTables["experiment_events"]["Row"];
+export type ExperimentEventInsert = PublicTables["experiment_events"]["Insert"];
+export type ExperimentEventUpdate = PublicTables["experiment_events"]["Update"];
+export type ExperimentResultRow = PublicTables["experiment_results"]["Row"];
+export type ExperimentResultInsert = PublicTables["experiment_results"]["Insert"];
+export type ExperimentResultUpdate = PublicTables["experiment_results"]["Update"];
+export type ExperimentPublicTokenRow = PublicTables["experiment_public_tokens"]["Row"];
+export type ExperimentPublicTokenInsert = PublicTables["experiment_public_tokens"]["Insert"];
+export type ExperimentPublicTokenUpdate = PublicTables["experiment_public_tokens"]["Update"];
+export type SourceControlRow = PublicTables["source_controls"]["Row"];
+export type SourceControlInsert = PublicTables["source_controls"]["Insert"];
+export type SourceControlUpdate = PublicTables["source_controls"]["Update"];
+export type RateLimitBucketRow = PublicTables["rate_limit_buckets"]["Row"];
+export type RateLimitBucketInsert = PublicTables["rate_limit_buckets"]["Insert"];
+export type RateLimitBucketUpdate = PublicTables["rate_limit_buckets"]["Update"];
 
 // Phase 6 billing persistence aliases. Keep these as direct projections of
 // the generated Supabase schema; billing/domain modules validate provider and

@@ -57,6 +57,8 @@ export class InMemoryIngestionRepository implements IngestionRepository {
       completed_at: input.completed_at ?? null,
       error_code: input.error_code ?? null,
       error_details: input.error_details ?? null,
+      retry_after_at: input.retry_after_at ?? null,
+      terminal_at: input.terminal_at ?? null,
       created_at: input.created_at ?? timestamp,
       updated_at: input.updated_at ?? timestamp,
     };

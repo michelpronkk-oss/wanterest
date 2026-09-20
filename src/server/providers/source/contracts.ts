@@ -58,6 +58,8 @@ export type SourceItemCandidate = z.infer<typeof sourceItemCandidateSchema>;
 
 export const rateLimitMetadataSchema = z.object({
   provider: z.string().trim().max(120).optional(),
+  mode: z.enum(["public", "authenticated"]).optional(),
+  resource: z.string().trim().max(120).optional(),
   remaining: z.number().int().nonnegative().nullable().optional(),
   limit: z.number().int().positive().nullable().optional(),
   retryAfterMs: z.number().int().nonnegative().nullable().optional(),

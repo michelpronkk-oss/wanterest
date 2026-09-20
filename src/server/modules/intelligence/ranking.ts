@@ -36,6 +36,7 @@ export const SOURCE_QUALITY: Record<string, number> = {
   "hacker-news": 0.65,
   bluesky: 0.6,
   reddit: 0.62,
+  github: 0.6,
 };
 
 export function freshnessScore(timestamp: string | null | undefined, now = new Date()): number {

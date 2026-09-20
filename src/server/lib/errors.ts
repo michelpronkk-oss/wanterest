@@ -5,6 +5,7 @@ export type AppErrorCode =
   | "NOT_FOUND"
   | "CONFLICT"
   | "USAGE_LIMIT_EXCEEDED"
+  | "RATE_LIMITED"
   | "CAPABILITY_DISABLED"
   | "INTERNAL_ERROR";
 
@@ -33,6 +34,8 @@ function statusForCode(code: AppErrorCode): number {
     case "VALIDATION_ERROR":
       return 422;
     case "USAGE_LIMIT_EXCEEDED":
+      return 429;
+    case "RATE_LIMITED":
       return 429;
     case "CAPABILITY_DISABLED":
       return 403;

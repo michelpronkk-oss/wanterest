@@ -1,7 +1,8 @@
 # Wanterest backend architecture
 
-Status: approved foundation; Phase 1 through Phase 6 are implemented as backend foundations.
-Phase 7 experiments remain out of scope.
+Status: approved foundation; Phase 1 through Phase 7 are implemented as backend foundations.
+The initial authenticated dashboard foundation is implemented under `src/app/app`; broader
+dashboard workflows remain intentionally incremental.
 
 ## 1. Current repository
 
@@ -9,7 +10,8 @@ The repository is a clean Next.js 16.3.5 App Router starter using TypeScript, Re
 Tailwind CSS 4, ESLint, and the React Compiler. It currently contains:
 
 - `src/app/layout.tsx`: default root layout and Geist font setup.
-- `src/app/page.tsx`: default Create Next App landing page.
+- `src/app/page.tsx`: temporary authenticated entry redirect to `/app` or `/login`.
+- `src/app/login/page.tsx`: minimal Supabase email/password sign-in entry point.
 - `src/app/globals.css`: default Tailwind import and color variables.
 - `package.json`: only Next.js/React/Tailwind/TypeScript/ESLint dependencies and the standard
   `dev`, `build`, `start`, and `lint` scripts.
@@ -364,9 +366,16 @@ feedback state never replaces the underlying history.
 
 #### `experiments`
 
-Workspace/product experiment linked to an action. Stores control definition, selected metric,
-assignment method, lifecycle state, sample/measurement window, engine version, and measurement
-metadata.
+Workspace/product experiment linked to an approved action. Stores the bounded taxonomy, hypothesis,
+primary metric, structured target, deterministic assignment method, lifecycle state, sample window,
+engine version, current-result pointer, and measurement metadata. The pointer is only a convenience;
+historical result rows remain immutable.
+
+#### `experiment_variants` and `experiment_assignments`
+
+Variants are immutable action-content snapshots with one explicit control and weighted allocation.
+Assignments are sticky rows keyed by the experiment and a hash of an anonymous subject key. Neither
+table stores arbitrary identity or executable client content.
 
 #### `experiment_events`
 
@@ -374,10 +383,16 @@ Minimal assignment and conversion-event facts: experiment, variant/control, anon
 hashed subject key, event name, occurred time, and dedupe key. Do not turn this into a general
 analytics warehouse.
 
-#### `experiment_outcomes`
+#### `experiment_results`
 
-Periodic result materialization: variant, exposure count, conversion count/rate, comparison to
-control, confidence/measurement metadata, and calculation version.
+Immutable periodic result snapshots: per-variant assignment/exposure/conversion counts and rates,
+comparison to control, sample state, primary metric, and calculation version. A future statistical
+engine may add a justified winner contract; Phase 7 does not infer one.
+
+#### `experiment_public_tokens`
+
+Rotatable, revocable public event credentials. Only a public key and token hash are stored; the raw
+credential is returned at issuance and never persisted.
 
 #### `digests`
 
@@ -514,7 +529,8 @@ association belongs in a join/derived table such as `product_matches`.
 `discovery_strategies`, `product_matches`, `product_match_evaluations`, `match_rankings`,
 `signals`, `match_feedback`, `demand_observations`, `demand_themes`, `theme_memberships`,
 `demand_snapshots`, `demand_gaps`, `demand_drifts`, `actions`, `action_variants`,
-`experiments`, `experiment_events`, `experiment_outcomes`, `digests`, `billing_customers`,
+`experiments`, `experiment_variants`, `experiment_assignments`, `experiment_events`,
+`experiment_results`, `experiment_public_tokens`, `source_controls`, `digests`, `billing_customers`,
 `subscriptions`, `workspace_entitlements`, `usage_ledger`, and scoped `job_runs`/`audit_log`
 rows are workspace-owned.
 
@@ -679,7 +695,8 @@ Implement and test adapters in this order:
 2. Hacker News
 3. Bluesky
 4. Reddit
-5. open-web/search adapters
+5. GitHub
+6. open-web/search adapters
 
 This order is an implementation sequence, not a downstream domain dependency. Discovery,
 normalization, deduplication, analysis, matching, ranking, and aggregation consume only the
@@ -919,8 +936,8 @@ No Phase 1 exit criterion requires a dashboard or product UI.
 
 Implement the source port, fixture adapter, raw/source/conversation tables, normalization and
 reversible dedupe jobs, source health, `job_runs`, and replay tooling. The adapter order is
-strictly: fixture first, Hacker News first real adapter, Bluesky next, Reddit next, and
-open-web/search later. Add each real adapter only after the provider-neutral fixture/contracts
+strictly: fixture first, Hacker News first real adapter, Bluesky next, Reddit next, GitHub next,
+and open-web/search later. Add each real adapter only after the provider-neutral fixture/contracts
 path is stable. Exit when the same input can be replayed without duplicates and downstream code
 does not branch on provider identity.
 
@@ -950,6 +967,22 @@ removed state, and minimal public author fields only. OAuth tokens are memory-on
 raw payloads, persistence, logs, or provenance. The connector is fixture-verified and live-API
 pending Reddit approval; no scraping, unofficial `.json` endpoints, posting, profile enrichment,
 Jetstream, migration, or provider-specific downstream branch is introduced.
+
+The GitHub adapter follows Reddit and uses only the official APIs. Public issue search and issue
+comments use `https://api.github.com`; public Discussions and their bounded comments use the
+official GraphQL `search(type: DISCUSSION)` connection with caller-supplied query and optional
+repository/owner/org qualifiers. GitHub may require authenticated public API access for this
+connection. REST `Link` headers and
+GraphQL cursors are wrapped in source-owned cursors for single-content-type discovery; combined
+issue/discussion discovery remains bounded to avoid pretending that two provider pagination
+models share one cursor. Pull requests are filtered, closed issues remain evidence, and malformed
+records are skipped after runtime validation. The optional server-only `GITHUB_TOKEN` is never
+persisted or sent to downstream code: it only selects authenticated public API mode and improves
+rate limits. Stable identities are `github:issue:<repository-id>:<number>`,
+`github:issue_comment:<comment-id>`, `github:discussion:<node-id>`, and
+`github:discussion_comment:<node-id>`. Repository, labels, state, milestone, reactions, and
+minimal author/bot metadata are retained in normalized metadata. No private repository access,
+mutation, user profiling, scraping, or GitHub-specific downstream branch is introduced.
 
 ### Phase 3 — Product understanding, analysis, matching, ranking
 
@@ -1093,9 +1126,58 @@ metered billing, tax logic, card storage, or Phase 7 experiments are included.
 
 ### Phase 7 — Experiments and operational hardening
 
-Implement minimal action experiments, assignment/conversion events, outcome evaluation, admin
-debug views, source health dashboards, backfills, retention/redaction, rate-limit tuning,
-observability, load tests, and runbooks.
+Phase 7 is backend-only. An experiment is a controlled measurement attached to one approved
+Action, product, and workspace. The lifecycle is `draft -> ready -> running -> paused ->
+completed` with cancellation from non-terminal states; database and service transition guards
+reject shortcuts such as `draft -> completed`. The supported taxonomy is intentionally bounded to
+messaging, CTA, landing-page, positioning, offer, and onboarding tests. Action-to-experiment
+compatibility is explicit and conservative.
+
+`experiment_variants` are immutable snapshots. Exactly one control is required before `ready`,
+weights must total 10,000 basis points, and targeting is structured (`target_page_path`,
+`target_key`, and JSON content) with no arbitrary JavaScript. `assignment_method` is the versioned
+`deterministic_hash_v1` contract. Assignment stores only a SHA-256 digest of an anonymous subject
+key, is sticky on `(experiment_id, subject_key_hash)`, and is rejected after completion/cancel.
+
+Public event ingestion is scoped by a rotatable, revocable experiment token whose hash is stored;
+the raw token is returned only at issuance. Events accept only the bounded exposure and conversion
+types, enforce assignment/variant/subject consistency, timestamp and payload limits, and are
+idempotent on `(experiment_id, external_event_id)`. The API never trusts a client-supplied
+workspace. An atomic Postgres rate-limit bucket protects the public endpoint.
+
+Results are immutable `experiment_results` revisions. Each snapshot contains assignment count,
+unique exposed subjects, unique converting subjects, conversion rate, sample count, the primary
+metric, calculation version, and a state of `insufficient_data`, `collecting`, `directional`, or
+`completed`. The V1 evaluator records no winner unless a future statistical contract is added.
+Completed experiments preserve assignments, events, variants, provenance, and result history but
+accept no new assignments or events. Experiment creation consumes the normalized internal
+`experiments_max` entitlement; downgrades preserve existing data and block only new over-limit
+creation.
+
+Operational Phase 7 adds source controls (`enabled`, `paused`, `disabled`) with a retry window,
+job-health read models for recent/failed/stuck runs, bounded replay/backfill command contracts,
+terminal failure support, structured telemetry with correlation IDs, redaction and retention
+classes, ingestion/demand consistency helpers, billing reconciliation read-model helpers, and
+safe `GET /api/health` liveness/readiness output. Reddit remains optional and non-blocking for
+readiness. The system fixture smoke is offline and covers workspace/product, fixture raw and
+canonical evidence, analysis/match/rank/signal/demand/action derivations, experiment assignment,
+exposure, outcome, and result calculation.
+
+The forward migration is `supabase/migrations/20260925000000_phase7_experiments_operations.sql`.
+The linked schema has been applied and `src/server/db/database.types.ts` is the only database schema
+source of truth. Phase 7 persistence aliases in `database.helpers.ts` are direct projections of the
+generated type; the generated file remains immutable and replaceable. The initial dashboard
+foundation is a thin authenticated App Router layer under `src/app/app`: it resolves workspace and
+product context only from RLS-visible server queries, stores validated selection hints in secure
+cookies, and keeps the browser on serialized read models plus server actions. `/app` is the
+overview and `/app/signals` is the first functional view. Signals use the existing scored read
+model, a bounded server-side page, safe source links, evidence-node details, and the existing
+lifecycle RPC for Save/Dismiss. Demand, Map, Gap, Drift, Actions, Experiments, and Settings are
+navigation placeholders until their dedicated read/write dashboard contracts are designed. Billing
+remains backend-only; no new source adapter, autonomous external Action execution, or Phase 8
+analytics platform is included.
+
+Production procedures are documented in [`docs/runbooks/production.md`](runbooks/production.md).
 
 No phase should silently expand into a general analytics platform, source crawler, or provider-
 specific domain model. Revisit this architecture when a measured requirement justifies a new

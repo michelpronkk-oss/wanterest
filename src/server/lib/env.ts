@@ -20,6 +20,7 @@ const serverEnvSchema = publicEnvSchema.extend({
   REDDIT_USER_AGENT: optionalServerString,
   REDDIT_API_BASE_URL: optionalServerUrl,
   REDDIT_AUTH_BASE_URL: optionalServerUrl,
+  GITHUB_TOKEN: optionalServerString,
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
@@ -58,6 +59,7 @@ export function getServerEnv(): ServerEnv {
     REDDIT_USER_AGENT: process.env.REDDIT_USER_AGENT,
     REDDIT_API_BASE_URL: process.env.REDDIT_API_BASE_URL,
     REDDIT_AUTH_BASE_URL: process.env.REDDIT_AUTH_BASE_URL,
+    GITHUB_TOKEN: process.env.GITHUB_TOKEN,
   });
 }
 

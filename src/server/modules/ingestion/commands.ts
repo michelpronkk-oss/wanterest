@@ -3,9 +3,14 @@ import "server-only";
 import { createSupabaseServiceClient } from "../../providers/supabase/service";
 import { SupabaseIngestionRepository } from "./ingestion.repository";
 import { IngestionService } from "./ingestion.service";
+import { SourceControlService, SupabaseSourceControlStore } from "../operations/source-control.service";
 
 function createService(): IngestionService {
-  return new IngestionService(new SupabaseIngestionRepository(createSupabaseServiceClient()));
+  return new IngestionService(
+    new SupabaseIngestionRepository(createSupabaseServiceClient()),
+    undefined,
+    new SourceControlService(new SupabaseSourceControlStore(createSupabaseServiceClient())),
+  );
 }
 
 export async function runFixturePipeline(input: { limit?: number; normalizationVersion?: string; canonicalizationVersion?: string } = {}) {
