@@ -11,6 +11,8 @@ export const engineTypeSchema = z.enum([
   "gap",
   "drift",
   "action",
+  "action_variant",
+  "digest_composer",
 ]);
 
 export const registerEngineVersionInputSchema = z.object({

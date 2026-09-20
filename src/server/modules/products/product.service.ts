@@ -1,0 +1,45 @@
+import { requireUser } from "../auth";
+import { AppError } from "../../lib/errors";
+import { createSupabaseServerClient } from "../../providers/supabase/server";
+import { archiveProduct, createProduct, getProduct, listProducts, updateProductMetadata } from "./product.repository";
+import { createProductInputSchema, productIdSchema, updateProductMetadataInputSchema, workspaceIdSchema } from "./product.schemas";
+
+export async function createProductCommand(workspaceId: unknown, input: unknown) {
+  const workspace = workspaceIdSchema.safeParse(workspaceId);
+  const parsed = createProductInputSchema.safeParse(input);
+  if (!workspace.success || !parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid product input.", 422);
+  await requireUser();
+  return createProduct(await createSupabaseServerClient(), { workspaceId: workspace.data, name: parsed.data.name, slug: parsed.data.slug, websiteUrl: parsed.data.websiteUrl });
+}
+
+export async function getProductQuery(workspaceId: unknown, productId: unknown) {
+  const workspace = workspaceIdSchema.safeParse(workspaceId);
+  const product = productIdSchema.safeParse(productId);
+  if (!workspace.success || !product.success) throw new AppError("VALIDATION_ERROR", "Invalid product identifier.");
+  await requireUser();
+  return getProduct(await createSupabaseServerClient(), workspace.data, product.data);
+}
+
+export async function listProductsQuery(workspaceId: unknown) {
+  const workspace = workspaceIdSchema.safeParse(workspaceId);
+  if (!workspace.success) throw new AppError("VALIDATION_ERROR", "Invalid workspace identifier.");
+  await requireUser();
+  return listProducts(await createSupabaseServerClient(), workspace.data);
+}
+
+export async function updateProductMetadataCommand(workspaceId: unknown, productId: unknown, input: unknown) {
+  const workspace = workspaceIdSchema.safeParse(workspaceId);
+  const product = productIdSchema.safeParse(productId);
+  const parsed = updateProductMetadataInputSchema.safeParse(input);
+  if (!workspace.success || !product.success || !parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid product update.", 422);
+  await requireUser();
+  return updateProductMetadata(await createSupabaseServerClient(), { workspaceId: workspace.data, productId: product.data, name: parsed.data.name, websiteUrl: parsed.data.websiteUrl });
+}
+
+export async function archiveProductCommand(workspaceId: unknown, productId: unknown) {
+  const workspace = workspaceIdSchema.safeParse(workspaceId);
+  const product = productIdSchema.safeParse(productId);
+  if (!workspace.success || !product.success) throw new AppError("VALIDATION_ERROR", "Invalid product identifier.");
+  await requireUser();
+  return archiveProduct(await createSupabaseServerClient(), workspace.data, product.data);
+}

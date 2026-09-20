@@ -1,7 +1,7 @@
 # Wanterest backend architecture
 
-Status: proposed for review. This document describes the target architecture only; no
-backend implementation should start until this proposal is approved.
+Status: approved foundation; Phase 1 through Phase 6 are implemented as backend foundations.
+Phase 7 experiments remain out of scope.
 
 ## 1. Current repository
 
@@ -342,7 +342,7 @@ asked of an LLM.
 Each drift row also stores an `evidence_node_id`; its provenance edges point to the compared
 snapshots and their observations/matches.
 
-### Actions, experiments, feedback, and operations
+### Actions, digests, experiments, feedback, and operations
 
 #### `actions`
 
@@ -353,7 +353,14 @@ record.
 
 #### `action_variants`
 
-Alternative copy/offer/angle hypotheses for an action with rationale, content, and status.
+Alternative copy/offer/angle hypotheses for an action with rationale, structured content,
+variant engine version, and immutable generated history. These are hypotheses, not experiments.
+
+#### `action_feedback` and `action_events`
+
+Feedback is append-only and preserves useful/not-useful, relevance, approval, dismissal, and
+completion history. Action events preserve lifecycle transitions and actor context so derived
+feedback state never replaces the underlying history.
 
 #### `experiments`
 
@@ -374,8 +381,15 @@ control, confidence/measurement metadata, and calculation version.
 
 #### `digests`
 
-Workspace/product digest period, selected evidence/action IDs, rendered content/version,
-delivery status, and sent time. The same digest key must be idempotent.
+Workspace/product digest period, immutable evidence anchor, selected structured content/render
+version, delivery status, and sent time. The stable idempotency key is
+`digest:<workspace>:<product-or-workspace>:<type>:<period-start>:<period-end>:<render-version>`.
+
+#### `digest_items`
+
+Relational references to selected Signals, Themes, Gaps, Drifts, and Actions with positions,
+reasons, and source evidence nodes. Digest composition is deterministic; delivery remains
+optional and provider-neutral.
 
 #### `billing_customers`
 
@@ -387,6 +401,11 @@ the workspace ID and internal plan codes, not Dodo product IDs.
 Normalized Wanterest subscription: workspace, internal plan (`free`, `pro`, `growth`), interval,
 status, current period, cancellation/failure state, provider subscription reference, and last
 provider event. Provider references are reconciliation data only.
+
+#### `billing_checkout_requests`
+
+Server-side checkout idempotency boundary. It stores the internal plan/interval and resulting
+provider checkout reference, but never accepts a provider product or price from a browser.
 
 #### `plan_catalog`
 
@@ -666,6 +685,17 @@ This order is an implementation sequence, not a downstream domain dependency. Di
 normalization, deduplication, analysis, matching, ranking, and aggregation consume only the
 shared contracts and must not branch on Hacker News, Bluesky, Reddit, or search behavior.
 
+Phase 2 ingestion tables are global system tables, not browser-facing read models. RLS is enabled
+with no `anon` or `authenticated` policies, direct browser privileges are revoked, and only the
+server-side service-role repository may write or inspect raw payloads, canonical source rows,
+source health, job state, and provenance. API routes and UI code must use backend commands rather
+than querying these tables directly.
+
+Replay reads stored `raw_source_items` by ID or bounded time/source filters, then runs the selected
+normalization and canonicalization versions without calling adapter discovery. Raw rows are never
+updated or deleted; current normalized rows may converge to newer versions, while conversation
+relationships and evidence provenance preserve the reversible history.
+
 ## 9. Durable job graph
 
 Trigger.dev tasks are the durable execution boundary. PostgreSQL uniqueness and `job_runs` are
@@ -894,31 +924,160 @@ open-web/search later. Add each real adapter only after the provider-neutral fix
 path is stable. Exit when the same input can be replayed without duplicates and downstream code
 does not branch on provider identity.
 
+The Bluesky V1 adapter uses the public AppView at `https://api.bsky.app` for the
+`app.bsky.feed.searchPosts` endpoint with caller-
+supplied queries, bounded first-page searches, exact local time-window filtering,
+runtime-validated records, and typed timeout/rate-limit/server-error handling. Public AppView
+cursor pagination has a known HTTP 403 failure mode, so `supportsIncrementalCursor` is false for
+this mode: a returned cursor is retained in raw diagnostics, but additional-page discovery is
+rejected rather than faking or retrying unsafe pagination. It uses AT URIs as stable external
+identities, maps replies to their root URI, and keeps quote posts as independent conversations.
+Thread expansion, authentication, posting, private data, and Jetstream are deliberately deferred.
+The newer `app.bsky.feed.searchPostsV2` lexicon is not used: its public AppView availability and
+operational response contract are not established by the current public API reference, so it is
+not a safe compatibility workaround for V1's cursor behavior.
+All payloads enter the existing raw-source ingestion and replay path; normalization,
+canonicalization, provenance, and downstream intelligence remain provider-neutral.
+
 ### Phase 3 — Product understanding, analysis, matching, ranking
 
-Implement product snapshots, demand profiles, discovery strategies, conversation analysis,
-product matching, component ranking, evidence links, and match feedback. Exit when one product
-can inspect a traceable ranked signal with all component scores.
+Phase 3 adds the intelligence layer without introducing Demand Map, Gap, Drift, Actions,
+experiments, billing, digests, or UI. The forward migration is
+`20260921000000_phase3_intelligence.sql`.
+
+The implemented pipeline is:
+
+```text
+product -> immutable product_snapshot -> immutable demand_profile
+conversation -> global conversation_analysis
+product + analysis -> stable product_match -> immutable match_evaluation
+match_evaluation -> immutable match_ranking -> current user-facing signal
+```
+
+Products and all workspace-derived intelligence use composite workspace foreign keys and RLS.
+Conversation analysis is global and service-role-only; it is reusable across products. Match
+evaluations and rankings are immutable and keyed by engine/input fingerprints. Signals point to
+the specific evaluation and ranking currently surfaced, while historical rows remain intact.
+
+The initial engines are provider-neutral ports with deterministic fixture implementations for
+demand profiles, conversation analysis, and product matching. Ranking is deterministic with
+formula `ranker-v1` and weights: semantic relevance `.24`, pain alignment `.20`, buyer alignment
+`.14`, intent strength `.18`, specificity `.10`, freshness `.08`, and source quality `.06`.
+Freshness uses an exponential 30-day decay with a safe `.5` value when timestamps are missing.
+Qualified signal usage consumes the Phase 1 `signals_monthly` entitlement exactly once per
+workspace/match/evaluation idempotency key. Replay reuses stored canonical conversations and
+creates new versioned analysis, match, and ranking rows without fetching sources again.
+
+Exit when one product can inspect a traceable ranked signal with all component scores, feedback,
+and replay history available from backend primitives and automated tests.
 
 ### Phase 4 — Demand Map, Gap, and Drift
 
-Implement persistent observations/themes, materialized period snapshots, product-positioning
-comparison, and historical drift calculations with minimum-sample/uncertainty metadata. Exit
-when Map/Gap/Drift can be regenerated from stored observations alone.
+Phase 4 is backend-only and is implemented by the forward migration
+`20260922000000_phase4_demand_intelligence.sql`. It adds:
 
-### Phase 5 — Actions, digests, usage, and feedback loop
+- immutable, product-specific `demand_observations` derived from qualified Phase 3 evaluations,
+  analyses, signals, conversations, and source items. Raw facet phrases are retained alongside
+  conservative normalized values, typed observation kinds, weights, confidence, source keys,
+  and engine/input fingerprints;
+- versioned `demand_themes` and immutable `theme_memberships`. The fixture engine is
+  deterministic (`fixture-theme-v1`) and maps known facets to a small taxonomy while preserving
+  an explicit `unclassified` bucket;
+- immutable `demand_snapshots` for 7-, 30-, and 90-day windows, with relational theme, phrase,
+  alternative, and intent detail rows. Theme share is the number of unique conversations mentioning
+  a theme divided by unique conversations with an observation; multi-theme shares may therefore
+  sum above one. Sample size, source mix, confidence, and warnings are stored with the snapshot;
+- immutable `demand_gaps`, calculated from market share, high-intent share, current product
+  positioning, and sample quality. The deterministic formula is
+  `marketWeight * (1 - positioningWeight) * (0.5 + 0.5 * highIntentShare) * sampleFactor`,
+  where sample factors are `.25/.5/.8/1` for insufficient/low/normal/high confidence;
+- immutable `demand_drifts` plus phrase and alternative drift details. Drift compares equal-length
+  windows, uses smoothed growth `(current - previous) / (previous + 1)`, and reports
+  `insufficient_data` below five conversations rather than treating tiny samples as meaningful.
 
-Implement evidence-backed actions/variants, digest build/send, feedback capture, and ranking
-evaluation inputs. Extend the Phase 1 usage primitives with all product usage event types.
-Exit when every suggested action links back to inspectable source evidence and usage is
-independently auditable.
+Every Phase 4 derived row has a relational evidence node. Provenance links preserve the chains
+`map → observation → signal/evaluation → analysis → conversation → source item → raw source`
+and `gap → demand snapshot + product snapshot + demand profile`; drift links both comparable
+snapshots. Structured spans, weights, and measurement metadata are kept on provenance/detail rows.
+The job types are `aggregate-demand`, `calculate-demand-gap`, `calculate-demand-drift`, and
+`backfill-demand-snapshots`. Replays use stored observations and snapshots only; they never refetch
+providers. Read models are exposed through backend module contracts `getDemandMap`,
+`getDemandGap`, and `getDemandDrift`. No Actions, experiments, billing, or UI are part of Phase 4.
+
+The Phase 4 implementation includes deterministic in-memory fixtures and automated migration,
+provenance, aggregation, positioning-gap, drift, and sample-uncertainty tests. The migration
+keeps derived tables service-role writable and member-readable through RLS, uses composite
+workspace foreign keys for every workspace-owned relationship, and protects all historical rows
+with immutable triggers.
+
+### Phase 5 — Actions, variants, digests, usage, and feedback loop
+
+Phase 5 is backend-only and is implemented by the forward migration
+`20260923000000_phase5_actions_digests.sql`. It adds:
+
+- controlled, evidence-backed Action candidates from qualified Demand Gaps, rising notable
+  Demand Drifts, Demand Snapshots, and high-value Signals;
+- deterministic candidate thresholds and bounded priority formula `action-priority-v1`;
+- immutable structured Action Variants, explicit lifecycle transitions, append-only feedback,
+  transition events, replay/regeneration under newer engine versions, and duplicate prevention;
+- idempotent `action_generated` usage consumption only for newly persisted user-visible Actions,
+  with `actions_enabled` enforced through the entitlement port;
+- deterministic daily/weekly Digest materialization with relational `digest_items`, sample
+  warnings, stale/dismissed Action exclusion, and period/render idempotency;
+- backend read models for Action detail/list and Digest detail/list, plus `generate-actions` and
+  `build-digest` job contracts. No delivery provider is required in this phase.
+
+Every Action requires a validated trigger evidence node and provenance edges to its trigger and
+supporting evidence. Variants link to their Action; Digests link to selected intelligence through
+relational items and provenance. The implementation deliberately contains no experiments,
+assignment/conversion tracking, autonomous execution, billing, or UI.
+
+The linked Supabase types are now authoritative for Phase 4 and Phase 5. All persistence aliases
+are derived in `database.helpers.ts`; `database.types.ts` remains generated and replaceable.
+Exit when Action generation, no-Action thresholds, deduplication, lifecycle, variants, feedback,
+usage, digest materialization, replay, provenance, RLS, migration contracts, and smoke tests pass.
 
 ### Phase 6 — Billing and entitlements
 
-Implement only the Dodo adapter, verified webhook inbox, normalized subscriptions, provider
-reconciliation, and subscription-to-internal-plan transitions. The internal plan catalog and
-`can`/`limit`/`consume` primitives already exist from Phase 1. Exit when provider events are
-safely replayed and access never depends on a Dodo product ID or browser return.
+Phase 6 is backend-only. Dodo is the payment/Merchant-of-Record provider; Wanterest owns internal
+plans, catalog versions, entitlements, usage, and access decisions. The provider boundary is
+`src/server/providers/billing/`, while normalized persistence and commands live under
+`src/server/modules/billing/`.
+
+The four configured Dodo product references map centrally to `pro|growth` and `monthly|annual`.
+Domain code never branches on a Dodo product ID. Free is internal-only and has no Dodo product.
+Checkout accepts only a validated internal plan and interval, requires an owner, attaches trusted
+metadata, and uses a server-generated checkout reference as both the Wanterest idempotency key and
+the Dodo idempotency key. A browser return is informational and cannot grant access.
+
+The Dodo route reads the raw request body, verifies the Standard Webhooks headers
+(`webhook-id`, `webhook-timestamp`, `webhook-signature`) within a bounded replay window, redacts
+payment-instrument fields, and records the verified payload in `billing_webhook_events`. The
+unique `(provider, provider_event_id)` constraint is the durable inbox boundary. Processing is
+retryable and can be re-run from the stored validated payload.
+
+Provider states are normalized to `trialing`, `active`, `past_due`, `canceling`, `canceled`,
+`expired`, or `incomplete`. `active`, `trialing`, and `canceling` resolve to the provider-mapped
+internal paid plan. `canceling` keeps the current paid entitlement until the period ends.
+`past_due` preserves the current paid entitlement during the conservative V1 grace policy.
+`canceled`, `expired`, and `incomplete` resolve a new Free entitlement revision. Previous
+`workspace_entitlements` revisions are retained; current access is resolved from the latest
+materialized revision, never from a browser redirect or a Dodo counter.
+
+Upgrades and downgrades take effect only after a verified provider state. Downgrades never delete
+products, members, or other customer data. Existing over-limit resources remain readable, while
+new creation is blocked by the existing entitlement primitives until the workspace is below the
+new limit. Usage remains in `usage_ledger`; a plan change never resets usage.
+
+`process-billing-webhook` and `reconcile-billing-subscription` are bounded job contracts. Manual
+reconciliation fetches provider state, ignores stale provider timestamps, applies a valid newer
+state, and records an audit correction. Provider outages leave existing entitlements unchanged and
+make webhook processing retryable. Billing mutations and webhook tables are service-role-only;
+authenticated users can read only their own workspace's normalized billing read model.
+
+The deterministic `FixtureBillingProvider` covers checkout, activation, renewal, cancellation,
+past-due, upgrade, downgrade, duplicate, out-of-order, and failed-request behavior. No billing UI,
+metered billing, tax logic, card storage, or Phase 7 experiments are included.
 
 ### Phase 7 — Experiments and operational hardening
 

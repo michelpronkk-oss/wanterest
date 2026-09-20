@@ -1,0 +1,149 @@
+import { z } from "zod";
+import type { Json } from "../../db/database.helpers";
+
+export const actionTypeSchema = z.enum([
+  "messaging_change", "landing_page", "positioning_change", "offer_hypothesis",
+  "onboarding_change", "comparison_page", "content_angle", "campaign_angle",
+  "product_research",
+]);
+export type ActionType = z.infer<typeof actionTypeSchema>;
+
+export const actionTriggerTypeSchema = z.enum(["demand_gap", "demand_drift", "demand_snapshot", "signal"]);
+export type ActionTriggerType = z.infer<typeof actionTriggerTypeSchema>;
+export const actionStatusSchema = z.enum(["proposed", "approved", "in_progress", "completed", "dismissed", "superseded"]);
+export type ActionStatus = z.infer<typeof actionStatusSchema>;
+export const actionVariantStatusSchema = z.enum(["generated", "selected", "rejected", "archived"]);
+export type ActionVariantStatus = z.infer<typeof actionVariantStatusSchema>;
+export const actionFeedbackTypeSchema = z.enum([
+  "useful", "not_useful", "too_generic", "not_relevant", "already_done",
+  "saved", "approved", "dismissed", "completed",
+]);
+export type ActionFeedbackType = z.infer<typeof actionFeedbackTypeSchema>;
+export const actionEventTypeSchema = z.enum(["approved", "dismissed", "started", "completed", "superseded", "regenerated"]);
+export type ActionEventType = z.infer<typeof actionEventTypeSchema>;
+
+export const digestTypeSchema = z.enum(["daily", "weekly"]);
+export type DigestType = z.infer<typeof digestTypeSchema>;
+export const digestStatusSchema = z.enum(["materialized", "sent", "superseded"]);
+export type DigestStatus = z.infer<typeof digestStatusSchema>;
+export const digestItemTypeSchema = z.enum(["signal", "theme", "gap", "drift", "action"]);
+export type DigestItemType = z.infer<typeof digestItemTypeSchema>;
+
+export const businessHypothesisSchema = z.object({
+  observation: z.string().trim().min(1).max(2_000),
+  hypothesis: z.string().trim().min(1).max(2_000),
+  target: z.string().trim().min(1).max(500),
+  metric: z.string().trim().min(1).max(500),
+});
+export type BusinessHypothesis = z.infer<typeof businessHypothesisSchema>;
+
+const objectContent = z.record(z.string(), z.json());
+const messagingContent = z.object({
+  headline: z.string().trim().min(1).max(500),
+  subheadline: z.string().trim().min(1).max(1_000),
+  cta: z.string().trim().min(1).max(200),
+});
+const landingPageContent = z.object({
+  angle: z.string().trim().min(1).max(500),
+  headline: z.string().trim().min(1).max(500),
+  problemStatement: z.string().trim().min(1).max(1_000),
+  proofPoints: z.array(z.string().trim().min(1).max(500)).min(1).max(5),
+  cta: z.string().trim().min(1).max(200),
+});
+const onboardingContent = z.object({
+  message: z.string().trim().min(1).max(1_000),
+  stepContext: z.string().trim().min(1).max(500),
+});
+const comparisonContent = z.object({
+  positioningAngle: z.string().trim().min(1).max(500),
+  comparisonFraming: z.string().trim().min(1).max(1_000),
+});
+const angleContent = z.object({
+  angle: z.string().trim().min(1).max(1_000),
+  audience: z.string().trim().min(1).max(500),
+  proof: z.array(z.string().trim().min(1).max(500)).min(1).max(5),
+});
+
+export type VariantContent = Record<string, Json>;
+
+export function parseVariantContent(actionType: ActionType, value: unknown): VariantContent {
+  const schema = actionType === "messaging_change" || actionType === "positioning_change"
+    ? messagingContent
+    : actionType === "landing_page"
+      ? landingPageContent
+      : actionType === "onboarding_change"
+        ? onboardingContent
+        : actionType === "comparison_page"
+          ? comparisonContent
+          : actionType === "content_angle" || actionType === "campaign_angle"
+            ? angleContent
+            : objectContent;
+  return schema.parse(value) as VariantContent;
+}
+
+export const actionGenerationInputSchema = z.object({
+  workspaceId: z.string().uuid(),
+  productId: z.string().uuid(),
+  productName: z.string().trim().min(1).max(200),
+  triggerType: actionTriggerTypeSchema,
+  triggerId: z.string().uuid(),
+  triggerEvidenceNodeId: z.string().uuid(),
+  triggerConceptKey: z.string().trim().min(1).max(300),
+  conceptLabel: z.string().trim().min(1).max(500),
+  targetKey: z.string().trim().min(1).max(200),
+  marketWeight: z.number().min(0).max(1).default(0),
+  gapScore: z.number().min(0).max(1).default(0),
+  driftStrength: z.number().min(0).max(1).default(0),
+  intentStrength: z.number().min(0).max(1).default(0),
+  opportunityScore: z.number().min(0).max(1).default(0),
+  evidenceStrength: z.number().min(0).max(1).default(0),
+  confidence: z.number().min(0).max(1),
+  freshness: z.number().min(0).max(1).default(1),
+  sampleSize: z.number().int().nonnegative().default(0),
+  sampleQuality: z.enum(["insufficient_data", "low_confidence", "normal", "high_confidence"]),
+  driftDirection: z.enum(["rising", "cooling", "stable", "insufficient_data"]).optional(),
+  driftSignificance: z.enum(["insufficient", "weak", "notable", "strong"]).optional(),
+  positioningWeight: z.number().min(0).max(1).default(0),
+  highIntentShare: z.number().min(0).max(1).default(0),
+  specificity: z.number().min(0).max(1).default(0),
+  buyerLanguage: z.array(z.string()).max(10).default([]),
+  supportingEvidence: z.array(z.string().uuid()).max(50).default([]),
+  actionEngineVersionId: z.string().uuid().optional(),
+});
+export type ActionGenerationInput = z.infer<typeof actionGenerationInputSchema>;
+
+export const actionListFiltersSchema = z.object({
+  status: actionStatusSchema.optional(),
+  actionType: actionTypeSchema.optional(),
+  triggerType: actionTriggerTypeSchema.optional(),
+  minimumPriority: z.number().min(0).max(1).optional(),
+  stale: z.boolean().optional(),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+});
+export type ActionListFilters = z.infer<typeof actionListFiltersSchema>;
+
+export const actionFeedbackInputSchema = z.object({
+  workspaceId: z.string().uuid(),
+  productId: z.string().uuid(),
+  actionId: z.string().uuid(),
+  actorUserId: z.string().uuid(),
+  feedbackType: actionFeedbackTypeSchema,
+  reason: z.string().trim().min(1).max(1_000).optional(),
+  metadata: z.record(z.string(), z.json()).default({}),
+});
+
+export const digestBuildInputSchema = z.object({
+  workspaceId: z.string().uuid(),
+  productId: z.string().uuid().nullable().optional(),
+  periodStart: z.string().datetime(),
+  periodEnd: z.string().datetime(),
+  digestType: digestTypeSchema,
+  renderVersion: z.string().trim().min(1).max(120),
+  engineVersionId: z.string().uuid().nullable().optional(),
+});
+export type DigestBuildInput = z.infer<typeof digestBuildInputSchema>;
+
+export function clampAction(value: number): number {
+  return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+}

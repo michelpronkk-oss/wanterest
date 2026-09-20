@@ -1,0 +1,218 @@
+import { AppError } from "../../lib/errors";
+import { jsonValueSchema, type Json } from "../../db/database.helpers";
+import { deterministicUuid, sha256Json, sha256Text } from "../ingestion/hash";
+import type { ConversationRow, ProductRow, ProductSnapshotInsert, SourceItemRow } from "../../db/database.helpers";
+import { conversationAnalysisSchema, demandProfileSchema, feedbackTypeSchema, type FeedbackType } from "./intelligence.schemas";
+import { calculateOpportunityScore, freshnessScore, INTENT_STRENGTH, RANKING_FORMULA_VERSION, sourceQuality, type RankingComponents } from "./ranking";
+import type { ConversationAnalysisEngine, DemandProfileEngine, ProductMatchingEngine } from "./engines";
+import type { IntelligenceRepository } from "./intelligence.repository";
+
+function json(value: unknown): Json { return jsonValueSchema.parse(value); }
+function asStrings(value: Json): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; }
+function normalizeText(value: string): string { return value.replace(/\s+/g, " ").trim(); }
+
+export type SignalFilters = { minimumScore?: number; intentType?: string; sourceKey?: string; lifecycleStatus?: string; from?: string; to?: string };
+export type SignalReadModel = {
+  signalId: string; workspaceId: string; productId: string; productMatchId: string; conversationId: string; source: string;
+  canonicalUrl: string | null; publishedAt: string | null; intentType: string; opportunityScore: number; matchPercent: number;
+  excerpt: string; whyItMatters: string; tags: string[]; buyerLanguage: string[]; painThemes: string[]; lifecycleStatus: string;
+  feedbackState: { saved: boolean; dismissed: boolean; relevant: boolean | null; opened: boolean; contacted: boolean; converted: boolean };
+  evidence: { signalEvidenceNodeId: string; evaluationId: string; rankingId: string; conversationEvidenceNodeId: string; sourceItemId: string; demandProfileEvidenceNodeId: string };
+};
+
+export class IntelligenceService {
+  constructor(private readonly repository: IntelligenceRepository) {}
+
+  async createSnapshot(product: ProductRow, input: { pageType: "manual" | "homepage" | "pricing" | "features" | "use_cases"; rawText: string; sourceUrl?: string | null; metadata?: Json; captureEngineVersionId?: string | null }) {
+    const normalizedText = normalizeText(input.rawText);
+    if (!normalizedText) throw new AppError("VALIDATION_ERROR", "A product snapshot needs text.");
+    const hash = sha256Text(normalizedText);
+    const previous = await this.repository.getProductSnapshots(product.id);
+    const existing = previous.find((snapshot) => snapshot.content_hash === hash && snapshot.page_type === input.pageType);
+    if (existing) return existing;
+    const row: ProductSnapshotInsert = {
+      workspace_id: product.workspace_id, product_id: product.id, evidence_node_id: deterministicUuid(`evidence:product-snapshot:${product.id}:${hash}`), snapshot_version: (previous.at(-1)?.snapshot_version ?? 0) + 1,
+      page_type: input.pageType, source_url: input.sourceUrl ?? null, raw_text: input.rawText, normalized_text: normalizedText,
+      content_hash: hash, metadata: input.metadata ?? {}, capture_status: "captured", capture_engine_version_id: input.captureEngineVersionId ?? null,
+    };
+    const snapshot = await this.repository.createProductSnapshot(row);
+    await this.repository.setCurrentSnapshot(product.id, snapshot.id);
+    return snapshot;
+  }
+
+  async generateDemandProfile(product: ProductRow, engineVersionId: string, engine: DemandProfileEngine, snapshotIds?: string[]) {
+    const allSnapshots = await this.repository.getProductSnapshots(product.id);
+    const snapshots = snapshotIds ? allSnapshots.filter((snapshot) => snapshotIds.includes(snapshot.id)) : allSnapshots.filter((snapshot) => snapshot.id === product.current_snapshot_id || snapshot === allSnapshots.at(-1));
+    if (!snapshots.length) throw new AppError("VALIDATION_ERROR", "A product snapshot is required before generating a demand profile.");
+    const result = demandProfileSchema.parse(await engine.generate({ snapshots, productName: product.name }));
+    const previous = await this.repository.getDemandProfiles(product.id);
+    const profile = await this.repository.createDemandProfile({
+      workspace_id: product.workspace_id, product_id: product.id, evidence_node_id: deterministicUuid(`evidence:demand-profile:${product.id}:${engineVersionId}:${previous.length + 1}`), profile_version: (previous.at(-1)?.profile_version ?? 0) + 1,
+      audience: json(result.audience), jobs: json(result.jobs), problems: json(result.problems), desired_outcomes: json(result.desiredOutcomes),
+      capabilities: json(result.capabilities), alternatives: json(result.alternatives), include_terms: json(result.includeTerms), exclude_terms: json(result.excludeTerms),
+      languages: json(result.languages), geographies: json(result.geographies), confidence: result.confidence, engine_version_id: engineVersionId,
+      model: "fixture", prompt_version: engine.version,
+    }, snapshots.map((snapshot) => ({ workspace_id: product.workspace_id, demand_profile_id: "pending", product_snapshot_id: snapshot.id })));
+    // The join row receives the generated profile ID in SQL-backed adapters; the in-memory
+    // adapter records the same association after creation.
+    const inputs = (this.repository as unknown as { profileSnapshotInputs?: Array<{ demand_profile_id: string; product_snapshot_id: string }> }).profileSnapshotInputs;
+    if (inputs) for (const input of inputs.filter((row) => row.demand_profile_id === "pending")) input.demand_profile_id = profile.id;
+    for (const snapshot of snapshots) await this.repository.linkProvenance({ derivedEvidenceNodeId: profile.evidence_node_id, sourceEvidenceNodeId: snapshot.evidence_node_id, relationType: "derived_from_snapshot", ordinal: snapshots.indexOf(snapshot), engineVersionId });
+    await this.repository.setCurrentDemandProfile(product.id, profile.id);
+    return profile;
+  }
+
+  async analyzeConversation(conversation: ConversationRow, sourceItem: SourceItemRow, engineVersionId: string, engine: ConversationAnalysisEngine) {
+    const inputFingerprint = sha256Json({ conversationId: conversation.id, contentHash: conversation.content_hash, engineVersionId });
+    const existing = await this.repository.getConversationAnalysis(conversation.id, engineVersionId, inputFingerprint);
+    if (existing) return existing;
+    const skipped = conversation.body.trim().length < 20 || sourceItem.status !== "active";
+    const result = skipped
+      ? conversationAnalysisSchema.parse({ intentType: "unknown", painThemes: [], desiredOutcomes: [], alternatives: [], buyerLanguage: [], audienceSignals: [], specificity: 0, urgency: null, confidence: 0, evidenceSpans: [] })
+      : conversationAnalysisSchema.parse(await engine.analyze({ conversation, sourceItemId: sourceItem.id }));
+    const analysis = await this.repository.createConversationAnalysis({
+      conversation_id: conversation.id, evidence_node_id: deterministicUuid(`evidence:conversation-analysis:${conversation.id}:${engineVersionId}:${inputFingerprint}`),
+      engine_version_id: engineVersionId, input_fingerprint: inputFingerprint, intent_type: result.intentType, pain_themes: json(result.painThemes),
+      desired_outcomes: json(result.desiredOutcomes), alternatives: json(result.alternatives), buyer_language: json(result.buyerLanguage), audience_signals: json(result.audienceSignals),
+      specificity: result.specificity, urgency: result.urgency, confidence: result.confidence, status: skipped ? "skipped" : "completed", skip_reason: skipped ? "content_unusable" : null,
+      evidence_spans: json(result.evidenceSpans), provider: "fixture", model: "deterministic", prompt_version: engine.version, usage_metadata: {},
+    }, result.evidenceSpans.map((span) => ({ analysis_id: "pending", conversation_id: conversation.id, source_item_id: span.sourceItemId ?? sourceItem.id, field: span.field, start_offset: span.startOffset, end_offset: span.endOffset, excerpt_hash: span.excerptHash, evidence_type: span.evidenceType, confidence: span.confidence })));
+    const spans = (this.repository as unknown as { analysisSpans?: Array<{ analysis_id: string }> }).analysisSpans;
+    if (spans) for (const span of spans.filter((row) => row.analysis_id === "pending")) span.analysis_id = analysis.id;
+    await this.repository.linkProvenance({ derivedEvidenceNodeId: analysis.evidence_node_id, sourceEvidenceNodeId: conversation.evidence_node_id, relationType: "analyzes_conversation", engineVersionId });
+    await this.repository.linkProvenance({ derivedEvidenceNodeId: analysis.evidence_node_id, sourceEvidenceNodeId: sourceItem.evidence_node_id, relationType: "supported_by_source_item", engineVersionId });
+    return analysis;
+  }
+
+  async matchProduct(product: ProductRow, profileId: string, analysisId: string, engineVersionId: string, engine: ProductMatchingEngine) {
+    const profiles = await this.repository.getDemandProfiles(product.id);
+    const profile = profiles.find((row) => row.id === profileId);
+    if (!profile) throw new AppError("NOT_FOUND", "Demand profile was not found.");
+    const analysis = await this.repository.getConversationAnalysisById(analysisId);
+    if (!analysis) throw new AppError("NOT_FOUND", "Conversation analysis was not found.");
+    const conversation = await this.repository.getConversation(analysis.conversation_id);
+    if (!conversation) throw new AppError("NOT_FOUND", "Conversation was not found.");
+    const result = await engine.match({ profile, analysis: conversationAnalysisSchema.parse({ intentType: analysis.intent_type, painThemes: asStrings(analysis.pain_themes), desiredOutcomes: asStrings(analysis.desired_outcomes), alternatives: asStrings(analysis.alternatives), buyerLanguage: asStrings(analysis.buyer_language), audienceSignals: asStrings(analysis.audience_signals), specificity: analysis.specificity, urgency: analysis.urgency, confidence: analysis.confidence, evidenceSpans: [] }), productName: product.name, conversation });
+    const match = await this.repository.getMatch(product.workspace_id, product.id, conversation.id) ?? await this.repository.createMatch({ workspace_id: product.workspace_id, product_id: product.id, conversation_id: conversation.id, evidence_node_id: deterministicUuid(`evidence:match:${product.id}:${conversation.id}`) });
+    await this.repository.linkProvenance({ derivedEvidenceNodeId: match.evidence_node_id, sourceEvidenceNodeId: conversation.evidence_node_id, relationType: "matches_conversation" });
+    const inputFingerprint = sha256Json({ matchId: match.id, profileId, analysisId, engineVersionId });
+    const existing = await this.repository.getEvaluation(match.id, engineVersionId, inputFingerprint);
+    if (existing) return existing;
+    const evaluation = await this.repository.createEvaluation({ workspace_id: product.workspace_id, product_match_id: match.id, product_id: product.id, conversation_id: conversation.id, demand_profile_id: profile.id, conversation_analysis_id: analysis.id, match_engine_version_id: engineVersionId, evidence_node_id: deterministicUuid(`evidence:evaluation:${match.id}:${engineVersionId}:${inputFingerprint}`), input_fingerprint: inputFingerprint, match_confidence: result.matchConfidence, rationale: result.rationale, evidence: json(result.evidence), decision: result.decision });
+    await this.repository.setCurrentEvaluation(match.id, evaluation.id);
+    await this.repository.linkProvenance({ derivedEvidenceNodeId: evaluation.evidence_node_id, sourceEvidenceNodeId: analysis.evidence_node_id, relationType: "evaluates_analysis", engineVersionId });
+    await this.repository.linkProvenance({ derivedEvidenceNodeId: evaluation.evidence_node_id, sourceEvidenceNodeId: profile.evidence_node_id, relationType: "uses_demand_profile", engineVersionId });
+    return evaluation;
+  }
+
+  async rankEvaluation(product: ProductRow, evaluationId: string, rankingEngineVersionId: string, now = new Date()) {
+    const evaluation = await this.repository.getEvaluationById(evaluationId);
+    if (!evaluation) throw new AppError("NOT_FOUND", "Match evaluation was not found.");
+    const conversation = await this.repository.getConversation(evaluation.conversation_id);
+    if (!conversation) throw new AppError("NOT_FOUND", "Conversation was not found.");
+    const analysis = await this.repository.getConversationAnalysisById(evaluation.conversation_analysis_id);
+    if (!analysis) throw new AppError("NOT_FOUND", "Conversation analysis was not found.");
+    const evidence = evaluation.evidence && typeof evaluation.evidence === "object" && !Array.isArray(evaluation.evidence) ? evaluation.evidence as Record<string, Json> : {};
+    const listLength = (key: string) => Array.isArray(evidence[key]) ? evidence[key].length : 0;
+    const components: RankingComponents = {
+      semanticRelevance: evaluation.match_confidence,
+      painAlignment: Math.min(1, listLength("painAlignment") / 4),
+      buyerAlignment: Math.min(1, listLength("buyerAlignment") / 2),
+      intentStrength: INTENT_STRENGTH[analysis.intent_type as keyof typeof INTENT_STRENGTH] ?? INTENT_STRENGTH.unknown,
+      specificity: analysis.specificity,
+      freshness: freshnessScore(conversation.last_activity_at ?? conversation.published_at, now),
+      sourceQuality: sourceQuality((await this.repository.getSourceItem(conversation.primary_source_item_id))?.source_key ?? "unknown"),
+    };
+    const inputFingerprint = sha256Json({ evaluationId, rankingEngineVersionId, components });
+    const existing = await this.repository.getRanking(evaluationId, rankingEngineVersionId, inputFingerprint);
+    if (existing) return existing;
+    const ranking = await this.repository.createRanking({ workspace_id: product.workspace_id, product_match_evaluation_id: evaluation.id, ranking_engine_version_id: rankingEngineVersionId, evidence_node_id: deterministicUuid(`evidence:ranking:${evaluation.id}:${rankingEngineVersionId}:${inputFingerprint}`), formula_version: RANKING_FORMULA_VERSION, semantic_relevance: components.semanticRelevance, pain_alignment: components.painAlignment, buyer_alignment: components.buyerAlignment, intent_strength: components.intentStrength, specificity: components.specificity, freshness: components.freshness, source_quality: components.sourceQuality, opportunity_score: calculateOpportunityScore(components), input_fingerprint: inputFingerprint });
+    await this.repository.linkProvenance({ derivedEvidenceNodeId: ranking.evidence_node_id, sourceEvidenceNodeId: evaluation.evidence_node_id, relationType: "ranks_match_evaluation", engineVersionId: rankingEngineVersionId });
+    return ranking;
+  }
+
+  async materializeSignal(product: ProductRow, evaluationId: string, rankingId: string) {
+    const evaluation = await this.repository.getEvaluationById(evaluationId);
+    const ranking = await this.repository.getRankingById(rankingId);
+    if (!evaluation || !ranking || evaluation.decision !== "qualified") return null;
+    const conversation = await this.repository.getConversation(evaluation.conversation_id);
+    const source = conversation ? await this.repository.getSourceItem(conversation.primary_source_item_id) : null;
+    if (!conversation || !source) throw new AppError("NOT_FOUND", "Signal source evidence was not found.");
+    const existing = await this.repository.getSignalByMatch(evaluation.product_match_id);
+    const analysis = await this.repository.getConversationAnalysisById(evaluation.conversation_analysis_id);
+    const signalInput = { workspace_id: product.workspace_id, product_id: product.id, product_match_id: evaluation.product_match_id, product_match_evaluation_id: evaluation.id, match_ranking_id: ranking.id, conversation_id: conversation.id, evidence_node_id: deterministicUuid(`evidence:signal:${evaluation.product_match_id}`), lifecycle_status: existing?.lifecycle_status ?? "active", intent_type: analysis?.intent_type ?? "unknown", excerpt: conversation.body.slice(0, 500), why_it_matters: evaluation.rationale, tags: json([]), buyer_language: json(analysis ? asStrings(analysis.buyer_language) : []), pain_themes: json(analysis ? asStrings(analysis.pain_themes) : []), source_key: source.source_key, canonical_url: source.canonical_url, published_at: source.published_at };
+    if (existing) return this.repository.updateSignal(existing.id, signalInput);
+    try { await this.repository.consumeSignalUsage(product.workspace_id, `${evaluation.product_match_id}:${evaluation.id}`); } catch (error) { if (error instanceof Error && error.message.includes("usage_limit_exceeded")) throw new AppError("USAGE_LIMIT_EXCEEDED", "The workspace signal limit was reached."); throw error; }
+    const signal = await this.repository.createSignal(signalInput);
+    await this.repository.linkProvenance({ derivedEvidenceNodeId: signal.evidence_node_id, sourceEvidenceNodeId: ranking.evidence_node_id, relationType: "surfaces_ranking" });
+    await this.repository.linkProvenance({ derivedEvidenceNodeId: signal.evidence_node_id, sourceEvidenceNodeId: evaluation.evidence_node_id, relationType: "surfaces_match_evaluation" });
+    const profile = await this.repository.getDemandProfileById(evaluation.demand_profile_id);
+    if (profile) await this.repository.linkProvenance({ derivedEvidenceNodeId: signal.evidence_node_id, sourceEvidenceNodeId: profile.evidence_node_id, relationType: "uses_demand_profile" });
+    return signal;
+  }
+
+  async addFeedback(input: { workspaceId: string; matchId: string; actorUserId: string; type: FeedbackType; signalId?: string; evaluationId?: string; reason?: string; metadata?: Json }) {
+    const parsed = feedbackTypeSchema.safeParse(input.type);
+    if (!parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid feedback type.");
+    const match = await this.repository.getMatchById(input.matchId);
+    if (!match || match.workspace_id !== input.workspaceId) throw new AppError("FORBIDDEN", "The match does not belong to this workspace.");
+    if (input.signalId) {
+      const signal = await this.repository.getSignal(input.signalId);
+      if (!signal || signal.workspace_id !== input.workspaceId || signal.product_match_id !== input.matchId) throw new AppError("FORBIDDEN", "The signal does not belong to this workspace.");
+    }
+    return this.repository.createFeedback({ workspace_id: input.workspaceId, product_match_id: input.matchId, actor_user_id: input.actorUserId, feedback_type: parsed.data, signal_id: input.signalId ?? null, product_match_evaluation_id: input.evaluationId ?? null, reason: input.reason ?? null, metadata: input.metadata ?? {} });
+  }
+
+  async listSignals(workspaceId: string, productId?: string, filters: SignalFilters = {}): Promise<SignalReadModel[]> {
+    const rows = await this.repository.listSignals(workspaceId, productId);
+    const result: SignalReadModel[] = [];
+    for (const row of rows) {
+      const ranking = await this.repository.getRankingById(row.match_ranking_id);
+      if (!ranking || (filters.minimumScore !== undefined && ranking.opportunity_score < filters.minimumScore) || (filters.intentType && row.intent_type !== filters.intentType) || (filters.sourceKey && row.source_key !== filters.sourceKey) || (filters.lifecycleStatus && row.lifecycle_status !== filters.lifecycleStatus)) continue;
+      if (filters.from && (row.published_at ?? row.created_at) < filters.from) continue;
+      if (filters.to && (row.published_at ?? row.created_at) > filters.to) continue;
+      result.push(await this.signalReadModel(row));
+    }
+    return result.sort((a, b) => b.opportunityScore - a.opportunityScore);
+  }
+
+  async getSignal(workspaceId: string, signalId: string): Promise<SignalReadModel> {
+    const row = await this.repository.getSignal(signalId);
+    if (!row || row.workspace_id !== workspaceId) throw new AppError("NOT_FOUND", "Signal was not found.");
+    return this.signalReadModel(row);
+  }
+
+  async replayAnalysis(conversations: Array<{ conversation: ConversationRow; sourceItem: SourceItemRow }>, engineVersionId: string, engine: ConversationAnalysisEngine) {
+    const results = [];
+    for (const input of conversations) results.push(await this.analyzeConversation(input.conversation, input.sourceItem, engineVersionId, engine));
+    return results;
+  }
+
+  async replayMatch(product: ProductRow, profileId: string, analyses: string[], engineVersionId: string, engine: ProductMatchingEngine) {
+    const results = [];
+    for (const analysisId of analyses) results.push(await this.matchProduct(product, profileId, analysisId, engineVersionId, engine));
+    return results;
+  }
+
+  async replayRanking(product: ProductRow, evaluations: string[], rankingEngineVersionId: string) {
+    const results = [];
+    for (const evaluationId of evaluations) {
+      const ranking = await this.rankEvaluation(product, evaluationId, rankingEngineVersionId);
+      results.push(ranking);
+    }
+    return results;
+  }
+
+  private async signalReadModel(row: import("../../db/database.helpers").SignalRow): Promise<SignalReadModel> {
+    const feedback = await this.repository.listFeedback(row.id);
+    const latest = (type: string) => [...feedback].reverse().find((event) => event.feedback_type === type);
+    const latestState = (types: string[]) => [...feedback].reverse().find((event) => types.includes(event.feedback_type))?.feedback_type;
+    const evaluation = await this.repository.getEvaluationById(row.product_match_evaluation_id);
+    const conversation = await this.repository.getConversation(row.conversation_id);
+    const source = conversation ? await this.repository.getSourceItem(conversation.primary_source_item_id) : null;
+    const profile = evaluation ? await this.repository.getDemandProfileById(evaluation.demand_profile_id) : null;
+    const savedState = latestState(["saved", "dismissed"]);
+    const relevanceState = latestState(["relevant", "not_relevant"]);
+    return { signalId: row.id, workspaceId: row.workspace_id, productId: row.product_id, productMatchId: row.product_match_id, conversationId: row.conversation_id, source: row.source_key, canonicalUrl: row.canonical_url, publishedAt: row.published_at, intentType: row.intent_type, opportunityScore: (await this.repository.getRankingById(row.match_ranking_id))?.opportunity_score ?? 0, matchPercent: Math.round(((evaluation?.match_confidence ?? 0) * 100)), excerpt: row.excerpt, whyItMatters: row.why_it_matters, tags: asStrings(row.tags), buyerLanguage: asStrings(row.buyer_language), painThemes: asStrings(row.pain_themes), lifecycleStatus: row.lifecycle_status, feedbackState: { saved: savedState === "saved", dismissed: savedState === "dismissed", relevant: relevanceState === "relevant" ? true : relevanceState === "not_relevant" ? false : null, opened: Boolean(latest("opened")), contacted: Boolean(latest("contacted")), converted: Boolean(latest("converted")) }, evidence: { signalEvidenceNodeId: row.evidence_node_id, evaluationId: row.product_match_evaluation_id, rankingId: row.match_ranking_id, conversationEvidenceNodeId: conversation?.evidence_node_id ?? "", sourceItemId: source?.id ?? "", demandProfileEvidenceNodeId: profile?.evidence_node_id ?? "" } };
+  }
+}
