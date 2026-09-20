@@ -119,6 +119,24 @@ npm run smoke:bluesky
 The connector accepts public provider responses only and records typed health, timeout, rate-limit,
 and server-error outcomes without persisting authorization material.
 
+## Reddit source connector
+
+Reddit is implemented as the next source adapter using Reddit's official OAuth/Data API only. It
+uses app-only client-credentials access against `https://oauth.reddit.com`, with credentials and a
+descriptive `REDDIT_USER_AGENT` supplied only through server environment variables. The connector
+supports bounded global or subreddit search, opaque `after` cursor pagination, raw payload capture,
+replay, stable `t3_`/`t1_` identities, and optional bounded post-comment expansion. Deleted/removed
+content and `more` placeholders are handled safely; scraping, `.json` endpoints, posting, private
+profile enrichment, and user-history scoring are not supported.
+
+The adapter is implemented and fixture-verified; live API use remains pending Reddit approval. Run
+the live smoke command after credentials are approved. Without credentials it exits successfully
+with a clear skip message and makes no network request:
+
+```bash
+npm run smoke:reddit
+```
+
 ## Phase 4 demand intelligence
 
 Phase 4 derives immutable, product-specific observations from qualified Phase 3 evidence, then

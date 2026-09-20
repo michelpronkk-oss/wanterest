@@ -919,7 +919,7 @@ No Phase 1 exit criterion requires a dashboard or product UI.
 
 Implement the source port, fixture adapter, raw/source/conversation tables, normalization and
 reversible dedupe jobs, source health, `job_runs`, and replay tooling. The adapter order is
-strictly: fixture first, Hacker News first real adapter, Bluesky next, Reddit later, and
+strictly: fixture first, Hacker News first real adapter, Bluesky next, Reddit next, and
 open-web/search later. Add each real adapter only after the provider-neutral fixture/contracts
 path is stable. Exit when the same input can be replayed without duplicates and downstream code
 does not branch on provider identity.
@@ -938,6 +938,18 @@ operational response contract are not established by the current public API refe
 not a safe compatibility workaround for V1's cursor behavior.
 All payloads enter the existing raw-source ingestion and replay path; normalization,
 canonicalization, provenance, and downstream intelligence remain provider-neutral.
+
+The Reddit adapter is implemented after Bluesky using the official OAuth/Data API at
+`https://oauth.reddit.com` and the official token endpoint at `https://www.reddit.com/api/v1/access_token`.
+It accepts caller-supplied global or subreddit queries, sends bounded documented listing parameters,
+preserves Reddit's opaque `after` cursor inside a Wanterest cursor envelope, and records provider rate
+limit metadata. Optional post-comment expansion is bounded by maximum comments and depth; nested
+comments remain in the root post conversation, while `more` placeholders are ignored. Posts and
+comments preserve stable Reddit fullnames (`t3_` and `t1_`), safe canonical permalinks, deleted or
+removed state, and minimal public author fields only. OAuth tokens are memory-only and never enter
+raw payloads, persistence, logs, or provenance. The connector is fixture-verified and live-API
+pending Reddit approval; no scraping, unofficial `.json` endpoints, posting, profile enrichment,
+Jetstream, migration, or provider-specific downstream branch is introduced.
 
 ### Phase 3 — Product understanding, analysis, matching, ranking
 

@@ -20,6 +20,7 @@
     "smoke:actions": "vitest run tests/modules/actions.test.ts --reporter=verbose",
     "smoke:billing": "vitest run tests/smoke/billing.test.ts --reporter=verbose",
     "smoke:bluesky": "node scripts/smoke-bluesky.mjs",
+    "smoke:reddit": "node scripts/smoke-reddit.mjs",
     "smoke:fixture": "vitest run tests/modules/ingestion.test.ts --reporter=verbose",
     "db:lint": "supabase db lint",
     "db:reset": "supabase db reset"

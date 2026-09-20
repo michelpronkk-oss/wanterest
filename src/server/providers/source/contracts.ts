@@ -61,6 +61,7 @@ export const rateLimitMetadataSchema = z.object({
   remaining: z.number().int().nonnegative().nullable().optional(),
   limit: z.number().int().positive().nullable().optional(),
   retryAfterMs: z.number().int().nonnegative().nullable().optional(),
+  resetAt: timestampSchema.nullable().optional(),
 });
 
 export type RateLimitMetadata = z.infer<typeof rateLimitMetadataSchema>;

@@ -15,6 +15,11 @@ const serverEnvSchema = publicEnvSchema.extend({
   DODO_PRODUCT_PRO_ANNUAL: optionalServerString,
   DODO_PRODUCT_GROWTH_MONTHLY: optionalServerString,
   DODO_PRODUCT_GROWTH_ANNUAL: optionalServerString,
+  REDDIT_CLIENT_ID: optionalServerString,
+  REDDIT_CLIENT_SECRET: optionalServerString,
+  REDDIT_USER_AGENT: optionalServerString,
+  REDDIT_API_BASE_URL: optionalServerUrl,
+  REDDIT_AUTH_BASE_URL: optionalServerUrl,
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
@@ -48,6 +53,11 @@ export function getServerEnv(): ServerEnv {
     DODO_PRODUCT_PRO_ANNUAL: process.env.DODO_PRODUCT_PRO_ANNUAL,
     DODO_PRODUCT_GROWTH_MONTHLY: process.env.DODO_PRODUCT_GROWTH_MONTHLY,
     DODO_PRODUCT_GROWTH_ANNUAL: process.env.DODO_PRODUCT_GROWTH_ANNUAL,
+    REDDIT_CLIENT_ID: process.env.REDDIT_CLIENT_ID,
+    REDDIT_CLIENT_SECRET: process.env.REDDIT_CLIENT_SECRET,
+    REDDIT_USER_AGENT: process.env.REDDIT_USER_AGENT,
+    REDDIT_API_BASE_URL: process.env.REDDIT_API_BASE_URL,
+    REDDIT_AUTH_BASE_URL: process.env.REDDIT_AUTH_BASE_URL,
   });
 }
 

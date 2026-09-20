@@ -2,6 +2,7 @@ export { createSourceRegistry, getSourceAdapter } from "./registry";
 export { blueskySourceAdapter, BlueskySourceAdapter } from "./bluesky";
 export { fixtureSourceAdapter, FixtureSourceAdapter } from "./fixture";
 export { hackerNewsSourceAdapter, HackerNewsSourceAdapter } from "./hacker-news";
+export { redditSourceAdapter, RedditSourceAdapter, RedditClient, RedditTokenManager, normalizeRedditItem } from "./reddit";
 export {
   rawSourceItemEnvelopeSchema,
   sourceDiscoveryRequestSchema,

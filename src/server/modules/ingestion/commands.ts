@@ -56,6 +56,25 @@ export async function runBlueskySmoke(input: { query?: string; limit?: number } 
   return { query, discovery, replay, health };
 }
 
+export async function runRedditSmoke(input: { query?: string; subreddit?: string; limit?: number; expandThreads?: boolean } = {}) {
+  const service = createService();
+  const limit = Math.min(input.limit ?? 5, 10);
+  const discovery = await service.discoverSource("reddit", {
+    query: input.query ?? "test",
+    limit,
+    expandThreads: input.expandThreads ?? false,
+    requestMetadata: input.subreddit ? { subreddit: input.subreddit } : {},
+  });
+  const replay = await service.replay({
+    sourceKey: "reddit",
+    normalizationVersion: "reddit-v1",
+    canonicalizationVersion: "canonical-v1",
+    limit: 100,
+  });
+  const health = await service.healthCheck("reddit");
+  return { query: input.query ?? "test", discovery, replay, health };
+}
+
 export async function replaySource(input: unknown) {
   return createService().replay(input);
 }
