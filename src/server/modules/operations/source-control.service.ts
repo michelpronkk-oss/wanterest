@@ -44,4 +44,5 @@ export const initialSourceAvailability: SourceAvailability[] = [
   { sourceKey: "bluesky", configured: true, state: "enabled" },
   { sourceKey: "reddit", configured: false, state: "disabled", reason: "approval_pending_or_credentials_missing" },
   { sourceKey: "github", configured: true, state: "enabled", reason: "public_api_available" },
+  { sourceKey: "x", configured: Boolean(process.env.X_BEARER_TOKEN?.trim()), state: process.env.X_BEARER_TOKEN?.trim() ? "enabled" : "disabled", reason: process.env.X_BEARER_TOKEN?.trim() ? "app_only_token_configured" : "credentials_missing" },
 ];

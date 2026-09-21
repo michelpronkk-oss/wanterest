@@ -29,4 +29,24 @@ describe("Hacker News source adapter", () => {
     await expect(adapter.discover({ limit: 1, expandThreads: false, requestMetadata: {} })).rejects.toMatchObject({ code: "RATE_LIMITED" });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
+
+  it("filters the bounded recent feed using product anchors instead of admitting unrelated stories", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response([201, 202]))
+      .mockResolvedValueOnce(response({ id: 201, type: "story", title: "A poem about convenience", time: 1_758_284_800 }))
+      .mockResolvedValueOnce(response({ id: 202, type: "story", title: "Jira alternative for small teams", text: "Comparing issue trackers", time: 1_758_284_900 }));
+    const adapter = new HackerNewsSourceAdapter({ fetchImpl, baseUrl: "https://hn.test/v0" });
+
+    const page = await adapter.discover({
+      query: "Jira alternative",
+      limit: 1,
+      requestMetadata: { lexicalAnchors: ["Jira"] },
+      expandThreads: false,
+    });
+
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]?.externalId).toBe("202");
+    expect(page.diagnostics.rejected).toBe(1);
+    expect(page.diagnostics.messages[0]).toContain("bounded lexical anchors");
+  });
 });

@@ -4,16 +4,20 @@ import { useState, useTransition } from "react";
 
 import type { SignalReadModel } from "@/server/modules/intelligence";
 import { updateSignalLifecycleAction } from "@/app/app/actions";
-import { formatDate, formatScore, lifecycleLabel, safeExternalUrl, sourceLabel } from "./dashboard-utils";
+import { confidenceLabel, IntentBadge, SourceBadge } from "@/components/ui/badge";
+import { formatRelativeTime, sourceLabel } from "./dashboard-utils";
 
-type Props = { signal: SignalReadModel; workspaceId: string };
+type Props = {
+  signal: SignalReadModel;
+  workspaceId: string;
+  onOpen?: (signalId: string) => void;
+  showNote?: boolean;
+};
 
-export function SignalCard({ signal, workspaceId }: Props) {
+export function SignalCard({ signal, workspaceId, onOpen, showNote = false }: Props) {
   const [lifecycleStatus, setLifecycleStatus] = useState(signal.lifecycleStatus);
-  const [expanded, setExpanded] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const sourceUrl = safeExternalUrl(signal.canonicalUrl);
   const isSaved = lifecycleStatus === "saved";
   const isDismissed = lifecycleStatus === "dismissed";
 
@@ -26,52 +30,58 @@ export function SignalCard({ signal, workspaceId }: Props) {
     });
   }
 
+  function stopPropagation(event: React.MouseEvent) {
+    event.stopPropagation();
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent) {
+    if (!onOpen) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onOpen(signal.signalId);
+    }
+  }
+
   return (
-    <article className={`signal-card${isDismissed ? " is-dismissed" : ""}`}>
+    <article
+      className={`signal-card${isDismissed ? " is-dismissed" : ""}`}
+      onClick={() => onOpen?.(signal.signalId)}
+      onKeyDown={handleKeyDown}
+      role={onOpen ? "button" : undefined}
+      tabIndex={onOpen ? 0 : undefined}
+    >
       <div className="signal-card-topline">
-        <div className="signal-source"><span className="signal-source-mark" aria-hidden="true">↗</span><span>{sourceLabel(signal.source)}</span></div>
-        <span className="signal-score" title="Backend opportunity score">{formatScore(signal.opportunityScore)} opportunity</span>
-      </div>
-      <div className="signal-card-body">
-        <div className="signal-card-heading">
-          <div>
-            <p className="signal-intent">{sourceLabel(signal.intentType)}</p>
-            <h2>{signal.excerpt || "Untitled signal"}</h2>
-          </div>
-          <span className={`signal-status status-${lifecycleStatus}`}>{lifecycleLabel(lifecycleStatus)}</span>
+        <SourceBadge source={signal.source} label={sourceLabel(signal.source)} />
+        <span className="signal-source-name">{sourceLabel(signal.source)}</span>
+        <span className="signal-source-time">{formatRelativeTime(signal.publishedAt ?? signal.createdAt)}</span>
+        <div className="signal-topline-end">
+          <IntentBadge intentType={signal.intentType} label={signal.intentType.replaceAll("_", " ")} />
+          <span className="signal-score">{signal.matchPercent}% match</span>
         </div>
-        <p className="signal-why">{signal.whyItMatters}</p>
-        <div className="signal-meta">
-          <span>{signal.matchPercent}% match</span>
-          <span>{formatDate(signal.publishedAt ?? signal.createdAt)}</span>
-          {sourceUrl ? <a href={sourceUrl} target="_blank" rel="noreferrer">View source<span className="sr-only"> (opens in a new tab)</span></a> : <span>Source link unavailable</span>}
-        </div>
-        {signal.tags.length > 0 ? <div className="signal-tags">{signal.tags.map((tag) => <span key={tag}>{tag}</span>)}</div> : null}
       </div>
-      <div className="signal-card-actions">
-        <button className="dashboard-button dashboard-button-secondary" type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
-          {expanded ? "Hide details" : "Inspect evidence"}
-        </button>
-        <button className={`dashboard-button ${isSaved ? "dashboard-button-primary" : "dashboard-button-quiet"}`} type="button" disabled={isPending} onClick={() => updateLifecycle(isSaved ? "active" : "saved")}>
-          {isSaved ? "Saved" : "Save"}
-        </button>
-        <button className={`dashboard-button ${isDismissed ? "dashboard-button-primary" : "dashboard-button-quiet"}`} type="button" disabled={isPending} onClick={() => updateLifecycle(isDismissed ? "active" : "dismissed")}>
-          {isDismissed ? "Dismissed" : "Dismiss"}
-        </button>
-      </div>
-      {error ? <p className="dashboard-inline-error signal-error" role="alert">{error}</p> : null}
-      {expanded ? (
-        <div className="signal-evidence" aria-label="Signal evidence provenance">
-          <div><strong>Signal evidence</strong><code>{signal.evidence.signalEvidenceNodeId}</code></div>
-          <div><strong>Match evaluation</strong><code>{signal.evidence.evaluationId}</code></div>
-          <div><strong>Ranking</strong><code>{signal.evidence.rankingId}</code></div>
-          <div><strong>Conversation evidence</strong><code>{signal.evidence.conversationEvidenceNodeId || "Unavailable"}</code></div>
-          <div><strong>Source item</strong><code>{signal.evidence.sourceItemId || "Unavailable"}</code></div>
-          <div><strong>Demand profile</strong><code>{signal.evidence.demandProfileEvidenceNodeId || "Unavailable"}</code></div>
-          {signal.buyerLanguage.length > 0 ? <div><strong>Buyer language</strong><span>{signal.buyerLanguage.join(", ")}</span></div> : null}
-          {signal.painThemes.length > 0 ? <div><strong>Pain themes</strong><span>{signal.painThemes.join(", ")}</span></div> : null}
-        </div>
+      <p className="signal-excerpt">&ldquo;{signal.excerpt || "Untitled signal"}&rdquo;</p>
+      {signal.whyItMatters ? (
+        <p className="signal-why">
+          <span className="signal-why-label">Why</span>
+          {signal.whyItMatters}
+        </p>
       ) : null}
+      <div className="signal-card-footer">
+        <div className="signal-matched">
+          {signal.qualification?.matched_profile_concepts.slice(0, 3).map((concept) => <span key={concept}>{concept}</span>)}
+        </div>
+        <div className="signal-card-actions" onClick={stopPropagation}>
+          <button className={`dashboard-button ${isSaved ? "dashboard-button-primary" : "dashboard-button-secondary"}`} type="button" disabled={isPending} onClick={() => updateLifecycle(isSaved ? "active" : "saved")}>
+            {isSaved ? "Saved" : "Save"}
+          </button>
+          <button className="dashboard-button dashboard-button-quiet" type="button" disabled={isPending} onClick={() => updateLifecycle(isDismissed ? "active" : "dismissed")}>
+            {isDismissed ? "Dismissed" : "Dismiss"}
+          </button>
+        </div>
+      </div>
+      {error ? <p className="signal-error" role="alert">{error}</p> : null}
+      {showNote ? <p className="signal-card-note">+ Add note</p> : null}
+      {signal.qualification ? <span className="sr-only">{confidenceLabel(signal.qualification.confidence)}</span> : null}
     </article>
   );
 }

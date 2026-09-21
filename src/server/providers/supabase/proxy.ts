@@ -27,6 +27,23 @@ export async function updateSupabaseSession(request: NextRequest) {
     },
   );
 
-  await supabase.auth.getUser();
+  // Server Actions validate the caller inside the action/service boundary.
+  // Running a second auth.getUser() in proxy for every narrow polling POST
+  // doubles provider traffic and can rotate the same SSR cookies concurrently.
+  // Let the action's server client perform the authoritative check and cookie
+  // refresh for this request.
+  if (request.method === "POST" && request.headers.has("Next-Action")) {
+    return response;
+  }
+
+  // Supabase recommends this call here so refreshed auth cookies are copied to
+  // the response. A provider rate limit or network failure must not turn into
+  // a redirect or a synthetic unauthenticated response; the server render will
+  // classify the same failure explicitly if it cannot verify the session.
+  try {
+    await supabase.auth.getUser();
+  } catch {
+    // Keep the request moving. Do not log provider payloads or auth material.
+  }
   return response;
 }

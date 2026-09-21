@@ -70,7 +70,15 @@ export class ExperimentService {
       assignment_method: "deterministic_hash_v1", min_sample_size: parsed.data.minSampleSize, created_by: parsed.data.createdBy,
       engine_version_id: parsed.data.engineVersionId ?? null, current_result_id: null, started_at: null, ended_at: null,
     });
-    await this.entitlements.consume(parsed.data.workspaceId, { usageType: "experiment_created", amount: 1, idempotencyKey: `experiment_created:${row.id}`, sourceMetadata: { experimentId: row.id, actionId: row.action_id } });
+    try {
+      await this.entitlements.consume(parsed.data.workspaceId, { usageType: "experiment_created", amount: 1, idempotencyKey: `experiment_created:${row.id}`, sourceMetadata: { experimentId: row.id, actionId: row.action_id } });
+    } catch (error) {
+      // The Phase 7 usage ledger is the authority. Until the database-side
+      // create-and-consume RPC exists, compensate the just-created draft so a
+      // failed entitlement write cannot leave a phantom active experiment.
+      await this.options.repository.deleteExperiment(parsed.data.workspaceId, row.id).catch(() => undefined);
+      throw error;
+    }
     await this.options.repository.linkProvenance({ derivedEvidenceNodeId: evidenceNodeId, sourceEvidenceNodeId: action.evidence_node_id, relationType: "derived_from_action", ordinal: 0 });
     await this.audit(parsed.data.workspaceId, parsed.data.createdBy, "experiment.created", row.id, { actionId: row.action_id });
     return row;

@@ -1,5 +1,6 @@
 export type AppErrorCode =
   | "UNAUTHENTICATED"
+  | "AUTH_TRANSIENT"
   | "FORBIDDEN"
   | "VALIDATION_ERROR"
   | "NOT_FOUND"
@@ -25,6 +26,8 @@ function statusForCode(code: AppErrorCode): number {
   switch (code) {
     case "UNAUTHENTICATED":
       return 401;
+    case "AUTH_TRANSIENT":
+      return 503;
     case "FORBIDDEN":
       return 403;
     case "NOT_FOUND":

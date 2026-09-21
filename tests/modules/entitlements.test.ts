@@ -45,4 +45,5 @@ describe("entitlement policy", () => {
       }).success,
     ).toBe(false);
   });
+
 });

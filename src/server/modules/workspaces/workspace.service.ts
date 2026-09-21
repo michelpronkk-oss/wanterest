@@ -4,11 +4,13 @@ import { requireUser } from "@/server/modules/auth";
 import { createSupabaseServerClient } from "@/server/providers/supabase/server";
 import { AppError } from "@/server/lib/errors";
 import { getTraceId } from "@/server/lib/request-context";
+import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
 import {
   addWorkspaceMember,
   createWorkspace,
   deactivateWorkspaceMember,
   getWorkspace,
+  listWorkspaceMembers,
   listWorkspaces,
   updateWorkspaceMember,
 } from "./workspace.repository";
@@ -133,6 +135,27 @@ export async function deactivateWorkspaceMemberCommand(
     memberId: parsedMemberId.data,
     traceId: getTraceId(request),
   });
+}
+
+/** Thin read wrapper: lists workspace_members and best-effort resolves each member's email via the service-role admin API. No role/permission logic beyond the existing RLS on workspace_members. */
+export async function listWorkspaceMembersQuery(workspaceId: unknown) {
+  const parsed = workspaceIdSchema.safeParse(workspaceId);
+  if (!parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid workspace ID.");
+  await requireUser();
+  const members = await listWorkspaceMembers(await createSupabaseServerClient(), parsed.data);
+  const serviceClient = createSupabaseServiceClient();
+  return Promise.all(
+    members.map(async (member) => {
+      let email: string | null = null;
+      try {
+        const { data } = await serviceClient.auth.admin.getUserById(member.user_id);
+        email = data.user?.email ?? null;
+      } catch {
+        email = null;
+      }
+      return { ...member, email };
+    }),
+  );
 }
 
 export { ACTIVE_WORKSPACE_COOKIE };

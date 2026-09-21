@@ -30,6 +30,15 @@ function embedType(embed: unknown): string | null {
   return parsed.success ? parsed.data.$type : null;
 }
 
+function externalReference(embed: unknown): { uri: string; title: string | null; description: string | null } | null {
+  if (!embed || typeof embed !== "object" || Array.isArray(embed)) return null;
+  const value = embed as Record<string, unknown>;
+  const external = value.external && typeof value.external === "object" && !Array.isArray(value.external) ? value.external as Record<string, unknown> : null;
+  if (!external || typeof external.uri !== "string") return null;
+  try { new URL(external.uri); } catch { return null; }
+  return { uri: external.uri, title: typeof external.title === "string" ? external.title : null, description: typeof external.description === "string" ? external.description : null };
+}
+
 export function normalizeBlueskyPost(raw: RawSourceItemEnvelope): SourceItemCandidate {
   const envelope = rawSourceItemEnvelopeSchema.parse(raw);
   const parsed = blueskyPostSchema.safeParse(envelope.payload);
@@ -41,6 +50,7 @@ export function normalizeBlueskyPost(raw: RawSourceItemEnvelope): SourceItemCand
   const replyRootUri = post.record.reply?.root.uri;
   const replyParentUri = post.record.reply?.parent.uri;
   const quote = quoteReference(post.record.embed);
+  const external = externalReference(post.record.embed);
   const actor = post.author.handle ?? post.author.did;
 
   return sourceItemCandidateSchema.parse({
@@ -66,6 +76,7 @@ export function normalizeBlueskyPost(raw: RawSourceItemEnvelope): SourceItemCand
       quoteUri: quote?.uri ?? null,
       quoteCid: quote?.cid ?? null,
       embedType: embedType(post.record.embed),
+      ...(external ? { externalUrl: external.uri, externalTitle: external.title, externalDescription: external.description } : {}),
       langs: post.record.langs ?? [],
       labels: post.labels?.map((label) => label.val) ?? [],
       likeCount: post.likeCount ?? null,

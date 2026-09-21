@@ -3,6 +3,7 @@ export {
   createWorkspaceCommand,
   deactivateWorkspaceMemberCommand,
   getWorkspaceQuery,
+  listWorkspaceMembersQuery,
   listWorkspacesQuery,
   resolveWorkspaceQuery,
   selectWorkspaceCommand,

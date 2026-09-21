@@ -4,6 +4,8 @@ import { publicEnvSchema } from "../../shared/config/public-env";
 
 const optionalServerString = z.preprocess((value) => value === "" ? undefined : value, z.string().min(1).optional());
 const optionalServerUrl = z.preprocess((value) => value === "" ? undefined : value, z.string().url().optional());
+const optionalServerPositiveInt = z.preprocess((value) => value === "" ? undefined : value, z.coerce.number().int().positive().optional());
+const optionalServerNonnegativeNumber = z.preprocess((value) => value === "" ? undefined : value, z.coerce.number().nonnegative().optional());
 
 const serverEnvSchema = publicEnvSchema.extend({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
@@ -21,6 +23,17 @@ const serverEnvSchema = publicEnvSchema.extend({
   REDDIT_API_BASE_URL: optionalServerUrl,
   REDDIT_AUTH_BASE_URL: optionalServerUrl,
   GITHUB_TOKEN: optionalServerString,
+  X_BEARER_TOKEN: optionalServerString,
+  X_API_BASE_URL: optionalServerUrl,
+  X_MAX_POSTS_PER_SCAN: optionalServerPositiveInt,
+  X_POST_READ_COST_USD: optionalServerNonnegativeNumber,
+  X_COST_CONFIG_VERSION: optionalServerString,
+  OPENAI_API_KEY: optionalServerString,
+  OPENAI_MODEL: optionalServerString,
+  TRIGGER_SECRET_KEY: optionalServerString,
+  TRIGGER_LOCAL_EXECUTION: z.enum(["direct", "remote"]).default("remote"),
+  RESEND_API_KEY: optionalServerString,
+  RESEND_FROM_EMAIL: optionalServerString,
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
@@ -60,6 +73,17 @@ export function getServerEnv(): ServerEnv {
     REDDIT_API_BASE_URL: process.env.REDDIT_API_BASE_URL,
     REDDIT_AUTH_BASE_URL: process.env.REDDIT_AUTH_BASE_URL,
     GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+    X_BEARER_TOKEN: process.env.X_BEARER_TOKEN,
+    X_API_BASE_URL: process.env.X_API_BASE_URL,
+    X_MAX_POSTS_PER_SCAN: process.env.X_MAX_POSTS_PER_SCAN,
+    X_POST_READ_COST_USD: process.env.X_POST_READ_COST_USD,
+    X_COST_CONFIG_VERSION: process.env.X_COST_CONFIG_VERSION,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    OPENAI_MODEL: process.env.OPENAI_MODEL,
+    TRIGGER_SECRET_KEY: process.env.TRIGGER_SECRET_KEY,
+    TRIGGER_LOCAL_EXECUTION: process.env.TRIGGER_LOCAL_EXECUTION,
+    RESEND_API_KEY: process.env.RESEND_API_KEY,
+    RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL,
   });
 }
 

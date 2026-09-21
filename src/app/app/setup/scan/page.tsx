@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { FirstScanForm } from "@/components/onboarding/setup-forms";
+import { OnboardingShell } from "@/components/onboarding/onboarding-shell";
+import { OnboardingScanStatus } from "@/components/onboarding/onboarding-scan-status";
+import { deriveProductUnderstanding } from "@/components/onboarding/product-understanding";
 import { getDashboardContext } from "@/server/modules/dashboard/dashboard.context";
-import { listSignalsQuery } from "@/server/modules/intelligence/commands";
+import { getCurrentProductSnapshotQuery } from "@/server/modules/intelligence/commands";
 import { getInitialScanState } from "@/server/modules/onboarding";
+import { getOnboardingStatusAction } from "@/app/app/setup/actions";
 
 export default async function ScanSetupPage() {
   const { workspace, product } = await getDashboardContext();
@@ -12,22 +15,52 @@ export default async function ScanSetupPage() {
   if (!product) redirect("/app/setup/product");
   if (!product.current_snapshot_id || !product.current_demand_profile_id) redirect("/app/setup/product");
 
-  const scan = await getInitialScanState(workspace.id, product.id);
-  const signals = await listSignalsQuery(workspace.id, product.id, { limit: 1 });
-  if (signals.length) redirect("/app/signals");
-  const completedNoSignals = scan?.result?.state === "complete_no_signals";
-  const failed = scan?.status === "failed";
-  const running = scan?.status === "running";
-  const phaseLabel = scan?.phase === "preparing" ? "Preparing the scan…" : scan?.phase === "discovering" ? "Discovering conversations…" : scan?.phase === "analyzing" ? "Analyzing conversations…" : scan?.phase === "matching" ? "Matching conversations to your product…" : scan?.phase === "ranking" ? "Ranking the results…" : "The first scan is in progress…";
+  const [snapshot, scan, status] = await Promise.all([
+    getCurrentProductSnapshotQuery(workspace.id, product.id).catch(() => null),
+    getInitialScanState(workspace.id, product.id).catch(() => null),
+    getOnboardingStatusAction({ workspaceId: workspace.id, productId: product.id }),
+  ]);
+
+  const understanding = deriveProductUnderstanding(snapshot);
+
   return (
-    <section className="dashboard-page onboarding-page">
-      <p className="dashboard-eyebrow">First scan</p>
-      <h1>{completedNoSignals ? "Your first scan is complete." : failed ? "The first scan needs another try." : running ? phaseLabel : "Find your first Signals."}</h1>
-      <p className="dashboard-subtitle">{completedNoSignals ? "The enabled sources returned no qualified Signals this time. You can review the empty feed while the persisted scan remains available for inspection." : failed ? (scan.errorMessage ?? "No usable source results were available.") : running ? "This state is persisted in the backend, so refreshing will safely resume from the recorded scan status." : "Use the existing provider-neutral pipeline to discover and score a small, inspectable set of conversations."}</p>
-      <div className="dashboard-panel onboarding-panel">
-        {scan?.result ? <div className="onboarding-result" aria-live="polite"><strong>{scan.result.signals} Signals</strong><span>{scan.result.rawItems} raw items · {scan.result.conversations} conversations · {scan.result.sources.join(", ") || "no enabled sources"}</span></div> : null}
-        {running ? <p className="onboarding-status" role="status">{phaseLabel}</p> : completedNoSignals ? <div className="onboarding-actions"><Link className="dashboard-button dashboard-button-secondary" href="/app/signals">Open Signals</Link></div> : <FirstScanForm workspaceId={workspace.id} productId={product.id} />}
+    <OnboardingShell step={3}>
+      <div className="onboarding-step is-wide">
+        <p className="onboarding-step-eyebrow">Step 3 of 3</p>
+        <h1 className="onboarding-headline is-compact">Here&rsquo;s what we think you sell</h1>
+        <p className="onboarding-subcopy">Confirm this looks right &mdash; you can refine it anytime in Settings.</p>
+
+        <div className="onboarding-card">
+          <div className="onboarding-card-label">What you do</div>
+          {understanding.whatYouDo ? (
+            <div className="onboarding-card-body">{understanding.whatYouDo}</div>
+          ) : (
+            <div className="onboarding-card-body" style={{ color: "var(--color-ink-muted)" }}>Still preparing your product understanding&hellip;</div>
+          )}
+
+          {understanding.whoItsFor.length > 0 ? (
+            <>
+              <div className="onboarding-card-label">Who it&rsquo;s for</div>
+              <div className="onboarding-chip-row">
+                {understanding.whoItsFor.map((audience) => <span className="onboarding-chip" key={audience}>{audience}</span>)}
+              </div>
+            </>
+          ) : null}
+
+          {understanding.watchingFor.length > 0 ? (
+            <>
+              <div className="onboarding-card-label">Watching for</div>
+              <div className="onboarding-chip-row">
+                {understanding.watchingFor.map((term) => <span className="onboarding-chip" key={term}>{term}</span>)}
+              </div>
+            </>
+          ) : null}
+        </div>
+
+        <OnboardingScanStatus workspaceId={workspace.id} productId={product.id} hasScan={scan !== null} initialStatus={status} />
+
+        <Link className="onboarding-cta" href="/app">Go to my dashboard →</Link>
       </div>
-    </section>
+    </OnboardingShell>
   );
 }

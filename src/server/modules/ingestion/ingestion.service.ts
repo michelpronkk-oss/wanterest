@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { jsonObjectSchema, type Json, type JsonObject } from "../../db/database.helpers";
+import { jsonObjectSchema, omitUndefined, type Json, type JsonObject } from "../../db/database.helpers";
 import type {
   ConversationInsert,
   EvidenceNodeInsert,
@@ -18,6 +18,7 @@ import {
   type RawSourceItemEnvelope,
   type SourceAdapter,
   type SourceHealthResult as SourceHealthContract,
+  type RateLimitMetadata,
 } from "../../providers/source/contracts";
 import { createSourceRegistry } from "../../providers/source/registry";
 import { contentHash, deterministicUuid, normalizedUrl, sha256Json } from "./hash";
@@ -33,7 +34,7 @@ function timestamp(): string {
 }
 
 function jsonObject(value: unknown): JsonObject {
-  return jsonObjectSchema.parse(value);
+  return jsonObjectSchema.parse(omitUndefined(value));
 }
 
 function sanitizedError(error: unknown): { code: string; summary: string; details: Record<string, Json | undefined> } {
@@ -52,6 +53,8 @@ export type DiscoveryResult = {
   rejected: number;
   rawSourceItemIds: string[];
   nextCursor?: string;
+  rateLimit?: RateLimitMetadata;
+  estimatedCost?: number;
   diagnostics: string[];
 };
 
@@ -146,13 +149,15 @@ export class IngestionService {
         rejected,
         rawSourceItemIds,
         nextCursor: page.nextCursor,
+        rateLimit: page.rateLimit,
+        estimatedCost: page.estimatedCost,
         diagnostics,
       };
       await this.repository.upsertSourceHealth(this.successHealth(sourceKey, Date.now() - started, page.rateLimit));
       await this.repository.updateJobRun(job.id, {
         status: "succeeded",
         completed_at: timestamp(),
-        input_reference: { sourceKey, request, result },
+        input_reference: jsonObject({ sourceKey, request, result }),
       });
       return result;
     } catch (error) {
@@ -239,7 +244,7 @@ export class IngestionService {
       };
       await this.repository.insertEvidenceProvenance(provenance);
       const result: NormalizationResult = { jobRunId: job.id, rawSourceItemId, sourceItemId, normalizationVersion };
-      await this.repository.updateJobRun(job.id, { status: "succeeded", completed_at: timestamp(), input_reference: { rawSourceItemId, normalizationVersion, result } });
+      await this.repository.updateJobRun(job.id, { status: "succeeded", completed_at: timestamp(), input_reference: jsonObject({ rawSourceItemId, normalizationVersion, result }) });
       return result;
     } catch (error) {
       const failure = sanitizedError(error);
@@ -336,7 +341,7 @@ export class IngestionService {
         conversationKey: conversation.conversation_key,
         relationType,
       };
-      await this.repository.updateJobRun(job.id, { status: "succeeded", completed_at: timestamp(), input_reference: { sourceItemId, canonicalizationVersion, result } });
+      await this.repository.updateJobRun(job.id, { status: "succeeded", completed_at: timestamp(), input_reference: jsonObject({ sourceItemId, canonicalizationVersion, result }) });
       return result;
     } catch (error) {
       const failure = sanitizedError(error);
@@ -401,9 +406,10 @@ export class IngestionService {
   }
 
   private async startJob(input: Pick<JobRunInsert, "job_type" | "idempotency_key" | "input_reference" | "trace_id"> & Partial<Pick<JobRunInsert, "workspace_id" | "product_id" | "trigger_run_id" | "started_at" | "completed_at" | "error_code" | "error_details">>) {
-    const existing = await this.repository.getJobRun(input.job_type, input.idempotency_key);
+    const safeInput = { ...input, input_reference: jsonObject(input.input_reference) };
+    const existing = await this.repository.getJobRun(safeInput.job_type, safeInput.idempotency_key);
     if (existing?.status === "running") return existing;
-    const job = await this.repository.createJobRun({ ...input, status: "running", attempt_count: (existing?.attempt_count ?? 0) + 1, started_at: timestamp() });
+    const job = await this.repository.createJobRun({ ...safeInput, status: "running", attempt_count: (existing?.attempt_count ?? 0) + 1, started_at: timestamp() });
     return job.status === "running" ? job : this.repository.updateJobRun(job.id, { status: "running", started_at: timestamp(), attempt_count: job.attempt_count + 1 });
   }
 
@@ -460,7 +466,7 @@ export class IngestionService {
       last_failure_at: timestamp(),
       last_latency_ms: latencyMs,
       rate_limit_state: previous?.rate_limit_state ?? {},
-      degradation_state: failure.code === "RATE_LIMITED" ? "blocked" : "degraded",
+      degradation_state: ["RATE_LIMITED", "INSUFFICIENT_CREDITS"].includes(failure.code) ? "blocked" : "degraded",
       latest_error_code: failure.code,
       latest_error_summary: failure.summary,
       updated_at: timestamp(),

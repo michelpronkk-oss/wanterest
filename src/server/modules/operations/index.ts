@@ -6,3 +6,6 @@ export * from "./job-health.service";
 export * from "./replay.service";
 export * from "./consistency.service";
 export * from "./read-models";
+export * from "./source-routing.index";
+export * from "./query-planning.index";
+export * from "./product-demand-scan.schemas";

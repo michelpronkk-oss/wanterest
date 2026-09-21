@@ -4,6 +4,10 @@ export type StructuredGenerationRequest = {
   systemPrompt: string;
   userPrompt: string;
   schemaName: string;
+  promptVersion?: string;
+  jsonSchema?: Record<string, unknown>;
+  maxOutputTokens?: number;
+  temperature?: number;
   timeoutMs?: number;
 };
 

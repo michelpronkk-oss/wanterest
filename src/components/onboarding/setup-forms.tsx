@@ -1,74 +1,148 @@
 "use client";
 
-import { useActionState } from "react";
+import { useRouter } from "next/navigation";
+import { useActionState, useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { OnboardingActionState } from "@/app/app/setup/actions";
-import { completeProductUnderstandingAction, createOnboardingProductAction, createOnboardingWorkspaceAction, runOnboardingScanAction } from "@/app/app/setup/actions";
+import { completeProductUnderstandingAction, createOnboardingProductAction, createOnboardingWorkspaceAction } from "@/app/app/setup/actions";
+import { getOnboardingSuccessPath } from "@/lib/onboarding-transition";
+import { isValidOnboardingDescription, isValidOnboardingProductForm, isValidOnboardingWebsiteInput } from "./form-validation";
 
-const initialState: OnboardingActionState = { error: null };
+const initialState: OnboardingActionState = { status: "idle", error: null };
+type FormAction = (formData: FormData) => void;
 
-function SubmitButton({ children, pendingLabel }: { children: string; pendingLabel: string }) {
-  return <button className="dashboard-button dashboard-button-primary" type="submit">{children}<span className="onboarding-pending-label">{pendingLabel}</span></button>;
+function useSubmitGuard(pending: boolean) {
+  const submittedRef = useRef(false);
+  useEffect(() => {
+    if (!pending) submittedRef.current = false;
+  }, [pending]);
+  return (event: FormEvent<HTMLFormElement>) => {
+    if (submittedRef.current) {
+      event.preventDefault();
+      return;
+    }
+    submittedRef.current = true;
+  };
 }
 
 function ActionError({ error }: { error: string | null }) {
-  return error ? <p className="dashboard-inline-error onboarding-form-error" role="alert">{error}</p> : null;
+  return error ? <p className="onboarding-inline-error" role="alert">{error}</p> : null;
+}
+
+function useSuccessNavigation(state: OnboardingActionState) {
+  const router = useRouter();
+  const navigatedRef = useRef(false);
+  const nextPath = getOnboardingSuccessPath(state);
+
+  useEffect(() => {
+    if (!nextPath || navigatedRef.current) return;
+    navigatedRef.current = true;
+    router.replace(nextPath);
+  }, [nextPath, router]);
+}
+
+function FieldError({ id, message }: { id: string; message?: string }) {
+  return message ? <p id={id} className="onboarding-field-error" role="alert">{message}</p> : null;
+}
+
+function websiteFieldError(value: string, serverError?: string): string | undefined {
+  if (!value.trim()) return serverError;
+  return isValidOnboardingWebsiteInput(value)
+    ? undefined
+    : "Enter your product's public website or domain.";
+}
+
+function descriptionFieldError(value: string, serverError?: string): string | undefined {
+  if (!value.trim()) return serverError;
+  if (value.trim().length < 15) return "Use at least 15 characters.";
+  if (value.trim().length > 240) return "Keep the description under 240 characters.";
+  return undefined;
+}
+
+function WorkspaceSetupFields({ action, state, pending }: { action: FormAction; state: OnboardingActionState; pending: boolean }) {
+  const [name, setName] = useState(state.values?.name ?? "");
+  const canSubmit = name.trim().length > 0;
+  const handleSubmit = useSubmitGuard(pending);
+
+  return (
+    <form action={action} onSubmit={handleSubmit}>
+      <div className="onboarding-field">
+        <label className="onboarding-field-label" htmlFor="workspace-name">Workspace name</label>
+        <input id="workspace-name" className="onboarding-input" name="name" defaultValue={name} onInput={(event) => setName(event.currentTarget.value)} required maxLength={120} placeholder="Acme research" autoComplete="organization" aria-invalid={Boolean(state.fieldErrors?.name)} aria-describedby={state.fieldErrors?.name ? "workspace-name-error" : undefined} />
+        <FieldError id="workspace-name-error" message={state.fieldErrors?.name} />
+      </div>
+      <ActionError error={state.error} />
+      <button className={`onboarding-cta${pending ? " is-pending" : ""}`} type="submit" disabled={pending || !canSubmit} aria-busy={pending}>{pending ? "Creating…" : "Continue →"}</button>
+      <p className="onboarding-note">You&rsquo;ll become the owner and start on the internal Free plan.</p>
+    </form>
+  );
 }
 
 export function WorkspaceSetupForm() {
   const [state, action, pending] = useActionState(createOnboardingWorkspaceAction, initialState);
+  return <WorkspaceSetupFields key={state.values?.name ?? "initial"} action={action} state={state} pending={pending} />;
+}
+
+function ProductSetupFields({ workspaceId, action, state, pending }: { workspaceId: string; action: FormAction; state: OnboardingActionState; pending: boolean }) {
+  const [websiteUrl, setWebsiteUrl] = useState(state.values?.websiteUrl ?? "");
+  const [description, setDescription] = useState(state.values?.description ?? "");
+  const canSubmit = isValidOnboardingProductForm(websiteUrl, description);
+  const handleSubmit = useSubmitGuard(pending);
+  const websiteError = websiteFieldError(websiteUrl, state.fieldErrors?.websiteUrl);
+  const descriptionError = descriptionFieldError(description, state.fieldErrors?.description);
+
   return (
-    <form className="onboarding-form" action={action}>
-      <label className="dashboard-field"><span>Workspace name</span><input name="name" required maxLength={120} placeholder="Acme research" autoComplete="organization" /></label>
-      <p className="onboarding-help">You’ll become the owner and start on the internal Free plan.</p>
+    <form action={action} onSubmit={handleSubmit}>
+      <input type="hidden" name="workspaceId" value={workspaceId} />
+      <div className="onboarding-field">
+        <label className="onboarding-field-label" htmlFor="product-website">Website</label>
+        <input id="product-website" className="onboarding-input" name="websiteUrl" defaultValue={websiteUrl} onInput={(event) => setWebsiteUrl(event.currentTarget.value)} required maxLength={2_000} placeholder="yourdomain.com" inputMode="url" autoComplete="url" aria-invalid={Boolean(websiteError)} aria-describedby={websiteError ? "product-website-error" : undefined} />
+        <FieldError id="product-website-error" message={websiteError} />
+      </div>
+      <div className="onboarding-field">
+        <label className="onboarding-field-label" htmlFor="product-description">What do you do, in one line?</label>
+        <textarea id="product-description" className="onboarding-textarea" name="description" defaultValue={description} onInput={(event) => setDescription(event.currentTarget.value)} required minLength={15} maxLength={240} placeholder="We help ops teams automate manual work between their inbox, CRM, and spreadsheets." aria-invalid={Boolean(descriptionError)} aria-describedby={descriptionError ? "product-description-error" : undefined} />
+        <FieldError id="product-description-error" message={descriptionError} />
+      </div>
       <ActionError error={state.error} />
-      <SubmitButton pendingLabel="Creating…">Create workspace</SubmitButton>
-      {pending ? <span className="onboarding-status">Creating your workspace…</span> : null}
+      <button className={`onboarding-cta${pending ? " is-pending" : ""}`} type="submit" disabled={pending || !canSubmit} aria-busy={pending}>{pending ? "Preparing your product…" : "Find my demand signals →"}</button>
+      <p className="onboarding-note">Takes about 30 seconds. No credit card required.</p>
     </form>
   );
 }
 
 export function ProductSetupForm({ workspaceId }: { workspaceId: string }) {
   const [state, action, pending] = useActionState(createOnboardingProductAction, initialState);
+  useSuccessNavigation(state);
+  const formKey = `${state.values?.websiteUrl ?? ""}:${state.values?.description ?? ""}`;
+  return <ProductSetupFields key={formKey} workspaceId={workspaceId} action={action} state={state} pending={pending} />;
+}
+
+function ProductUnderstandingFields({ workspaceId, productId, websiteUrl, initialDescription, action, state, pending }: { workspaceId: string; productId: string; websiteUrl: string | null; initialDescription?: string | null; action: FormAction; state: OnboardingActionState; pending: boolean }) {
+  const [description, setDescription] = useState(state.values?.description ?? initialDescription ?? "");
+  const canSubmit = isValidOnboardingDescription(description);
+  const handleSubmit = useSubmitGuard(pending);
+  const descriptionError = descriptionFieldError(description, state.fieldErrors?.description);
+
   return (
-    <form className="onboarding-form" action={action}>
+    <form action={action} onSubmit={handleSubmit}>
       <input type="hidden" name="workspaceId" value={workspaceId} />
-      <label className="dashboard-field"><span>Product name</span><input name="name" required maxLength={200} placeholder="Acme analytics" autoComplete="off" /></label>
-      <label className="dashboard-field"><span>Website URL</span><input name="websiteUrl" required maxLength={2_000} placeholder="acme.example" inputMode="url" autoComplete="url" /></label>
-      <label className="dashboard-field"><span>What does it help people do? <em>(optional)</em></span><textarea name="description" maxLength={5_000} rows={5} placeholder="A short description helps the first demand profile." /></label>
-      <p className="onboarding-help">The URL is stored as product context. Wanterest does not fetch arbitrary websites during setup.</p>
+      <input type="hidden" name="productId" value={productId} />
+      <div className="onboarding-field">
+        <label className="onboarding-field-label" htmlFor="product-context">What do you do, in one line?</label>
+        <textarea id="product-context" className="onboarding-textarea" name="description" defaultValue={description} onInput={(event) => setDescription(event.currentTarget.value)} required minLength={15} maxLength={240} placeholder="Describe the customer, problem, and outcome this product supports." aria-invalid={Boolean(descriptionError)} aria-describedby={descriptionError ? "product-context-error" : undefined} />
+        <FieldError id="product-context-error" message={descriptionError} />
+      </div>
+      {websiteUrl ? <p className="onboarding-note" style={{ marginTop: -8, marginBottom: 16, textAlign: "left" }}>Website context: {websiteUrl}</p> : null}
       <ActionError error={state.error} />
-      <SubmitButton pendingLabel="Preparing…">Add product</SubmitButton>
-      {pending ? <span className="onboarding-status">Creating the product profile…</span> : null}
+      <button className={`onboarding-cta${pending ? " is-pending" : ""}`} type="submit" disabled={pending || !canSubmit} aria-busy={pending}>{pending ? "Preparing your product…" : "Continue →"}</button>
     </form>
   );
 }
 
-export function ProductUnderstandingForm({ workspaceId, productId, websiteUrl }: { workspaceId: string; productId: string; websiteUrl: string | null }) {
+export function ProductUnderstandingForm({ workspaceId, productId, websiteUrl, initialDescription }: { workspaceId: string; productId: string; websiteUrl: string | null; initialDescription?: string | null }) {
   const [state, action, pending] = useActionState(completeProductUnderstandingAction, initialState);
-  return (
-    <form className="onboarding-form" action={action}>
-      <input type="hidden" name="workspaceId" value={workspaceId} />
-      <input type="hidden" name="productId" value={productId} />
-      <label className="dashboard-field"><span>Product context</span><textarea name="description" required maxLength={5_000} rows={6} placeholder="Describe the customer, problem, and outcome this product supports." /></label>
-      {websiteUrl ? <p className="onboarding-help">Website context: {websiteUrl}</p> : null}
-      <ActionError error={state.error} />
-      <SubmitButton pendingLabel="Preparing…">Continue to first scan</SubmitButton>
-      {pending ? <span className="onboarding-status">Building the demand profile…</span> : null}
-    </form>
-  );
-}
-
-export function FirstScanForm({ workspaceId, productId }: { workspaceId: string; productId: string }) {
-  const [state, action, pending] = useActionState(runOnboardingScanAction, initialState);
-  return (
-    <form className="onboarding-form" action={action}>
-      <input type="hidden" name="workspaceId" value={workspaceId} />
-      <input type="hidden" name="productId" value={productId} />
-      <p className="onboarding-help">Wanterest will run a bounded scan through enabled, configured sources, then normalize, analyze, match, rank, and persist the results.</p>
-      <ActionError error={state.error} />
-      <SubmitButton pendingLabel="Scanning…">Run first scan</SubmitButton>
-      {pending ? <span className="onboarding-status">Discovering conversations and building Signals…</span> : null}
-    </form>
-  );
+  useSuccessNavigation(state);
+  const formKey = state.values?.description ?? initialDescription ?? "initial";
+  return <ProductUnderstandingFields key={formKey} workspaceId={workspaceId} productId={productId} websiteUrl={websiteUrl} initialDescription={initialDescription} action={action} state={state} pending={pending} />;
 }

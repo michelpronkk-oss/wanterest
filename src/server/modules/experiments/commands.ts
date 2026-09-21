@@ -18,6 +18,17 @@ export async function createExperimentCommand(input: unknown) { const user = awa
 export async function createExperimentVariantCommand(input: unknown) { await requireUser(); return service().createVariant(input); }
 export async function transitionExperimentCommand(input: unknown) { const user = await requireUser(); return service().transition({ ...(input as object), actorUserId: user.id }); }
 export async function getActiveExperimentsQuery(workspaceId: string, productId?: string) { await requireUser(); return service().getActiveExperiments(workspaceId, productId); }
+/** Thin read wrapper over the experiment repository — lists every experiment (not just running), with variants and the latest computed result. No result-calculation logic here. */
+export async function listExperimentsQuery(workspaceId: string, productId?: string) {
+  await requireUser();
+  const repository = new SupabaseExperimentRepository(createSupabaseServiceClient());
+  const rows = await repository.listExperiments(workspaceId, productId);
+  return Promise.all(rows.map(async (experiment) => ({
+    experiment,
+    variants: await repository.listVariants(workspaceId, experiment.id),
+    latestResult: await repository.latestResult(workspaceId, experiment.id),
+  })));
+}
 export async function assignExperimentVariantCommand(input: unknown) { await requireUser(); return service().assignVariant(input); }
 export async function issueExperimentTokenCommand(workspaceId: string, experimentId: string) { const user = await requireUser(); const issued = await service().issuePublicToken(workspaceId, experimentId); await recordAuditEvent({ workspaceId, actorUserId: user.id, actorKind: "user", action: "experiment.public_token_issued", targetType: "experiment_public_tokens", targetId: issued.record.id }); return issued; }
 export async function revokeExperimentTokenCommand(workspaceId: string, tokenId: string) { const user = await requireUser(); const revoked = await service().revokePublicToken(workspaceId, tokenId); await recordAuditEvent({ workspaceId, actorUserId: user.id, actorKind: "user", action: "experiment.public_token_revoked", targetType: "experiment_public_tokens", targetId: tokenId }); return revoked; }

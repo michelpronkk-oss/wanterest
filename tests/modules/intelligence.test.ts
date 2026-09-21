@@ -27,6 +27,8 @@ describe("Phase 3 intelligence pipeline", () => {
     const evaluation = await service.matchProduct(product, profile.id, analysis.id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", new FixtureProductMatchingEngine());
     expect(evaluation.decision).toBe("qualified");
     const ranking = await service.rankEvaluation(product, evaluation.id, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+    expect(ranking).not.toBeNull();
+    if (!ranking) throw new Error("Expected qualified evaluation to rank.");
     const signal = await service.materializeSignal(product, evaluation.id, ranking.id);
     expect(signal?.intent_type).toBe("high_intent");
     expect(signal?.evidence_node_id).toBeTruthy();
@@ -48,6 +50,8 @@ describe("Phase 3 intelligence pipeline", () => {
     expect(replay.id).not.toBe(first.id);
     const match = await service.matchProduct(product, profile.id, first.id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", new FixtureProductMatchingEngine());
     const rank = await service.rankEvaluation(product, match.id, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+    expect(rank).not.toBeNull();
+    if (!rank) throw new Error("Expected qualified evaluation to rank.");
     expect(repository.analyses.size).toBe(2);
     expect(rank.opportunity_score).toBeGreaterThanOrEqual(0);
     expect(rank.opportunity_score).toBeLessThanOrEqual(1);

@@ -135,6 +135,9 @@ export type DigestUpdate = PublicTables["digests"]["Update"];
 export type DigestItemRow = PublicTables["digest_items"]["Row"];
 export type DigestItemInsert = PublicTables["digest_items"]["Insert"];
 export type DigestItemUpdate = PublicTables["digest_items"]["Update"];
+export type DigestDeliveryRow = PublicTables["digest_deliveries"]["Row"];
+export type DigestDeliveryInsert = PublicTables["digest_deliveries"]["Insert"];
+export type DigestDeliveryUpdate = PublicTables["digest_deliveries"]["Update"];
 
 // Phase 7 persistence aliases are direct projections of the regenerated
 // Supabase schema. Domain modules validate stricter contracts separately.
@@ -162,6 +165,16 @@ export type SourceControlUpdate = PublicTables["source_controls"]["Update"];
 export type RateLimitBucketRow = PublicTables["rate_limit_buckets"]["Row"];
 export type RateLimitBucketInsert = PublicTables["rate_limit_buckets"]["Insert"];
 export type RateLimitBucketUpdate = PublicTables["rate_limit_buckets"]["Update"];
+
+// Automatic Monitoring v1 persistence aliases. These are direct projections
+// of the generated Supabase schema; policy/domain validation lives in the
+// monitoring module.
+export type MonitoringScheduleRow = PublicTables["monitoring_schedules"]["Row"];
+export type MonitoringScheduleInsert = PublicTables["monitoring_schedules"]["Insert"];
+export type MonitoringScheduleUpdate = PublicTables["monitoring_schedules"]["Update"];
+export type MonitoringAlertRow = PublicTables["monitoring_alerts"]["Row"];
+export type MonitoringAlertInsert = PublicTables["monitoring_alerts"]["Insert"];
+export type MonitoringAlertUpdate = PublicTables["monitoring_alerts"]["Update"];
 
 // Phase 6 billing persistence aliases. Keep these as direct projections of
 // the generated Supabase schema; billing/domain modules validate provider and
@@ -203,3 +216,21 @@ export type JsonObject = { [key: string]: Json | undefined };
 /** JSON values accepted by PostgreSQL jsonb columns. */
 export const jsonValueSchema = z.json();
 export const jsonObjectSchema = z.record(z.string(), jsonValueSchema);
+
+/**
+ * Remove values that JavaScript can represent but PostgreSQL JSON cannot.
+ * Arrays omit undefined entries instead of persisting an implicit value.
+ */
+export function omitUndefined(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.filter((item) => item !== undefined).map(omitUndefined);
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, item]) => item !== undefined)
+        .map(([key, item]) => [key, omitUndefined(item)]),
+    );
+  }
+  return value;
+}

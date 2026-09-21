@@ -1,20 +1,36 @@
 import { redirect } from "next/navigation";
 
+import { OnboardingShell } from "@/components/onboarding/onboarding-shell";
 import { ProductSetupForm, ProductUnderstandingForm } from "@/components/onboarding/setup-forms";
 import { getDashboardContext } from "@/server/modules/dashboard/dashboard.context";
+import { getCurrentProductSnapshotQuery } from "@/server/modules/intelligence/commands";
 
-export default async function ProductSetupPage() {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export default async function ProductSetupPage({ searchParams }: { searchParams: SearchParams }) {
   const { workspace, product } = await getDashboardContext();
   if (!workspace) redirect("/app/setup/workspace");
-  if (product && product.current_snapshot_id && product.current_demand_profile_id) redirect("/app/setup/scan");
+
+  const query = await searchParams;
+  const forceNew = query.new !== undefined;
+  const activeProduct = forceNew ? null : product;
+  if (activeProduct && activeProduct.current_snapshot_id && activeProduct.current_demand_profile_id) redirect("/app/setup/scan");
+  const existingSnapshot = activeProduct
+    ? await getCurrentProductSnapshotQuery(workspace.id, activeProduct.id).catch(() => null)
+    : null;
+
   return (
-    <section className="dashboard-page onboarding-page">
-      <p className="dashboard-eyebrow">First setup</p>
-      <h1>{product ? "Tell us about your product." : "Add your first product."}</h1>
-      <p className="dashboard-subtitle">This context anchors the first scan and keeps every result traceable to your product.</p>
-      <div className="dashboard-panel onboarding-panel">
-        {product ? <ProductUnderstandingForm workspaceId={workspace.id} productId={product.id} websiteUrl={product.website_url} /> : <ProductSetupForm workspaceId={workspace.id} />}
+    <OnboardingShell step={2}>
+      <div className="onboarding-step">
+        <p className="onboarding-step-eyebrow">Step 2 of 3</p>
+        <h1 className="onboarding-headline">What does your business sell?</h1>
+        <p className="onboarding-subcopy">Tell us your site and what you do &mdash; we&rsquo;ll surface where people are already looking for exactly that.</p>
+        {activeProduct ? (
+          <ProductUnderstandingForm workspaceId={workspace.id} productId={activeProduct.id} websiteUrl={activeProduct.website_url} initialDescription={existingSnapshot?.normalized_text ?? existingSnapshot?.raw_text ?? null} />
+        ) : (
+          <ProductSetupForm workspaceId={workspace.id} />
+        )}
       </div>
-    </section>
+    </OnboardingShell>
   );
 }

@@ -4,6 +4,7 @@ export { fixtureSourceAdapter, FixtureSourceAdapter } from "./fixture";
 export { hackerNewsSourceAdapter, HackerNewsSourceAdapter } from "./hacker-news";
 export { redditSourceAdapter, RedditSourceAdapter, RedditClient, RedditTokenManager, normalizeRedditItem } from "./reddit";
 export { githubSourceAdapter, GitHubSourceAdapter, GitHubClient, normalizeGitHubItem } from "./github";
+export { xSourceAdapter, XSourceAdapter, XClient, estimateXReadCost, normalizeXItem } from "./x";
 export {
   rawSourceItemEnvelopeSchema,
   sourceDiscoveryRequestSchema,

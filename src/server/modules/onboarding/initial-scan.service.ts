@@ -12,17 +12,31 @@ import { SupabaseIngestionRepository } from "@/server/modules/ingestion/ingestio
 import { IngestionService } from "@/server/modules/ingestion/ingestion.service";
 import { createSourceRegistry } from "@/server/providers/source/registry";
 import { getRedditRuntimeConfig } from "@/server/providers/source/reddit/reddit.auth";
+import { getXRuntimeConfig } from "@/server/providers/source/x/x.auth";
 import { SupabaseIntelligenceRepository } from "@/server/modules/intelligence/intelligence.repository";
 import { IntelligenceService } from "@/server/modules/intelligence/intelligence.service";
+import { qualificationFromEvidence, readBusinessClassification, readDemandProfileV2, readDemandProfileV2RoutingModel } from "@/server/modules/intelligence";
 import { FixtureConversationAnalysisEngine, FixtureProductMatchingEngine } from "@/server/modules/intelligence/engines";
 import { ensureEngineVersion } from "@/server/modules/observability/engine.repository";
 import { getTraceId } from "@/server/lib/request-context";
+import { buildSourceRoutingPlan, selectExecutableSourceRoutes, type SourceRoutingPlan, type SourceRoutingHealthStatus } from "@/server/modules/operations/source-routing.index";
+import { buildQueryPlan, toSourceDiscoveryRequest, type QueryPlan } from "@/server/modules/operations/query-planning.index";
+import { sourceDiscoveryRequestSchema, type SourceDiscoveryRequest } from "@/server/providers/source/contracts";
+import { rebuildDemandIntelligenceForScan, type DemandRebuildResult } from "@/server/modules/demand-intelligence/demand.orchestration";
+import { generateActionsForScan, type ActionGenerationForScanResult } from "@/server/modules/actions/action.orchestration";
+import { scanCandidateReviewSchema, sourceScanResultSchema, type ScanCandidateReview, type ScanMode, type ScanProgress, type SourceScanResult } from "@/server/modules/operations/product-demand-scan.schemas";
+import { initialScanIdempotencyKey, isActiveProductDemandScanJob, PRODUCT_DEMAND_SCAN_JOB_TYPE } from "@/server/modules/operations/product-demand-scan.identity";
+import { reconcileActiveProductDemandScanJobs, reconcileProductDemandScanJob } from "@/server/modules/operations/product-demand-scan.recovery";
+import { isActiveProduct } from "@/server/modules/products/product-lifecycle";
+import { resolveMonitoringPolicy, type MonitoringPolicy } from "@/server/modules/entitlements/monitoring-policy";
+import { buildScanJobReference } from "./scan-job-metadata";
 
 type Client = SupabaseClient<Database>;
 
 const scanResultSchema = z.object({
-  state: z.enum(["complete", "complete_no_signals"]),
+  state: z.enum(["complete", "complete_no_signals", "complete_with_warnings"]),
   rawItems: z.number().int().nonnegative(),
+  normalizedItems: z.number().int().nonnegative(),
   conversations: z.number().int().nonnegative(),
   analyses: z.number().int().nonnegative(),
   evaluations: z.number().int().nonnegative(),
@@ -30,16 +44,103 @@ const scanResultSchema = z.object({
   signals: z.number().int().nonnegative(),
   sources: z.array(z.string()),
   diagnostics: z.array(z.object({ sourceKey: z.string(), state: z.string(), message: z.string().optional() })),
+  sourceResults: z.array(sourceScanResultSchema).optional(),
+  mapUpdated: z.number().int().nonnegative().optional(),
+  gapUpdated: z.number().int().nonnegative().optional(),
+  driftUpdated: z.number().int().nonnegative().optional(),
+  actionsUpdated: z.number().int().nonnegative().optional(),
+  routing: z.object({ version: z.string(), coverageStatus: z.string(), coverageConfidence: z.number(), selectedSources: z.array(z.string()), excludedSources: z.array(z.string()) }).optional(),
+  queryPlanning: z.object({ version: z.string(), sourceCount: z.number().int().nonnegative(), queryCount: z.number().int().nonnegative(), queryFamilyDistribution: z.record(z.string(), z.number().int().nonnegative()), queriesPerSource: z.record(z.string(), z.number().int().nonnegative()), candidateBudgetPerSource: z.record(z.string(), z.number().int().nonnegative()), suppressedDuplicateCount: z.number().int().nonnegative(), lowConfidence: z.boolean() }).optional(),
+  qualification: z.object({ version: z.string(), thresholdVersion: z.string(), candidateCount: z.number().int().nonnegative(), qualifiedCount: z.number().int().nonnegative(), highConfidenceCount: z.number().int().nonnegative(), weakCount: z.number().int().nonnegative(), rejectedCount: z.number().int().nonnegative(), rejectionReasonDistribution: z.record(z.string(), z.number().int().nonnegative()), intentDistribution: z.record(z.string(), z.number().int().nonnegative()), averageDemandQuality: z.number().min(0).max(1), averageConfidence: z.number().min(0).max(1) }).optional(),
+  candidateReviews: z.array(scanCandidateReviewSchema).max(100).optional(),
 });
 
 export type InitialScanResult = z.infer<typeof scanResultSchema>;
 
 export type InitialScanJobState = {
+  jobRunId: string;
   status: string;
   phase: string;
+  progress: ScanProgress | null;
   result: InitialScanResult | null;
   errorMessage: string | null;
+  idempotencyKey: string;
+  completedAt: string | null;
 };
+
+export type SourceExecutionInput = {
+  sourceKey: string;
+  requests: SourceDiscoveryRequest[];
+  traceId: string;
+  /**
+   * Keeps discovery idempotent within one durable scan while allowing a
+   * later manual rescan to execute the same semantic request again.
+   */
+  jobRunId: string;
+};
+
+export type SourceExecutionResult = {
+  sourceKey: string;
+  rawSourceItemIds: string[];
+  normalizedSourceItemIds: string[];
+  conversationIds: string[];
+  rawInserted: number;
+  itemsReturned: number;
+  queryCount: number;
+  diagnostics: string[];
+  rateLimitRemaining: number | null;
+  estimatedCost: number | null;
+};
+
+export type SourceExecutionBatchResult = {
+  sourceKey: string;
+  execution?: SourceExecutionResult;
+  fallback?: boolean;
+  error?: string;
+};
+
+function requestScopedToScan(request: SourceDiscoveryRequest, jobRunId: string): SourceDiscoveryRequest {
+  return sourceDiscoveryRequestSchema.parse({
+    ...request,
+    requestMetadata: { ...request.requestMetadata, scanJobRunId: jobRunId },
+  });
+}
+
+export type CandidateProcessingResult = {
+  conversationCount: number;
+  analyses: number;
+  evaluations: number;
+  rankings: number;
+  signals: number;
+  evaluationIds: string[];
+  /** Positional with evaluationIds; null means the evaluation was not materialized as a signal. */
+  signalIds: Array<string | null>;
+  candidateReviews: ScanCandidateReview[];
+  qualification?: InitialScanResult["qualification"];
+  diagnostics: InitialScanResult["diagnostics"];
+};
+
+export type InitialScanExecutionOptions = {
+  traceId?: string;
+  scanMode?: ScanMode;
+  idempotencyKey?: string;
+  jobRunId?: string;
+  triggerRunId?: string;
+  sourceExecutor?: (input: SourceExecutionInput) => Promise<SourceExecutionResult>;
+  sourceBatchExecutor?: (inputs: SourceExecutionInput[]) => Promise<SourceExecutionBatchResult[]>;
+  candidateExecutor?: (input: { product: ProductRow; profileId: string; normalizedSourceItemIds: string[]; conversationIds: string[]; traceId: string }) => Promise<CandidateProcessingResult>;
+  demandExecutor?: (input: { product: ProductRow; evaluationIds: string[]; signalIds: Array<string | null>; traceId: string }) => Promise<DemandRebuildResult>;
+  actionsExecutor?: (input: { product: ProductRow; traceId: string }) => Promise<ActionGenerationForScanResult>;
+  onProgress?: (progress: ScanProgress) => Promise<void>;
+};
+
+export async function getScanProduct(workspaceId: string, productId: string): Promise<ProductRow> {
+  const { data, error } = await createSupabaseServiceClient().from("products").select("*").eq("workspace_id", workspaceId).eq("id", productId).maybeSingle();
+  if (error) throw new AppError("INTERNAL_ERROR", "The scan product could not be loaded.");
+  if (!data) throw new AppError("NOT_FOUND", "The scan product was not found.");
+  if (!isActiveProduct(data)) throw new AppError("CONFLICT", "Archived products cannot be scanned.");
+  return data;
+}
 
 function publicFailure(error: unknown): string {
   const appError = toPublicError(error);
@@ -55,32 +156,128 @@ function jsonStrings(value: Json): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
-function scanJobKey(workspaceId: string, productId: string): string {
-  return `initial-scan:${workspaceId}:${productId}`;
+function isManualScanMode(mode: ScanMode): boolean { return mode === "manual" || mode === "manual_refresh"; }
+function isCycleScanMode(mode: ScanMode): boolean { return mode === "scheduled" || mode === "intelligence_cycle"; }
+function isDeepScanMode(mode: ScanMode): boolean { return mode === "deep" || mode === "deep_refresh"; }
+
+function boundMonitoringRequests(
+  requests: SourceDiscoveryRequest[],
+  sourceKey: string,
+  scanMode: ScanMode,
+  policy: MonitoringPolicy | null,
+): SourceDiscoveryRequest[] {
+  if (!policy || (!isCycleScanMode(scanMode) && !isDeepScanMode(scanMode))) return requests;
+  const deep = isDeepScanMode(scanMode);
+  const queryBudget = deep ? policy.deepRefreshQueryBudget : policy.intelligenceCycleQueryBudget;
+  const candidateBudget = deep ? policy.deepRefreshCandidateBudget : policy.intelligenceCycleCandidateBudget;
+  const maxSources = deep ? policy.deepRefreshMaxSources : policy.intelligenceCycleMaxSources;
+  const maxRequests = sourceKey === "x"
+    ? (deep ? policy.xMaxRequestsPerDeepRefresh : policy.xMaxRequestsPerCycle)
+    : Math.max(1, Math.ceil(queryBudget / Math.max(1, maxSources)));
+  const maxCandidates = sourceKey === "x"
+    ? (deep ? policy.xMaxBillablePostsPerDeepRefresh : policy.xMaxBillablePostsPerCycle)
+    : Math.max(1, Math.ceil(candidateBudget / Math.max(1, maxSources)));
+  let remaining = maxCandidates;
+  return requests.slice(0, maxRequests).flatMap((request) => {
+    const limit = Math.min(request.limit, remaining);
+    remaining -= limit;
+    if (limit < 1) return [];
+    const requestMetadata = sourceKey === "x"
+      ? { ...request.requestMetadata, maxResults: limit, maxBillablePostsPerDiscovery: limit }
+      : request.requestMetadata;
+    return [sourceDiscoveryRequestSchema.parse({ ...request, limit, requestMetadata })];
+  });
 }
 
-async function loadScanJob(client: Client, workspaceId: string, productId: string) {
+function reviewExcerpt(conversation: ConversationRow | undefined, source: SourceItemRow | undefined, fallback: string): string {
+  const value = source?.body || conversation?.body || source?.title || conversation?.title || fallback;
+  return value.replace(/\s+/g, " ").trim().slice(0, 500) || "No readable excerpt was stored.";
+}
+
+function candidateReviewsFromRows(
+  evaluations: Awaited<ReturnType<IntelligenceService["matchProduct"]>>[],
+  conversations: ConversationRow[],
+  sourceById: Map<string, SourceItemRow>,
+): ScanCandidateReview[] {
+  const conversationById = new Map(conversations.map((conversation) => [conversation.id, conversation]));
+  return evaluations.map((evaluation) => {
+    const qualification = qualificationFromEvidence(evaluation.evidence);
+    if (!qualification || !["weak_candidate", "rejected"].includes(qualification.status)) return null;
+    const conversation = conversationById.get(evaluation.conversation_id);
+    const source = conversation ? sourceById.get(conversation.primary_source_item_id) : undefined;
+    return scanCandidateReviewSchema.parse({
+      evaluationId: evaluation.id,
+      source: source?.source_key ?? "unknown",
+      title: source?.title ?? conversation?.title ?? null,
+      excerpt: reviewExcerpt(conversation, source, evaluation.rationale),
+      canonicalUrl: source?.canonical_url ?? conversation?.canonical_url ?? null,
+      status: qualification.status,
+      scores: {
+        relevance: qualification.dimensions.product_relevance,
+        intent: qualification.dimensions.demand_intent,
+        pain: qualification.dimensions.pain_clarity,
+        specificity: qualification.dimensions.specificity,
+        evidence: qualification.dimensions.evidence_quality,
+        noise: qualification.dimensions.noise_risk,
+      },
+      reasonCodes: qualification.reason_codes,
+    });
+  }).filter((review): review is ScanCandidateReview => Boolean(review));
+}
+
+export function scanJobKey(workspaceId: string, productId: string): string {
+  return initialScanIdempotencyKey(workspaceId, productId);
+}
+
+async function loadScanJob(client: Client, workspaceId: string, productId: string, idempotencyKey = scanJobKey(workspaceId, productId)) {
   const { data, error } = await client
     .from("job_runs")
     .select("*")
-    .eq("job_type", "discover-source")
+    .eq("job_type", PRODUCT_DEMAND_SCAN_JOB_TYPE)
     .eq("workspace_id", workspaceId)
     .eq("product_id", productId)
-    .eq("idempotency_key", scanJobKey(workspaceId, productId))
+    .eq("idempotency_key", idempotencyKey)
     .maybeSingle();
   if (error) throw new AppError("INTERNAL_ERROR", "The first-scan status could not be loaded.");
   return data;
 }
 
-async function setScanJob(client: Client, id: string, input: { status?: string; phase: string; result?: InitialScanResult | null; errorCode?: string | null; errorMessage?: string | null; completed?: boolean }) {
-  const reference = jsonObjectSchema.parse({
-    workflow: "initial-scan",
-    phase: input.phase,
-    result: input.result,
-    errorMessage: input.errorMessage ?? null,
-  });
+async function loadActiveScanJob(client: Client, workspaceId: string, productId: string) {
+  const { data, error } = await client
+    .from("job_runs")
+    .select("*")
+    .eq("job_type", PRODUCT_DEMAND_SCAN_JOB_TYPE)
+    .eq("workspace_id", workspaceId)
+    .eq("product_id", productId)
+    .in("status", ["pending", "running"])
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error) throw new AppError("INTERNAL_ERROR", "The active scan status could not be loaded.");
+  const reconciled = await reconcileActiveProductDemandScanJobs(client, data ?? []);
+  if (reconciled.some((result) => result.reason === "dispatch-link-uncertain")) return null;
+  return reconciled.filter((result) => result.action !== "recovered").map((result) => result.job).find(isActiveProductDemandScanJob) ?? null;
+}
+
+async function loadLatestScanJob(client: Client, workspaceId: string, productId: string) {
+  const { data, error } = await client
+    .from("job_runs")
+    .select("*")
+    .eq("job_type", PRODUCT_DEMAND_SCAN_JOB_TYPE)
+    .eq("workspace_id", workspaceId)
+    .eq("product_id", productId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new AppError("INTERNAL_ERROR", "The latest scan status could not be loaded.");
+  return data;
+}
+
+export type ScanJobUpdate = { status?: string; phase: string; scanMode?: ScanMode; result?: InitialScanResult | null; errorCode?: string | null; errorMessage?: string | null; completed?: boolean; progress?: Partial<ScanProgress> };
+
+export async function setScanJob(client: Client, id: string, input: ScanJobUpdate) {
+  const reference = buildScanJobReference(input);
   const { error } = await client.from("job_runs").update({
-    status: input.status,
+    ...(input.status === undefined ? {} : { status: input.status }),
     input_reference: reference,
     error_code: input.errorCode ?? null,
     error_details: input.errorMessage ? { message: input.errorMessage } : null,
@@ -90,27 +287,36 @@ async function setScanJob(client: Client, id: string, input: { status?: string; 
   if (error) throw new AppError("INTERNAL_ERROR", "The first-scan status could not be saved.");
 }
 
-async function createOrResumeScanJob(client: Client, workspaceId: string, productId: string, traceId: string) {
-  const existing = await loadScanJob(client, workspaceId, productId);
+async function createOrResumeScanJob(client: Client, workspaceId: string, productId: string, traceId: string, options: Pick<InitialScanExecutionOptions, "idempotencyKey" | "jobRunId" | "scanMode" | "triggerRunId"> = {}) {
+  const idempotencyKey = options.idempotencyKey ?? scanJobKey(workspaceId, productId);
+  const scanMode = options.scanMode ?? "onboarding";
+  const existing = options.jobRunId
+    ? (await client.from("job_runs").select("*").eq("id", options.jobRunId).maybeSingle()).data
+    : await loadScanJob(client, workspaceId, productId, idempotencyKey);
+  if (existing && (existing.workspace_id !== workspaceId || existing.product_id !== productId || existing.idempotency_key !== idempotencyKey)) {
+    throw new AppError("FORBIDDEN", "The scan job does not belong to this product.");
+  }
   if (existing?.status === "succeeded") return { job: existing, alreadyComplete: true };
   if (existing) {
     const { data, error } = await client.from("job_runs").update({ status: "running", attempt_count: existing.attempt_count + 1, started_at: new Date().toISOString(), completed_at: null, terminal_at: null, error_code: null, error_details: null }).eq("id", existing.id).select("*").single();
     if (error || !data) throw new AppError("INTERNAL_ERROR", "The first scan could not be started.");
-    await setScanJob(client, data.id, { status: "running", phase: "preparing" });
+    await setScanJob(client, data.id, { status: "running", phase: "preparing", scanMode, progress: { stage: "preparing_product", percent: 5, currentLabel: "Understanding your product" } });
     return { job: data, alreadyComplete: false };
   }
   const { data, error } = await client.from("job_runs").insert({
-    job_type: "discover-source",
+    job_type: PRODUCT_DEMAND_SCAN_JOB_TYPE,
     workspace_id: workspaceId,
     product_id: productId,
-    idempotency_key: scanJobKey(workspaceId, productId),
-    input_reference: jsonObjectSchema.parse({ workflow: "initial-scan", phase: "preparing", result: null }),
-    status: "running",
+    idempotency_key: idempotencyKey,
+    input_reference: jsonObjectSchema.parse({ workflow: "product-demand-scan", phase: "preparing", scanMode: options.scanMode ?? "onboarding", result: null, progress: { stage: "preparing_product", percent: 5, completedSources: 0, totalSources: 0, currentLabel: "Understanding your product", warnings: [] } }),
+    status: "pending",
     attempt_count: 1,
-    started_at: new Date().toISOString(),
+    started_at: null,
     trace_id: traceId,
+    trigger_run_id: options.triggerRunId ?? null,
   }).select("*").single();
   if (error || !data) throw new AppError("INTERNAL_ERROR", "The first scan could not be started.");
+  await setScanJob(client, data.id, { status: "running", phase: "preparing", scanMode, progress: { stage: "preparing_product", percent: 5, currentLabel: "Understanding your product" } });
   return { job: data, alreadyComplete: false };
 }
 
@@ -136,77 +342,430 @@ async function loadRows(client: Client, sourceItemIds: string[], conversationIds
   };
 }
 
-export async function getInitialScanState(workspaceId: string, productId: string): Promise<InitialScanJobState | null> {
-  const job = await loadScanJob(createSupabaseServiceClient(), workspaceId, productId);
-  if (!job) return null;
-  const reference = job.input_reference && typeof job.input_reference === "object" && !Array.isArray(job.input_reference) ? job.input_reference : {};
-  const resultValue = "result" in reference && reference.result && typeof reference.result === "object" ? scanResultSchema.safeParse(reference.result) : null;
+/**
+ * Executes only provider discovery plus the existing raw -> normalized -> canonical replay.
+ * Trigger child tasks call this function; it deliberately contains no Trigger.dev dependency.
+ */
+export async function executeSourceDiscovery(input: SourceExecutionInput): Promise<SourceExecutionResult> {
+  const client = createSupabaseServiceClient();
+  const ingestionRepository = new SupabaseIngestionRepository(client);
+  const ingestion = new IngestionService(ingestionRepository, undefined, new SourceControlService(new SupabaseSourceControlStore(client)));
+  const rawSourceItemIds: string[] = [];
+  const normalizedSourceItemIds: string[] = [];
+  const conversationIds: string[] = [];
+  const diagnostics: string[] = [];
+  let rawInserted = 0;
+  let rateLimitRemaining: number | null = null;
+  let estimatedCost: number | null = null;
+  for (const rawRequest of input.requests) {
+    const request = sourceDiscoveryRequestSchema.parse(rawRequest);
+    const discovery = await ingestion.discoverSource(input.sourceKey, requestScopedToScan(request, input.jobRunId), input.traceId);
+    rawSourceItemIds.push(...discovery.rawSourceItemIds);
+    rawInserted += discovery.rawInserted;
+    diagnostics.push(...discovery.diagnostics);
+    const replay = await ingestion.replayDetailed({ rawSourceItemIds: discovery.rawSourceItemIds, normalizationVersion: `${input.sourceKey}-v1`, canonicalizationVersion: "canonical-v1", limit: 100 });
+    normalizedSourceItemIds.push(...replay.normalizedSourceItemIds);
+    conversationIds.push(...replay.canonicalizedConversationIds);
+    const metadata = request.requestMetadata;
+    if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+      if (typeof metadata.estimatedCost === "number") estimatedCost = (estimatedCost ?? 0) + metadata.estimatedCost;
+      if (typeof metadata.rateLimitRemaining === "number") rateLimitRemaining = metadata.rateLimitRemaining;
+    }
+    if (typeof discovery.estimatedCost === "number") estimatedCost = (estimatedCost ?? 0) + discovery.estimatedCost;
+    if (typeof discovery.rateLimit?.remaining === "number") rateLimitRemaining = discovery.rateLimit.remaining;
+  }
   return {
-    status: job.status,
-    phase: typeof reference.phase === "string" ? reference.phase : "preparing",
-    result: resultValue?.success ? resultValue.data : null,
-    errorMessage: typeof reference.errorMessage === "string" ? reference.errorMessage : job.error_code ? "The first scan could not be completed. Please try again." : null,
+    sourceKey: input.sourceKey,
+    rawSourceItemIds: [...new Set(rawSourceItemIds)],
+    normalizedSourceItemIds: [...new Set(normalizedSourceItemIds)],
+    conversationIds: [...new Set(conversationIds)],
+    rawInserted,
+    itemsReturned: rawSourceItemIds.length,
+    queryCount: input.requests.length,
+    diagnostics,
+    rateLimitRemaining,
+    estimatedCost,
   };
 }
 
-export async function runInitialScan(product: ProductRow, traceId = getTraceId()): Promise<InitialScanResult> {
+export async function processScanCandidates(input: { product: ProductRow; profileId: string; normalizedSourceItemIds: string[]; conversationIds: string[]; traceId: string }): Promise<CandidateProcessingResult> {
   const client = createSupabaseServiceClient();
-  const { job, alreadyComplete } = await createOrResumeScanJob(client, product.workspace_id, product.id, traceId);
+  const rows = await loadRows(client, [...new Set(input.normalizedSourceItemIds)], [...new Set(input.conversationIds)]);
+  const sourceById = new Map(rows.sourceItems.map((item) => [item.id, item]));
+  const repository = new SupabaseIntelligenceRepository(client);
+  const intelligence = new IntelligenceService(repository);
+  const classifier = new FixtureConversationAnalysisEngine();
+  const matcher = new FixtureProductMatchingEngine();
+  const classifierVersion = await ensureEngineVersion(client, { engine_type: "classifier", version: classifier.version, model: "deterministic", prompt_version: classifier.version, config_hash: null, metadata: { workflow: "product-demand-scan", traceId: input.traceId } });
+  const matcherVersion = await ensureEngineVersion(client, { engine_type: "matcher", version: matcher.version, model: "deterministic", prompt_version: matcher.version, config_hash: null, metadata: { workflow: "product-demand-scan", traceId: input.traceId } });
+  const rankerVersion = await ensureEngineVersion(client, { engine_type: "ranker", version: "ranking-v1", model: "deterministic", prompt_version: "ranking-v1", config_hash: null, metadata: { workflow: "product-demand-scan", traceId: input.traceId } });
+  const diagnostics: InitialScanResult["diagnostics"] = [];
+  const analyses: Awaited<ReturnType<IntelligenceService["analyzeConversation"]>>[] = [];
+  for (const conversation of rows.conversations) {
+    const sourceItem = sourceById.get(conversation.primary_source_item_id);
+    if (!sourceItem) continue;
+    try {
+      analyses.push(await intelligence.analyzeConversation(conversation, sourceItem, classifierVersion.id, classifier));
+    } catch (error) {
+      diagnostics.push({ sourceKey: sourceItem.source_key, state: "failed", message: `Analysis skipped: ${safeSummary(error)}` });
+    }
+  }
+  const evaluations: Awaited<ReturnType<IntelligenceService["matchProduct"]>>[] = [];
+  for (const analysis of analyses) {
+    try {
+      evaluations.push(await intelligence.matchProduct(input.product, input.profileId, analysis.id, matcherVersion.id, matcher));
+    } catch (error) {
+      diagnostics.push({ sourceKey: "matching", state: "failed", message: safeSummary(error) });
+    }
+  }
+  const rankings: NonNullable<Awaited<ReturnType<IntelligenceService["rankEvaluation"]>>>[] = [];
+  const signals: Awaited<ReturnType<IntelligenceService["materializeSignal"]>>[] = [];
+  const signalIdsByEvaluation: Array<string | null> = [];
+  for (const evaluation of evaluations) {
+    try {
+      const ranking = await intelligence.rankEvaluation(input.product, evaluation.id, rankerVersion.id);
+      if (!ranking) {
+        signalIdsByEvaluation.push(null);
+        diagnostics.push({ sourceKey: "signals", state: "filtered", message: "Candidate did not pass Signal Qualification." });
+        continue;
+      }
+      rankings.push(ranking);
+      const signal = await intelligence.materializeSignal(input.product, evaluation.id, ranking.id);
+      signalIdsByEvaluation.push(signal?.id ?? null);
+      if (signal) signals.push(signal);
+    } catch (error) {
+      signalIdsByEvaluation.push(null);
+      diagnostics.push({ sourceKey: "signals", state: "failed", message: safeSummary(error) });
+    }
+  }
+  const qualificationRows = evaluations.map((evaluation) => qualificationFromEvidence(evaluation.evidence)).filter((value): value is NonNullable<typeof value> => Boolean(value));
+  const rejectionReasonDistribution: Record<string, number> = {};
+  const intentDistribution: Record<string, number> = {};
+  for (const qualification of qualificationRows) {
+    for (const code of qualification.reason_codes) rejectionReasonDistribution[code] = (rejectionReasonDistribution[code] ?? 0) + 1;
+    intentDistribution[qualification.primary_intent] = (intentDistribution[qualification.primary_intent] ?? 0) + 1;
+  }
+  return {
+    conversationCount: rows.conversations.length,
+    analyses: analyses.length,
+    evaluations: evaluations.length,
+    rankings: rankings.length,
+    signals: signals.length,
+    evaluationIds: evaluations.map((evaluation) => evaluation.id),
+    signalIds: signalIdsByEvaluation,
+    candidateReviews: candidateReviewsFromRows(evaluations, rows.conversations, sourceById),
+    diagnostics,
+    ...(qualificationRows.length ? {
+      qualification: {
+        version: qualificationRows[0].version,
+        thresholdVersion: qualificationRows[0].diagnostics.threshold_version,
+        candidateCount: qualificationRows.length,
+        qualifiedCount: qualificationRows.filter((item) => item.status === "qualified").length,
+        highConfidenceCount: qualificationRows.filter((item) => item.status === "high_confidence_signal").length,
+        weakCount: qualificationRows.filter((item) => item.status === "weak_candidate").length,
+        rejectedCount: qualificationRows.filter((item) => item.status === "rejected").length,
+        rejectionReasonDistribution,
+        intentDistribution,
+        averageDemandQuality: qualificationRows.reduce((sum, item) => sum + item.demand_quality_score, 0) / qualificationRows.length,
+        averageConfidence: qualificationRows.reduce((sum, item) => sum + item.confidence, 0) / qualificationRows.length,
+      },
+    } : {}),
+  };
+}
+
+function parseScanJobState(job: NonNullable<Awaited<ReturnType<typeof loadScanJob>>>): InitialScanJobState {
+  const reference = job.input_reference && typeof job.input_reference === "object" && !Array.isArray(job.input_reference) ? job.input_reference : {};
+  const resultValue = "result" in reference && reference.result && typeof reference.result === "object" ? scanResultSchema.safeParse(reference.result) : null;
+  const progressValue = "progress" in reference ? z.object({ stage: z.string(), percent: z.number(), completedSources: z.number(), totalSources: z.number(), currentLabel: z.string(), warnings: z.array(z.string()) }).safeParse(reference.progress) : null;
+  return {
+    jobRunId: job.id,
+    status: job.status,
+    phase: typeof reference.phase === "string" ? reference.phase : "preparing",
+    progress: progressValue?.success ? progressValue.data as ScanProgress : null,
+    result: resultValue?.success ? resultValue.data : null,
+    errorMessage: typeof reference.errorMessage === "string" ? reference.errorMessage : job.error_code ? "The first scan could not be completed. Please try again." : null,
+    idempotencyKey: job.idempotency_key,
+    completedAt: job.completed_at,
+  };
+}
+
+export async function getInitialScanState(workspaceId: string, productId: string, idempotencyKey = scanJobKey(workspaceId, productId)): Promise<InitialScanJobState | null> {
+  const client = createSupabaseServiceClient();
+  const job = await loadScanJob(client, workspaceId, productId, idempotencyKey);
+  if (!job) return null;
+  const reconciled = await reconcileProductDemandScanJob(client, job);
+  if (reconciled.reason === "dispatch-link-uncertain") {
+    return {
+      ...parseScanJobState(reconciled.job),
+      status: "failed",
+      errorMessage: "The scan dispatch needs to be recovered. Retry to continue safely.",
+    };
+  }
+  return parseScanJobState(reconciled.job);
+}
+
+/** Read-only dashboard view of the newest pending/running scan for this product. */
+export async function getActiveScanState(workspaceId: string, productId: string): Promise<InitialScanJobState | null> {
+  const job = await loadActiveScanJob(createSupabaseServiceClient(), workspaceId, productId);
+  return job ? parseScanJobState(job) : null;
+}
+
+/** Reads the newest persisted scan so a completed manual rescan remains visible after its active poll ends. */
+export async function getLatestScanState(workspaceId: string, productId: string): Promise<InitialScanJobState | null> {
+  const job = await loadLatestScanJob(createSupabaseServiceClient(), workspaceId, productId);
+  return job ? parseScanJobState(job) : null;
+}
+
+export async function runInitialScan(product: ProductRow, traceId = getTraceId(), options: InitialScanExecutionOptions = {}): Promise<InitialScanResult> {
+  const client = createSupabaseServiceClient();
+  const scanMode = options.scanMode ?? "onboarding";
+  const { job, alreadyComplete } = await createOrResumeScanJob(client, product.workspace_id, product.id, traceId, {
+    idempotencyKey: options.idempotencyKey,
+    jobRunId: options.jobRunId,
+    scanMode,
+    triggerRunId: options.triggerRunId,
+  });
   if (alreadyComplete) {
-    const state = await getInitialScanState(product.workspace_id, product.id);
+    const state = await getInitialScanState(product.workspace_id, product.id, options.idempotencyKey ?? scanJobKey(product.workspace_id, product.id));
     if (state?.result) return state.result;
   }
 
-  const ingestion = new IngestionService(new SupabaseIngestionRepository(client), undefined, new SourceControlService(new SupabaseSourceControlStore(client)));
+  const ingestionRepository = new SupabaseIngestionRepository(client);
+  const ingestion = new IngestionService(ingestionRepository, undefined, new SourceControlService(new SupabaseSourceControlStore(client)));
   const controls = new SourceControlService(new SupabaseSourceControlStore(client));
   const registry = createSourceRegistry();
   const configuredReddit = getRedditRuntimeConfig();
+  const configuredX = getXRuntimeConfig();
   const intelligenceRepository = new SupabaseIntelligenceRepository(client);
   const profile = product.current_demand_profile_id ? await intelligenceRepository.getDemandProfileById(product.current_demand_profile_id) : null;
   if (!profile) {
     const message = "A demand profile is required before the first scan.";
-    await setScanJob(client, job.id, { status: "failed", phase: "failed", errorCode: "VALIDATION_ERROR", errorMessage: message, completed: true });
+    await setScanJob(client, job.id, { status: "failed", phase: "failed", scanMode, errorCode: "VALIDATION_ERROR", errorMessage: message, completed: true });
     throw new AppError("VALIDATION_ERROR", message);
   }
   const queryTerms = jsonStrings(profile.include_terms);
   const sourceKeys = [...registry.keys()].filter((key) => key !== "fixture");
+  const environment = process.env.NODE_ENV === "production" ? "production" : process.env.NODE_ENV === "test" ? "test" : "development";
+  const snapshots = await intelligenceRepository.getProductSnapshots(product.id);
+  const latestSnapshot = [...snapshots].reverse()[0] ?? null;
+  const classification = latestSnapshot ? readBusinessClassification(latestSnapshot) : null;
+  const demandProfileV2 = latestSnapshot ? readDemandProfileV2(latestSnapshot) : null;
+  const monitoringPolicy = isCycleScanMode(scanMode) || isDeepScanMode(scanMode)
+    ? await resolveMonitoringPolicy(client, product.workspace_id)
+    : null;
+  const scheduledCycle = isCycleScanMode(scanMode);
+  const deepRefresh = isDeepScanMode(scanMode);
+  const monitoringCandidateBudget = scheduledCycle
+    ? monitoringPolicy?.intelligenceCycleCandidateBudget ?? 15
+    : deepRefresh
+      ? monitoringPolicy?.deepRefreshCandidateBudget ?? 30
+      : null;
+  const monitoringMaxSources = scheduledCycle
+    ? monitoringPolicy?.intelligenceCycleMaxSources ?? 3
+    : deepRefresh
+      ? monitoringPolicy?.deepRefreshMaxSources ?? 4
+      : null;
+  const sourceStates = await Promise.all(sourceKeys.map(async (sourceKey) => {
+    const control = await controls.get(sourceKey);
+    const health = await ingestionRepository.getSourceHealth(sourceKey, environment).catch(() => null);
+    const healthStatus: SourceRoutingHealthStatus = health?.degradation_state === "healthy" || health?.degradation_state === "degraded" || health?.degradation_state === "blocked" ? health.degradation_state : "unknown";
+    const configured = sourceKey === "reddit"
+      ? Boolean(configuredReddit.clientId && configuredReddit.clientSecret && configuredReddit.userAgent)
+      : sourceKey === "x"
+        ? Boolean(configuredX.token)
+        : true;
+    const retryWindowOpen = Boolean(control.next_retry_at && control.next_retry_at > new Date().toISOString());
+    return { sourceKey, configured, controlState: retryWindowOpen && control.state === "enabled" ? "paused" : control.state, healthStatus, reason: configured ? control.reason : "credentials_missing" };
+  }));
+  const routingPlan: SourceRoutingPlan | null = demandProfileV2
+    ? buildSourceRoutingPlan({
+        productId: product.id,
+        classification,
+        demandProfile: readDemandProfileV2RoutingModel(demandProfileV2),
+        sourceStates,
+        scanMode,
+        totalCandidateBudget: isManualScanMode(scanMode) ? 30 : monitoringCandidateBudget ?? 15,
+        maxSources: isManualScanMode(scanMode) ? 4 : monitoringMaxSources ?? 3,
+        safetyCaps: {
+          x: { maxCandidates: Math.min(
+            isManualScanMode(scanMode) ? 8 : deepRefresh ? monitoringPolicy?.xMaxBillablePostsPerDeepRefresh ?? 10 : scheduledCycle ? monitoringPolicy?.xMaxBillablePostsPerCycle ?? 10 : 10,
+            configuredX.maxPostsPerScan,
+          ), maxPages: 1 },
+          ...(isManualScanMode(scanMode) ? {
+            github: { maxCandidates: 10, maxPages: 3 },
+            "hacker-news": { maxCandidates: 6, maxPages: 3 },
+            bluesky: { maxCandidates: 8, maxPages: 1 },
+          } : {}),
+        },
+      })
+    : null;
+  const selectedRoutes = routingPlan ? selectExecutableSourceRoutes(routingPlan) : [];
+  const routedSourceKeys = selectedRoutes.map((route) => route.source_key);
+  const routeBySource = new Map(selectedRoutes.map((route) => [route.source_key, route]));
   const sources: string[] = [];
+  const sourceResults: SourceScanResult[] = [];
   const diagnostics: InitialScanResult["diagnostics"] = [];
+  let queryPlan: QueryPlan | null = null;
+  if (routingPlan) {
+    diagnostics.push({ sourceKey: "source-routing", state: "planned", message: `${routingPlan.coverage_status} coverage (${routingPlan.overall_coverage_confidence}); selected ${routingPlan.diagnostics.selected_sources.join(", ") || "none"}.` });
+    try {
+      queryPlan = buildQueryPlan({
+        classification,
+        demandProfile: demandProfileV2 ? readDemandProfileV2RoutingModel(demandProfileV2) : null,
+        sourceRoutingPlan: routingPlan,
+        scanMode,
+      });
+      diagnostics.push({ sourceKey: "query-planning", state: "planned", message: `${queryPlan.diagnostics.query_count} semantic quer${queryPlan.diagnostics.query_count === 1 ? "y" : "ies"} across ${queryPlan.diagnostics.source_count} source${queryPlan.diagnostics.source_count === 1 ? "" : "s"}.` });
+    } catch (error) {
+      diagnostics.push({ sourceKey: "query-planning", state: "fallback", message: safeSummary(error) });
+    }
+  } else {
+    diagnostics.push({ sourceKey: "source-routing", state: "fallback", message: "Demand Profile v2 is unavailable; using the existing configured-source selection." });
+  }
   const rawSourceItemIds: string[] = [];
   const normalizedSourceItemIds: string[] = [];
   const conversationIds: string[] = [];
+  const queryPlanBySource = new Map((queryPlan?.source_plans ?? []).map((source) => [source.source_key, source]));
 
   try {
-    await setScanJob(client, job.id, { status: "running", phase: "discovering" });
-    for (const sourceKey of sourceKeys) {
+    await setScanJob(client, job.id, { status: "running", phase: "planning", scanMode, progress: { stage: "planning", percent: 25, currentLabel: "Choosing the best sources" } });
+    await setScanJob(client, job.id, { status: "running", phase: "discovering", scanMode, progress: { stage: "discovering", percent: 40, currentLabel: "Finding conversations" } });
+    const plannedSourceKeys = routingPlan ? routedSourceKeys : sourceKeys;
+    const sourceExecutor = options.sourceExecutor;
+    const sourceBatchExecutor = options.sourceBatchExecutor;
+    if (sourceBatchExecutor || sourceExecutor) {
+      const sourceInputs: Array<{ input: SourceExecutionInput; fallback: boolean; candidateBudget: number }> = [];
+      for (const sourceKey of plannedSourceKeys) {
+        const control = await controls.get(sourceKey);
+        if (control.state !== "enabled") {
+          sourceResults.push({ sourceKey, planned: true, executed: false, status: "skipped", queryCount: 0, candidateBudget: 0, itemsReturned: 0, rawItems: 0, normalizedItems: 0, warnings: [`Source is ${control.state}.`], errorCode: null, rateLimitRemaining: null, estimatedCost: null });
+          diagnostics.push({ sourceKey, state: "skipped", message: `Source is ${control.state}.` });
+          continue;
+        }
+        if (sourceKey === "reddit" && (!configuredReddit.clientId || !configuredReddit.clientSecret || !configuredReddit.userAgent)) {
+          sourceResults.push({ sourceKey, planned: true, executed: false, status: "skipped", queryCount: 0, candidateBudget: 0, itemsReturned: 0, rawItems: 0, normalizedItems: 0, warnings: ["Reddit credentials are not configured."], errorCode: "CONFIGURATION_MISSING", rateLimitRemaining: null, estimatedCost: null });
+          diagnostics.push({ sourceKey, state: "skipped", message: "Reddit credentials are not configured." });
+          continue;
+        }
+        if (sourceKey === "x" && !configuredX.token) {
+          sourceResults.push({ sourceKey, planned: true, executed: false, status: "skipped", queryCount: 0, candidateBudget: 0, itemsReturned: 0, rawItems: 0, normalizedItems: 0, warnings: ["X API bearer token is not configured."], errorCode: "CONFIGURATION_MISSING", rateLimitRemaining: null, estimatedCost: null });
+          diagnostics.push({ sourceKey, state: "skipped", message: "X API bearer token is not configured." });
+          continue;
+        }
+        const route = routeBySource.get(sourceKey);
+        const query = sourceKey === "bluesky" || sourceKey === "reddit" || sourceKey === "x" ? [product.name, ...queryTerms.slice(0, 5)].join(" ").slice(0, 180) : undefined;
+        const sourcePlan = queryPlanBySource.get(sourceKey);
+        const plannedRequests = sourcePlan?.queries.length && route ? sourcePlan.queries.map((plannedQuery) => toSourceDiscoveryRequest({ sourcePlan, query: plannedQuery, maxPages: route.max_pages })) : [];
+        const fallbackLimit = Math.min(route?.max_candidates ?? 5, sourceKey === "x" ? configuredX.maxPostsPerScan : 100);
+        const fallbackRequest = sourceKey === "x"
+          ? { limit: fallbackLimit, query, requestMetadata: { maxResults: fallbackLimit, maxPages: route?.max_pages ?? 1, maxBillablePostsPerDiscovery: fallbackLimit } }
+          : { limit: fallbackLimit, ...(query ? { query } : {}) };
+        const requests = boundMonitoringRequests((plannedRequests.length ? plannedRequests : [fallbackRequest]).map((request) => sourceDiscoveryRequestSchema.parse(request)), sourceKey, scanMode, monitoringPolicy);
+        sourceInputs.push({ input: { sourceKey, requests, traceId, jobRunId: job.id }, fallback: !plannedRequests.length && Boolean(queryPlan), candidateBudget: requests.reduce((sum, request) => sum + request.limit, 0) });
+        sources.push(sourceKey);
+      }
+      const results = sourceBatchExecutor
+        ? await sourceBatchExecutor(sourceInputs.map(({ input }) => input))
+        : await Promise.all(sourceInputs.map(async ({ input, fallback }) => {
+            try {
+              return { sourceKey: input.sourceKey, execution: await sourceExecutor!(input), fallback };
+            } catch (error) {
+              return { sourceKey: input.sourceKey, error: safeSummary(error), fallback };
+            }
+          }));
+      for (const result of results) {
+        const sourceInput = sourceInputs.find(({ input }) => input.sourceKey === result.sourceKey);
+        if (result.error || !result.execution) {
+          sourceResults.push({ sourceKey: result.sourceKey, planned: true, executed: true, status: "failed", queryCount: sourceInput?.input.requests.length ?? 0, candidateBudget: sourceInput?.candidateBudget ?? 0, itemsReturned: 0, rawItems: 0, normalizedItems: 0, warnings: [result.error ?? "Source task returned no result."], errorCode: null, rateLimitRemaining: null, estimatedCost: null });
+          diagnostics.push({ sourceKey: result.sourceKey, state: "failed", message: result.error ?? "Source task returned no result." });
+          continue;
+        }
+        sourceResults.push({ sourceKey: result.sourceKey, planned: true, executed: true, status: "completed", queryCount: sourceInput?.input.requests.length ?? 0, candidateBudget: sourceInput?.candidateBudget ?? 0, itemsReturned: result.execution.itemsReturned, rawItems: result.execution.rawInserted, normalizedItems: result.execution.normalizedSourceItemIds.length, warnings: result.execution.diagnostics, errorCode: null, rateLimitRemaining: result.execution.rateLimitRemaining, estimatedCost: result.execution.estimatedCost });
+        rawSourceItemIds.push(...result.execution.rawSourceItemIds);
+        normalizedSourceItemIds.push(...result.execution.normalizedSourceItemIds);
+        conversationIds.push(...result.execution.conversationIds);
+        if (result.fallback) diagnostics.push({ sourceKey: result.sourceKey, state: "fallback", message: "Query Planning produced no executable query; using the existing conservative request." });
+        diagnostics.push({ sourceKey: result.sourceKey, state: "complete", message: `${result.execution.rawInserted} new raw item${result.execution.rawInserted === 1 ? "" : "s"}.` });
+      }
+      await setScanJob(client, job.id, { status: "running", phase: "discovering", scanMode, progress: { stage: "discovering", percent: 55, completedSources: results.length, totalSources: plannedSourceKeys.length, currentLabel: "Finding conversations" } });
+    } else {
+    for (const sourceKey of plannedSourceKeys) {
       const control = await controls.get(sourceKey);
       if (control.state !== "enabled") {
+        sourceResults.push({ sourceKey, planned: true, executed: false, status: "skipped", queryCount: 0, candidateBudget: 0, itemsReturned: 0, rawItems: 0, normalizedItems: 0, warnings: [`Source is ${control.state}.`], errorCode: null, rateLimitRemaining: null, estimatedCost: null });
         diagnostics.push({ sourceKey, state: "skipped", message: `Source is ${control.state}.` });
         continue;
       }
       if (sourceKey === "reddit" && (!configuredReddit.clientId || !configuredReddit.clientSecret || !configuredReddit.userAgent)) {
+        sourceResults.push({ sourceKey, planned: true, executed: false, status: "skipped", queryCount: 0, candidateBudget: 0, itemsReturned: 0, rawItems: 0, normalizedItems: 0, warnings: ["Reddit credentials are not configured."], errorCode: "CONFIGURATION_MISSING", rateLimitRemaining: null, estimatedCost: null });
         diagnostics.push({ sourceKey, state: "skipped", message: "Reddit credentials are not configured." });
         continue;
       }
+      if (sourceKey === "x" && !configuredX.token) {
+        sourceResults.push({ sourceKey, planned: true, executed: false, status: "skipped", queryCount: 0, candidateBudget: 0, itemsReturned: 0, rawItems: 0, normalizedItems: 0, warnings: ["X API bearer token is not configured."], errorCode: "CONFIGURATION_MISSING", rateLimitRemaining: null, estimatedCost: null });
+        diagnostics.push({ sourceKey, state: "skipped", message: "X API bearer token is not configured." });
+        continue;
+      }
       sources.push(sourceKey);
+      let requests: SourceDiscoveryRequest[] = [];
       try {
-        const query = sourceKey === "bluesky" || sourceKey === "reddit"
+        const route = routeBySource.get(sourceKey);
+        const query = sourceKey === "bluesky" || sourceKey === "reddit" || sourceKey === "x"
           ? [product.name, ...queryTerms.slice(0, 5)].join(" ").slice(0, 180)
           : undefined;
-        const discovery = await ingestion.discoverSource(sourceKey, { limit: 5, ...(query ? { query } : {}) });
-        rawSourceItemIds.push(...discovery.rawSourceItemIds);
-        const replay = await ingestion.replayDetailed({ rawSourceItemIds: discovery.rawSourceItemIds, normalizationVersion: `${sourceKey}-v1`, canonicalizationVersion: "canonical-v1", limit: 100 });
-        normalizedSourceItemIds.push(...replay.normalizedSourceItemIds);
-        conversationIds.push(...replay.canonicalizedConversationIds);
-        diagnostics.push({ sourceKey, state: "complete", message: `${discovery.rawInserted} new raw item${discovery.rawInserted === 1 ? "" : "s"}.` });
+        const sourcePlan = queryPlanBySource.get(sourceKey);
+        const plannedRequests = sourcePlan?.queries.length && route
+          ? sourcePlan.queries.map((plannedQuery) => toSourceDiscoveryRequest({ sourcePlan, query: plannedQuery, maxPages: route.max_pages }))
+          : [];
+        const fallbackLimit = Math.min(route?.max_candidates ?? 5, sourceKey === "x" ? configuredX.maxPostsPerScan : 100);
+        const fallbackRequest = sourceKey === "x"
+          ? {
+              limit: fallbackLimit,
+              query,
+              requestMetadata: {
+                maxResults: fallbackLimit,
+                maxPages: route?.max_pages ?? 1,
+                maxBillablePostsPerDiscovery: fallbackLimit,
+              },
+            }
+          : { limit: fallbackLimit, ...(query ? { query } : {}) };
+        requests = boundMonitoringRequests((plannedRequests.length ? plannedRequests : [fallbackRequest]).map((request) => sourceDiscoveryRequestSchema.parse(request)), sourceKey, scanMode, monitoringPolicy);
+        let sourceItemsReturned = 0;
+        let sourceRawItems = 0;
+        let sourceNormalizedItems = 0;
+        let sourceWarnings: string[] = [];
+        if (!plannedRequests.length && queryPlan) diagnostics.push({ sourceKey, state: "fallback", message: "Query Planning produced no executable query; using the existing conservative request." });
+        for (const discoveryRequest of requests) {
+          const discovery = await ingestion.discoverSource(sourceKey, requestScopedToScan(discoveryRequest, job.id));
+          sourceItemsReturned += discovery.rawSourceItemIds.length;
+          sourceRawItems += discovery.rawInserted;
+          sourceWarnings = [...sourceWarnings, ...discovery.diagnostics];
+          rawSourceItemIds.push(...discovery.rawSourceItemIds);
+          const replay = await ingestion.replayDetailed({ rawSourceItemIds: discovery.rawSourceItemIds, normalizationVersion: `${sourceKey}-v1`, canonicalizationVersion: "canonical-v1", limit: 100 });
+          sourceNormalizedItems += replay.normalizedSourceItemIds.length;
+          normalizedSourceItemIds.push(...replay.normalizedSourceItemIds);
+          conversationIds.push(...replay.canonicalizedConversationIds);
+          const requestMetadata = discoveryRequest.requestMetadata;
+          const semanticQuery = requestMetadata && typeof requestMetadata === "object" && !Array.isArray(requestMetadata) && "semanticQuery" in requestMetadata && typeof requestMetadata.semanticQuery === "string" ? requestMetadata.semanticQuery : null;
+          const queryLabel = semanticQuery ? ` for “${semanticQuery}”` : "";
+          diagnostics.push({ sourceKey, state: "complete", message: `${discovery.rawInserted} new raw item${discovery.rawInserted === 1 ? "" : "s"}${queryLabel}.` });
+        }
+        sourceResults.push({ sourceKey, planned: true, executed: true, status: "completed", queryCount: requests.length, candidateBudget: requests.reduce((sum, request) => sum + request.limit, 0), itemsReturned: sourceItemsReturned, rawItems: sourceRawItems, normalizedItems: sourceNormalizedItems, warnings: sourceWarnings, errorCode: null, rateLimitRemaining: null, estimatedCost: null });
       } catch (error) {
+        sourceResults.push({ sourceKey, planned: true, executed: true, status: "failed", queryCount: requests?.length ?? 0, candidateBudget: requests?.reduce((sum, request) => sum + request.limit, 0) ?? 0, itemsReturned: 0, rawItems: 0, normalizedItems: 0, warnings: [safeSummary(error)], errorCode: null, rateLimitRemaining: null, estimatedCost: null });
         diagnostics.push({ sourceKey, state: "failed", message: safeSummary(error) });
       }
-      await setScanJob(client, job.id, { status: "running", phase: "discovering" });
+      await setScanJob(client, job.id, { status: "running", phase: "discovering", scanMode });
+    }
     }
     if (!sources.length || !conversationIds.length) throw new AppError("CONFLICT", "No usable source results were available for the first scan.");
 
-    await setScanJob(client, job.id, { status: "running", phase: "analyzing" });
+    await setScanJob(client, job.id, { status: "running", phase: "analyzing", scanMode, progress: { stage: "processing", percent: 65, currentLabel: "Processing conversations" } });
+    let candidateResult: CandidateProcessingResult;
+    if (options.candidateExecutor) {
+      candidateResult = await options.candidateExecutor({ product, profileId: profile.id, normalizedSourceItemIds: [...new Set(normalizedSourceItemIds)], conversationIds: [...new Set(conversationIds)], traceId });
+      diagnostics.push(...candidateResult.diagnostics);
+    } else {
     const rows = await loadRows(client, [...new Set(normalizedSourceItemIds)], [...new Set(conversationIds)]);
     const sourceById = new Map(rows.sourceItems.map((item) => [item.id, item]));
     const intelligence = new IntelligenceService(intelligenceRepository);
@@ -227,7 +786,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
     }
     if (!analyses.length) throw new AppError("CONFLICT", "No usable conversations were available for analysis.");
 
-    await setScanJob(client, job.id, { status: "running", phase: "matching" });
+    await setScanJob(client, job.id, { status: "running", phase: "matching", scanMode });
     const evaluations = [];
     for (const analysis of analyses) {
       try {
@@ -236,36 +795,125 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
         diagnostics.push({ sourceKey: "matching", state: "failed", message: safeSummary(error) });
       }
     }
-    await setScanJob(client, job.id, { status: "running", phase: "ranking" });
+    await setScanJob(client, job.id, { status: "running", phase: "ranking", scanMode });
     const rankings = [];
     const signals = [];
+    const signalIdsByEvaluation: Array<string | null> = [];
     for (const evaluation of evaluations) {
       try {
         const ranking = await intelligence.rankEvaluation(product, evaluation.id, rankerVersion.id);
+        if (!ranking) {
+          signalIdsByEvaluation.push(null);
+          diagnostics.push({ sourceKey: "signals", state: "filtered", message: "Candidate did not pass Signal Qualification." });
+          continue;
+        }
         rankings.push(ranking);
         const signal = await intelligence.materializeSignal(product, evaluation.id, ranking.id);
+        signalIdsByEvaluation.push(signal?.id ?? null);
         if (signal) signals.push(signal);
       } catch (error) {
+        signalIdsByEvaluation.push(null);
         diagnostics.push({ sourceKey: "signals", state: "failed", message: safeSummary(error) });
       }
     }
 
-    const result: InitialScanResult = {
-      state: signals.length ? "complete" : "complete_no_signals",
-      rawItems: rawSourceItemIds.length,
-      conversations: rows.conversations.length,
+    const qualificationRows = evaluations.map((evaluation) => qualificationFromEvidence(evaluation.evidence)).filter((value): value is NonNullable<typeof value> => Boolean(value));
+    const rejectionReasonDistribution: Record<string, number> = {};
+    const intentDistribution: Record<string, number> = {};
+    for (const qualification of qualificationRows) {
+      for (const code of qualification.reason_codes) rejectionReasonDistribution[code] = (rejectionReasonDistribution[code] ?? 0) + 1;
+      intentDistribution[qualification.primary_intent] = (intentDistribution[qualification.primary_intent] ?? 0) + 1;
+    }
+    candidateResult = {
+      conversationCount: rows.conversations.length,
       analyses: analyses.length,
       evaluations: evaluations.length,
       rankings: rankings.length,
       signals: signals.length,
-      sources,
-      diagnostics,
+      evaluationIds: evaluations.map((evaluation) => evaluation.id),
+      signalIds: signalIdsByEvaluation,
+      candidateReviews: candidateReviewsFromRows(evaluations, rows.conversations, sourceById),
+      diagnostics: [],
+      ...(qualificationRows.length ? { qualification: {
+        version: qualificationRows[0].version,
+        thresholdVersion: qualificationRows[0].diagnostics.threshold_version,
+        candidateCount: qualificationRows.length,
+        qualifiedCount: qualificationRows.filter((item) => item.status === "qualified").length,
+        highConfidenceCount: qualificationRows.filter((item) => item.status === "high_confidence_signal").length,
+        weakCount: qualificationRows.filter((item) => item.status === "weak_candidate").length,
+        rejectedCount: qualificationRows.filter((item) => item.status === "rejected").length,
+        rejectionReasonDistribution,
+        intentDistribution,
+        averageDemandQuality: qualificationRows.reduce((sum, item) => sum + item.demand_quality_score, 0) / qualificationRows.length,
+        averageConfidence: qualificationRows.reduce((sum, item) => sum + item.confidence, 0) / qualificationRows.length,
+      } } : {}),
     };
-    await setScanJob(client, job.id, { status: "succeeded", phase: result.state, result, completed: true });
+    }
+    await setScanJob(client, job.id, { status: "running", phase: "qualifying", scanMode, progress: { stage: "qualifying", percent: 75, currentLabel: "Qualifying real demand" } });
+    let demand: DemandRebuildResult = { observationsUpdated: 0, mapUpdated: 0, gapUpdated: 0, driftUpdated: 0, warnings: [] };
+    try {
+      await setScanJob(client, job.id, { status: "running", phase: "building-intelligence", scanMode, progress: { stage: "building_intelligence", percent: 82, currentLabel: "Building your demand map" } });
+      demand = await (options.demandExecutor ?? rebuildDemandIntelligenceForScan)({ product, evaluationIds: candidateResult.evaluationIds, signalIds: candidateResult.signalIds, traceId });
+      for (const warning of demand.warnings) diagnostics.push({ sourceKey: "demand-intelligence", state: "warning", message: warning });
+    } catch (error) {
+      demand = { ...demand, warnings: [safeSummary(error)] };
+      diagnostics.push({ sourceKey: "demand-intelligence", state: "warning", message: demand.warnings[0] });
+    }
+    let actions: ActionGenerationForScanResult = { actionsUpdated: 0, warnings: [] };
+    try {
+      await setScanJob(client, job.id, { status: "running", phase: "generating-actions", scanMode, progress: { stage: "generating_actions", percent: 92, currentLabel: "Preparing actions" } });
+      actions = await (options.actionsExecutor ?? generateActionsForScan)({ product, traceId });
+      for (const warning of actions.warnings) diagnostics.push({ sourceKey: "actions", state: "warning", message: warning });
+    } catch (error) {
+      actions = { actionsUpdated: 0, warnings: [safeSummary(error)] };
+      diagnostics.push({ sourceKey: "actions", state: "warning", message: actions.warnings[0] });
+    }
+    const hasWarnings = diagnostics.some((item) => item.state === "failed" || item.state === "warning" || item.state === "skipped") || demand.warnings.length > 0 || actions.warnings.length > 0;
+    const result: InitialScanResult = {
+      state: hasWarnings ? "complete_with_warnings" : candidateResult.signals ? "complete" : "complete_no_signals",
+      rawItems: rawSourceItemIds.length,
+      normalizedItems: normalizedSourceItemIds.length,
+      conversations: candidateResult.conversationCount,
+      analyses: candidateResult.analyses,
+      evaluations: candidateResult.evaluations,
+      rankings: candidateResult.rankings,
+      signals: candidateResult.signals,
+      sources,
+      sourceResults,
+      diagnostics,
+      mapUpdated: demand.mapUpdated,
+      gapUpdated: demand.gapUpdated,
+      driftUpdated: demand.driftUpdated,
+      actionsUpdated: actions.actionsUpdated,
+      candidateReviews: candidateResult.candidateReviews,
+      ...(candidateResult.qualification ? { qualification: candidateResult.qualification } : {}),
+      ...(routingPlan ? {
+        routing: {
+          version: routingPlan.version,
+          coverageStatus: routingPlan.coverage_status,
+          coverageConfidence: routingPlan.overall_coverage_confidence,
+          selectedSources: routingPlan.diagnostics.selected_sources,
+          excludedSources: routingPlan.excluded_sources.map((source) => source.source_key),
+        },
+      } : {}),
+      ...(queryPlan ? {
+        queryPlanning: {
+          version: queryPlan.version,
+          sourceCount: queryPlan.diagnostics.source_count,
+          queryCount: queryPlan.diagnostics.query_count,
+          queryFamilyDistribution: queryPlan.diagnostics.query_family_distribution,
+          queriesPerSource: queryPlan.diagnostics.queries_per_source,
+          candidateBudgetPerSource: queryPlan.diagnostics.candidate_budget_per_source,
+          suppressedDuplicateCount: queryPlan.diagnostics.suppressed_duplicate_count,
+          lowConfidence: queryPlan.diagnostics.low_confidence,
+        },
+      } : {}),
+    };
+    await setScanJob(client, job.id, { status: "succeeded", phase: result.state, scanMode, result, completed: true, progress: { stage: hasWarnings ? "partial_failure" : "completed", percent: 100, completedSources: sources.length, totalSources: sources.length, currentLabel: "Complete", warnings: diagnostics.map((item) => item.message).filter((message): message is string => Boolean(message)).slice(0, 100) } });
     return result;
   } catch (error) {
     const message = publicFailure(error);
-    await setScanJob(client, job.id, { status: "failed", phase: "failed", errorCode: error instanceof AppError ? error.code : "INITIAL_SCAN_FAILED", errorMessage: message, completed: true });
+    await setScanJob(client, job.id, { status: "failed", phase: "failed", scanMode, errorCode: error instanceof AppError ? error.code : "INITIAL_SCAN_FAILED", errorMessage: message, completed: true });
     throw error;
   }
 }

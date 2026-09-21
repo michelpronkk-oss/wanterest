@@ -33,6 +33,33 @@ const hnItemSchema = z
 type HnItem = z.infer<typeof hnItemSchema>;
 type FetchLike = typeof fetch;
 
+const genericQueryTerms = new Set([
+  "a", "an", "and", "alternative", "alternatives", "because", "best", "better", "for", "from", "how", "looking", "need", "of", "or", "replace", "switching", "the", "to", "versus", "vs", "with",
+]);
+
+function cleanText(value: string): string {
+  return value.replace(/<[^>]*>/g, " ").replace(/&[#a-z0-9]+;/gi, " ").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function strings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").map((item) => cleanText(item)).filter(Boolean) : [];
+}
+
+function matchesQuery(item: HnItem, request: SourceDiscoveryRequest): boolean {
+  if (!request.query) return true;
+  const metadata = request.requestMetadata as Record<string, unknown>;
+  const haystack = cleanText(`${item.title ?? ""}\n${item.text ?? ""}`);
+  const anchors = strings(metadata.lexicalAnchors);
+  const anchorMatches = anchors.some((anchor) => {
+    if (haystack.includes(anchor)) return true;
+    const terms = anchor.split(/\s+/).filter((term) => term.length >= 3);
+    return terms.length >= 2 && terms.filter((term) => haystack.includes(term)).length >= Math.min(2, terms.length);
+  });
+  if (anchors.length) return anchorMatches;
+  const terms = cleanText(request.query).split(/\s+/).filter((term) => term.length >= 3 && !genericQueryTerms.has(term));
+  return terms.length >= 2 && terms.some((term) => haystack.includes(term));
+}
+
 function retryAfterMs(response: Response): number | null {
   const value = response.headers.get("retry-after");
   if (!value) return null;
@@ -71,11 +98,11 @@ export class HackerNewsSourceAdapter implements SourceAdapter {
 
   async discover(input: SourceDiscoveryRequest): Promise<SourceDiscoveryPage> {
     const request = sourceDiscoveryRequestSchema.parse(input);
-    if (request.query) throw new SourceAdapterError("SEARCH_UNSUPPORTED", "Hacker News search is not enabled in Phase 2.");
     const offset = request.cursor ? this.parseCursor(request.cursor) : 0;
     const idsResponse = await this.getJson(`${this.baseUrl}/newstories.json`);
     const ids = z.array(z.number().int().positive()).parse(idsResponse.body);
-    const selectedIds = ids.slice(offset, offset + request.limit);
+    const inspectLimit = Math.min(50, Math.max(request.limit, request.limit * (request.query ? 5 : 1)));
+    const selectedIds = ids.slice(offset, offset + inspectLimit);
     const items: RawSourceItemEnvelope[] = [];
     let observedRateLimit: RateLimitMetadata | undefined = idsResponse.rateLimit;
 
@@ -87,6 +114,9 @@ export class HackerNewsSourceAdapter implements SourceAdapter {
       const item = parsed.data;
       if (request.windowStart && item.time && item.time * 1000 < Date.parse(request.windowStart)) continue;
       if (request.windowEnd && item.time && item.time * 1000 > Date.parse(request.windowEnd)) continue;
+      if (!matchesQuery(item, request)) {
+        continue;
+      }
       items.push(this.envelope(item, itemResponse.rateLimit, { rootId: item.id.toString() }));
 
       if (request.expandThreads && item.kids) {
@@ -107,11 +137,14 @@ export class HackerNewsSourceAdapter implements SourceAdapter {
     }
 
     const nextOffset = offset + selectedIds.length;
+    const messages = request.query
+      ? [`Applied bounded lexical anchors for semantic query "${request.query.slice(0, 120)}"; inspected ${selectedIds.length} recent stories.`]
+      : [];
     return {
       items,
       nextCursor: nextOffset < ids.length ? `offset:${nextOffset}` : undefined,
       rateLimit: observedRateLimit,
-      diagnostics: { accepted: items.length, rejected: selectedIds.length - items.length, messages: [] },
+      diagnostics: { accepted: items.length, rejected: selectedIds.length - items.length, messages },
     };
   }
 

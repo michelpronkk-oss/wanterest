@@ -3,13 +3,18 @@ import { AppError } from "../../lib/errors";
 import { createSupabaseServerClient } from "../../providers/supabase/server";
 import { archiveProduct, createProduct, getProduct, listProducts, updateProductMetadata } from "./product.repository";
 import { createProductInputSchema, productIdSchema, updateProductMetadataInputSchema, workspaceIdSchema } from "./product.schemas";
+import { ensureMonitoringScheduleForProduct } from "../monitoring/monitoring.schedule";
+import { disableMonitoringSchedule } from "../monitoring/monitoring.repository";
+import { createSupabaseServiceClient } from "../../providers/supabase/service";
 
 export async function createProductCommand(workspaceId: unknown, input: unknown) {
   const workspace = workspaceIdSchema.safeParse(workspaceId);
   const parsed = createProductInputSchema.safeParse(input);
   if (!workspace.success || !parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid product input.", 422);
   await requireUser();
-  return createProduct(await createSupabaseServerClient(), { workspaceId: workspace.data, name: parsed.data.name, slug: parsed.data.slug, websiteUrl: parsed.data.websiteUrl });
+  const product = await createProduct(await createSupabaseServerClient(), { workspaceId: workspace.data, name: parsed.data.name, slug: parsed.data.slug, websiteUrl: parsed.data.websiteUrl });
+  await ensureMonitoringScheduleForProduct(createSupabaseServiceClient(), workspace.data, product.id);
+  return product;
 }
 
 export async function getProductQuery(workspaceId: unknown, productId: unknown) {
@@ -41,5 +46,7 @@ export async function archiveProductCommand(workspaceId: unknown, productId: unk
   const product = productIdSchema.safeParse(productId);
   if (!workspace.success || !product.success) throw new AppError("VALIDATION_ERROR", "Invalid product identifier.");
   await requireUser();
-  return archiveProduct(await createSupabaseServerClient(), workspace.data, product.data);
+  const archived = await archiveProduct(await createSupabaseServerClient(), workspace.data, product.data);
+  await disableMonitoringSchedule(createSupabaseServiceClient(), workspace.data, product.data);
+  return archived;
 }

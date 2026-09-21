@@ -50,6 +50,47 @@ Supported command contracts are:
 - `reconcileBillingSubscription`
 - `recomputeExperimentResults`
 
+## Trigger.dev product scans
+
+The Vercel/server-action path only validates and queues `product-demand-scan`; the Trigger.dev
+worker owns durable execution. Inspect the linked `job_runs` row first, using its `trace_id`,
+`trigger_run_id`, `idempotency_key`, `attempt_count`, `input_reference.progress`, and redacted
+`error_details`. Then inspect the corresponding Trigger run and the per-source diagnostics in the
+stored result. Do not retry by inventing a new idempotency key unless a genuinely new scan was
+requested.
+
+`discover-product-source` child runs are isolated by source. A failed or unavailable source must
+not cause successful source work to be repeated; X insufficient credits and unconfigured Reddit
+are expected nonfatal warnings. A scan can finish with database status `succeeded` and result state
+`complete_with_warnings`. Entitlement failure, invalid product/workspace context, or a database
+integrity failure is fatal and must be corrected before retrying.
+
+Scan dispatch is durable independently of execution. `job_runs.dispatch_status` records
+`unclaimed`, `claimed`, `linked`, `not_applicable`, `failed`, or `orphaned`; a pending/running row
+is active only while its claim is within the short dispatch grace window, its Trigger run is
+provider-active, or its direct execution is explicitly marked `not_applicable`. A linked run that
+is terminal at Trigger.dev, or a claim that never links a run after the grace window, is marked
+`failed_terminal`/`orphaned` with a redacted error and becomes retryable. The application checks
+Trigger status conservatively and uses the original idempotency key when a successful provider
+dispatch was not yet linked to PostgreSQL, preventing a second run. Never delete a stuck row or
+blindly dispatch a replacement while the original claim/run is still valid.
+
+For local operation, put a Trigger.dev Development API key in `.env.local` as the server-only
+`TRIGGER_SECRET_KEY`, then run `npm run dev` and `npm run trigger:dev`; both processes must use
+the same project/environment key and project configuration. For production task changes, use the configured
+Trigger project and `npm run trigger:deploy`; do not deploy Trigger tasks from a browser or expose
+the secret to Vercel client bundles. The direct execution mode is reserved for tests/debugging and
+does not replace the durable worker.
+
+## Product-understanding provider
+
+Set the server-only `OPENAI_API_KEY` in the same `.env.local` used by Next.js and the local
+Trigger.dev worker. `OPENAI_MODEL` is optional and defaults to `gpt-4.1-mini`. Do not expose either
+value through a `NEXT_PUBLIC_` variable. The onboarding product-understanding command records
+provider/model/operation/latency/status diagnostics without prompts or user text. Missing or failed
+OpenAI calls are distinguishable from low-confidence normalized output; the deterministic fixture
+fallback is explicit in diagnostics and is not presented as a successful OpenAI result.
+
 ## Billing and consistency
 
 Billing diagnostics compare normalized subscription state with the internal entitlement revision;

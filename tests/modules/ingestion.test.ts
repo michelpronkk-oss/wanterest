@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { jsonValueSchema } from "../../src/server/db/database.helpers";
 import { IngestionService } from "../../src/server/modules/ingestion/ingestion.service";
 import { InMemoryIngestionRepository } from "../../src/server/modules/ingestion/in-memory.repository";
 import { sha256Json, stableJsonStringify } from "../../src/server/modules/ingestion/hash";
@@ -30,6 +31,7 @@ describe("Phase 2 ingestion pipeline", () => {
     expect([...repository.rawItems.values()].every((row) => row.fetch_job_run_id !== null)).toBe(true);
     expect([...repository.jobs.values()].every((row) => row.trace_id.length > 0)).toBe(true);
     expect(repository.health.get("fixture:test")?.degradation_state).toBe("healthy");
+    expect([...repository.jobs.values()].every((job) => jsonValueSchema.safeParse(job.input_reference).success)).toBe(true);
 
     const sameRequest = await service.discoverSource("fixture", { limit: 4 });
     expect(sameRequest.jobRunId).toBe(pages[0]?.jobRunId);

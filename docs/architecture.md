@@ -463,7 +463,11 @@ this ledger; payment-provider counters are never the usage authority.
 
 Durable job state: job type, workspace/product scope where applicable, input reference, stable
 idempotency key, Trigger.dev run ID, status, attempt count, timestamps, trace ID, error code,
-and redacted error details. Unique idempotency keys prevent duplicate writes.
+redacted error details, and dispatch claim/link state. Dispatch state is separate from execution
+status: a short-lived claim may be `claimed`, a provider run is `linked`, direct execution is
+`not_applicable`, and proven stale/terminal dispatches become `orphaned`. Unique idempotency
+keys prevent duplicate writes and provider re-dispatch uses the original key until a run is
+durably linked.
 
 #### `feature_flags`
 
@@ -696,7 +700,8 @@ Implement and test adapters in this order:
 3. Bluesky
 4. Reddit
 5. GitHub
-6. open-web/search adapters
+6. X
+7. open-web/search adapters
 
 This order is an implementation sequence, not a downstream domain dependency. Discovery,
 normalization, deduplication, analysis, matching, ranking, and aggregation consume only the
@@ -750,6 +755,53 @@ Job rules:
 - Record state transitions, attempts, latency, trace IDs, and redacted errors in `job_runs`.
 - Use bounded batches and cursor pagination. Do not put an entire scan in one unbounded task.
 - Send digests only after the digest row is committed and use a delivery idempotency key.
+
+### Trigger.dev orchestration v1
+
+Trigger.dev is the durable execution layer for the production product scan; it does not own
+Wanterest business logic. The `product-demand-scan` task validates its schema, revalidates the
+workspace/product context and initiating membership before execution, checks the existing scan
+entitlement, and delegates to the server-only domain/application services. The task is entered by
+the onboarding/manual server command and returns the existing `job_runs` identifier promptly.
+
+The scan uses bounded child tasks for provider isolation and observability:
+
+```text
+product-demand-scan
+  ├─ discover-product-source (one per selected source/query plan fragment)
+  ├─ process-product-candidates (bounded analysis/matching/qualification/ranking batch)
+  ├─ rebuild-product-demand-intelligence
+  └─ generate-product-actions
+```
+
+Selected source discovery runs in parallel only after Source Routing and Query Planning have
+excluded disabled, paused, unconfigured, or unavailable sources. Each child consumes a validated
+server-built plan fragment; it never accepts provider queries directly from the browser. Source
+errors are isolated, so X insufficient credits and unavailable Reddit remain warnings while
+successful sources continue. Trigger retries are bounded and share the existing job, raw-ingestion,
+immutable-evaluation, and usage idempotency boundaries. A scan with usable output and source
+warnings remains a successful `job_runs` row with a `complete_with_warnings` result state; the
+existing database status constraint is not expanded for this orchestration.
+
+Progress is persisted in `job_runs.input_reference.progress` using stable user-facing stages:
+`queued`, `preparing_product`, `planning`, `discovering`, `processing`, `qualifying`,
+`building_intelligence`, `generating_actions`, `completed`, `partial_failure`, and `failed`.
+The final job result records source/candidate counts, qualified and high-confidence signals,
+Map/Gap/Drift and Actions updates, and redacted warnings. The direct synchronous service remains
+available for tests, debug, and replay, and replay never requires Trigger.dev or provider network
+calls.
+
+Local development uses `npm run dev` plus `npm run trigger:dev`. Production requires the existing
+Trigger project connection, server-only `TRIGGER_SECRET_KEY`, and `npm run trigger:deploy`; Vercel
+only queues the durable task. `TRIGGER_LOCAL_EXECUTION=direct` is an explicit local/debug escape
+hatch, not the production execution path.
+
+Dispatch recovery is part of the durable scan boundary. A pending/running row is not considered
+active solely because of its execution status: the claim must still be within the dispatch grace
+window, its linked Trigger run must be provider-active, or direct execution must be explicitly
+marked `not_applicable`. Polling and retry commands reconcile terminal/missing Trigger runs and
+stale claims, mark them terminal with redacted diagnostics, and stop polling; they never delete a
+job or blindly create a replacement while the existing provider run remains valid.
 
 ## 10. Dodo billing and entitlement flow
 
@@ -936,8 +988,8 @@ No Phase 1 exit criterion requires a dashboard or product UI.
 
 Implement the source port, fixture adapter, raw/source/conversation tables, normalization and
 reversible dedupe jobs, source health, `job_runs`, and replay tooling. The adapter order is
-strictly: fixture first, Hacker News first real adapter, Bluesky next, Reddit next, GitHub next,
-and open-web/search later. Add each real adapter only after the provider-neutral fixture/contracts
+strictly: fixture first, Hacker News first real adapter, Bluesky next, Reddit next, GitHub next, X
+next, and open-web/search later. Add each real adapter only after the provider-neutral fixture/contracts
 path is stable. Exit when the same input can be replayed without duplicates and downstream code
 does not branch on provider identity.
 
@@ -984,6 +1036,17 @@ rate limits. Stable identities are `github:issue:<repository-id>:<number>`,
 minimal author/bot metadata are retained in normalized metadata. No private repository access,
 mutation, user profiling, scraping, or GitHub-specific downstream branch is introduced.
 
+The X adapter follows GitHub and uses only the official API v2 at `https://api.x.com`, with a
+server-only app-only bearer token. Recent search is caller-driven and bounded to a default ten-post,
+one-page scan; the first scan never follows a cursor. An explicit caller may request at most two
+bounded pages through an opaque cursor envelope, with cost and configured scan-budget guards applied
+before every request. The default versioned read-cost assumption is `$0.005` per post. Author data comes only
+from the bundled `author_id` expansion; no profile history, private data, posting, scraping, or
+thread expansion is supported. Retweets are excluded by default, post IDs remain stable identities,
+replies use `conversation_id`, quoted posts keep their own conversation, malformed records are
+skipped, and rate-limit/auth/forbidden/credit failures are typed. Raw ingestion, replay,
+normalization, canonicalization, provenance, and downstream intelligence remain provider-neutral.
+
 ### Phase 3 — Product understanding, analysis, matching, ranking
 
 Phase 3 adds the intelligence layer without introducing Demand Map, Gap, Drift, Actions,
@@ -1015,6 +1078,249 @@ creates new versioned analysis, match, and ranking rows without fetching sources
 
 Exit when one product can inspect a traceable ranked signal with all component scores, feedback,
 and replay history available from backend primitives and automated tests.
+
+### Website Understanding v1
+
+Website Understanding v1 is the bounded, server-only enrichment layer before Business
+Classification v1 and Demand Profile v2. Onboarding validates a public HTTP(S) URL, then the
+`WebsiteUnderstandingService` composes four small provider-neutral boundaries:
+`WebsiteFetcher`, `WebsitePageExtractor`, `WebsitePageSelector`, and the service itself. The
+default fetcher resolves every hostname before each request, rejects loopback/private/link-local/
+metadata addresses, manually revalidates same-site redirects, accepts only HTML/XHTML/plain text,
+does not execute scripts, and enforces a 9-second timeout and 512 KB per-page response limit.
+
+The homepage is always attempted. A deterministic selector may choose at most four additional
+same-site pages using product, feature, solution, pricing, use-case, customer, integration,
+platform, and about signals while excluding auth, careers, legal, cookie, changelog, and archive
+paths. Secondary failures are non-fatal; a homepage failure produces an explicit description
+fallback. Extracted text is deduplicated and capped at 48,000 characters before it reaches the
+existing structured LLM boundary. The browser never fetches the submitted URL.
+
+The resulting compact context is persisted as the existing immutable `product_snapshots` record,
+with `page_type = homepage` for a successful website capture and `page_type = manual` for the
+description fallback. `metadata.website_understanding` records the extraction version, canonical
+URL, fetched page summaries and content hashes, character count, user-description participation,
+and a sanitized fallback reason. The snapshot `raw_text` contains labeled page excerpts and the
+supplemental description; raw HTML is not passed downstream. Provenance remains attached to the
+snapshot evidence node, and the existing Business Classification v1 / Demand Profile v2 outputs
+remain immutable metadata derived from that snapshot. No migration or second crawler is required.
+
+### Business Classification v1
+
+Business Classification v1 is an intelligence-layer read model derived from the existing
+immutable `product_snapshots` text and metadata. The normalized record is stored under snapshot metadata as
+`business_classification`, versioned as `business-classification-v1`, and remains attached to
+the immutable snapshot that produced it. A later snapshot or classification engine version
+creates a new immutable snapshot record; historical classifications are never overwritten.
+
+The controlled primary taxonomy is:
+
+```text
+b2b_saas | developer_tool | consumer_software | ecommerce | marketplace |
+service_business | local_business | agency | media_content | other
+```
+
+Each classification also includes these bounded secondary dimensions:
+
+```text
+business_model: b2b | b2c | b2b2c | mixed | unknown
+delivery_model: software | physical_product | digital_product | service |
+                marketplace | content | mixed | unknown
+market_scope: global | multi_country | country | regional | local | unknown
+technical_orientation: high | medium | low | unknown
+commerce_type: subscription | transactional | usage_based | service_fee |
+                advertising | mixed | unknown
+```
+
+Geographic fields are `primary_country_code`, `primary_region`, `primary_city`, and a bounded
+`location_dependency` score. A physical office or headquarters alone does not make a product
+local; local classification requires evidence of geographic service dependency. Category labels
+are short normalized strings rather than a large taxonomy. Audience arrays cover target customer
+types, buyer roles, and end-user types.
+
+The record stores overall confidence and per-dimension confidence for business type, model,
+market scope, category, delivery model, technical orientation, commerce type, and audience. Each
+user-facing classification field is backed by inspectable snapshot evidence entries containing
+field, value, reason, source reference, optional source path, and bounded excerpt. Invalid enums
+normalize to `unknown`/`other`, labels are whitespace-normalized and deduplicated, country codes
+are canonicalized, confidence values are clamped to 0..1, and no evidence is fabricated when the
+input is weak.
+
+The classification engine is exposed through the existing provider-neutral
+`StructuredLlmProvider`; its schema-only request explicitly treats website text as untrusted
+data, not instructions. A deterministic fixture engine is used for local and automated tests.
+Failure is non-blocking and produces an unavailable result rather than fake classification data.
+The read model exposes business type, business model, market scope, technical orientation,
+primary category, and location dependency for Source Routing and Signal Qualification decisions.
+Source Routing consumes it deterministically; Signal Qualification remains a separate downstream
+contract. Future manual overrides should be stored separately from computed snapshot
+classifications.
+
+One generic demand engine, product-type-aware discovery and qualification. Engagement does not
+determine demand quality.
+
+### Demand Profile v2
+
+Demand Profile v2 is the richer, versioned product-understanding input for Source Routing and
+future discovery. It is built from the existing immutable product snapshot, structured website
+understanding, optional future user hints, and Business Classification v1. It does not introduce
+another crawler, source adapter, provider query planner, Signal Qualification rule, competitor
+monitor, domain verification, or billing entitlement.
+
+The schema contains:
+
+```text
+identity, audience, problems, desired_outcomes, jobs_to_be_done,
+switching_triggers, buying_intents, feature_demands, objections, language,
+competitors, alternatives, comparison_terms, geography, confidence, evidence, version
+```
+
+Identity dimensions are inherited from Business Classification v1 when available: business type,
+business model, delivery model, technical orientation, market scope, primary category, and
+secondary categories. High-confidence classification is authoritative; absent classification
+falls back to explicit `other`/`unknown` values without a second independent classifier.
+Audience includes target customer types, buyer roles, end users, company-size segments, and
+industry segments. Pains, outcomes, JTBD, switching triggers, feature demands, objections,
+competitors, and alternatives are structured concepts with stable normalized keys, bounded arrays,
+confidence, and evidence. Buying intents use a controlled taxonomy and describe discovery
+relevance, not claims that current users expressed that intent.
+
+Competitor and alternative semantics are intentionally separate. A known competitor requires
+explicit comparison, replacement, migration, or related evidence; integration partners, customer
+logos, broad category matches, and footer links are not competitors by themselves. Alternatives
+include manual workflows, spreadsheets, internal builds, service providers, generic tools, and
+the status quo. Domains are preserved only when supplied and valid; they are never invented.
+The compact language model preserves category, pain, outcome, switching, comparison,
+recommendation, and feature phrasing rather than generating an SEO keyword dump.
+
+The profile also preserves the distinction between current product capabilities and likely
+market-demand feature concepts. Website positioning may support the former, but it is not proof
+that users demand the latter.
+
+The geographic section inherits market scope, country, region, city, and location dependency from
+Business Classification and adds only evidence-supported demand geography terms. Overall and
+section-level confidence are bounded to 0..1. Every important derived concept carries evidence
+with source type, reference, field path, excerpt, reason, and confidence. Website text is data,
+not instructions, and the structured LLM boundary explicitly defends that rule.
+
+Version `demand_profile_v2` is stored immutably under
+`product_snapshots.metadata.demand_profile_v2`; no new table or column is required. Repeated
+same-version builds reuse the existing snapshot, while a new snapshot or engine identity creates
+a new immutable result. Build failures are diagnostic and non-blocking, so existing v1 profile
+behavior remains available. Lightweight diagnostics record version, success/failure, confidence,
+and concept counts without logging crawled text.
+
+The routing projection exposes business type, model, delivery, market scope, technical orientation,
+category, audience, pains, JTBD, switching triggers, buying intents, feature demands, competitors,
+alternatives, comparison terms, location dependency, and profile confidence. The qualification
+projection exposes relevant pains, outcomes, intents, JTBD, features, buyer roles, competitors,
+alternatives, and geography. These projections remain separate contracts: Source Routing decides
+where to look, while Signal Qualification decides whether what was found is actually demand.
+
+### Source Routing v1
+
+Source Routing v1 is a deterministic, provider-neutral orchestration layer. It consumes Business
+Classification v1, the Demand Profile v2 routing projection, source configuration, persisted source
+health, source controls, scan mode, and a bounded candidate budget. The output is a recomputable
+`source_routing_v1` plan with classification/profile versions, route priorities, relevance,
+confidence, reason codes, cost class, health and availability status, per-source candidate/page
+caps, selected budget weights, coverage status, and missing-capability diagnostics. No new table
+is required; onboarding stores a compact routing summary in its existing job result.
+
+Provider-neutral capability profiles are centralized for the initial source set (Hacker News,
+Bluesky, Reddit, GitHub, and X, plus the fixture adapter). They describe software, consumer,
+developer, ecommerce, local, switching, recommendation, problem, feature, comparison, long-form,
+reply, and recency fit, as well as cost class. Business type and structured intent modifiers are
+bounded and deterministic; raw website keyword matching is not used to score routes.
+
+Source relevance and operational availability are separate. A relevant but unconfigured, paused,
+disabled, or blocked source remains visible as an operational exclusion and contributes to
+coverage diagnostics without receiving a discovery budget. Free does not mean relevant. Paid
+sources are cost-weighted and bounded, and X remains within its provider safety cap.
+
+Onboarding selects no more than three executable routes, with stable tie-breaking and minimum
+candidate allocations. If Demand Profile v2 is unavailable, the current configured-source
+selection remains the conservative fallback. The planner has a network-free dry-run formatter and
+does not change provider pagination, query generation, normalization, canonicalization, matching,
+ranking, or Signal Qualification semantics. Source Routing chooses where to look. Signal Qualification decides whether what we found is actually demand.
+
+### Query Planning v1
+
+Query Planning v1 is a deterministic, provider-neutral discovery layer after Source Routing. It
+consumes the Business Classification v1 and Demand Profile v2 projections, selected routing plans,
+scan mode, and route candidate budgets. Its `query_planning_v1` output contains source plans,
+controlled query families, reused buying intents, semantic query text, concept/competitor/
+alternative references, confidence, priorities, reason codes, geographic context, cost hints,
+per-query candidate budgets, and compact diagnostics. It is reproducible from its inputs and does
+not require a query-plan table.
+
+The controlled family taxonomy is `pain`, `alternative_search`, `switching`, `recommendation`,
+`comparison`, `feature_requirement`, `jtbd`, `objection`, `desired_outcome`, and
+`category_discovery`. Templates consume only bounded structured concepts: top pains, switching
+triggers, buying intents, features, competitors, alternatives, JTBD, objections, and outcomes.
+Known competitors are preferred; detected candidates require high confidence; integration partners
+and customer logos are never promoted. Manual processes, internal builds, service providers, and
+generic tools receive distinct natural-language alternatives rather than brand-style templates.
+
+Scores combine commercial intent weighting, concept confidence, profile confidence, source
+capability fit, route priority, and uniqueness. No engagement or Signal score is used. Exact and
+near-identical normalized queries are suppressed, then family-diverse candidates are selected.
+Onboarding caps each source at three queries and remains conservative. Discovery Depth v2 gives
+manual scans a bounded twelve-query/four-source envelope when enough distinct demand concepts and
+executable routes exist: X up to four queries/eight candidates, GitHub four/ten, Hacker News
+two/six, and Bluesky two/eight. Manual routing uses source minimums of 6/8/4/6 for
+X/GitHub/Hacker News/Bluesky but does not force a low-relevance or unavailable source. Per-query
+budgets are positive and sum no higher than the route candidate budget. X remains limited to one
+bounded page per query with an explicit provider-minimum cost guard; no open-ended pagination is
+introduced. Scheduled and deep modes retain their smaller existing query ceilings; low-confidence
+profiles get fewer broad queries and no competitor-specific exploration.
+Local geography is added only for local/high-dependency profiles; global SaaS does not receive
+invented geo terms.
+
+The planner emits semantic queries only. The execution bridge adapts them to the existing source
+request port: X compiles each selected semantic family into a bounded human query from product,
+competitor, alternative, pain, and category context, validates it before HTTP, and retains any
+fallback reason as sanitized diagnostics; X operators remain in the provider layer. GitHub retains
+issue/discussion qualifiers in its adapter, Reddit receives natural-language demand queries,
+Bluesky remains short and bounded, and Hacker News applies bounded lexical product/category/
+competitor anchors to a recent-stories window because HN search is not supported. Empty results do
+not trigger adaptive second-wave search. If Query Planning fails, onboarding falls back to its
+existing conservative query behavior. Source Routing chooses where to look. Query Planning
+chooses what to look for. Signal Qualification decides whether what we found is actually demand.
+
+### Signal Qualification v1
+
+Signal Qualification v1 is a deterministic, versioned gate after conversation analysis and product
+matching and before normal ranking/Signal materialization. Its typed result records status, primary
+intent, normalized quality/risk dimensions, matched Demand Profile concepts, exact evidence spans,
+controlled reason codes, a concise explanation, Market Resonance, and qualification diagnostics.
+The explicit threshold set is `signal_qualification_thresholds_v1`; the planner version is
+`signal_qualification_v1`.
+
+The hard gate requires product relevance, demand intent or strong pain/intent, specificity,
+validated evidence, low noise, low spam, and low promotion probability. High-confidence Signals
+use stricter relevance, intent, specificity, evidence, commercial-relevance, confidence, and
+noise thresholds plus a strong commercial intent. Qualification is persisted inside the existing
+immutable product-match evaluation evidence JSON, with structured provenance links to exact
+source-item spans; no new table or migration is required.
+
+Market Resonance is intentionally separate. Existing provider metrics are normalized per source
+and retained as contextual diagnostics only. Engagement strengthens qualified demand; engagement
+does not create demand. Generic viral content therefore cannot qualify from popularity, while
+specific low-engagement switching or feature demand can qualify. Promotion, affiliate/giveaway
+spam, bot-like repetition, news-only content, memes, link-only content, duplicate reposts, and
+vague replies are rejected or kept weak. Qualification errors fail closed, preserve diagnostics,
+and do not crash the scan.
+
+Ranking remains the ordering layer for qualified candidates, and Signal lifecycle/feedback remains
+unchanged. Qualification can be replayed from stored canonical content, analysis, match, and
+profile inputs without provider calls. A network-free calibration formatter is represented by the
+typed result and fixtures; a labeling UI and adaptive learning system are intentionally deferred.
+
+Public domains can be analyzed. Persistent monitoring is plan-limited. Execution belongs only to
+owned products. Competitors should be discovered by overlapping demand, not merely by category
+labels. A future ProductRelationship will keep ownership/monitoring relationship types separate
+from independent verification status; persistent relationship storage is intentionally deferred.
 
 ### Phase 4 — Demand Map, Gap, and Drift
 
@@ -1178,6 +1484,47 @@ remains backend-only; no new source adapter, autonomous external Action executio
 analytics platform is included.
 
 Production procedures are documented in [`docs/runbooks/production.md`](runbooks/production.md).
+
+### Automatic Monitoring v1
+
+Automatic Monitoring v1 is the launch control plane for recurring product intelligence. It is
+policy-driven: the internal `plan_catalog` -> `plan_entitlements` -> current
+`workspace_entitlements` chain resolves cadence, source/query/candidate budgets, manual-refresh
+cooldown, paid-source limits, Drift history, digest access, and Growth priority-alert access.
+Dodo may change normalized subscription state, but never defines these capabilities.
+
+There is one durable `monitoring_schedules` row per workspace/product. It stores the current
+policy snapshot, cycle/deep-refresh due timestamps, last outcomes, X daily cost aggregate, the
+latest job reference, and a short lease. The service-role-only
+`claim_monitoring_schedule` function atomically claims a due row, so concurrent Trigger ticks
+cannot dispatch the same slot. The recurring `automatic-monitoring-scheduler` task is thin: it
+ensures active products have schedules, resolves current policy, claims due rows, and dispatches
+the existing `product-demand-scan` workflow with `intelligence_cycle` or `deep_refresh` mode.
+The existing durable `job_runs`, dispatch idempotency, product concurrency, and recovery logic
+remain the execution boundary. A second queue is not introduced.
+
+Pro runs four bounded intelligence cycles per day at approximately six-hour intervals and one
+deterministically jittered deep refresh per week. Growth runs twelve cycles per day at
+approximately two-hour intervals and three deep refreshes per week. Cycle and deep budgets are
+explicit entitlement values, including X request/post caps and a soft daily X cost ceiling.
+Paid-source exhaustion produces partial coverage and a persisted warning; it does not weaken
+qualification or fail unrelated sources. Plan changes recompute the policy snapshot and future
+cadence. Downgrades disable newly unavailable work while retaining historical intelligence;
+archived products are disabled and never scheduled.
+
+Manual refresh remains durable but is a bounded, cooldown-aware fallback. Drift requests are
+server-enforced against the current plan window while older snapshots remain stored. Digest rows
+and `digest_deliveries` provide idempotent pending/sent/failed delivery state with safe retries;
+the server-only email adapter is disabled unless its provider configuration is present. Growth
+priority conditions create idempotent `monitoring_alerts` rows with persistent delivery status;
+there are no realtime sockets, arbitrary alert rules, public API, webhooks, MCP, or adaptive
+follow-up engine in this version.
+
+The forward migration is `supabase/migrations/20261002000000_automatic_monitoring_v1.sql`.
+Monitoring tables are member-readable and service-role writable under RLS, and all workspace
+relationships use the existing composite-tenant integrity pattern. Trigger task definitions,
+policy resolution, schedule repositories, notification delivery, and the dashboard status
+read-model are covered by module, migration-contract, system, and Trigger configuration tests.
 
 No phase should silently expand into a general analytics platform, source crawler, or provider-
 specific domain model. Revisit this architecture when a measured requirement justifies a new

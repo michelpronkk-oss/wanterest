@@ -11,6 +11,7 @@ import type {
 import { AppError } from "../../lib/errors";
 import type { BillingInterval, BillingPlan } from "./billing.schemas";
 import type { ProviderSubscription, VerifiedBillingEvent } from "../../providers/billing/contracts";
+import { ensureMonitoringSchedulesForActiveProducts } from "../monitoring/monitoring.schedule";
 
 export type EffectiveEntitlement = {
   capabilityKey: string;
@@ -80,21 +81,26 @@ function publicSubscription(row: SubscriptionRow | null): BillingSubscriptionVie
   return { id, workspace_id, internal_plan, billing_interval, status, current_period_start, current_period_end, cancel_at_period_end, canceled_at, ended_at, payment_failure_state, created_at, updated_at };
 }
 
+// Test/fixture repository only. Production entitlement reads come from the
+// normalized workspace_entitlements rows in Supabase.
 const catalogValues: Record<BillingPlan | "free", EffectiveEntitlement[]> = {
   free: [
     ["products_max", "integer", 1], ["signals_monthly", "integer", 5], ["scan_frequency", "enum", "manual"],
     ["demand_map", "enum", "preview"], ["demand_gap", "enum", "preview"], ["demand_drift_days", "integer", 0],
     ["actions_enabled", "boolean", false], ["experiments_max", "integer", 0], ["exports", "boolean", false], ["team_members", "integer", 1],
+    ["monitoring_enabled", "boolean", false], ["intelligence_cycles_per_day", "integer", 0], ["intelligence_cycle_interval_minutes", "integer", 0], ["deep_refreshes_per_week", "integer", 0], ["manual_refresh_cooldown_minutes", "integer", 1440], ["digest_enabled", "boolean", false], ["priority_alerts_enabled", "boolean", false],
   ].map(([capabilityKey, valueType, value]) => ({ capabilityKey: capabilityKey as string, valueType: valueType as EffectiveEntitlement["valueType"], value: value as EffectiveEntitlement["value"] })),
   pro: [
     ["products_max", "integer", 3], ["signals_monthly", "integer", 500], ["scan_frequency", "enum", "daily"],
     ["demand_map", "enum", "full"], ["demand_gap", "enum", "full"], ["demand_drift_days", "integer", 30],
     ["actions_enabled", "boolean", true], ["experiments_max", "integer", 2], ["exports", "boolean", false], ["team_members", "integer", 1],
+    ["monitoring_enabled", "boolean", true], ["intelligence_cycles_per_day", "integer", 4], ["intelligence_cycle_interval_minutes", "integer", 360], ["deep_refreshes_per_week", "integer", 1], ["manual_refresh_cooldown_minutes", "integer", 180], ["digest_enabled", "boolean", true], ["priority_alerts_enabled", "boolean", false],
   ].map(([capabilityKey, valueType, value]) => ({ capabilityKey: capabilityKey as string, valueType: valueType as EffectiveEntitlement["valueType"], value: value as EffectiveEntitlement["value"] })),
   growth: [
     ["products_max", "integer", 10], ["signals_monthly", "integer", 2000], ["scan_frequency", "enum", "frequent"],
     ["demand_map", "enum", "advanced"], ["demand_gap", "enum", "advanced"], ["demand_drift_days", "integer", 90],
     ["actions_enabled", "boolean", true], ["experiments_max", "integer", 10], ["exports", "boolean", true], ["team_members", "integer", 3],
+    ["monitoring_enabled", "boolean", true], ["intelligence_cycles_per_day", "integer", 12], ["intelligence_cycle_interval_minutes", "integer", 120], ["deep_refreshes_per_week", "integer", 3], ["manual_refresh_cooldown_minutes", "integer", 60], ["digest_enabled", "boolean", true], ["priority_alerts_enabled", "boolean", true],
   ].map(([capabilityKey, valueType, value]) => ({ capabilityKey: capabilityKey as string, valueType: valueType as EffectiveEntitlement["valueType"], value: value as EffectiveEntitlement["value"] })),
 };
 
@@ -282,6 +288,9 @@ export class SupabaseBillingRepository implements BillingRepository {
     if (input.traceId) args.p_trace_id = input.traceId;
     const response = await this.client.rpc("apply_normalized_subscription", args);
     if (response.error || !response.data) throw repositoryError("Subscription could not be normalized.", response.error ?? { message: "No subscription returned." });
+    await ensureMonitoringSchedulesForActiveProducts(this.client, new Date().toISOString()).catch((error) => {
+      if (process.env.NODE_ENV !== "production") console.warn("[monitoring] schedule policy refresh failed after billing change", error instanceof Error ? error.message : "unknown error");
+    });
     return response.data;
   }
 

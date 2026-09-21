@@ -72,6 +72,20 @@ export async function getWorkspace(client: Client, workspaceId: string): Promise
   return requireData(data, error, "Workspace was not found.");
 }
 
+export async function listWorkspaceMembers(client: Client, workspaceId: string): Promise<WorkspaceMemberRow[]> {
+  const { data, error } = await client
+    .from("workspace_members")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .order("created_at", { ascending: true });
+  if (error) {
+    throw new AppError("INTERNAL_ERROR", "Workspace members could not be loaded.", 500, {
+      providerMessage: error.message,
+    });
+  }
+  return data ?? [];
+}
+
 export async function addWorkspaceMember(
   client: Client,
   input: { workspaceId: string; userId: string; role: WorkspaceMemberRole; traceId: string },

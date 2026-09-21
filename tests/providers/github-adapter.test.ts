@@ -54,6 +54,19 @@ describe("GitHub source adapter", () => {
     expect(page.rateLimit).toMatchObject({ provider: "github-rest", mode: "public", resource: "search", remaining: 4999, limit: 5000 });
   });
 
+  it("attaches GITHUB_TOKEN to authenticated REST search and reports authenticated limits", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response(githubIssueSearchResponse, 200, {
+      "x-ratelimit-remaining": "4999",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-resource": "search",
+    }));
+    const adapter = new GitHubSourceAdapter({ fetchImpl, token: "test-token" });
+
+    const page = await adapter.discover({ query: "export", limit: 1, expandThreads: false, requestMetadata: {} });
+    expect(fetchImpl.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: "Bearer test-token" });
+    expect(page.rateLimit).toMatchObject({ provider: "github-rest", mode: "authenticated", resource: "search", remaining: 4999, limit: 5000 });
+  });
+
   it("expands bounded issue comments and maps them to the issue root", async () => {
     const fetchImpl = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(response({ ...githubIssueSearchResponse, items: [githubIssue] }))
@@ -73,6 +86,7 @@ describe("GitHub source adapter", () => {
     const requestBody = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body));
     expect(new URL(String(fetchImpl.mock.calls[0]?.[0])).pathname).toBe("/graphql");
     expect(requestBody.variables).toMatchObject({ query: "export is:discussion repo:acme/product", first: 10, commentFirst: 5, after: null });
+    expect(requestBody.query).not.toContain("author { id");
     expect(fetchImpl.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: "Bearer test-token" });
     expect(page.items.map((item) => item.externalId)).toEqual(["github:discussion:D_kwDOdiscussion5", "github:discussion_comment:DC_kwDOfirstcomment"]);
     expect(page.nextCursor).toMatch(/^github:v1:discussions:/);

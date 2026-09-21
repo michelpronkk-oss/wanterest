@@ -1,13 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import type { Database } from "@/server/db/database.types";
+import type { Database } from "../../db/database.types";
 import type {
   JsonObject,
   UsageLedgerRow,
   UsageType,
   WorkspaceEntitlementRow,
-} from "@/server/db/database.helpers";
-import { AppError } from "@/server/lib/errors";
+} from "../../db/database.helpers";
+import { AppError } from "../../lib/errors";
 import type { EntitlementValue } from "./entitlement.schemas";
 
 type Client = SupabaseClient<Database>;
@@ -44,6 +44,23 @@ export async function getWorkspaceEntitlement(
   return { row: data, value: data ? decodeValue(data) : null };
 }
 
+export async function listWorkspaceEntitlements(
+  client: Client,
+  workspaceId: string,
+): Promise<WorkspaceEntitlementRow[]> {
+  const { data, error } = await client
+    .from("workspace_entitlements")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .is("effective_to", null)
+    .order("capability_key", { ascending: true });
+  if (error) throw providerFailure("Entitlements could not be loaded.", error.message);
+  return (data ?? []).map((row) => {
+    decodeValue(row);
+    return row;
+  });
+}
+
 export async function consumeUsage(
   client: Client,
   input: {
@@ -52,6 +69,7 @@ export async function consumeUsage(
     amount: number;
     idempotencyKey: string;
     sourceMetadata: JsonObject;
+    actorUserId?: string;
     traceId?: string;
   },
 ): Promise<UsageLedgerRow> {
@@ -62,6 +80,7 @@ export async function consumeUsage(
     p_idempotency_key: input.idempotencyKey,
     p_source_metadata: input.sourceMetadata,
   };
+  if (input.actorUserId !== undefined) args.p_actor_user_id = input.actorUserId;
   if (input.traceId !== undefined) args.p_trace_id = input.traceId;
 
   const { data, error } = await client.rpc("consume_usage", args);

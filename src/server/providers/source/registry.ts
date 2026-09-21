@@ -4,8 +4,9 @@ import { fixtureSourceAdapter } from "./fixture";
 import { hackerNewsSourceAdapter } from "./hacker-news";
 import { redditSourceAdapter } from "./reddit";
 import { githubSourceAdapter } from "./github";
+import { xSourceAdapter } from "./x";
 
-export function createSourceRegistry(adapters: SourceAdapter[] = [fixtureSourceAdapter, hackerNewsSourceAdapter, blueskySourceAdapter, redditSourceAdapter, githubSourceAdapter]) {
+export function createSourceRegistry(adapters: SourceAdapter[] = [fixtureSourceAdapter, hackerNewsSourceAdapter, blueskySourceAdapter, redditSourceAdapter, githubSourceAdapter, xSourceAdapter]) {
   return new Map(adapters.map((adapter) => [adapter.key, adapter]));
 }
 

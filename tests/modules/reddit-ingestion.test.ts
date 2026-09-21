@@ -73,6 +73,8 @@ describe("Reddit ingestion pipeline", () => {
     const analysis = await intelligence.analyzeConversation(conversation, source, "99999999-9999-4999-8999-999999999999", new FixtureConversationAnalysisEngine());
     const evaluation = await intelligence.matchProduct(product, profile.id, analysis.id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", new FixtureProductMatchingEngine());
     const ranking = await intelligence.rankEvaluation(product, evaluation.id, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+    expect(ranking).not.toBeNull();
+    if (!ranking) throw new Error("Expected qualified evaluation to rank.");
     const signal = await intelligence.materializeSignal(product, evaluation.id, ranking.id);
     expect(signal?.source_key).toBe("reddit");
     expect(signal?.conversation_id).toBe(conversation.id);

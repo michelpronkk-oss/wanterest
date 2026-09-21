@@ -137,12 +137,84 @@ npm run smoke:bluesky
 The connector accepts public provider responses only and records typed health, timeout, rate-limit,
 and server-error outcomes without persisting authorization material.
 
+## Trigger.dev orchestration
+
+Trigger.dev orchestrates Wanterest; it does not own Wanterest business logic. The durable
+`product-demand-scan` task calls the existing onboarding, source, ingestion, intelligence,
+Demand Map/Gap/Drift, Actions, entitlement, and usage services. Its bounded child tasks are
+`discover-product-source`, `process-product-candidates`,
+`rebuild-product-demand-intelligence`, and `generate-product-actions`.
+
+The initiating server command validates the authenticated user, workspace membership, product
+access, and scan entitlement, then returns a `jobRunId` and queued status. `job_runs` remains the
+idempotency and progress boundary; the `input_reference.progress` object exposes the stable stages
+`queued`, `preparing_product`, `planning`, `discovering`, `processing`, `qualifying`,
+`building_intelligence`, `generating_actions`, `completed`, `partial_failure`, and `failed`.
+The database status remains compatible with the existing constraint: a successful run with source
+warnings is stored as `succeeded` with a `complete_with_warnings` result/progress state.
+
+Source discovery is isolated and bounded. X insufficient credits and unavailable/unconfigured
+Reddit are nonfatal source warnings; successful sources continue through qualification, ranking,
+intelligence rebuild, and evidence-backed Actions. Retries reuse the same job and usage
+idempotency keys, while raw ingestion and immutable derived records remain replayable. The direct
+service path remains available for tests, debugging, and replay and does not require Trigger.dev.
+
+For local development, put a Trigger.dev Development API key in `.env.local` as
+`TRIGGER_SECRET_KEY` (the same server-only environment key is used by the Next.js
+dispatcher and local worker), then run the app and Trigger worker separately:
+
+```bash
+npm run dev
+npm run trigger:dev
+```
+
+The worker uses the existing Trigger project configuration and `.env.local`; use
+`TRIGGER_LOCAL_EXECUTION=direct` only for an explicit local/test direct execution path. In
+production, configure the same project and server-only environment variables in the Trigger.dev
+worker, deploy tasks with `npm run trigger:deploy`, and keep the Vercel request path limited to
+queueing `product-demand-scan`. Do not put Trigger secrets in browser configuration.
+
+## Website understanding, product understanding, and OpenAI
+
+Onboarding treats the submitted public website as the primary product-understanding input. The
+server-only Website Understanding v1 layer fetches the homepage and at most four high-value
+same-site pages (`product`, `features`, `solutions`, `pricing`, `use cases`, `customers`,
+`integrations`, `platform`, or `about`). It uses bounded HTTP(S)-only requests, DNS checks that
+reject private/link-local/metadata addresses, revalidated same-site redirects, a 9-second page
+timeout, a 512 KB response limit, and deterministic HTML/text extraction. It never executes page
+scripts, follows external domains, or fetches from the browser.
+
+The extracted context is compacted into the existing immutable `product_snapshots` path. Snapshot
+metadata records the website URL, pages selected/fetched, extraction version, content hashes,
+fetch outcome, user-description participation, and a sanitized fallback reason. The one-line
+description remains supplemental context; if the homepage cannot be read, it becomes the explicit
+description-fallback input and onboarding continues when possible. A persisted snapshot prevents
+refreshes from fetching the same website again.
+
+Product understanding keeps the provider-neutral `StructuredLlmProvider` boundary. When the
+server-only `OPENAI_API_KEY` is present, onboarding selects the OpenAI structured-output adapter;
+the default model is `gpt-4.1-mini` and can be changed with `OPENAI_MODEL`. The same `.env.local`
+file is loaded by Next.js and `npm run trigger:dev`, so the Trigger worker sees the same key without
+any `NEXT_PUBLIC_` variable. Prompts are bounded, temperature is zero, output is schema-guided,
+and retries are limited.
+
+Business Classification v1 and Demand Profile v2 remain normalized and persisted in immutable
+product snapshot metadata. OpenAI failures are logged with provider/model/operation/latency/status
+diagnostics only; a deterministic fixture result is used as an explicit, observable fallback so a
+temporary provider failure does not create opaque `unknown` output. Product understanding uses the
+website-derived context plus the onboarding description, and both existing engines receive that
+same bounded context. Refreshes reuse the persisted snapshot/profile instead of fetching the site
+or calling the model again.
+
 ## GitHub source connector
 
 GitHub uses the official REST API at `https://api.github.com` for public issue search and bounded
 issue-comment expansion. Public Discussions are supported through the official GraphQL search API
 when the caller supplies a query and optional repository/owner/org qualifiers in request metadata
-(`contentType: "discussions"`); GitHub may require an authenticated token for this API. Combined
+(`contentType: "discussions"`); GitHub may require an authenticated token for this API. Set
+`GITHUB_TOKEN` in the server/Trigger worker environment to receive the higher authenticated
+rate-limit bucket; without it, public API rate limits are handled as a nonfatal source warning.
+Combined
 discovery is bounded and does not expose a misleading shared cursor. Pull requests are filtered from issue
 results. Stable issue, issue-comment, discussion, and discussion-comment identities are preserved,
 along with repository, labels, state, milestone, reaction, author-type, and bot-indicator metadata.
@@ -156,6 +228,25 @@ live smoke check with a network connection:
 
 ```bash
 npm run smoke:github
+```
+
+## X source connector
+
+X uses only the official API v2 recent-search endpoint at `https://api.x.com`. It is a
+server-only, app-only bearer integration: `X_BEARER_TOKEN` is never sent to the browser, stored
+in raw payloads, or logged. Queries are caller-supplied, recent searches are bounded, retweets are
+excluded by default, and author data is limited to the user expansion bundled with the post search.
+The adapter does not post, read private data, enrich profiles, or expand complete threads.
+
+The default scan budget is 10 posts and one page. Provider cursors are opaque and can be requested
+only with an explicit bounded page/billable-post budget; no pagination is attempted by the initial
+scan. The read-cost assumption is versioned and defaults to `$0.005` per post (`X_POST_READ_COST_USD`);
+the adapter records the estimate and provider cursor diagnostics without storing credentials. Rate
+limits, authentication failures, forbidden access, and insufficient credits are classified separately.
+Run the bounded live smoke check only when `X_BEARER_TOKEN` is configured:
+
+```bash
+npm run smoke:x
 ```
 
 ## Reddit source connector
@@ -175,6 +266,142 @@ with a clear skip message and makes no network request:
 ```bash
 npm run smoke:reddit
 ```
+
+## Business Classification v1
+
+Product understanding also produces a versioned, normalized Business Classification v1 record
+inside the immutable product snapshot metadata. It uses the controlled primary taxonomy
+`b2b_saas`, `developer_tool`, `consumer_software`, `ecommerce`, `marketplace`,
+`service_business`, `local_business`, `agency`, `media_content`, and `other`.
+
+The record also carries business model, delivery model, market scope, technical orientation,
+commerce type, short category labels, customer/buyer/end-user arrays, geographic fields, and a
+0..1 location-dependency score. Overall and per-dimension confidence, plus inspectable evidence
+references and excerpts, are persisted with the classification. Country codes and labels are
+normalized deterministically, arrays are deduplicated, and weak or invalid model output falls
+back to `unknown`/`other` without inventing evidence.
+
+Classification is `business-classification-v1`, runs from the existing product snapshot text,
+and is recomputed only when the snapshot or classification engine version changes. The structured
+LLM adapter is provider-neutral and treats website text as untrusted data, while the fixture
+engine keeps local development and tests deterministic. Classification failure is non-blocking:
+product understanding continues with an unavailable classification diagnostic. Source Routing v1
+may consume the read model for deterministic source selection, while Signal Qualification remains
+separate. One generic demand engine, product-type-aware discovery and qualification. Engagement
+does not determine demand quality.
+
+## Demand Profile v2
+
+Demand Profile v2 is a compact, versioned prerequisite for product-type-aware Source Routing.
+It is built from the existing product snapshot and Business Classification v1; it does not crawl
+again, generate provider queries, qualify Signals, monitor competitors, or enforce new billing
+limits.
+The profile contains structured identity, audience, pains, desired outcomes, jobs-to-be-done,
+switching triggers, buying intents, feature-demand concepts, objections, buyer language,
+competitors, alternatives, comparison terms, geography, confidence, and evidence.
+
+Competitors require explicit comparison, replacement, migration, or similar evidence. Alternatives
+remain distinct and can be manual workflows, spreadsheets, internal builds, service providers,
+generic tools, or the status quo. Website positioning is evidence of positioning, not proof of
+market demand; current product capabilities remain separate from likely market feature demand;
+engagement is not used as demand quality. Profiles are bounded and normalized, with
+stable concept keys, confidence values, source references, and no invented domains. The fixture
+and structured-LLM paths both treat website text as untrusted data.
+
+The version is `demand_profile_v2`. It is stored immutably under
+`product_snapshots.metadata.demand_profile_v2` and rebuilt only for a material snapshot,
+Business Classification, engine-version, or explicit rescan change. A failed build leaves the
+existing product and v1 profile usable. Compact routing and qualification projections feed the
+deterministic Source Routing v1 planner.
+
+## Source Routing v1
+
+Source Routing v1 builds a recomputable, provider-neutral plan from Business Classification v1,
+Demand Profile v2, source configuration, persisted source health, source controls, scan mode, and
+a bounded candidate budget. It assigns controlled priorities and route reasons, separates
+theoretical relevance from operational availability, and selects at most three conservative
+sources for the onboarding scan. Reddit remains a valid high-relevance route when unavailable,
+but is not executed; X is paid and bounded; GitHub and Hacker News are not used as local or
+ecommerce substitutes; Bluesky is not promoted automatically without a fit signal.
+
+Free does not mean relevant.
+
+Source relevance and operational availability are separate.
+
+The planner exposes coverage status, confidence, missing-capability diagnostics, operational
+exclusions, route budgets, and a network-free dry-run formatter. If Demand Profile v2 is not
+available, onboarding falls back to the existing configured-source selection. Source Routing chooses where to look. Signal Qualification decides whether what we found is actually demand.
+
+The clean planner boundary is `buildSourceRoutingPlan(...)` in
+`src/server/modules/operations/source-routing.service.ts`; it does not generate provider queries,
+change connector semantics, alter Signal Qualification, or add a persistence table.
+
+## Query Planning v1
+
+Query Planning v1 determines what to search after Source Routing has determined where to search.
+It consumes the Business Classification v1 and Demand Profile v2 projections plus the selected
+Source Routing routes, and emits a deterministic `query_planning_v1` plan. Query families are
+controlled: pain, alternative search, switching, recommendation, comparison, feature requirement,
+JTBD, objection, desired outcome, and category discovery. Buying intents are reused rather than
+invented, and structured profile concepts are capped at the top three per section.
+
+The planner uses compact semantic templates for competitors, alternatives, pains, switching
+triggers, features, JTBD, objections, outcomes, and category fallback. It deduplicates normalized
+and near-identical variants, preserves family diversity, explains each query with reason codes,
+and allocates positive candidate budgets whose source totals never exceed the routing budget.
+Onboarding remains conservative at at most three queries per source. Discovery Depth v2 gives
+manual scans a bounded twelve-query/four-source envelope when the profile supports it: X up to
+four queries and eight admitted candidates, GitHub up to four queries and ten candidates, Hacker
+News up to two queries and six candidates, and Bluesky up to two queries and eight candidates.
+Manual routing requires modest per-source minimums (6/8/4/6 for X/GitHub/Hacker News/Bluesky)
+when those sources are executable; it does not force a low-relevance source. Scheduled and deep
+modes retain their smaller existing query ceilings. Low-confidence profiles receive fewer broad
+queries and no competitor-specific exploration. X remains limited to one bounded page per query
+and its provider minimum/cost guard; no open-ended pagination is introduced.
+
+Query text remains provider-neutral. A small execution formatter maps semantic plans to the
+existing source request port: X receives a validated, human lexical query compiled from product
+and competitor context, X operators remain in the X adapter metadata, and GitHub qualifiers
+remain in the GitHub adapter. Hacker News has no search endpoint, so it applies bounded lexical
+product/category/competitor anchors to a recent-stories window rather than admitting an
+unfiltered feed. No connector pagination contract is redesigned.
+Empty results do not trigger a second wave or adaptive query mutation in v1. If planning fails,
+onboarding uses the existing conservative source-query behavior. The job result stores compact
+routing/query diagnostics; the full plan is reproducible and has a network-free dry-run helper.
+
+Source Routing chooses where to look.
+
+Query Planning chooses what to look for.
+
+Signal Qualification decides whether what we found is actually demand.
+
+## Signal Qualification v1
+
+Signal Qualification v1 is the deterministic quality gate between conversation analysis/matching
+and ranking. It emits a versioned `SignalQualification` result with controlled status and intent
+taxonomies, normalized relevance/intent/specificity/pain/buyer/commercial/evidence/freshness/source
+dimensions, risk dimensions, matched Demand Profile concepts, verified evidence spans, and a
+concise explanation. The threshold set is explicit and stored with the immutable match evaluation.
+
+Qualification uses the Demand Profile v2 projection where available and falls back to the existing
+stored profile only for compatibility. Evidence spans are validated against exact source-item text
+and linked through the existing relational provenance chain. A candidate must clear product,
+intent/pain, specificity, evidence, noise, spam, and promotion gates before it can enter normal
+ranking and Signal creation. Qualification failures fail closed and remain diagnosable; they never
+silently promote a candidate.
+
+Market Resonance is separate from demand quality. Provider-supplied likes, replies, reposts,
+upvotes, reactions, and comments are source-normalized for context only. Engagement strengthens
+qualified demand; engagement does not create demand. No new engagement fetches, billing unit,
+table, or migration are required. Calibration fixtures cover strong demand, weak/rejected noise,
+promotion, spam, duplicates, geo relevance, evidence validity, product relevance, determinism,
+and fail-closed behavior.
+
+Public domains can be analyzed. Persistent monitoring is plan-limited. Execution belongs only to
+owned products. Competitors should be discovered by overlapping demand, not merely by category
+labels. A future `ProductRelationship` may separate `owned`, `tracked_competitor`,
+`tracked_alternative`, and `reference` from independent `unverified`, `pending`, and `verified`
+ownership status; that relationship is not persisted in this scope.
 
 ## Phase 4 demand intelligence
 

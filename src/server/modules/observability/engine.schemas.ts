@@ -13,6 +13,7 @@ export const engineTypeSchema = z.enum([
   "action",
   "action_variant",
   "digest_composer",
+  "classification",
 ]);
 
 export const registerEngineVersionInputSchema = z.object({

@@ -72,6 +72,7 @@ export type SourceDiscoveryPage = {
   items: RawSourceItemEnvelope[];
   nextCursor?: string;
   rateLimit?: RateLimitMetadata;
+  estimatedCost?: number;
   diagnostics: { accepted: number; rejected: number; messages: string[] };
 };
 
