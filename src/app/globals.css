@@ -689,6 +689,10 @@ body {
 .marketing-card { border: 1px solid var(--color-border); border-radius: 16px; background: var(--color-surface); padding: 28px; }
 .marketing-signal-static { cursor: default; }
 
+/** Full desktop copy vs. a shorter mobile variant of the same message; swapped via the mobile media query below. */
+.marketing-copy-full { display: inline; }
+.marketing-copy-short { display: none; }
+
 /* Nav */
 .marketing-nav { position: sticky; top: 0; z-index: 30; background: rgba(247, 246, 241, 0.85); backdrop-filter: blur(8px); border-bottom: 1px solid var(--color-border); }
 .marketing-nav-inner { display: flex; align-items: center; justify-content: space-between; gap: 16px; max-width: 1240px; margin: 0 auto; padding: 18px 32px; flex-wrap: wrap; }
@@ -780,6 +784,8 @@ body {
 .marketing-tab-dot { width: 5px; height: 5px; border-radius: 50%; background: transparent; flex-shrink: 0; }
 .marketing-tab.is-active .marketing-tab-dot { background: var(--color-accent); }
 .marketing-tab-panel { position: relative; border-radius: 16px; border: 1px solid var(--color-border); box-shadow: 0 30px 70px -30px rgba(17, 17, 16, 0.2); overflow: hidden; background: var(--color-surface); padding: 28px; min-height: 420px; }
+.marketing-gap-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 16px; }
+.marketing-drift-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
 /* Why Wanterest */
 .marketing-feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
@@ -827,13 +833,19 @@ body {
 }
 
 /* Pricing */
+.marketing-pricing-toggle-row { display: flex; justify-content: center; margin-bottom: 48px; }
+.marketing-pricing-toggle { display: inline-flex; align-items: center; background: var(--color-chip); border-radius: 20px; padding: 4px; gap: 2px; }
+.marketing-pricing-toggle-btn { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 16px; cursor: pointer; border: 0; background: transparent; color: var(--color-ink-muted); font: inherit; transition: background 0.15s ease, color 0.15s ease; }
+.marketing-pricing-toggle-btn.is-active { background: var(--color-ink); color: #ffffff; }
+.marketing-pricing-save-chip { font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em; background: var(--color-accent); color: var(--color-ink); padding: 2px 7px; border-radius: 20px; }
 .marketing-pricing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
 .marketing-price-card { border: 1px solid var(--color-border); border-radius: 16px; padding: 28px; }
 .marketing-price-card.is-popular { border: 1.5px solid var(--color-ink); position: relative; box-shadow: 0 20px 40px -18px rgba(17, 17, 16, 0.18); }
 .marketing-price-badge { position: absolute; top: -13px; left: 24px; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; background: var(--color-accent); color: var(--color-ink); padding: 5px 13px; border-radius: 20px; box-shadow: 0 4px 10px -2px rgba(17, 17, 16, 0.2); }
 .marketing-price-name { font-size: 14px; font-weight: 600; color: var(--color-ink-muted); margin-bottom: 6px; }
-.marketing-price-value { font-family: var(--font-sora), sans-serif; font-weight: 700; font-size: 30px; margin-bottom: 18px; }
+.marketing-price-value { font-family: var(--font-sora), sans-serif; font-weight: 700; font-size: 30px; margin-bottom: 2px; }
 .marketing-price-value span { font-size: 14px; font-weight: 500; color: var(--color-ink-muted); }
+.marketing-price-annual-note { font-size: 12px; color: var(--color-ink-faint); margin-bottom: 12px; }
 .marketing-price-features { display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; color: var(--color-ink-muted); margin-bottom: 22px; min-height: 96px; }
 .marketing-price-cta { display: block; text-align: center; font-size: 13.5px; font-weight: 600; padding: 11px; border-radius: 8px; text-decoration: none; transition: opacity 0.15s ease, border-color 0.15s ease; }
 .marketing-price-cta.is-primary { color: #ffffff; background: var(--color-ink); }
@@ -868,19 +880,72 @@ body {
   .marketing-signals-grid { grid-template-columns: 1fr; }
   .marketing-qualify-grid { grid-template-columns: 1fr; }
   .marketing-competitor-columns { grid-template-columns: 1fr; gap: 10px; }
+  .marketing-gap-stats { grid-template-columns: 1fr 1fr; }
   .marketing-proof-strip { padding-bottom: 72px; }
 }
 
 @media (max-width: 640px) {
-  .marketing-hero { padding: 72px 20px 56px; }
-  .marketing-section { padding: 64px 20px 48px; }
-  .marketing-section.is-tight { padding: 56px 20px; }
-  .marketing-section-title.is-tight { margin-bottom: 40px; }
-  .marketing-nav-inner { padding: 14px 20px; }
+  /* Nav: logo + single primary CTA only */
+  .marketing-nav-inner { padding: 12px 20px; }
   .marketing-nav-actions { gap: 10px; }
-  .marketing-proof-strip { flex-direction: column; padding: 0 20px 56px; }
-  .marketing-proof-step { padding: 8px 0 28px !important; }
+  .marketing-nav-signin { display: none; }
+
+  /* Hero: compact enough to clear the fold */
+  .marketing-hero { padding: 40px 20px 40px; }
+  .marketing-eyebrow-pill { margin-bottom: 18px; padding: 6px 13px; }
+  .marketing-hero-title { font-size: clamp(30px, 9vw, 38px); line-height: 1.1; margin-bottom: 14px; }
+  .marketing-hero-sub { font-size: 15.5px; margin-bottom: 24px; }
+  .marketing-hero-note { margin-top: 12px; }
+  .marketing-hero-note-break { display: none; }
+
+  /* Scan form: stacked full-width rows read as native mobile, not a squeezed desktop row */
+  .marketing-scan-form { flex-direction: column; }
+  .marketing-scan-input, .marketing-scan-form .marketing-cta { width: 100%; }
+
+  /* Section rhythm: denser padding/margins throughout */
+  .marketing-section { padding: 48px 20px 40px; }
+  .marketing-section.is-tight { padding: 44px 20px; }
+  .marketing-section-eyebrow { margin-bottom: 12px; }
+  .marketing-section-title { margin-bottom: 12px; }
+  .marketing-section-title.is-tight { margin-bottom: 28px; }
+  .marketing-section-subtitle { margin-bottom: 32px; }
+
+  /* Shortened mobile copy for desktop-length subheads */
+  .marketing-copy-full { display: none; }
+  .marketing-copy-short { display: inline; }
+
+  /* Product proof strip: stacked steps (fix flex-basis, which maps to height once column) */
+  .marketing-proof-strip { flex-direction: column; padding: 0 20px 40px; gap: 24px; }
+  .marketing-proof-step { flex: 0 0 auto; width: 100%; padding: 0 !important; }
   .marketing-proof-arrow { display: none; }
-  .marketing-tab-panel { padding: 18px; min-height: 0; }
-  .marketing-footer { flex-direction: column; align-items: flex-start; }
+
+  /* Multi-column grids: stack with tighter gaps */
+  .marketing-steps-grid { gap: 24px; }
+  .marketing-signals-grid { gap: 12px; }
+  .marketing-proof-secondary-grid { gap: 12px; }
+  .marketing-qualify-grid { gap: 14px; }
+  .marketing-feature-grid { gap: 12px; }
+  .marketing-compare-grid { gap: 14px; }
+  .marketing-gap-stats { grid-template-columns: 1fr; }
+  .marketing-drift-cols { grid-template-columns: 1fr; }
+
+  /* Card density: shrink padding proportionally, never overlap */
+  .marketing-card { padding: 20px; }
+  .marketing-feature-card { padding: 18px; }
+  .marketing-compare-card { padding: 20px; }
+  .marketing-compare-card-dark { padding: 22px; }
+  .marketing-proof-stack { padding: 12px 0 28px; }
+
+  /* Beyond Signals: full-width panel, horizontally scrollable tabs already handled */
+  .marketing-tab-panel { padding: 16px; min-height: 0; }
+
+  /* Pricing: stacked cards stay scannable, Popular badge stays legible */
+  .marketing-price-card { padding: 22px 20px; }
+  .marketing-price-badge { left: 20px; }
+  .marketing-price-features { min-height: 0; }
+
+  /* Final CTA / footer: simple single column */
+  .marketing-final-cta-sub { margin-bottom: 24px; }
+  .marketing-footer { flex-direction: column; align-items: flex-start; gap: 16px; padding: 32px 20px; }
+  .marketing-footer-links { gap: 16px 20px; }
 }

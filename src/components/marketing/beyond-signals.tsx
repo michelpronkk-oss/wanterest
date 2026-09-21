@@ -83,7 +83,7 @@ const GAP_ROWS = [
 function GapPreview() {
   return (
     <div>
-      <div className="insights-stat-grid" style={{ gridTemplateColumns: "repeat(3, 1fr)", marginBottom: 16 }}>
+      <div className="marketing-gap-stats">
         <div className="insights-stat-card"><div className="insights-stat-card-label">Gap score</div><div className="insights-stat-card-value">42</div></div>
         <div className="insights-stat-card"><div className="insights-stat-card-label">Highest missed theme</div><div className="insights-stat-card-value" style={{ fontSize: 15 }}>Workflow simplicity</div></div>
         <div className="insights-stat-card"><div className="insights-stat-card-label">Urgency</div><div className="insights-stat-card-value" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 20 }}>High<span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--color-accent)" }} /></div></div>
@@ -121,7 +121,7 @@ function GapPreview() {
 function DriftPreview() {
   return (
     <div>
-      <div className="insights-two-col" style={{ gridTemplateColumns: "1fr 1fr", marginBottom: 0 }}>
+      <div className="marketing-drift-cols">
         <div>
           <div className="ui-section-label">What is rising</div>
           <div className="drift-row" style={{ cursor: "default" }}>

@@ -1,4 +1,4 @@
-const APP_ORIGIN = "https://app.wanterest.com";
+import { APP_ORIGIN } from "@/shared/config/site";
 
 export const APP_SIGNUP_URL = `${APP_ORIGIN}/signup`;
 export const APP_LOGIN_URL = `${APP_ORIGIN}/login`;

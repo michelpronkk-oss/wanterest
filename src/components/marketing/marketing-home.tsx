@@ -3,9 +3,20 @@ import Link from "next/link";
 import { LogoMark } from "@/components/dashboard/nav-icons";
 import { BeyondSignalsTabs } from "./beyond-signals";
 import { APP_LOGIN_URL, APP_SIGNUP_URL } from "./links";
+import { PricingSection } from "./pricing";
 import { ProofSignalCard } from "./proof-signal-card";
 import { Reveal } from "./reveal";
 import { ScanForm } from "./scan-form";
+
+/** Renders the full desktop copy, swapped via CSS for a shorter mobile variant at narrow widths. */
+function ResponsiveText({ full, short }: { full: string; short: string }) {
+  return (
+    <>
+      <span className="marketing-copy-full">{full}</span>
+      <span className="marketing-copy-short">{short}</span>
+    </>
+  );
+}
 
 export function MarketingHome() {
   return (
@@ -22,7 +33,7 @@ export function MarketingHome() {
       <CompetitorPreview />
       <Positioning />
       <DailyValue />
-      <Pricing />
+      <PricingSection />
       <Faq />
       <FinalCta />
       <Footer />
@@ -63,8 +74,8 @@ function Hero() {
       <p className="marketing-hero-sub">Wanterest just finds it.</p>
       <ScanForm />
       <p className="marketing-hero-note">
-        No keywords. No setup.
-        <br />
+        {"No keywords. No setup. "}
+        <br className="marketing-hero-note-break" />
         Just real conversations.
       </p>
     </header>
@@ -153,7 +164,12 @@ function SignalTypes() {
       <div className="marketing-section-inner">
         <div className="marketing-section-eyebrow">SIGNAL, NOT NOISE</div>
         <h2 className="marketing-heading marketing-section-title">Not leads. Signals of real need.</h2>
-        <p className="marketing-section-subtitle">Find qualified demand across the public conversations that matter to your market.</p>
+        <p className="marketing-section-subtitle">
+          <ResponsiveText
+            full="Find qualified demand across the public conversations that matter to your market."
+            short="Find qualified demand across the conversations that matter."
+          />
+        </p>
         <div className="marketing-signals-grid">
           <ProofSignalCard source="reddit" sourceLabel="Reddit" time="—" intentLabel="High intent" intentTone="accent" matchPercent={94} quote="Looking for a tool that can watch our inbox and CRM together. Recommendations?" />
           <ProofSignalCard source="hacker-news" sourceLabel="Hacker News" time="—" intentLabel="Problem signal" matchPercent={81} quote="Every week I reconcile the same invoices across three spreadsheets by hand." />
@@ -232,7 +248,10 @@ function BeyondSignals() {
         <div className="marketing-section-eyebrow">BEYOND SIGNALS</div>
         <h2 className="marketing-display-title" style={{ fontSize: "clamp(28px, 3.7vw, 40px)", marginBottom: 16 }}>Understand demand. Then act on it.</h2>
         <p style={{ fontSize: 15, color: "var(--color-ink-muted)", maxWidth: 560, margin: "0 auto", lineHeight: 1.55 }}>
-          See what your market wants, where you&rsquo;re missing it, what&rsquo;s changing — and what to do next.
+          <ResponsiveText
+            full="See what your market wants, where you're missing it, what's changing — and what to do next."
+            short="See what your market wants, where you're missing it, and what's changing."
+          />
         </p>
       </div>
       <BeyondSignalsTabs />
@@ -272,7 +291,10 @@ function CompetitorPreview() {
         <div className="marketing-section-eyebrow">COMING SOON</div>
         <h2 className="marketing-heading" style={{ fontSize: "clamp(26px, 3.4vw, 36px)", marginBottom: 16 }}>Understand what buyers compare you against.</h2>
         <p style={{ fontSize: 14.5, color: "var(--color-ink-muted)", marginBottom: 44, maxWidth: 560, marginLeft: "auto", marginRight: "auto", lineHeight: 1.55 }}>
-          See which alternatives buyers actually consider, and where neither product owns the demand.
+          <ResponsiveText
+            full="See which alternatives buyers actually consider, and where neither product owns the demand."
+            short="See which alternatives buyers actually consider."
+          />
         </p>
         <div className="marketing-card marketing-competitor-card">
           <div className="marketing-competitor-columns">
@@ -300,7 +322,10 @@ function Positioning() {
         Wanterest shows you who is showing need.
       </h2>
       <p style={{ fontSize: 15, color: "var(--color-ink-muted)", maxWidth: 460, margin: "0 auto 56px", lineHeight: 1.55 }}>
-        Stop guessing who to contact. Start with people already talking about the problem you solve.
+        <ResponsiveText
+          full="Stop guessing who to contact. Start with people already talking about the problem you solve."
+          short="Stop guessing who to contact."
+        />
       </p>
       <div className="marketing-compare-grid">
         <Reveal>
@@ -365,55 +390,6 @@ function DailyValue() {
           </div>
         </div>
         <a className="marketing-cta is-compact" href={APP_SIGNUP_URL}>See today&rsquo;s signals →</a>
-      </div>
-    </section>
-  );
-}
-
-function Pricing() {
-  return (
-    <section className="marketing-section is-tight" id="pricing">
-      <div className="marketing-section-inner">
-        <div className="marketing-section-eyebrow">PRICING</div>
-        <h2 className="marketing-heading marketing-section-title" style={{ marginBottom: 48 }}>Simple pricing.</h2>
-
-        <div className="marketing-pricing-grid">
-          <div className="marketing-price-card">
-            <div className="marketing-price-name">Free</div>
-            <div className="marketing-price-value">$0</div>
-            <div className="marketing-price-features">
-              <div>Monitor 1 product</div>
-              <div>Manual scans</div>
-              <div>Preview Demand Map &amp; Gap</div>
-            </div>
-            <a className="marketing-price-cta is-secondary" href={APP_SIGNUP_URL}>Start free</a>
-          </div>
-
-          <div className="marketing-price-card is-popular">
-            <span className="marketing-price-badge">Popular</span>
-            <div className="marketing-price-name">Pro</div>
-            <div className="marketing-price-value">$49<span> / month</span></div>
-            <div className="marketing-price-features">
-              <div>Monitor up to 3 products</div>
-              <div>Daily automatic scans</div>
-              <div>30 days of Demand Drift history</div>
-              <div>2 active experiments</div>
-            </div>
-            <a className="marketing-price-cta is-primary" href={APP_SIGNUP_URL}>Start free</a>
-          </div>
-
-          <div className="marketing-price-card">
-            <div className="marketing-price-name">Growth</div>
-            <div className="marketing-price-value">$99<span> / month</span></div>
-            <div className="marketing-price-features">
-              <div>Monitor up to 10 products</div>
-              <div>Frequent automatic scans</div>
-              <div>90 days of Demand Drift history</div>
-              <div>10 active experiments · 3 seats</div>
-            </div>
-            <a className="marketing-price-cta is-secondary" href={APP_SIGNUP_URL}>Start free</a>
-          </div>
-        </div>
       </div>
     </section>
   );
