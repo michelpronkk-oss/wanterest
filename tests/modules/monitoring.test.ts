@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { demandDriftWindowAllowed, MONITORING_POLICY_VERSION, monitoringPolicySnapshot, type MonitoringPolicy } from "../../src/server/modules/entitlements/monitoring-policy.contract";
 import { nextMonitoringCycleAt, nextMonitoringDeepRefreshAt } from "../../src/server/modules/monitoring/monitoring.schedule";
+import { deriveMonitoringStatus } from "../../src/server/modules/monitoring/monitoring.view-model";
 import { scanModeSchema } from "../../src/server/modules/operations/product-demand-scan.schemas";
-import { scheduledScanIdempotencyKey } from "../../src/server/modules/operations/product-demand-scan.identity";
+import { scheduledScanIdempotencyKey, shouldRefreshDerivedIntelligence } from "../../src/server/modules/operations/product-demand-scan.identity";
 
 const policy: MonitoringPolicy = {
   version: MONITORING_POLICY_VERSION,
@@ -40,9 +41,24 @@ describe("Automatic Monitoring v1 policy contracts", () => {
   });
 
   it("accepts the explicit monitoring scan modes and creates stable slots", () => {
+    expect(scanModeSchema.parse("monitoring")).toBe("monitoring");
     expect(scanModeSchema.parse("intelligence_cycle")).toBe("intelligence_cycle");
     expect(scanModeSchema.parse("deep_refresh")).toBe("deep_refresh");
+    expect(scheduledScanIdempotencyKey("00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002", "monitoring", "2026-09-22T12:00:00.000Z")).toContain("monitoring:");
     expect(scheduledScanIdempotencyKey("00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002", "intelligence_cycle", "2026-09-22T12:00:00.000Z")).toContain("intelligence_cycle:");
+  });
+
+  it("keeps recurring monitoring lightweight when qualification finds no new signal", () => {
+    expect(shouldRefreshDerivedIntelligence("monitoring", 0)).toBe(false);
+    expect(shouldRefreshDerivedIntelligence("monitoring", 1)).toBe(true);
+    expect(shouldRefreshDerivedIntelligence("manual", 0)).toBe(true);
+  });
+
+  it("maps persisted monitoring state to the small dashboard status contract", () => {
+    expect(deriveMonitoringStatus({ enabled: false, policyEnabled: false })).toBe("paused");
+    expect(deriveMonitoringStatus({ enabled: true, policyEnabled: true, currentStatus: "failed" })).toBe("failed");
+    expect(deriveMonitoringStatus({ enabled: true, policyEnabled: true, resultState: "complete_with_warnings" })).toBe("limited");
+    expect(deriveMonitoringStatus({ enabled: true, policyEnabled: true, currentStatus: "completed" })).toBe("healthy");
   });
 
   it("recomputes future cadence from the current policy and disables recurring work for Free", () => {

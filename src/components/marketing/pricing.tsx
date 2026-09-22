@@ -16,11 +16,7 @@ type Plan = {
   annualPrice: number;
   popular?: boolean;
   icon: "free" | "pro" | "growth";
-  /**
-   * Kept plan-neutral on cadence: Automatic Monitoring v1 is still being built and its
-   * entitlement values aren't final, so these bullets avoid promising an exact scan
-   * frequency. Update once that work ships and is verified.
-   */
+  /** Keep exact cadence entitlement-driven; the product dashboard shows the workspace's actual schedule. */
   features: string[];
 };
 

@@ -1499,7 +1499,11 @@ latest job reference, and a short lease. The service-role-only
 `claim_monitoring_schedule` function atomically claims a due row, so concurrent Trigger ticks
 cannot dispatch the same slot. The recurring `automatic-monitoring-scheduler` task is thin: it
 ensures active products have schedules, resolves current policy, claims due rows, and dispatches
-the existing `product-demand-scan` workflow with `intelligence_cycle` or `deep_refresh` mode.
+the existing `product-demand-scan` workflow with explicit `monitoring` mode for bounded light
+cycles and `deep_refresh` mode for the optional deeper refresh hook. The older
+`intelligence_cycle`/`scheduled` values remain accepted as compatibility aliases for persisted
+jobs, but new scheduler dispatches use `monitoring` so onboarding, manual refresh, and recurring
+monitoring remain visibly distinct in the durable job record.
 The existing durable `job_runs`, dispatch idempotency, product concurrency, and recovery logic
 remain the execution boundary. A second queue is not introduced.
 
@@ -1509,8 +1513,9 @@ approximately two-hour intervals and three deep refreshes per week. Cycle and de
 explicit entitlement values, including X request/post caps and a soft daily X cost ceiling.
 Paid-source exhaustion produces partial coverage and a persisted warning; it does not weaken
 qualification or fail unrelated sources. Plan changes recompute the policy snapshot and future
-cadence. Downgrades disable newly unavailable work while retaining historical intelligence;
-archived products are disabled and never scheduled.
+cadence. Downgrades disable newly unavailable work while retaining historical intelligence; failed
+dispatched runs record an error state and exponential retry backoff on the product schedule.
+Archived products are disabled and never scheduled.
 
 Manual refresh remains durable but is a bounded, cooldown-aware fallback. Drift requests are
 server-enforced against the current plan window while older snapshots remain stored. Digest rows
@@ -1520,7 +1525,8 @@ priority conditions create idempotent `monitoring_alerts` rows with persistent d
 there are no realtime sockets, arbitrary alert rules, public API, webhooks, MCP, or adaptive
 follow-up engine in this version.
 
-The forward migration is `supabase/migrations/20261002000000_automatic_monitoring_v1.sql`.
+The forward migrations are `supabase/migrations/20261002000000_automatic_monitoring_v1.sql` and
+`supabase/migrations/20261003000000_automatic_monitoring_state_v1.sql`.
 Monitoring tables are member-readable and service-role writable under RLS, and all workspace
 relationships use the existing composite-tenant integrity pattern. Trigger task definitions,
 policy resolution, schedule repositories, notification delivery, and the dashboard status

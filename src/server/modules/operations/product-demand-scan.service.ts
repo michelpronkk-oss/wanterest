@@ -164,16 +164,16 @@ export async function executeProductDemandScan(input: ProductDemandScanInput, tr
   const product = await loadProductForTask(client, parsed);
   const scanEntitlement = await getWorkspaceEntitlement(client, parsed.workspaceId, "scan_frequency");
   if (scanEntitlement.value === null) throw new AppError("CAPABILITY_DISABLED", "Scanning is not enabled for this workspace.");
-  await consumeUsage(client, {
-    workspaceId: parsed.workspaceId,
-    usageType: "source_scan",
-    amount: 1,
-    idempotencyKey: `source_scan:${job?.idempotency_key ?? parsed.idempotencyKey}`,
-    actorUserId: parsed.requestedByUserId,
-    sourceMetadata: { workflow: "product-demand-scan", scanMode: parsed.scanMode, productId: parsed.productId, jobRunId: parsed.jobRunId ?? null, triggerRunId: triggerRunId ?? null },
-    traceId: getTraceId(),
-  });
   try {
+    await consumeUsage(client, {
+      workspaceId: parsed.workspaceId,
+      usageType: "source_scan",
+      amount: 1,
+      idempotencyKey: `source_scan:${job?.idempotency_key ?? parsed.idempotencyKey}`,
+      actorUserId: parsed.requestedByUserId,
+      sourceMetadata: { workflow: "product-demand-scan", scanMode: parsed.scanMode, productId: parsed.productId, jobRunId: parsed.jobRunId ?? null, triggerRunId: triggerRunId ?? null },
+      traceId: getTraceId(),
+    });
     const result = await runInitialScan(product, getTraceId(), {
       scanMode: parsed.scanMode,
       idempotencyKey: parsed.idempotencyKey,
@@ -186,6 +186,10 @@ export async function executeProductDemandScan(input: ProductDemandScanInput, tr
         scheduleId: parsed.monitoringScheduleId,
         jobRunId: parsed.jobRunId,
         succeeded: true,
+        scanMode: parsed.scanMode,
+        newCandidateCount: result.evaluations,
+        newSignalCount: result.newSignals ?? result.signals,
+        intelligenceUpdated: (result.newSignals ?? result.signals) > 0,
         xCostUsd: result.sourceResults?.filter((source) => source.sourceKey === "x").reduce((sum, source) => sum + (source.estimatedCost ?? 0), 0),
       });
       await materializeMonitoringNotifications({ workspaceId: parsed.workspaceId, productId: parsed.productId, completedAt: new Date().toISOString() }).catch((notificationError) => {
@@ -199,6 +203,8 @@ export async function executeProductDemandScan(input: ProductDemandScanInput, tr
         scheduleId: parsed.monitoringScheduleId,
         jobRunId: parsed.jobRunId,
         succeeded: false,
+        scanMode: parsed.scanMode,
+        errorCode: error instanceof AppError ? error.code : "MONITORING_SCAN_FAILED",
         message: error instanceof Error ? error.message : "Scheduled scan failed.",
       }).catch(() => undefined);
     }

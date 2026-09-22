@@ -369,7 +369,7 @@ function selectDiverse(candidates: Candidate[], maxQueries: number): { selected:
 }
 
 function queryCountCap(mode: SourceRoutingScanMode): number {
-  return mode === "onboarding" || mode === "baseline" ? 3 : mode === "manual" || mode === "manual_refresh" ? 12 : mode === "scheduled" || mode === "intelligence_cycle" ? 4 : 8;
+  return mode === "onboarding" || mode === "baseline" ? 3 : mode === "manual" || mode === "manual_refresh" ? 12 : mode === "scheduled" || mode === "monitoring" || mode === "intelligence_cycle" ? 4 : 8;
 }
 
 function allocateQueryBudgets(candidates: Candidate[], budget: number): number[] {

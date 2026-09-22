@@ -48,6 +48,7 @@ async function upsertSchedule(client: Client, input: {
   enabled: boolean;
   policyVersion: string;
   policySnapshot: Json;
+  currentStatus: string;
   nextCycleAt: string | null;
   nextDeepRefreshAt: string | null;
 }): Promise<void> {
@@ -55,6 +56,7 @@ async function upsertSchedule(client: Client, input: {
     workspace_id: input.workspaceId,
     product_id: input.productId,
     enabled: input.enabled,
+    current_status: input.currentStatus,
     policy_version: input.policyVersion,
     policy_snapshot: jsonValueSchema.parse(input.policySnapshot),
     next_cycle_at: input.nextCycleAt,
@@ -69,12 +71,18 @@ export async function ensureMonitoringScheduleForProduct(client: Client, workspa
   const snapshot = monitoringPolicySnapshot(policy);
   const enabled = policy.monitoringEnabled;
   const policyChanged = existing ? snapshotChanged(existing.policy_snapshot, snapshot) : false;
+  const currentStatus = !enabled
+    ? "paused"
+    : existing?.current_status === "paused" || policyChanged
+      ? "idle"
+      : existing?.current_status ?? "idle";
   await upsertSchedule(client, {
     workspaceId,
     productId,
     enabled,
     policyVersion: policy.version,
     policySnapshot: snapshot,
+    currentStatus,
     nextCycleAt: enabled
       ? policyChanged ? nextMonitoringCycleAt(now, policy, productId) : existing?.next_cycle_at ?? nextMonitoringCycleAt(now, policy, productId)
       : null,
@@ -85,13 +93,17 @@ export async function ensureMonitoringScheduleForProduct(client: Client, workspa
 }
 
 export async function ensureMonitoringSchedulesForActiveProducts(client: Client, now: string): Promise<number> {
-  const { data, error } = await client.from("products").select("workspace_id,id,status").eq("status", "active").limit(1_000);
-  if (error) throw new AppError("INTERNAL_ERROR", "Active monitoring products could not be loaded.", 500, { providerMessage: error.message });
   let ensured = 0;
-  for (const product of data ?? []) {
-    if (!isActiveProduct(product)) continue;
-    await ensureMonitoringScheduleForProduct(client, product.workspace_id, product.id, now);
-    ensured += 1;
+  const pageSize = 500;
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await client.from("products").select("workspace_id,id,status").eq("status", "active").range(offset, offset + pageSize - 1);
+    if (error) throw new AppError("INTERNAL_ERROR", "Active monitoring products could not be loaded.", 500, { providerMessage: error.message });
+    for (const product of data ?? []) {
+      if (!isActiveProduct(product)) continue;
+      await ensureMonitoringScheduleForProduct(client, product.workspace_id, product.id, now);
+      ensured += 1;
+    }
+    if ((data ?? []).length < pageSize) break;
   }
   return ensured;
 }

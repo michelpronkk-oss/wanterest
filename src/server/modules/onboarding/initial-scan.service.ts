@@ -25,7 +25,7 @@ import { sourceDiscoveryRequestSchema, type SourceDiscoveryRequest } from "@/ser
 import { rebuildDemandIntelligenceForScan, type DemandRebuildResult } from "@/server/modules/demand-intelligence/demand.orchestration";
 import { generateActionsForScan, type ActionGenerationForScanResult } from "@/server/modules/actions/action.orchestration";
 import { scanCandidateReviewSchema, sourceScanResultSchema, type ScanCandidateReview, type ScanMode, type ScanProgress, type SourceScanResult } from "@/server/modules/operations/product-demand-scan.schemas";
-import { initialScanIdempotencyKey, isActiveProductDemandScanJob, PRODUCT_DEMAND_SCAN_JOB_TYPE } from "@/server/modules/operations/product-demand-scan.identity";
+import { initialScanIdempotencyKey, isActiveProductDemandScanJob, PRODUCT_DEMAND_SCAN_JOB_TYPE, shouldRefreshDerivedIntelligence } from "@/server/modules/operations/product-demand-scan.identity";
 import { reconcileActiveProductDemandScanJobs, reconcileProductDemandScanJob } from "@/server/modules/operations/product-demand-scan.recovery";
 import { isActiveProduct } from "@/server/modules/products/product-lifecycle";
 import { resolveMonitoringPolicy, type MonitoringPolicy } from "@/server/modules/entitlements/monitoring-policy";
@@ -42,6 +42,7 @@ const scanResultSchema = z.object({
   evaluations: z.number().int().nonnegative(),
   rankings: z.number().int().nonnegative(),
   signals: z.number().int().nonnegative(),
+  newSignals: z.number().int().nonnegative().optional(),
   sources: z.array(z.string()),
   diagnostics: z.array(z.object({ sourceKey: z.string(), state: z.string(), message: z.string().optional() })),
   sourceResults: z.array(sourceScanResultSchema).optional(),
@@ -112,6 +113,8 @@ export type CandidateProcessingResult = {
   evaluations: number;
   rankings: number;
   signals: number;
+  /** Qualified signals created by this scan; existing signal refreshes are excluded. */
+  newSignals?: number;
   evaluationIds: string[];
   /** Positional with evaluationIds; null means the evaluation was not materialized as a signal. */
   signalIds: Array<string | null>;
@@ -157,8 +160,9 @@ function jsonStrings(value: Json): string[] {
 }
 
 function isManualScanMode(mode: ScanMode): boolean { return mode === "manual" || mode === "manual_refresh"; }
-function isCycleScanMode(mode: ScanMode): boolean { return mode === "scheduled" || mode === "intelligence_cycle"; }
+function isCycleScanMode(mode: ScanMode): boolean { return mode === "scheduled" || mode === "monitoring" || mode === "intelligence_cycle"; }
 function isDeepScanMode(mode: ScanMode): boolean { return mode === "deep" || mode === "deep_refresh"; }
+function isMonitoringScanMode(mode: ScanMode): boolean { return mode === "monitoring"; }
 
 function boundMonitoringRequests(
   requests: SourceDiscoveryRequest[],
@@ -518,6 +522,7 @@ export async function getLatestScanState(workspaceId: string, productId: string)
 
 export async function runInitialScan(product: ProductRow, traceId = getTraceId(), options: InitialScanExecutionOptions = {}): Promise<InitialScanResult> {
   const client = createSupabaseServiceClient();
+  const scanStartedAt = Date.now();
   const scanMode = options.scanMode ?? "onboarding";
   const { job, alreadyComplete } = await createOrResumeScanJob(client, product.workspace_id, product.id, traceId, {
     idempotencyKey: options.idempotencyKey,
@@ -762,6 +767,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
 
     await setScanJob(client, job.id, { status: "running", phase: "analyzing", scanMode, progress: { stage: "processing", percent: 65, currentLabel: "Processing conversations" } });
     let candidateResult: CandidateProcessingResult;
+    const newSignalEvaluationIds: string[] = [];
     if (options.candidateExecutor) {
       candidateResult = await options.candidateExecutor({ product, profileId: profile.id, normalizedSourceItemIds: [...new Set(normalizedSourceItemIds)], conversationIds: [...new Set(conversationIds)], traceId });
       diagnostics.push(...candidateResult.diagnostics);
@@ -810,7 +816,10 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
         rankings.push(ranking);
         const signal = await intelligence.materializeSignal(product, evaluation.id, ranking.id);
         signalIdsByEvaluation.push(signal?.id ?? null);
-        if (signal) signals.push(signal);
+        if (signal) {
+          signals.push(signal);
+          if (Date.parse(signal.created_at) >= scanStartedAt) newSignalEvaluationIds.push(evaluation.id);
+        }
       } catch (error) {
         signalIdsByEvaluation.push(null);
         diagnostics.push({ sourceKey: "signals", state: "failed", message: safeSummary(error) });
@@ -830,6 +839,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       evaluations: evaluations.length,
       rankings: rankings.length,
       signals: signals.length,
+      newSignals: newSignalEvaluationIds.length,
       evaluationIds: evaluations.map((evaluation) => evaluation.id),
       signalIds: signalIdsByEvaluation,
       candidateReviews: candidateReviewsFromRows(evaluations, rows.conversations, sourceById),
@@ -849,24 +859,40 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       } } : {}),
     };
     }
+    const newSignalCount = candidateResult.newSignals ?? (isMonitoringScanMode(scanMode) ? newSignalEvaluationIds.length : candidateResult.signals);
+    const shouldRefreshDerived = shouldRefreshDerivedIntelligence(scanMode, newSignalCount);
+    const derivedEvaluationIds = isMonitoringScanMode(scanMode) && newSignalEvaluationIds.length
+      ? candidateResult.evaluationIds.filter((evaluationId) => newSignalEvaluationIds.includes(evaluationId))
+      : candidateResult.evaluationIds;
+    const derivedSignalIds = isMonitoringScanMode(scanMode) && newSignalEvaluationIds.length
+      ? candidateResult.signalIds.filter((signalId, index) => signalId !== null && newSignalEvaluationIds.includes(candidateResult.evaluationIds[index] ?? ""))
+      : candidateResult.signalIds;
     await setScanJob(client, job.id, { status: "running", phase: "qualifying", scanMode, progress: { stage: "qualifying", percent: 75, currentLabel: "Qualifying real demand" } });
     let demand: DemandRebuildResult = { observationsUpdated: 0, mapUpdated: 0, gapUpdated: 0, driftUpdated: 0, warnings: [] };
-    try {
-      await setScanJob(client, job.id, { status: "running", phase: "building-intelligence", scanMode, progress: { stage: "building_intelligence", percent: 82, currentLabel: "Building your demand map" } });
-      demand = await (options.demandExecutor ?? rebuildDemandIntelligenceForScan)({ product, evaluationIds: candidateResult.evaluationIds, signalIds: candidateResult.signalIds, traceId });
-      for (const warning of demand.warnings) diagnostics.push({ sourceKey: "demand-intelligence", state: "warning", message: warning });
-    } catch (error) {
-      demand = { ...demand, warnings: [safeSummary(error)] };
-      diagnostics.push({ sourceKey: "demand-intelligence", state: "warning", message: demand.warnings[0] });
+    if (shouldRefreshDerived) {
+      try {
+        await setScanJob(client, job.id, { status: "running", phase: "building-intelligence", scanMode, progress: { stage: "building_intelligence", percent: 82, currentLabel: "Building your demand map" } });
+        demand = await (options.demandExecutor ?? rebuildDemandIntelligenceForScan)({ product, evaluationIds: derivedEvaluationIds, signalIds: derivedSignalIds, traceId });
+        for (const warning of demand.warnings) diagnostics.push({ sourceKey: "demand-intelligence", state: "warning", message: warning });
+      } catch (error) {
+        demand = { ...demand, warnings: [safeSummary(error)] };
+        diagnostics.push({ sourceKey: "demand-intelligence", state: "warning", message: demand.warnings[0] });
+      }
+    } else {
+      diagnostics.push({ sourceKey: "demand-intelligence", state: "unchanged", message: "No new qualified signals; existing intelligence was left unchanged." });
     }
     let actions: ActionGenerationForScanResult = { actionsUpdated: 0, warnings: [] };
-    try {
-      await setScanJob(client, job.id, { status: "running", phase: "generating-actions", scanMode, progress: { stage: "generating_actions", percent: 92, currentLabel: "Preparing actions" } });
-      actions = await (options.actionsExecutor ?? generateActionsForScan)({ product, traceId });
-      for (const warning of actions.warnings) diagnostics.push({ sourceKey: "actions", state: "warning", message: warning });
-    } catch (error) {
-      actions = { actionsUpdated: 0, warnings: [safeSummary(error)] };
-      diagnostics.push({ sourceKey: "actions", state: "warning", message: actions.warnings[0] });
+    if (shouldRefreshDerived) {
+      try {
+        await setScanJob(client, job.id, { status: "running", phase: "generating-actions", scanMode, progress: { stage: "generating_actions", percent: 92, currentLabel: "Preparing actions" } });
+        actions = await (options.actionsExecutor ?? generateActionsForScan)({ product, traceId });
+        for (const warning of actions.warnings) diagnostics.push({ sourceKey: "actions", state: "warning", message: warning });
+      } catch (error) {
+        actions = { actionsUpdated: 0, warnings: [safeSummary(error)] };
+        diagnostics.push({ sourceKey: "actions", state: "warning", message: actions.warnings[0] });
+      }
+    } else {
+      diagnostics.push({ sourceKey: "actions", state: "unchanged", message: "No new qualified signals; existing actions were left unchanged." });
     }
     const hasWarnings = diagnostics.some((item) => item.state === "failed" || item.state === "warning" || item.state === "skipped") || demand.warnings.length > 0 || actions.warnings.length > 0;
     const result: InitialScanResult = {
@@ -878,6 +904,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       evaluations: candidateResult.evaluations,
       rankings: candidateResult.rankings,
       signals: candidateResult.signals,
+      newSignals: newSignalCount,
       sources,
       sourceResults,
       diagnostics,

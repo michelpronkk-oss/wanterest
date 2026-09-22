@@ -25,7 +25,7 @@ import {
 type Client = SupabaseClient<Database>;
 
 async function monitoringOwner(client: Client, workspaceId: string): Promise<string | null> {
-  const { data, error } = await client.from("workspace_members").select("user_id").eq("workspace_id", workspaceId).eq("status", "active").order("role", { ascending: true }).limit(1).maybeSingle();
+  const { data, error } = await client.from("workspace_members").select("user_id").eq("workspace_id", workspaceId).eq("status", "active").in("role", ["owner", "admin"]).order("created_at", { ascending: true }).limit(1).maybeSingle();
   if (error) throw new AppError("INTERNAL_ERROR", "Monitoring workspace membership could not be loaded.", 500, { providerMessage: error.message });
   return data?.user_id ?? null;
 }
@@ -57,18 +57,17 @@ async function dispatchOneMonitoringSchedule(client: Client, schedule: Awaited<R
   }
   const ownerId = await monitoringOwner(client, schedule.workspace_id);
   if (!ownerId) {
-    await recordMonitoringScheduleFailure(client, claimed, "No active workspace member.", now);
+    await recordMonitoringScheduleFailure(client, claimed, "No active workspace member.", now, "MONITORING_OWNER_MISSING");
     return { status: "failed" };
   }
 
   const slot = leaseKind === "deep_refresh" ? claimed.next_deep_refresh_at ?? now : claimed.next_cycle_at ?? now;
-  const scanMode = leaseKind;
   const input = {
     workspaceId: claimed.workspace_id,
     productId: claimed.product_id,
     requestedByUserId: ownerId,
-    scanMode,
-    idempotencyKey: scheduledScanIdempotencyKey(claimed.workspace_id, claimed.product_id, scanMode, slot),
+    scanMode: leaseKind === "deep_refresh" ? "deep_refresh" : "monitoring",
+    idempotencyKey: scheduledScanIdempotencyKey(claimed.workspace_id, claimed.product_id, leaseKind === "deep_refresh" ? "deep_refresh" : "monitoring", slot),
     forceRebuild: false,
     monitoringScheduleId: claimed.id,
     monitoringLeaseToken: claimed.lease_token ?? undefined,
@@ -99,7 +98,13 @@ async function dispatchOneMonitoringSchedule(client: Client, schedule: Awaited<R
     await recordMonitoringScheduleDispatched(client, claimed, { now, nextCycleAt: nextCycle, nextDeepRefreshAt: nextDeep, jobRunId: prepared.job.id });
     return { status: "dispatched", jobRunId: prepared.job.id };
   } catch (error) {
-    await recordMonitoringScheduleFailure(client, claimed, error instanceof Error ? error.message : "Monitoring dispatch failed.", now);
+    await recordMonitoringScheduleFailure(
+      client,
+      claimed,
+      error instanceof Error ? error.message : "Monitoring dispatch failed.",
+      now,
+      error instanceof AppError ? error.code : "MONITORING_DISPATCH_FAILED",
+    );
     if (error instanceof AppError && error.code === "INTERNAL_ERROR") return { status: "failed" };
     throw error;
   }

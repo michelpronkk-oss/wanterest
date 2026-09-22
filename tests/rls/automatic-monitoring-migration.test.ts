@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const migration = readFileSync(resolve(process.cwd(), "supabase/migrations/20261002000000_automatic_monitoring_v1.sql"), "utf8");
+const stateMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/20261003000000_automatic_monitoring_state_v1.sql"), "utf8");
 
 describe("Automatic Monitoring v1 migration contract", () => {
   it("defines durable schedules, leases, alert state, and digest delivery state", () => {
@@ -12,6 +13,10 @@ describe("Automatic Monitoring v1 migration contract", () => {
     expect(migration).toContain("monitoring_alerts");
     expect(migration).toContain("digest_deliveries");
     expect(migration).toContain("lease_expires_at");
+    expect(stateMigration).toContain("current_status");
+    expect(stateMigration).toContain("last_error_code");
+    expect(stateMigration).toContain("last_new_signal_count");
+    expect(stateMigration).toContain("current_status = 'running'");
   });
 
   it("keeps tenant integrity and authoritative plan capabilities in the database", () => {

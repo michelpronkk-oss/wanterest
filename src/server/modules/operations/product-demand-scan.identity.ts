@@ -36,8 +36,13 @@ export function manualScanIdempotencyKey(workspaceId: string, productId: string)
   return `manual-scan:${workspaceId}:${productId}:${randomUUID()}`;
 }
 
-export function scheduledScanIdempotencyKey(workspaceId: string, productId: string, mode: "intelligence_cycle" | "deep_refresh", slot: string): string {
+export function scheduledScanIdempotencyKey(workspaceId: string, productId: string, mode: "monitoring" | "intelligence_cycle" | "deep_refresh", slot: string): string {
   return `${mode}:${workspaceId}:${productId}:${slot}`;
+}
+
+/** Monitoring cycles may scan and qualify, but only new qualified signals rebuild derived intelligence. */
+export function shouldRefreshDerivedIntelligence(scanMode: ScanMode, newSignalCount: number): boolean {
+  return scanMode !== "monitoring" || newSignalCount > 0;
 }
 
 export function buildProductDemandScanInput(request: ProductDemandScanRequest, idempotencyKey: string, requestedByUserId: string): ProductDemandScanInput {

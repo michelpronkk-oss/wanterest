@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/server/db/database.types";
 import { jsonValueSchema, type Json, type MonitoringScheduleRow } from "@/server/db/database.helpers";
 import { AppError } from "@/server/lib/errors";
+import type { ScanMode } from "@/server/modules/operations/product-demand-scan.schemas";
 
 type Client = SupabaseClient<Database>;
 
@@ -14,6 +15,15 @@ function providerError(message: string, providerMessage?: string): AppError {
 
 function json(value: unknown): Json {
   return jsonValueSchema.parse(value);
+}
+
+function retryAt(now: string, consecutiveFailures: number): string {
+  const delay = Math.min(60 * 60_000, Math.max(10 * 60_000, 2 ** Math.min(consecutiveFailures, 5) * 60_000));
+  return new Date(Date.parse(now) + delay).toISOString();
+}
+
+function isDeepRefresh(mode: ScanMode | undefined): boolean {
+  return mode === "deep" || mode === "deep_refresh";
 }
 
 export async function getMonitoringSchedule(client: Client, workspaceId: string, productId: string): Promise<MonitoringScheduleRow | null> {
@@ -61,7 +71,7 @@ export async function updateMonitoringSchedule(
 }
 
 export async function disableMonitoringSchedule(client: Client, workspaceId: string, productId: string): Promise<void> {
-  const { error } = await client.from("monitoring_schedules").update({ enabled: false, next_cycle_at: null, next_deep_refresh_at: null, lease_token: null, lease_kind: null, lease_expires_at: null }).eq("workspace_id", workspaceId).eq("product_id", productId);
+  const { error } = await client.from("monitoring_schedules").update({ enabled: false, current_status: "paused", next_cycle_at: null, next_deep_refresh_at: null, lease_token: null, lease_kind: null, lease_expires_at: null }).eq("workspace_id", workspaceId).eq("product_id", productId);
   if (error) throw providerError("Monitoring schedule could not be disabled.", error.message);
 }
 
@@ -84,16 +94,20 @@ export async function claimMonitoringSchedule(client: Client, scheduleId: string
   return data;
 }
 
-export async function recordMonitoringScheduleFailure(client: Client, schedule: MonitoringScheduleRow, message: string, now: string): Promise<void> {
-  const retryAt = new Date(Date.parse(now) + Math.min(60 * 60_000, Math.max(10 * 60_000, 2 ** Math.min(schedule.consecutive_failures, 5) * 60_000))).toISOString();
+export async function recordMonitoringScheduleFailure(client: Client, schedule: MonitoringScheduleRow, message: string, now: string, errorCode = "MONITORING_DISPATCH_FAILED"): Promise<void> {
+  const scheduledRetryAt = retryAt(now, schedule.consecutive_failures);
+  const leaseKind = schedule.lease_kind;
   await updateMonitoringSchedule(client, schedule.id, {
+    current_status: "failed",
     last_failure_at: now,
+    last_error_at: now,
+    last_error_code: errorCode,
     consecutive_failures: schedule.consecutive_failures + 1,
     lease_token: null,
     lease_kind: null,
     lease_expires_at: null,
-    next_cycle_at: schedule.lease_kind === "intelligence_cycle" ? retryAt : schedule.next_cycle_at,
-    next_deep_refresh_at: schedule.lease_kind === "deep_refresh" ? retryAt : schedule.next_deep_refresh_at,
+    next_cycle_at: leaseKind === "intelligence_cycle" ? scheduledRetryAt : schedule.next_cycle_at,
+    next_deep_refresh_at: leaseKind === "deep_refresh" ? scheduledRetryAt : schedule.next_deep_refresh_at,
   }, schedule.lease_token ?? undefined);
   void message;
 }
@@ -153,17 +167,48 @@ export async function recordMonitoringScheduleDispatched(
 
 export async function recordMonitoringScanOutcome(
   client: Client,
-  input: { scheduleId: string; jobRunId: string; succeeded: boolean; message?: string; xCostUsd?: number },
+  input: {
+    scheduleId: string;
+    jobRunId: string;
+    succeeded: boolean;
+    message?: string;
+    errorCode?: string;
+    xCostUsd?: number;
+    now?: string;
+    scanMode?: ScanMode;
+    newCandidateCount?: number;
+    newSignalCount?: number;
+    intelligenceUpdated?: boolean;
+  },
 ): Promise<void> {
   const { data: schedule, error } = await client.from("monitoring_schedules").select("*").eq("id", input.scheduleId).maybeSingle();
   if (error) throw providerError("Monitoring schedule outcome could not be loaded.", error.message);
   if (!schedule || schedule.last_job_run_id !== input.jobRunId) return;
-  const now = new Date().toISOString();
+  const now = input.now ?? new Date().toISOString();
   const today = now.slice(0, 10);
   const sameDay = schedule.x_cost_day === today;
   const cost = sameDay ? Number(schedule.x_cost_day_usd) + (input.xCostUsd ?? 0) : (input.xCostUsd ?? 0);
+  const retry = retryAt(now, schedule.consecutive_failures);
+  const deep = isDeepRefresh(input.scanMode);
   const patch: Database["public"]["Tables"]["monitoring_schedules"]["Update"] = {
-    ...(input.succeeded ? { last_success_at: now, consecutive_failures: 0 } : { last_failure_at: now, consecutive_failures: schedule.consecutive_failures + 1 }),
+    current_status: input.succeeded ? "completed" : "failed",
+    ...(input.succeeded
+      ? {
+          last_success_at: now,
+          consecutive_failures: 0,
+          last_error_code: null,
+          last_error_at: null,
+          last_new_candidate_count: input.newCandidateCount ?? 0,
+          last_new_signal_count: input.newSignalCount ?? 0,
+          ...(input.intelligenceUpdated ? { last_intelligence_update_at: now } : {}),
+        }
+      : {
+          last_failure_at: now,
+          last_error_code: input.errorCode ?? "MONITORING_SCAN_FAILED",
+          last_error_at: now,
+          consecutive_failures: schedule.consecutive_failures + 1,
+          ...(deep ? { next_deep_refresh_at: retry } : { next_cycle_at: retry }),
+        }),
     ...(input.xCostUsd === undefined ? {} : { x_cost_day: today, x_cost_day_usd: cost }),
   };
   await updateMonitoringSchedule(client, schedule.id, patch);

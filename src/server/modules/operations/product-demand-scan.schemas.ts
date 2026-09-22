@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const scanModeSchema = z.enum(["onboarding", "baseline", "manual", "manual_refresh", "scheduled", "intelligence_cycle", "deep", "deep_refresh"]);
+export const scanModeSchema = z.enum(["onboarding", "baseline", "manual", "manual_refresh", "scheduled", "monitoring", "intelligence_cycle", "deep", "deep_refresh"]);
 export type ScanMode = z.infer<typeof scanModeSchema>;
 
 export const productDemandScanInputSchema = z.object({

@@ -109,8 +109,8 @@ export default async function HomePage() {
           </div>
           <div className="monitoring-summary-meta">
             <span>{monitoring.cadenceLabel}</span>
-            {monitoring.lastCycleAt ? <span>Last cycle {new Date(monitoring.lastCycleAt).toLocaleDateString()}</span> : <span>No cycle completed yet</span>}
-            {monitoring.nextRefreshAt && monitoring.enabled ? <span>Next refresh {new Date(monitoring.nextRefreshAt).toLocaleDateString()}</span> : null}
+            {monitoring.lastCheckedAt ? <span>Last checked {new Date(monitoring.lastCheckedAt).toLocaleString()}</span> : <span>Not checked yet</span>}
+            {monitoring.nextCheckAt && monitoring.enabled ? <span>Next check {new Date(monitoring.nextCheckAt).toLocaleString()}</span> : null}
             {monitoring.sources.length ? <span>{monitoring.sources.join(" · ")}</span> : null}
           </div>
           {monitoring.lastStatus === "limited" ? <p className="monitoring-summary-note">The last cycle completed with limited source coverage.</p> : null}
