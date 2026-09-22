@@ -706,8 +706,8 @@ body {
 .marketing-nav-signin:hover { color: var(--color-ink); }
 
 /* Buttons */
-.marketing-cta { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 15px; font-weight: 600; color: #ffffff; background: var(--color-ink); padding: 16px 24px; border-radius: 11px; border: 0; cursor: pointer; text-decoration: none; white-space: nowrap; font: inherit; transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease; box-shadow: 0 1px 2px rgba(17, 17, 16, 0.08), 0 8px 18px -6px rgba(17, 17, 16, 0.25); }
-.marketing-cta:hover { transform: translateY(-1px); box-shadow: 0 2px 4px rgba(17, 17, 16, 0.1), 0 12px 22px -6px rgba(17, 17, 16, 0.3); }
+.marketing-cta { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 15px; font-weight: 600; color: #ffffff; background: var(--color-ink); padding: 16px 24px; border-radius: 11px; border: 0; cursor: pointer; text-decoration: none; white-space: nowrap; font: inherit; transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease; box-shadow: 0 2px 4px rgba(17, 17, 16, 0.12), 0 18px 32px -14px rgba(17, 17, 16, 0.45); }
+.marketing-cta:hover { transform: translateY(-1px); box-shadow: 0 3px 6px rgba(17, 17, 16, 0.14), 0 22px 38px -14px rgba(17, 17, 16, 0.5); }
 .marketing-cta.is-compact { padding: 13px 20px; font-size: 14px; border-radius: 9px; box-shadow: none; }
 .marketing-cta.is-compact:hover { transform: none; box-shadow: none; opacity: 0.85; }
 .marketing-cta-nav { font-size: 13.5px; font-weight: 600; color: #ffffff; background: var(--color-ink); padding: 9px 16px; border-radius: 8px; text-decoration: none; transition: opacity 0.15s ease; }
@@ -723,7 +723,7 @@ body {
 
 /* Scan form */
 .marketing-scan-form { display: flex; gap: 10px; width: 100%; max-width: 460px; flex-wrap: wrap; }
-.marketing-scan-input { flex: 1; min-width: 200px; padding: 16px 19px; border-radius: 11px; border: 1px solid rgba(17, 17, 16, 0.14); background: var(--color-surface); color: var(--color-ink); font: inherit; font-size: 15px; box-shadow: inset 0 1px 2px rgba(17, 17, 16, 0.03), 0 1px 2px rgba(17, 17, 16, 0.04), 0 10px 24px -18px rgba(17, 17, 16, 0.35); transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+.marketing-scan-input { flex: 1; min-width: 200px; padding: 16px 19px; border-radius: 11px; border: 1px solid rgba(17, 17, 16, 0.14); background: var(--color-surface); color: var(--color-ink); font: inherit; font-size: 15px; box-shadow: inset 0 1px 2px rgba(17, 17, 16, 0.03), 0 2px 6px rgba(17, 17, 16, 0.06), 0 24px 44px -22px rgba(17, 17, 16, 0.4); transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 .marketing-scan-input:focus { border-color: var(--color-ink); box-shadow: 0 0 0 3px rgba(17, 17, 16, 0.08); }
 .marketing-scan-form.is-compact .marketing-scan-input { padding: 14px 16px; border-radius: 9px; font-size: 14.5px; }
 .marketing-scan-form.is-compact { max-width: 440px; }
@@ -916,7 +916,7 @@ body {
 
   /* Product proof strip: a distinct section (not a hero continuation), stacked steps
      (flex: none also fixes flex-basis, which maps to height once column) */
-  .marketing-proof-strip { flex-direction: column; background: var(--color-track); padding: 40px 20px 44px; margin: 0; gap: 24px; }
+  .marketing-proof-strip { flex-direction: column; background: var(--color-track); border-top: 1px solid var(--color-border); padding: 40px 20px 44px; margin: 0; gap: 24px; }
   .marketing-proof-step { flex: 0 0 auto; width: 100%; padding: 0 !important; }
   .marketing-proof-card { background: var(--color-surface); }
   .marketing-proof-arrow { display: none; }
