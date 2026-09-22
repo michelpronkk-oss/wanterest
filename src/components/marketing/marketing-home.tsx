@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { LogoMark } from "@/components/dashboard/nav-icons";
 import { BeyondSignalsTabs } from "./beyond-signals";
+import { HeroWave } from "./hero-wave";
 import { APP_LOGIN_URL, APP_SIGNUP_URL } from "./links";
 import { PricingSection } from "./pricing";
 import { ProofSignalCard } from "./proof-signal-card";
@@ -78,6 +79,7 @@ function Hero() {
         <br className="marketing-hero-note-break" />
         Just real conversations.
       </p>
+      <HeroWave />
     </header>
   );
 }
