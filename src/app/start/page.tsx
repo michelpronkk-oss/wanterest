@@ -13,18 +13,18 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 function InvalidWebsiteEntry() {
   return (
-    <main className="auth-page">
-      <section className="auth-card" aria-labelledby="invalid-website-title">
-        <div className="auth-wordmark" aria-label="Wanterest">
-          <span className="auth-wordmark-mark" aria-hidden="true">W</span>
+    <main className="auth-fallback-page">
+      <section className="auth-fallback-card" aria-labelledby="invalid-website-title">
+        <div className="auth-fallback-wordmark" aria-label="Wanterest">
+          <span className="auth-fallback-wordmark-mark" aria-hidden="true">W</span>
           <span>Wanterest</span>
         </div>
-        <div className="auth-heading">
-          <p className="auth-eyebrow">One quick check</p>
+        <div className="auth-fallback-heading">
+          <p className="auth-fallback-eyebrow">One quick check</p>
           <h1 id="invalid-website-title">That website needs a closer look.</h1>
           <p>Enter a public website or domain, such as linear.app.</p>
         </div>
-        <Link className="auth-submit auth-submit-link" href="/start">Try again</Link>
+        <Link className="auth-fallback-submit" href="/start">Try again</Link>
       </section>
     </main>
   );

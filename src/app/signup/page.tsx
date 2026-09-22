@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { AuthShell } from "@/components/auth/auth-shell";
 import { SignupForm } from "@/components/auth/signup-form";
 import { getCurrentUser } from "@/server/modules/auth";
 import { startPathForWebsite } from "@/shared/config/site";
@@ -17,8 +18,10 @@ export default async function SignupPage({ searchParams }: { searchParams: Searc
   if (user) redirect(startPathForWebsite(websiteUrl));
 
   return (
-    <main className="auth-page">
-      <SignupForm websiteUrl={websiteUrl} />
+    <main>
+      <AuthShell eyebrow="DEMAND INTELLIGENCE">
+        <SignupForm websiteUrl={websiteUrl} />
+      </AuthShell>
     </main>
   );
 }

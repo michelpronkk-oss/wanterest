@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { AuthShell } from "@/components/auth/auth-shell";
 import { LoginForm } from "@/components/auth/login-form";
 import { getCurrentUser } from "@/server/modules/auth";
 import { startPathForWebsite } from "@/shared/config/site";
@@ -17,8 +18,10 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
   if (user) redirect(websiteUrl ? startPathForWebsite(websiteUrl) : "/app");
 
   return (
-    <main className="auth-page">
-      <LoginForm websiteUrl={websiteUrl} />
+    <main>
+      <AuthShell eyebrow="WELCOME BACK">
+        <LoginForm websiteUrl={websiteUrl} />
+      </AuthShell>
     </main>
   );
 }

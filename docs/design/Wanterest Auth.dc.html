@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Archivo:wght@700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { margin: 0; }
+    *, *::before, *::after { box-sizing: border-box; }
+    a { color: #111110; }
+    a:hover { color: #5c6b1a; }
+    input { font-family: 'Inter', sans-serif; outline: none; }
+    .auth-shell { display: flex; min-height: 100vh; }
+    .auth-brand { display: flex; }
+    .auth-grid { display: block; }
+    .auth-glow { animation: glow-drift 24s ease-in-out infinite; }
+    .auth-glow-2 { animation: glow-drift-2 30s ease-in-out infinite; }
+    @keyframes glow-drift { 0%, 100% { opacity: 0.55; transform: translate(0, 0) scale(1); } 50% { opacity: 0.85; transform: translate(-40px, 30px) scale(1.08); } }
+    @keyframes glow-drift-2 { 0%, 100% { opacity: 0.3; transform: translate(0, 0) scale(1); } 50% { opacity: 0.5; transform: translate(24px, -20px) scale(0.95); } }
+    @media (max-width: 860px) {
+      .auth-brand { display: none !important; }
+      .auth-panel { padding: 28px 20px !important; align-items: flex-start !important; }
+      .auth-card { max-width: 100% !important; margin-top: 24px; }
+      .mobile-header { display: flex !important; }
+    }
+    .screen-label { font-family:'Sora',sans-serif; font-size:12px; font-weight:700; letter-spacing:0.08em; color:#8c8c82; text-transform:uppercase; padding:14px 24px; background:#EDEBE2; border-bottom:1px solid rgba(17,17,16,0.08); }
+  </style>
+</helmet>
+
+<div style="font-family:'Inter',sans-serif;">
+
+  <!-- ===================== SCREEN 1: SIGNUP ===================== -->
+  <div data-screen-label="Signup" class="screen-label">/signup</div>
+  <div class="auth-shell" style="font-family:'Inter',sans-serif; background:#F7F6F1; color:#111110;">
+    <div class="auth-brand" style="flex:0 0 40%; position:relative; background:#111110; color:#F5F4EE; flex-direction:column; justify-content:space-between; padding:56px; overflow:hidden;">
+      <div class="auth-grid" style="position:absolute; inset:0; background-image:radial-gradient(rgba(245,244,238,0.06) 1px, transparent 1px); background-size:24px 24px; mask-image:radial-gradient(circle at 78% 18%, rgba(0,0,0,0.9), transparent 60%); pointer-events:none;"></div>
+      <div class="auth-glow" style="position:absolute; top:-180px; right:-220px; width:560px; height:560px; border-radius:50%; background:radial-gradient(circle at 50% 50%, rgba(215,255,61,0.16), rgba(215,255,61,0) 70%); filter:blur(30px); pointer-events:none;"></div>
+      <div class="auth-glow-2" style="position:absolute; top:120px; right:40px; width:260px; height:260px; border-radius:50%; background:radial-gradient(circle at 50% 50%, rgba(215,255,61,0.14), rgba(215,255,61,0) 70%); filter:blur(20px); pointer-events:none;"></div>
+
+      <div style="display:flex; align-items:center; gap:9px; position:relative; z-index:1;">
+        <svg viewBox="0 0 120 118" width="20" height="20"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#F5F4EE" stroke-width="16" stroke-linejoin="miter" stroke-linecap="butt"></polyline><polygon points="60,19 51,42 69,42" fill="#D7FF3D"></polygon></svg>
+        <div style="font-family:'Sora',sans-serif; font-weight:600; font-size:16px; letter-spacing:-0.01em;">wanterest</div>
+      </div>
+
+      <div style="position:relative; z-index:1; max-width:380px;">
+        <div style="font-size:11px; font-weight:700; letter-spacing:0.2em; color:#D7FF3D; margin-bottom:20px;">DEMAND INTELLIGENCE</div>
+        <div style="font-family:'Archivo',sans-serif; font-weight:800; font-size:40px; line-height:1.1; letter-spacing:-0.03em; margin-bottom:16px;">The demand already exists.</div>
+        <div style="font-size:15px; color:rgba(245,244,238,0.6); line-height:1.5; margin-bottom:28px;">Wanterest just finds it.</div>
+        <div style="display:flex; gap:28px;">
+          <div style="font-size:11px; font-weight:700; letter-spacing:0.14em; color:rgba(245,244,238,0.4);">REAL CONVERSATIONS</div>
+          <div style="font-size:11px; font-weight:700; letter-spacing:0.14em; color:rgba(245,244,238,0.4);">QUALIFIED INTENT</div>
+        </div>
+      </div>
+      <div style="position:relative; z-index:1;"></div>
+    </div>
+
+    <div class="auth-panel" style="flex:1 1 60%; display:flex; align-items:center; justify-content:center; padding:56px;">
+      <div class="auth-card" style="width:100%; max-width:500px;">
+        <div class="mobile-header" style="display:none; align-items:center; gap:9px; margin-bottom:28px;">
+          <svg viewBox="0 0 120 118" width="20" height="20"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#111110" stroke-width="16" stroke-linejoin="miter" stroke-linecap="butt"></polyline><polygon points="60,19 51,42 69,42" fill="#D7FF3D"></polygon></svg>
+          <div style="font-family:'Sora',sans-serif; font-weight:600; font-size:16px; letter-spacing:-0.01em;">wanterest</div>
+        </div>
+
+        <div style="font-size:11.5px; font-weight:700; letter-spacing:0.2em; color:#8c8c82; margin-bottom:16px;">DEMAND INTELLIGENCE</div>
+        <div style="font-family:'Archivo',sans-serif; font-weight:800; font-size:38px; line-height:1.1; letter-spacing:-0.025em; margin-bottom:12px;">Start finding real demand.</div>
+        <div style="font-size:15.5px; color:#8c8c82; line-height:1.5; margin-bottom:36px;">Create your account and scan your first product.</div>
+
+        <form style="display:flex; flex-direction:column; gap:20px;">
+          <div>
+            <div style="font-size:13px; font-weight:600; color:#111110; margin-bottom:8px;">Email</div>
+            <input type="email" placeholder="you@company.com" style="width:100%; padding:16px 18px; border-radius:11px; border:1px solid rgba(17,17,16,0.12); background:#FFFFFF; color:#111110; font-size:15.5px; box-shadow:inset 0 1px 2px rgba(17,17,16,0.03); transition:border-color 0.15s;" style-focus="border-color:#111110;"></input>
+          </div>
+          <div>
+            <div style="font-size:13px; font-weight:600; color:#111110; margin-bottom:8px;">Password</div>
+            <div style="position:relative;">
+              <input type="password" placeholder="Create a password" style="width:100%; padding:16px 18px; border-radius:11px; border:1px solid rgba(17,17,16,0.12); background:#FFFFFF; color:#111110; font-size:15.5px; box-shadow:inset 0 1px 2px rgba(17,17,16,0.03); transition:border-color 0.15s;" style-focus="border-color:#111110;"></input>
+              <div style="position:absolute; right:16px; top:50%; transform:translateY(-50%); font-size:12.5px; font-weight:600; color:#8c8c82; cursor:pointer;">Show</div>
+            </div>
+          </div>
+
+          <div style="font-size:14.5px; font-weight:600; color:#FFFFFF; background:#111110; padding:16px; border-radius:11px; cursor:pointer; text-align:center; margin-top:6px; box-shadow:0 1px 2px rgba(17,17,16,0.08), 0 8px 18px -6px rgba(17,17,16,0.25); transition:transform 0.15s, box-shadow 0.15s;" style-hover="transform:translateY(-1px); box-shadow:0 2px 4px rgba(17,17,16,0.1), 0 12px 22px -6px rgba(17,17,16,0.3);">Create account</div>
+
+          <div style="font-size:12.5px; color:#a3a399; text-align:center;">No credit card required.</div>
+        </form>
+
+        <div style="margin-top:24px; text-align:center; font-size:14px; color:#8c8c82;">
+          Already have an account? <a href="#login" style="font-weight:600; text-decoration:none;">Log in</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SCREEN 2: LOGIN ===================== -->
+  <div data-screen-label="Login" id="login" class="screen-label">/login</div>
+  <div class="auth-shell" style="font-family:'Inter',sans-serif; background:#F7F6F1; color:#111110;">
+    <div class="auth-brand" style="flex:0 0 40%; position:relative; background:#111110; color:#F5F4EE; flex-direction:column; justify-content:space-between; padding:56px; overflow:hidden;">
+      <div class="auth-grid" style="position:absolute; inset:0; background-image:radial-gradient(rgba(245,244,238,0.06) 1px, transparent 1px); background-size:24px 24px; mask-image:radial-gradient(circle at 78% 18%, rgba(0,0,0,0.9), transparent 60%); pointer-events:none;"></div>
+      <div class="auth-glow" style="position:absolute; top:-180px; right:-220px; width:560px; height:560px; border-radius:50%; background:radial-gradient(circle at 50% 50%, rgba(215,255,61,0.16), rgba(215,255,61,0) 70%); filter:blur(30px); pointer-events:none;"></div>
+      <div class="auth-glow-2" style="position:absolute; top:120px; right:40px; width:260px; height:260px; border-radius:50%; background:radial-gradient(circle at 50% 50%, rgba(215,255,61,0.14), rgba(215,255,61,0) 70%); filter:blur(20px); pointer-events:none;"></div>
+
+      <div style="display:flex; align-items:center; gap:9px; position:relative; z-index:1;">
+        <svg viewBox="0 0 120 118" width="20" height="20"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#F5F4EE" stroke-width="16" stroke-linejoin="miter" stroke-linecap="butt"></polyline><polygon points="60,19 51,42 69,42" fill="#D7FF3D"></polygon></svg>
+        <div style="font-family:'Sora',sans-serif; font-weight:600; font-size:16px; letter-spacing:-0.01em;">wanterest</div>
+      </div>
+
+      <div style="position:relative; z-index:1; max-width:380px;">
+        <div style="font-size:11px; font-weight:700; letter-spacing:0.2em; color:#D7FF3D; margin-bottom:20px;">WELCOME BACK</div>
+        <div style="font-family:'Archivo',sans-serif; font-weight:800; font-size:40px; line-height:1.1; letter-spacing:-0.03em; margin-bottom:16px;">The demand already exists.</div>
+        <div style="font-size:15px; color:rgba(245,244,238,0.6); line-height:1.5; margin-bottom:28px;">Wanterest just finds it.</div>
+        <div style="display:flex; gap:28px;">
+          <div style="font-size:11px; font-weight:700; letter-spacing:0.14em; color:rgba(245,244,238,0.4);">REAL CONVERSATIONS</div>
+          <div style="font-size:11px; font-weight:700; letter-spacing:0.14em; color:rgba(245,244,238,0.4);">QUALIFIED INTENT</div>
+        </div>
+      </div>
+      <div style="position:relative; z-index:1;"></div>
+    </div>
+
+    <div class="auth-panel" style="flex:1 1 60%; display:flex; align-items:center; justify-content:center; padding:56px;">
+      <div class="auth-card" style="width:100%; max-width:500px;">
+        <div class="mobile-header" style="display:none; align-items:center; gap:9px; margin-bottom:28px;">
+          <svg viewBox="0 0 120 118" width="20" height="20"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#111110" stroke-width="16" stroke-linejoin="miter" stroke-linecap="butt"></polyline><polygon points="60,19 51,42 69,42" fill="#D7FF3D"></polygon></svg>
+          <div style="font-family:'Sora',sans-serif; font-weight:600; font-size:16px; letter-spacing:-0.01em;">wanterest</div>
+        </div>
+
+        <div style="font-size:11.5px; font-weight:700; letter-spacing:0.2em; color:#8c8c82; margin-bottom:16px;">WELCOME BACK</div>
+        <div style="font-family:'Archivo',sans-serif; font-weight:800; font-size:38px; line-height:1.1; letter-spacing:-0.025em; margin-bottom:12px;">Continue finding real demand.</div>
+        <div style="font-size:15.5px; color:#8c8c82; line-height:1.5; margin-bottom:36px;">Log in to continue to your Wanterest workspace.</div>
+
+        <form style="display:flex; flex-direction:column; gap:20px;">
+          <div>
+            <div style="font-size:13px; font-weight:600; color:#111110; margin-bottom:8px;">Email</div>
+            <input type="email" placeholder="you@company.com" style="width:100%; padding:16px 18px; border-radius:11px; border:1px solid rgba(17,17,16,0.12); background:#FFFFFF; color:#111110; font-size:15.5px; box-shadow:inset 0 1px 2px rgba(17,17,16,0.03); transition:border-color 0.15s;" style-focus="border-color:#111110;"></input>
+          </div>
+          <div>
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+              <div style="font-size:13px; font-weight:600; color:#111110;">Password</div>
+              <div style="font-size:12.5px; color:#8c8c82; cursor:pointer;">Forgot password?</div>
+            </div>
+            <div style="position:relative;">
+              <input type="password" placeholder="Enter your password" style="width:100%; padding:16px 18px; border-radius:11px; border:1px solid rgba(17,17,16,0.12); background:#FFFFFF; color:#111110; font-size:15.5px; box-shadow:inset 0 1px 2px rgba(17,17,16,0.03); transition:border-color 0.15s;" style-focus="border-color:#111110;"></input>
+              <div style="position:absolute; right:16px; top:50%; transform:translateY(-50%); font-size:12.5px; font-weight:600; color:#8c8c82; cursor:pointer;">Show</div>
+            </div>
+          </div>
+
+          <div style="font-size:14.5px; font-weight:600; color:#FFFFFF; background:#111110; padding:16px; border-radius:11px; cursor:pointer; text-align:center; margin-top:6px; box-shadow:0 1px 2px rgba(17,17,16,0.08), 0 8px 18px -6px rgba(17,17,16,0.25); transition:transform 0.15s, box-shadow 0.15s;" style-hover="transform:translateY(-1px); box-shadow:0 2px 4px rgba(17,17,16,0.1), 0 12px 22px -6px rgba(17,17,16,0.3);">Log in</div>
+        </form>
+
+        <div style="margin-top:24px; text-align:center; font-size:14px; color:#8c8c82;">
+          New to Wanterest? <a href="#" style="font-weight:600; text-decoration:none;">Start free</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</x-dc>
+</body>
+</html>

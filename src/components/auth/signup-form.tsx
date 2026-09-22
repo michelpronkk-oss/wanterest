@@ -5,15 +5,10 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { APP_ORIGIN, startPathForWebsite } from "@/shared/config/site";
+import { startPathForWebsite } from "@/shared/config/site";
 import { loginUrlForSite } from "@/components/marketing/links";
-
-function authCallbackUrl(websiteUrl: string | null): string {
-  const url = new URL("/auth/callback", APP_ORIGIN);
-  url.searchParams.set("next", startPathForWebsite(websiteUrl));
-  if (websiteUrl) url.searchParams.set("website", websiteUrl);
-  return url.toString();
-}
+import { authCallbackUrl } from "./auth-callback-url";
+import { PasswordField } from "./password-field";
 
 export function SignupForm({ websiteUrl = null }: { websiteUrl?: string | null }) {
   const router = useRouter();
@@ -33,7 +28,7 @@ export function SignupForm({ websiteUrl = null }: { websiteUrl?: string | null }
     const { data, error: authError } = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: authCallbackUrl(websiteUrl) },
+      options: { emailRedirectTo: authCallbackUrl(startPathForWebsite(websiteUrl), websiteUrl) },
     });
 
     if (authError) {
@@ -53,32 +48,55 @@ export function SignupForm({ websiteUrl = null }: { websiteUrl?: string | null }
   }
 
   return (
-    <section className="auth-card" aria-labelledby="signup-title">
-      <div className="auth-wordmark" aria-label="Wanterest">
-        <span className="auth-wordmark-mark" aria-hidden="true">W</span>
-        <span>Wanterest</span>
-      </div>
-      <div className="auth-heading">
-        <p className="auth-eyebrow">Demand intelligence</p>
-        <h1 id="signup-title">Start finding real demand.</h1>
-        <p>Create your account and scan your first product.</p>
-      </div>
-      <form className="auth-form" onSubmit={submit}>
-        <label className="auth-field">
-          <span>Email</span>
-          <input autoComplete="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required disabled={isSubmitting} />
-        </label>
-        <label className="auth-field">
-          <span>Password</span>
-          <input autoComplete="new-password" type="password" minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} required disabled={isSubmitting} />
-        </label>
+    <>
+      <p className="auth-card-eyebrow">DEMAND INTELLIGENCE</p>
+      <h1 className="auth-card-title" id="signup-title">Start finding real demand.</h1>
+      <p className="auth-card-sub">Create your account and scan your first product.</p>
+
+      <form className="auth-form" onSubmit={submit} aria-labelledby="signup-title">
+        <div className="auth-field">
+          <div className="auth-field-label-row">
+            <label htmlFor="signup-email">Email</label>
+          </div>
+          <div className="auth-input-wrap">
+            <input
+              id="signup-email"
+              className="auth-input"
+              autoComplete="email"
+              type="email"
+              placeholder="you@company.com"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+              disabled={isSubmitting}
+              aria-invalid={Boolean(error) || undefined}
+            />
+          </div>
+        </div>
+
+        <PasswordField
+          label="Password"
+          autoComplete="new-password"
+          placeholder="Create a password"
+          value={password}
+          onChange={setPassword}
+          required
+          minLength={6}
+          disabled={isSubmitting}
+          error={Boolean(error)}
+        />
+
         {error ? <p className="auth-error" role="alert">{error}</p> : null}
         {message ? <p className="auth-success" role="status">{message}</p> : null}
+
         <button className="auth-submit" type="submit" disabled={isSubmitting}>
           {isSubmitting ? "Creating account…" : "Create account"}
         </button>
+
+        <p className="auth-hint">No credit card required.</p>
       </form>
+
       <p className="auth-switch">Already have an account? <Link href={loginUrlForSite(websiteUrl)}>Log in</Link></p>
-    </section>
+    </>
   );
 }
