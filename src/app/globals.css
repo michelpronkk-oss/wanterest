@@ -723,8 +723,8 @@ body {
 
 /* Scan form */
 .marketing-scan-form { display: flex; gap: 10px; width: 100%; max-width: 460px; flex-wrap: wrap; }
-.marketing-scan-input { flex: 1; min-width: 200px; padding: 16px 19px; border-radius: 11px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-ink); font: inherit; font-size: 15px; box-shadow: inset 0 1px 2px rgba(17, 17, 16, 0.03); }
-.marketing-scan-input:focus { border-color: var(--color-ink); }
+.marketing-scan-input { flex: 1; min-width: 200px; padding: 16px 19px; border-radius: 11px; border: 1px solid rgba(17, 17, 16, 0.14); background: var(--color-surface); color: var(--color-ink); font: inherit; font-size: 15px; box-shadow: inset 0 1px 2px rgba(17, 17, 16, 0.03), 0 1px 2px rgba(17, 17, 16, 0.04), 0 10px 24px -18px rgba(17, 17, 16, 0.35); transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+.marketing-scan-input:focus { border-color: var(--color-ink); box-shadow: 0 0 0 3px rgba(17, 17, 16, 0.08); }
 .marketing-scan-form.is-compact .marketing-scan-input { padding: 14px 16px; border-radius: 9px; font-size: 14.5px; }
 .marketing-scan-form.is-compact { max-width: 440px; }
 
@@ -891,7 +891,7 @@ body {
   .marketing-nav-signin { display: none; }
 
   /* Hero: compact enough to clear the fold */
-  .marketing-hero { padding: 40px 20px 40px; }
+  .marketing-hero { padding: 40px 20px 44px; }
   .marketing-eyebrow-pill { margin-bottom: 18px; padding: 6px 13px; }
   .marketing-hero-title { font-size: clamp(30px, 9vw, 38px); line-height: 1.1; margin-bottom: 14px; }
   .marketing-hero-sub { font-size: 15.5px; margin-bottom: 24px; }
@@ -914,9 +914,11 @@ body {
   .marketing-copy-full { display: none; }
   .marketing-copy-short { display: inline; }
 
-  /* Product proof strip: stacked steps (fix flex-basis, which maps to height once column) */
-  .marketing-proof-strip { flex-direction: column; padding: 0 20px 40px; gap: 24px; }
+  /* Product proof strip: a distinct section (not a hero continuation), stacked steps
+     (flex: none also fixes flex-basis, which maps to height once column) */
+  .marketing-proof-strip { flex-direction: column; background: var(--color-track); padding: 40px 20px 44px; margin: 0; gap: 24px; }
   .marketing-proof-step { flex: 0 0 auto; width: 100%; padding: 0 !important; }
+  .marketing-proof-card { background: var(--color-surface); }
   .marketing-proof-arrow { display: none; }
 
   /* Multi-column grids: stack with tighter gaps */
