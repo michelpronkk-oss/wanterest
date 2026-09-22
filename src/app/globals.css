@@ -355,7 +355,10 @@ body {
 .signal-card { border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); padding: 18px; cursor: pointer; }
 .signal-card.is-dismissed { opacity: 0.65; }
 .signal-card-topline { display: flex; align-items: center; gap: 9px; margin-bottom: 11px; flex-wrap: wrap; }
-.signal-source-mark { width: 20px; height: 20px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 700; color: #fff; flex-shrink: 0; }
+.source-brand-icon, .source-brand-fallback { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; border-radius: 6px; }
+.source-brand-icon img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.source-brand-fallback { background: var(--color-chip); color: var(--color-ink-secondary); font-size: 10.5px; font-weight: 700; }
+.signal-source-mark { width: 20px; height: 20px; }
 .signal-source-name { font-size: 12.5px; font-weight: 600; }
 .signal-source-time { font-size: 12px; color: var(--color-ink-faint); }
 .signal-topline-end { margin-left: auto; display: flex; align-items: center; gap: 8px; }
@@ -490,7 +493,7 @@ body {
 .settings-row-value { font-size: 13.5px; font-weight: 600; color: var(--color-ink); text-align: right; }
 .settings-source-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--color-border-soft); }
 .settings-source-row:last-child { border-bottom: 0; }
-.settings-source-badge { width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0; }
+.settings-source-badge { width: 22px; height: 22px; }
 .settings-usage-row { padding: 10px 0; }
 .settings-usage-bar-track { flex: 1; height: 7px; background: var(--color-track); border-radius: 4px; margin-top: 6px; }
 .settings-usage-bar-fill { height: 100%; border-radius: 4px; }
@@ -824,7 +827,7 @@ body {
 .marketing-daily-pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); flex-shrink: 0; box-shadow: 0 0 0 4px var(--color-accent-tint); }
 .marketing-daily-ticker { position: relative; height: 20px; overflow: hidden; }
 .marketing-daily-ticker-item { position: absolute; inset: 0; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--color-ink-muted); opacity: 0; animation: marketing-signal-ticker 9s ease-in-out infinite; animation-fill-mode: both; }
-.marketing-daily-ticker-mark { width: 14px; height: 14px; border-radius: 4px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 700; color: #ffffff; }
+.marketing-daily-ticker-mark { width: 14px; height: 14px; border-radius: 4px; }
 @keyframes marketing-signal-ticker {
   0% { opacity: 0; transform: translateY(6px); }
   8% { opacity: 1; transform: translateY(0); }
@@ -896,8 +899,7 @@ body {
      type scale, gaps, and wave below carry the real sizing so that floor rarely has to add
      dead space of its own. Extra slack from the floor lands below the wave via flex-start. */
   .marketing-hero { position: relative; min-height: calc(100vh - 60px); min-height: calc(100svh - 60px); justify-content: flex-start; padding: 64px 20px 182px; }
-  .marketing-eyebrow-pill { background: var(--color-chip); margin-bottom: 24px; padding: 8px 16px; }
-  .marketing-eyebrow-pill-text { color: var(--color-ink); }
+  .marketing-eyebrow-pill { margin-bottom: 24px; padding: 8px 16px; }
   .marketing-hero-title { font-size: clamp(40px, 12vw, 50px); line-height: 1.05; margin-bottom: 18px; }
   .marketing-hero-sub { font-size: 18px; margin-bottom: 52px; }
   .marketing-hero-note { margin-top: 20px; }

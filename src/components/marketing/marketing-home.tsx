@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { LogoMark } from "@/components/dashboard/nav-icons";
+import { SourceBrandIcon } from "@/components/ui/source-brand-icon";
 import { BeyondSignalsTabs } from "./beyond-signals";
 import { HeroWave } from "./hero-wave";
 import { APP_LOGIN_URL, APP_SIGNUP_URL } from "./links";
@@ -102,7 +103,7 @@ function ProductProofStrip() {
         <div className="marketing-proof-title">Finds qualified demand</div>
         <div className="marketing-proof-card">
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-            <span style={{ width: 16, height: 16, borderRadius: 5, background: "#FF4500", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: "#fff" }}>R</span>
+            <SourceBrandIcon sourceKey="reddit" size={16} />
             <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.03em", color: "var(--color-positive)" }}>SWITCHING · 94%</span>
           </div>
           <div style={{ fontSize: 12, lineHeight: 1.5 }}>&ldquo;We&rsquo;re paying for half of HubSpot we never use. Has anyone moved to something simpler?&rdquo;</div>
@@ -378,15 +379,15 @@ function DailyValue() {
           </div>
           <div className="marketing-daily-ticker">
             <div className="marketing-daily-ticker-item" style={{ animationDelay: "0s" }}>
-              <span className="marketing-daily-ticker-mark" style={{ background: "#FF4500" }}>R</span>
+              <SourceBrandIcon sourceKey="reddit" size={14} className="marketing-daily-ticker-mark" decorative />
               New high-intent signal on Reddit — 94% match
             </div>
             <div className="marketing-daily-ticker-item" style={{ animationDelay: "3s" }}>
-              <span className="marketing-daily-ticker-mark" style={{ background: "#FF6600" }}>Y</span>
+              <SourceBrandIcon sourceKey="hacker-news" size={14} className="marketing-daily-ticker-mark" decorative />
               New problem signal on Hacker News — 81% match
             </div>
             <div className="marketing-daily-ticker-item" style={{ animationDelay: "6s" }}>
-              <span className="marketing-daily-ticker-mark" style={{ background: "#0085FF" }}>B</span>
+              <SourceBrandIcon sourceKey="bluesky" size={14} className="marketing-daily-ticker-mark" decorative />
               New switching intent on Bluesky — 67% match
             </div>
           </div>

@@ -1,10 +1,12 @@
-type GhostRow = { source: string; intent: string; accent: boolean };
+import { SourceBrandIcon } from "@/components/ui/source-brand-icon";
+
+type GhostRow = { source: string; sourceKey: string; intent: string; accent: boolean };
 
 const ROWS: GhostRow[] = [
-  { source: "Reddit", intent: "High intent", accent: true },
-  { source: "Hacker News", intent: "Switching intent", accent: true },
-  { source: "Bluesky", intent: "Problem signal", accent: false },
-  { source: "GitHub", intent: "Alternative search", accent: false },
+  { source: "Reddit", sourceKey: "reddit", intent: "High intent", accent: true },
+  { source: "Hacker News", sourceKey: "hacker-news", intent: "Switching intent", accent: true },
+  { source: "Bluesky", sourceKey: "bluesky", intent: "Problem signal", accent: false },
+  { source: "GitHub", sourceKey: "github", intent: "Alternative search", accent: false },
 ];
 
 /** Structural preview of the Signals product UI — real card anatomy, placeholder copy, no fabricated posts. */
@@ -14,7 +16,7 @@ export function SignalGhostPreview({ count = 3 }: { count?: number }) {
       {ROWS.slice(0, count).map((row) => (
         <div className="signal-card is-ghost" key={row.intent} aria-hidden="true">
           <div className="signal-card-topline">
-            <span className="signal-source-mark is-ghost-badge">{row.source.charAt(0)}</span>
+            <SourceBrandIcon sourceKey={row.sourceKey} className="signal-source-mark is-ghost-badge" decorative />
             <span className="signal-source-name">{row.source}</span>
             <span className="signal-source-time">—</span>
             <div className="signal-topline-end">

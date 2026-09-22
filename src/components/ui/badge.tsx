@@ -1,32 +1,13 @@
 import type { ReactNode } from "react";
 
+import { SourceBrandIcon } from "./source-brand-icon";
+
 export function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "accent" | "dark" }) {
   return <span className={`badge badge-${tone}`}>{children}</span>;
 }
 
-const SOURCE_COLORS: Record<string, string> = {
-  reddit: "#FF4500",
-  "hacker-news": "#FF6600",
-  bluesky: "#0085FF",
-  github: "#24292e",
-  x: "#000000",
-  fixture: "#8c8c82",
-};
-
-export function sourceColor(source: string): string {
-  return SOURCE_COLORS[source] ?? "#4a4a43";
-}
-
-export function sourceInitial(source: string): string {
-  return source.trim().charAt(0).toUpperCase() || "?";
-}
-
 export function SourceBadge({ source, label }: { source: string; label: string }) {
-  return (
-    <span className="signal-source-mark" style={{ background: sourceColor(source) }} role="img" aria-label={label} title={label}>
-      {sourceInitial(source)}
-    </span>
-  );
+  return <SourceBrandIcon sourceKey={source} label={label} className="signal-source-mark" decorative />;
 }
 
 const HIGH_INTENT: ReadonlySet<string> = new Set(["high_intent", "switching_intent"]);

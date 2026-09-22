@@ -8,7 +8,7 @@ import { initialSourceAvailability } from "@/server/modules/operations/source-co
 import { getProductDemandScanSummary } from "@/server/modules/operations/product-demand-scan.service";
 import { SettingsTabs } from "@/components/dashboard/settings-tabs";
 import { formatDate, sourceLabel } from "@/components/dashboard/dashboard-utils";
-import { sourceColor, sourceInitial } from "@/components/ui/badge";
+import { SourceBrandIcon } from "@/components/ui/source-brand-icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProductLifecycle } from "@/components/dashboard/product-lifecycle";
 
@@ -77,7 +77,7 @@ export default async function SettingsPage() {
         const active = source.state === "enabled";
         return (
           <div className="settings-source-row" key={source.sourceKey}>
-            <span className="settings-source-badge" style={{ background: sourceColor(source.sourceKey) }}>{sourceInitial(source.sourceKey)}</span>
+            <SourceBrandIcon sourceKey={source.sourceKey} size={22} className="settings-source-badge" decorative />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, fontWeight: 600 }}>{label}</div>
               <div style={{ fontSize: 11.5, color: "var(--color-ink-muted)" }}>
