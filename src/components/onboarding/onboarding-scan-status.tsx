@@ -44,10 +44,19 @@ export function OnboardingScanStatus({ workspaceId, productId, hasScan, initialS
         if (!cancelled) setStatus({ scanKind: "failed", scanLabel: null, errorMessage: "We could not read the scan status. Refresh to try again.", highIntentCount: 0, qualifiedCount: 0 });
       });
     };
-    const interval = setInterval(poll, POLL_INTERVAL_MS);
+    const pollWhenVisible = () => {
+      if (document.visibilityState === "visible") poll();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") poll();
+    };
+    pollWhenVisible();
+    const interval = setInterval(pollWhenVisible, POLL_INTERVAL_MS);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       cancelled = true;
       clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [workspaceId, productId, status.scanKind]);
 

@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 import { requireUser } from "@/server/modules/auth";
 import { createSupabaseServerClient } from "@/server/providers/supabase/server";
@@ -11,6 +12,7 @@ import {
   deactivateWorkspaceMember,
   getWorkspace,
   listWorkspaceMembers,
+  listDashboardWorkspaces,
   listWorkspaces,
   updateWorkspaceMember,
 } from "./workspace.repository";
@@ -37,17 +39,22 @@ export async function createWorkspaceCommand(input: unknown, request?: Request) 
   return createWorkspace(client, { ...parsed.data, traceId: getTraceId(request) });
 }
 
-export async function listWorkspacesQuery() {
+export const listWorkspacesQuery = cache(async function listWorkspacesQuery() {
   await requireUser();
   return listWorkspaces(await createSupabaseServerClient());
-}
+});
 
-export async function getWorkspaceQuery(workspaceId: unknown) {
+export const listDashboardWorkspacesQuery = cache(async function listDashboardWorkspacesQuery() {
+  await requireUser();
+  return listDashboardWorkspaces(await createSupabaseServerClient());
+});
+
+export const getWorkspaceQuery = cache(async function getWorkspaceQuery(workspaceId: unknown) {
   const parsed = workspaceIdSchema.safeParse(workspaceId);
   if (!parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid workspace ID.");
   await requireUser();
   return getWorkspace(await createSupabaseServerClient(), parsed.data);
-}
+});
 
 export async function selectWorkspaceCommand(workspaceId: unknown) {
   const parsed = workspaceIdSchema.safeParse(workspaceId);

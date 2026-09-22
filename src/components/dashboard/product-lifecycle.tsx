@@ -9,8 +9,8 @@ import { domainFromUrl } from "./dashboard-utils";
 
 type Props = {
   workspaceId: string;
-  activeProduct: ProductRow | null;
-  archivedProducts: ProductRow[];
+  activeProduct: Pick<ProductRow, "id" | "name" | "website_url"> | null;
+  archivedProducts: Array<Pick<ProductRow, "id" | "name" | "website_url">>;
 };
 
 export function ProductLifecycle({ workspaceId, activeProduct, archivedProducts }: Props) {

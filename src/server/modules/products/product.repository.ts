@@ -6,6 +6,7 @@ import { AppError } from "../../lib/errors";
 import { productConstraintName, productDatabaseError, type ProductProviderError } from "./product-errors";
 
 type Client = SupabaseClient<Database>;
+export type ProductContextRow = Pick<ProductRow, "id" | "workspace_id" | "name" | "slug" | "website_url" | "status" | "current_snapshot_id" | "current_demand_profile_id">;
 
 function normalizedHostname(websiteUrl?: string | null): string | null {
   if (!websiteUrl) return null;
@@ -66,7 +67,21 @@ export async function getProduct(client: Client, workspaceId: string, productId:
 }
 
 export async function listProducts(client: Client, workspaceId: string): Promise<ProductRow[]> {
-  const { data, error } = await client.from("products").select("*").eq("workspace_id", workspaceId).order("created_at", { ascending: true });
+  const { data, error } = await client
+    .from("products")
+    .select("id, workspace_id, name, slug, website_url, status, current_snapshot_id, current_demand_profile_id, created_at, updated_at")
+    .eq("workspace_id", workspaceId)
+    .order("created_at", { ascending: true });
+  if (error) throw productDatabaseError(error, "Products could not be loaded.");
+  return data ?? [];
+}
+
+export async function listDashboardProducts(client: Client, workspaceId: string): Promise<ProductContextRow[]> {
+  const { data, error } = await client
+    .from("products")
+    .select("id, workspace_id, name, slug, website_url, status, current_snapshot_id, current_demand_profile_id")
+    .eq("workspace_id", workspaceId)
+    .order("created_at", { ascending: true });
   if (error) throw productDatabaseError(error, "Products could not be loaded.");
   return data ?? [];
 }

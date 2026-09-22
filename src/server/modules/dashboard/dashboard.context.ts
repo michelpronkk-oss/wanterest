@@ -3,9 +3,10 @@ import "server-only";
 import { cookies } from "next/headers";
 import { cache } from "react";
 
-import type { ProductRow, WorkspaceRow } from "@/server/db/database.helpers";
-import { listProductsQuery } from "@/server/modules/products";
-import { listWorkspacesQuery } from "@/server/modules/workspaces";
+import type { ProductContextRow } from "@/server/modules/products";
+import { listDashboardProductsQuery } from "@/server/modules/products";
+import type { WorkspaceContextRow } from "@/server/modules/workspaces";
+import { listDashboardWorkspacesQuery } from "@/server/modules/workspaces";
 import { requireUser } from "@/server/modules/auth";
 import { partitionProducts } from "@/server/modules/products/product-lifecycle";
 
@@ -13,12 +14,12 @@ export const ACTIVE_PRODUCT_COOKIE = "wanterest_active_product";
 
 export type DashboardContext = {
   userEmail: string | null;
-  workspaces: WorkspaceRow[];
-  workspace: WorkspaceRow | null;
+  workspaces: WorkspaceContextRow[];
+  workspace: WorkspaceContextRow | null;
   /** Active products only; archived products cannot become dashboard context. */
-  products: ProductRow[];
-  archivedProducts: ProductRow[];
-  product: ProductRow | null;
+  products: ProductContextRow[];
+  archivedProducts: ProductContextRow[];
+  product: ProductContextRow | null;
 };
 
 /**
@@ -28,7 +29,7 @@ export type DashboardContext = {
  */
 async function resolveDashboardContext(): Promise<DashboardContext> {
   const user = await requireUser();
-  const workspaces = await listWorkspacesQuery();
+  const workspaces = await listDashboardWorkspacesQuery();
   const cookieStore = await cookies();
   const selectedWorkspaceId = cookieStore.get("wanterest_active_workspace")?.value;
   const workspace =
@@ -40,7 +41,7 @@ async function resolveDashboardContext(): Promise<DashboardContext> {
     return { userEmail: user.email ?? null, workspaces, workspace: null, products: [], archivedProducts: [], product: null };
   }
 
-  const allProducts = await listProductsQuery(workspace.id);
+  const allProducts = await listDashboardProductsQuery(workspace.id);
   const { active: products, archived: archivedProducts } = partitionProducts(allProducts);
   const selectedProductId = cookieStore.get(ACTIVE_PRODUCT_COOKIE)?.value;
   const product =

@@ -1,4 +1,18 @@
+"use client";
+
+import { useFormStatus } from "react-dom";
+
 import { logoutAction } from "@/app/auth-actions";
+
+function LogoutButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <button className="dashboard-signout" type="submit" disabled={pending} aria-disabled={pending}>
+      {pending ? "Signing out…" : "Sign out"}
+    </button>
+  );
+}
 
 export function UserAccount({ email }: { email: string | null }) {
   return (
@@ -8,7 +22,7 @@ export function UserAccount({ email }: { email: string | null }) {
         <span title={email ?? undefined}>{email ?? "Signed-in user"}</span>
       </div>
       <form action={logoutAction}>
-        <button className="dashboard-signout" type="submit">Sign out</button>
+        <LogoutButton />
       </form>
     </div>
   );

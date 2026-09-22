@@ -1,7 +1,10 @@
+import { cache } from "react";
+
 import { requireUser } from "../auth";
 import { AppError } from "../../lib/errors";
 import { createSupabaseServerClient } from "../../providers/supabase/server";
-import { archiveProduct, createProduct, getProduct, listProducts, updateProductMetadata } from "./product.repository";
+import { archiveProduct, createProduct, getProduct, listDashboardProducts, listProducts, updateProductMetadata } from "./product.repository";
+export type { ProductContextRow } from "./product.repository";
 import { createProductInputSchema, productIdSchema, updateProductMetadataInputSchema, workspaceIdSchema } from "./product.schemas";
 import { ensureMonitoringScheduleForProduct } from "../monitoring/monitoring.schedule";
 import { disableMonitoringSchedule } from "../monitoring/monitoring.repository";
@@ -17,20 +20,27 @@ export async function createProductCommand(workspaceId: unknown, input: unknown)
   return product;
 }
 
-export async function getProductQuery(workspaceId: unknown, productId: unknown) {
+export const getProductQuery = cache(async function getProductQuery(workspaceId: unknown, productId: unknown) {
   const workspace = workspaceIdSchema.safeParse(workspaceId);
   const product = productIdSchema.safeParse(productId);
   if (!workspace.success || !product.success) throw new AppError("VALIDATION_ERROR", "Invalid product identifier.");
   await requireUser();
   return getProduct(await createSupabaseServerClient(), workspace.data, product.data);
-}
+});
 
-export async function listProductsQuery(workspaceId: unknown) {
+export const listProductsQuery = cache(async function listProductsQuery(workspaceId: unknown) {
   const workspace = workspaceIdSchema.safeParse(workspaceId);
   if (!workspace.success) throw new AppError("VALIDATION_ERROR", "Invalid workspace identifier.");
   await requireUser();
   return listProducts(await createSupabaseServerClient(), workspace.data);
-}
+});
+
+export const listDashboardProductsQuery = cache(async function listDashboardProductsQuery(workspaceId: unknown) {
+  const workspace = workspaceIdSchema.safeParse(workspaceId);
+  if (!workspace.success) throw new AppError("VALIDATION_ERROR", "Invalid workspace identifier.");
+  await requireUser();
+  return listDashboardProducts(await createSupabaseServerClient(), workspace.data);
+});
 
 export async function updateProductMetadataCommand(workspaceId: unknown, productId: unknown, input: unknown) {
   const workspace = workspaceIdSchema.safeParse(workspaceId);

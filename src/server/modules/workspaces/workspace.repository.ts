@@ -9,6 +9,7 @@ import type {
 import { AppError } from "@/server/lib/errors";
 
 type Client = SupabaseClient<Database>;
+export type WorkspaceContextRow = Pick<WorkspaceRow, "id" | "name" | "slug" | "status">;
 
 function databaseError(error: { code?: string; message: string }, message: string): AppError {
   if (error.code === "42501" || error.message.includes("_denied")) {
@@ -53,7 +54,20 @@ export async function createWorkspace(
 export async function listWorkspaces(client: Client): Promise<WorkspaceRow[]> {
   const { data, error } = await client
     .from("workspaces")
-    .select("*")
+    .select("id, name, slug, status, created_by, created_at, updated_at")
+    .order("created_at", { ascending: true });
+  if (error) {
+    throw new AppError("INTERNAL_ERROR", "Workspaces could not be loaded.", 500, {
+      providerMessage: error.message,
+    });
+  }
+  return data ?? [];
+}
+
+export async function listDashboardWorkspaces(client: Client): Promise<WorkspaceContextRow[]> {
+  const { data, error } = await client
+    .from("workspaces")
+    .select("id, name, slug, status")
     .order("created_at", { ascending: true });
   if (error) {
     throw new AppError("INTERNAL_ERROR", "Workspaces could not be loaded.", 500, {

@@ -9,10 +9,10 @@ import { switchProductAction, switchWorkspaceAction } from "@/app/app/actions";
 import { domainFromUrl } from "./dashboard-utils";
 
 type Props = {
-  workspaces: WorkspaceRow[];
-  workspace: WorkspaceRow | null;
-  products: ProductRow[];
-  product: ProductRow | null;
+  workspaces: Array<Pick<WorkspaceRow, "id" | "name" | "slug" | "status">>;
+  workspace: Pick<WorkspaceRow, "id" | "name" | "slug" | "status"> | null;
+  products: Array<Pick<ProductRow, "id" | "workspace_id" | "name" | "slug" | "website_url" | "status" | "current_snapshot_id" | "current_demand_profile_id">>;
+  product: Pick<ProductRow, "id" | "workspace_id" | "name" | "slug" | "website_url" | "status" | "current_snapshot_id" | "current_demand_profile_id"> | null;
 };
 
 export function ContextSwitchers({ workspaces, workspace, products, product }: Props) {

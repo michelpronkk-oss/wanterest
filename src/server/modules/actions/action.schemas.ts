@@ -120,6 +120,8 @@ export const actionListFiltersSchema = z.object({
   stale: z.boolean().optional(),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
+  /** Optional server-side cap for compact surfaces such as the dashboard inbox. */
+  limit: z.number().int().positive().max(100).optional(),
 });
 export type ActionListFilters = z.infer<typeof actionListFiltersSchema>;
 

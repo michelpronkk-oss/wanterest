@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { DashboardShellSkeleton } from "@/components/dashboard/dashboard-shell-skeleton";
 import { getDashboardContext, resolveOnboardingStep } from "@/server/modules/dashboard/dashboard.context";
 
 /**
@@ -11,7 +13,15 @@ import { getDashboardContext, resolveOnboardingStep } from "@/server/modules/das
  * otherwise render the normal dashboard shell. Settings is deliberately outside this
  * group — it stays reachable (with the shell) regardless of onboarding state.
  */
-export default async function ProductLayout({ children }: { children: ReactNode }) {
+export default function ProductLayout({ children }: { children: ReactNode }) {
+  return (
+    <Suspense fallback={<DashboardShellSkeleton />}>
+      <ProductLayoutContent>{children}</ProductLayoutContent>
+    </Suspense>
+  );
+}
+
+async function ProductLayoutContent({ children }: { children: ReactNode }) {
   const context = await getDashboardContext();
   const onboardingStep = resolveOnboardingStep(context);
   if (onboardingStep) redirect(onboardingStep);

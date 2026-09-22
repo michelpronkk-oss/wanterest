@@ -247,19 +247,21 @@ export class IntelligenceService {
 
   async listSignals(workspaceId: string, productId?: string, filters: SignalFilters = {}): Promise<SignalReadModel[]> {
     const rows = await this.repository.listSignals(workspaceId, productId);
-    const result: SignalReadModel[] = [];
-    for (const row of rows) {
-      if (!filters.lifecycleStatus && row.lifecycle_status === "archived") continue;
-      const ranking = await this.repository.getRankingById(row.match_ranking_id);
-      if (!ranking || (filters.minimumScore !== undefined && ranking.opportunity_score < filters.minimumScore) || (filters.intentType && row.intent_type !== filters.intentType) || (filters.sourceKey && row.source_key !== filters.sourceKey) || (filters.lifecycleStatus && row.lifecycle_status !== filters.lifecycleStatus)) continue;
-      if (filters.from && (row.published_at ?? row.created_at) < filters.from) continue;
-      if (filters.to && (row.published_at ?? row.created_at) > filters.to) continue;
-      result.push(await this.signalReadModel(row));
-    }
-    const ranked = result.sort((a, b) => b.opportunityScore - a.opportunityScore);
     const limit = Math.min(Math.max(Math.trunc(filters.limit ?? 50), 1), 100);
     const offset = Math.max(Math.trunc(filters.offset ?? 0), 0);
-    return ranked.slice(offset, offset + limit);
+    const rankedRows = (await Promise.all(rows.map(async (row) => {
+      if (!filters.lifecycleStatus && row.lifecycle_status === "archived") return null;
+      if (filters.intentType && row.intent_type !== filters.intentType) return null;
+      if (filters.sourceKey && row.source_key !== filters.sourceKey) return null;
+      if (filters.from && (row.published_at ?? row.created_at) < filters.from) return null;
+      if (filters.to && (row.published_at ?? row.created_at) > filters.to) return null;
+      const ranking = await this.repository.getRankingById(row.match_ranking_id);
+      if (!ranking || (filters.minimumScore !== undefined && ranking.opportunity_score < filters.minimumScore)) return null;
+      return { row, opportunityScore: ranking.opportunity_score };
+    }))).filter((value): value is { row: import("../../db/database.helpers").SignalRow; opportunityScore: number } => value !== null)
+      .sort((a, b) => b.opportunityScore - a.opportunityScore);
+    const page = rankedRows.slice(offset, offset + limit);
+    return Promise.all(page.map(({ row, opportunityScore }) => this.signalReadModel(row, opportunityScore)));
   }
 
   async getSignal(workspaceId: string, signalId: string): Promise<SignalReadModel> {
@@ -303,7 +305,7 @@ export class IntelligenceService {
     return results;
   }
 
-  private async signalReadModel(row: import("../../db/database.helpers").SignalRow): Promise<SignalReadModel> {
+  private async signalReadModel(row: import("../../db/database.helpers").SignalRow, opportunityScore?: number): Promise<SignalReadModel> {
     const feedback = await this.repository.listFeedback(row.id);
     const latest = (type: string) => [...feedback].reverse().find((event) => event.feedback_type === type);
     const latestState = (types: string[]) => [...feedback].reverse().find((event) => types.includes(event.feedback_type))?.feedback_type;
@@ -314,7 +316,7 @@ export class IntelligenceService {
     const qualification = evaluation ? qualificationFromEvidence(evaluation.evidence) : null;
     const savedState = latestState(["saved", "dismissed"]);
     const relevanceState = latestState(["relevant", "not_relevant"]);
-    return { signalId: row.id, workspaceId: row.workspace_id, productId: row.product_id, productMatchId: row.product_match_id, conversationId: row.conversation_id, source: row.source_key, canonicalUrl: row.canonical_url, publishedAt: row.published_at, createdAt: row.created_at, intentType: row.intent_type, opportunityScore: (await this.repository.getRankingById(row.match_ranking_id))?.opportunity_score ?? 0, matchPercent: Math.round(((evaluation?.match_confidence ?? 0) * 100)), excerpt: row.excerpt, whyItMatters: row.why_it_matters, tags: asStrings(row.tags), buyerLanguage: asStrings(row.buyer_language), painThemes: asStrings(row.pain_themes), lifecycleStatus: row.lifecycle_status, feedbackState: { saved: savedState === "saved", dismissed: savedState === "dismissed", relevant: relevanceState === "relevant" ? true : relevanceState === "not_relevant" ? false : null, opened: Boolean(latest("opened")), contacted: Boolean(latest("contacted")), converted: Boolean(latest("converted")) }, evidence: { signalEvidenceNodeId: row.evidence_node_id, evaluationId: row.product_match_evaluation_id, rankingId: row.match_ranking_id, conversationEvidenceNodeId: conversation?.evidence_node_id ?? "", sourceItemId: source?.id ?? "", demandProfileEvidenceNodeId: profile?.evidence_node_id ?? "" }, qualification };
+    return { signalId: row.id, workspaceId: row.workspace_id, productId: row.product_id, productMatchId: row.product_match_id, conversationId: row.conversation_id, source: row.source_key, canonicalUrl: row.canonical_url, publishedAt: row.published_at, createdAt: row.created_at, intentType: row.intent_type, opportunityScore: opportunityScore ?? (await this.repository.getRankingById(row.match_ranking_id))?.opportunity_score ?? 0, matchPercent: Math.round(((evaluation?.match_confidence ?? 0) * 100)), excerpt: row.excerpt, whyItMatters: row.why_it_matters, tags: asStrings(row.tags), buyerLanguage: asStrings(row.buyer_language), painThemes: asStrings(row.pain_themes), lifecycleStatus: row.lifecycle_status, feedbackState: { saved: savedState === "saved", dismissed: savedState === "dismissed", relevant: relevanceState === "relevant" ? true : relevanceState === "not_relevant" ? false : null, opened: Boolean(latest("opened")), contacted: Boolean(latest("contacted")), converted: Boolean(latest("converted")) }, evidence: { signalEvidenceNodeId: row.evidence_node_id, evaluationId: row.product_match_evaluation_id, rankingId: row.match_ranking_id, conversationEvidenceNodeId: conversation?.evidence_node_id ?? "", sourceItemId: source?.id ?? "", demandProfileEvidenceNodeId: profile?.evidence_node_id ?? "" }, qualification };
   }
 
   private async qualificationProfile(product: ProductRow, profile: import("../../db/database.helpers").DemandProfileRow): Promise<SignalQualificationProfile> {

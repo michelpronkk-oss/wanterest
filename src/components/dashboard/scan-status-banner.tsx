@@ -82,11 +82,20 @@ export function ScanStatusBanner({ state, workspaceId, productId, retryHref = "/
       }
     };
 
-    void poll();
-    interval = setInterval(() => void poll(), DASHBOARD_SCAN_POLL_MS);
+    const pollWhenVisible = () => {
+      if (document.visibilityState === "visible") void poll();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") void poll();
+    };
+
+    pollWhenVisible();
+    interval = setInterval(pollWhenVisible, DASHBOARD_SCAN_POLL_MS);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       cancelled = true;
       stop();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [activeIdempotencyKey, activeJobRunId, productId, router, workspaceId]);
 

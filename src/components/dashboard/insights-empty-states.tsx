@@ -9,7 +9,7 @@ import { scanResultEmptyBody } from "./scan-status.view-model";
 const INSIGHTS_BODY = "Once your first scan is complete, Wanterest will show what buyers repeatedly want, where your positioning misses demand, what is rising or cooling, and which themes deserve attention.";
 
 /** Shared "no workspace / no product" state for every Insights tab. */
-export function InsightsScopeEmptyState({ workspace, product }: { workspace: WorkspaceRow | null; product: ProductRow | null }) {
+export function InsightsScopeEmptyState({ workspace, product }: { workspace: Pick<WorkspaceRow, "id" | "name" | "slug" | "status"> | null; product: Pick<ProductRow, "id" | "workspace_id" | "name" | "slug" | "website_url" | "status" | "current_snapshot_id" | "current_demand_profile_id"> | null }) {
   if (!workspace) {
     return (
       <div className="dashboard-state" style={{ marginTop: 4 }}>

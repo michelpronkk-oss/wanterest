@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 
 import type { DashboardContext } from "@/server/modules/dashboard/dashboard.context";
 import { ContextSwitchers } from "./context-switchers";
@@ -10,9 +10,31 @@ import { LogoMark } from "./nav-icons";
 import { getInboxItems } from "./inbox";
 import { domainFromUrl } from "./dashboard-utils";
 
-export async function DashboardShell({ context, children }: { context: DashboardContext; children: ReactNode }) {
+type TopBarProps = {
+  workspaceId: string;
+  productId: string;
+  productName: string;
+  productDomain: string | null;
+  userInitial: string;
+};
+
+async function DeferredTopBar({ props, inboxItemsPromise }: { props: TopBarProps; inboxItemsPromise: Promise<Awaited<ReturnType<typeof getInboxItems>>> }) {
+  const inboxItems = await inboxItemsPromise;
+  return <TopBar {...props} inboxItems={inboxItems} />;
+}
+
+export function DashboardShell({ context, children }: { context: DashboardContext; children: ReactNode }) {
   const { workspace, product } = context;
-  const inboxItems = workspace && product ? await getInboxItems(workspace.id, product.id).catch(() => []) : [];
+  const topBarProps = workspace && product ? {
+    workspaceId: workspace.id,
+    productId: product.id,
+    productName: product.name,
+    productDomain: domainFromUrl(product.website_url),
+    userInitial: (context.userEmail?.[0] ?? "U").toUpperCase(),
+  } : null;
+  const inboxItemsPromise = topBarProps
+    ? getInboxItems(topBarProps.workspaceId, topBarProps.productId).catch(() => [])
+    : null;
 
   return (
     <div className="dashboard-app">
@@ -29,15 +51,10 @@ export async function DashboardShell({ context, children }: { context: Dashboard
       </aside>
       <main className="dashboard-main">
         <div className="dashboard-mobile-brand"><LogoMark /> wanterest</div>
-        {workspace && product ? (
-          <TopBar
-            workspaceId={workspace.id}
-            productId={product.id}
-            productName={product.name}
-            productDomain={domainFromUrl(product.website_url)}
-            userInitial={(context.userEmail?.[0] ?? "U").toUpperCase()}
-            inboxItems={inboxItems}
-          />
+        {topBarProps && inboxItemsPromise ? (
+          <Suspense fallback={<TopBar {...topBarProps} inboxItems={[]} />}>
+            <DeferredTopBar props={topBarProps} inboxItemsPromise={inboxItemsPromise} />
+          </Suspense>
         ) : null}
         {children}
       </main>

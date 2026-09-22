@@ -33,7 +33,7 @@ export async function getInboxItems(workspaceId: string, productId: string): Pro
     listSignalsQuery(workspaceId, productId, { limit: 1, minimumScore: 0.75 }),
     getDemandGapQuery(workspaceId, productId),
     getDemandDriftQuery(workspaceId, productId),
-    listActionsQuery(workspaceId, productId, { status: "proposed" }),
+    listActionsQuery(workspaceId, productId, { status: "proposed", limit: 1 }),
     listExperimentsQuery(workspaceId, productId),
   ]);
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { getScanProgressAction, type ScanProgressState } from "@/app/app/actions";
 import { scanCoverageCopy, scanResultDestination, scanStatusLabel, scanSteps } from "./scan-progress.view-model";
@@ -21,6 +22,7 @@ type Props = {
 const POLL_INTERVAL_MS = 2500;
 
 export function ScanProgressModal({ open, onClose, productName, jobRunId, idempotencyKey, workspaceId, productId, errorMessage, onRetry }: Props) {
+  const router = useRouter();
   const [state, setState] = useState<ScanProgressState | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -28,12 +30,16 @@ export function ScanProgressModal({ open, onClose, productName, jobRunId, idempo
     if (!open || !jobRunId || !idempotencyKey) return;
 
     let cancelled = false;
+    let terminalReached = false;
     async function poll() {
       try {
         const next = await getScanProgressAction({ workspaceId, productId, jobRunId, idempotencyKey });
         if (!cancelled) {
           setState(next);
-          if (next && ["succeeded", "completed_with_warnings", "failed", "failed_terminal", "cancelled"].includes(next.status) && intervalRef.current) {
+          if (next && ["succeeded", "completed_with_warnings", "failed", "failed_terminal", "cancelled"].includes(next.status)) {
+            terminalReached = true;
+          }
+          if (terminalReached && intervalRef.current) {
             clearInterval(intervalRef.current);
             intervalRef.current = null;
           }
@@ -42,13 +48,23 @@ export function ScanProgressModal({ open, onClose, productName, jobRunId, idempo
         // transient poll failure — next tick will retry
       }
     }
-    void poll();
-    intervalRef.current = setInterval(() => void poll(), POLL_INTERVAL_MS);
+    const pollWhenVisible = () => {
+      if (!terminalReached && document.visibilityState === "visible") void poll();
+    };
+    const handleVisibilityChange = () => {
+      if (!terminalReached && document.visibilityState === "visible") void poll();
+    };
+
+    pollWhenVisible();
+    intervalRef.current = setInterval(pollWhenVisible, POLL_INTERVAL_MS);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       cancelled = true;
       if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = null;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [open, jobRunId, idempotencyKey, workspaceId, productId]);
+  }, [open, jobRunId, idempotencyKey, productId, router, workspaceId]);
 
   if (!open) return null;
 
@@ -80,7 +96,7 @@ export function ScanProgressModal({ open, onClose, productName, jobRunId, idempo
         {displayedError ? <p className="scan-progress-warning">{displayedError}</p> : null}
         {resultPath ? (
           <button className="dashboard-button dashboard-button-primary" type="button" style={{ marginTop: 20 }} onClick={() => {
-            window.location.assign(resultPath);
+            router.push(resultPath);
           }}>
             View results →
           </button>

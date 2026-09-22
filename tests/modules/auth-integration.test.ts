@@ -4,6 +4,7 @@ import { authCallbackErrorMessage, authCallbackErrorPath, isRecoveryCallbackPath
 import { classifyClientAuthError, isExistingSignupAccount, passwordConfirmationError } from "../../src/shared/auth/client-errors";
 import { authCallbackUrl } from "../../src/components/auth/auth-callback-url";
 import { shouldVerifySupabaseSession } from "../../src/server/providers/supabase/proxy-policy";
+import { isSupabaseAuthCookieName } from "../../src/server/providers/supabase/auth-cookie";
 
 function requestShape(input: { method?: string; pathname?: string; headers?: Headers; cookieNames?: string[] }) {
   return {
@@ -49,5 +50,12 @@ describe("production auth integration boundaries", () => {
     expect(shouldVerifySupabaseSession(requestShape({ pathname: "/auth/callback", cookieNames: ["sb-project-auth-token"] }))).toBe(false);
     expect(shouldVerifySupabaseSession(requestShape({ method: "POST", headers: new Headers({ "Next-Action": "1" }), cookieNames: ["sb-project-auth-token"] }))).toBe(false);
     expect(shouldVerifySupabaseSession(requestShape({ cookieNames: ["sb-project-auth-token.0"] }))).toBe(true);
+  });
+
+  it("recognizes the base and chunked SSR auth cookies without touching unrelated cookies", () => {
+    expect(isSupabaseAuthCookieName("sb-project-auth-token")).toBe(true);
+    expect(isSupabaseAuthCookieName("sb-project-auth-token.0")).toBe(true);
+    expect(isSupabaseAuthCookieName("wanterest_active_product")).toBe(false);
+    expect(isSupabaseAuthCookieName("sb-project-auth-token_backup")).toBe(false);
   });
 });
