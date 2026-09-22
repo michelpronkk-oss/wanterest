@@ -32,9 +32,12 @@ export function DifferenceSection() {
       <div className="marketing-section-inner marketing-difference-inner">
         <div className="marketing-section-eyebrow">THE DIFFERENCE</div>
         <h2 className="marketing-heading marketing-difference-title">
-          Lead finders show you who might fit.
-          <br />
-          {" "}Wanterest shows you who is showing <br className="marketing-difference-final-break" />need.
+          <span className="marketing-copy-full">
+            Lead finders show you who might fit.
+            <br />
+            {" "}Wanterest shows you who is showing <br className="marketing-difference-final-break" />need.
+          </span>
+          <span className="marketing-copy-short">Lead finders show fit. Wanterest shows need.</span>
         </h2>
         <p className="marketing-difference-subtitle">
           <ResponsiveText

@@ -1300,7 +1300,6 @@ body {
   .marketing-qualification-card { min-height: 300px; padding: 28px 24px; border-radius: 18px; }
   .marketing-qualification-quote { margin-bottom: 32px; font-size: clamp(25px, 8vw, 34px); }
   .marketing-qualification-tag { font-size: 11px; padding: 10px 14px; letter-spacing: 0.12em; }
-  .marketing-difference-title br { display: none; }
   .marketing-difference-subtitle { margin-bottom: 38px; }
   .marketing-difference-cards { grid-template-columns: 1fr; gap: 14px; max-width: 520px; }
   .marketing-difference-old-card, .marketing-difference-modern-card { min-height: 0; padding: 28px 24px; border-radius: 18px; }
