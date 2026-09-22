@@ -1,11 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { signupUrlForSite } from "@/components/marketing/links";
+import { startPathForWebsite } from "@/shared/config/site";
 
-export function LoginForm() {
+export function LoginForm({ websiteUrl = null }: { websiteUrl?: string | null }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,7 +29,8 @@ export function LoginForm() {
       return;
     }
 
-    router.replace("/app");
+    const destination = websiteUrl ? startPathForWebsite(websiteUrl) : "/app";
+    router.replace(destination);
     router.refresh();
   }
 
@@ -52,9 +56,10 @@ export function LoginForm() {
         </label>
         {error ? <p className="auth-error" role="alert">{error}</p> : null}
         <button className="auth-submit" type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Signing in…" : "Sign in"}
+          {isSubmitting ? "Signing in…" : "Log in"}
         </button>
       </form>
+      <p className="auth-switch">New to Wanterest? <Link href={signupUrlForSite(websiteUrl)}>Start free</Link></p>
     </section>
   );
 }

@@ -5,6 +5,9 @@ import { findExistingOnboardingProduct, hasCompletedOnboardingUnderstanding, nee
 import { deriveOnboardingProductName, normalizeOnboardingWebsiteUrl, onboardingProductInputSchema, slugifyOnboardingName } from "../../src/server/modules/onboarding/onboarding.schemas";
 import { productDatabaseError } from "../../src/server/modules/products/product-errors";
 import { workspaceIdSchema } from "../../src/server/modules/products/product.schemas";
+import { getEntryDestination } from "../../src/shared/config/entry-flow";
+import { safeInternalPath, startPathForWebsite } from "../../src/shared/config/site";
+import { normalizePublicWebsiteUrl } from "../../src/shared/validation/public-website";
 
 describe("onboarding input boundaries", () => {
   it("normalizes bare public domains to https URLs", () => {
@@ -113,5 +116,25 @@ describe("onboarding input boundaries", () => {
   it("requires a real workspace UUID before product persistence", () => {
     expect(workspaceIdSchema.safeParse("not-a-workspace").success).toBe(false);
     expect(workspaceIdSchema.safeParse("11111111-1111-4111-8111-111111111111").success).toBe(true);
+  });
+
+  it("preserves a normalized website through the start funnel", () => {
+    const website = normalizePublicWebsiteUrl("linear.app");
+    expect(startPathForWebsite(website)).toBe("/start?website=https%3A%2F%2Flinear.app");
+    expect(getEntryDestination({ authenticated: false, hasWorkspace: false, hasProduct: false, productUnderstandingReady: false, scanState: null }, website)).toBe("/signup?website=https%3A%2F%2Flinear.app");
+    expect(getEntryDestination({ authenticated: true, hasWorkspace: false, hasProduct: false, productUnderstandingReady: false, scanState: null }, website)).toBe("/app/setup/workspace?website=https%3A%2F%2Flinear.app");
+    expect(getEntryDestination({ authenticated: true, hasWorkspace: true, hasProduct: false, productUnderstandingReady: false, scanState: null }, website)).toBe("/app/setup/product?website=https%3A%2F%2Flinear.app");
+  });
+
+  it("resumes the furthest persisted onboarding state without overwriting an existing product", () => {
+    expect(getEntryDestination({ authenticated: true, hasWorkspace: true, hasProduct: true, productUnderstandingReady: false, scanState: null }, "https://other.example")).toBe("/app/setup/product");
+    expect(getEntryDestination({ authenticated: true, hasWorkspace: true, hasProduct: true, productUnderstandingReady: true, scanState: "no_scan" })).toBe("/app/setup/scan");
+    expect(getEntryDestination({ authenticated: true, hasWorkspace: true, hasProduct: true, productUnderstandingReady: true, scanState: "completed_with_signals" })).toBe("/app");
+  });
+
+  it("rejects unsafe callback destinations", () => {
+    expect(safeInternalPath("https://evil.example")).toBe("/start");
+    expect(safeInternalPath("//evil.example")).toBe("/start");
+    expect(safeInternalPath("/app/setup/product")).toBe("/app/setup/product");
   });
 });

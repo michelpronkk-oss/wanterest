@@ -4,6 +4,7 @@ import { OnboardingShell } from "@/components/onboarding/onboarding-shell";
 import { ProductSetupForm, ProductUnderstandingForm } from "@/components/onboarding/setup-forms";
 import { getDashboardContext } from "@/server/modules/dashboard/dashboard.context";
 import { getCurrentProductSnapshotQuery } from "@/server/modules/intelligence/commands";
+import { tryNormalizePublicWebsiteUrl } from "@/shared/validation/public-website";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -12,6 +13,7 @@ export default async function ProductSetupPage({ searchParams }: { searchParams:
   if (!workspace) redirect("/app/setup/workspace");
 
   const query = await searchParams;
+  const initialWebsiteUrl = tryNormalizePublicWebsiteUrl(typeof query.website === "string" ? query.website : null);
   const forceNew = query.new !== undefined;
   const activeProduct = forceNew ? null : product;
   if (activeProduct && activeProduct.current_snapshot_id && activeProduct.current_demand_profile_id) redirect("/app/setup/scan");
@@ -28,7 +30,7 @@ export default async function ProductSetupPage({ searchParams }: { searchParams:
         {activeProduct ? (
           <ProductUnderstandingForm workspaceId={workspace.id} productId={activeProduct.id} websiteUrl={activeProduct.website_url} initialDescription={existingSnapshot?.normalized_text ?? existingSnapshot?.raw_text ?? null} />
         ) : (
-          <ProductSetupForm workspaceId={workspace.id} />
+          <ProductSetupForm workspaceId={workspace.id} initialWebsiteUrl={initialWebsiteUrl} />
         )}
       </div>
     </OnboardingShell>

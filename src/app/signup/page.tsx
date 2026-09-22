@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { LoginForm } from "@/components/auth/login-form";
+import { SignupForm } from "@/components/auth/signup-form";
 import { getCurrentUser } from "@/server/modules/auth";
 import { startPathForWebsite } from "@/shared/config/site";
 import { tryNormalizePublicWebsiteUrl } from "@/shared/validation/public-website";
@@ -9,16 +9,16 @@ export const dynamic = "force-dynamic";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-export default async function LoginPage({ searchParams }: { searchParams: SearchParams }) {
+export default async function SignupPage({ searchParams }: { searchParams: SearchParams }) {
   const query = await searchParams;
   const rawWebsite = typeof query.website === "string" ? query.website : null;
   const websiteUrl = tryNormalizePublicWebsiteUrl(rawWebsite);
   const user = await getCurrentUser();
-  if (user) redirect(websiteUrl ? startPathForWebsite(websiteUrl) : "/app");
+  if (user) redirect(startPathForWebsite(websiteUrl));
 
   return (
     <main className="auth-page">
-      <LoginForm websiteUrl={websiteUrl} />
+      <SignupForm websiteUrl={websiteUrl} />
     </main>
   );
 }

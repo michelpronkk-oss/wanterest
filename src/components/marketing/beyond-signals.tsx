@@ -112,7 +112,7 @@ function GapPreview() {
         </div>
       ))}
       <div className="gap-callout">
-        <div><strong>Biggest gap detected:</strong> Buyers keep asking for workflow simplicity — your homepage barely mentions it.</div>
+        <div><strong>Biggest gap detected:</strong> Buyers keep asking for workflow simplicity, but your homepage barely mentions it.</div>
       </div>
     </div>
   );
@@ -176,7 +176,7 @@ function ActionsPreview() {
         <span style={{ fontWeight: 500, color: "var(--color-ink-faint)", textTransform: "none", letterSpacing: 0 }}>Based on a demand theme</span>
       </div>
       <p className="action-card-title">Make workflow simplicity explicit in homepage positioning</p>
-      <p className="action-card-why"><strong style={{ color: "var(--color-ink)" }}>Why now — </strong>Qualified signals, rising demand, and a positioning gap all point to the same theme.</p>
+      <p className="action-card-why"><strong style={{ color: "var(--color-ink)" }}>Why now: </strong>Qualified signals, rising demand, and a positioning gap point to the same theme.</p>
       <div className="action-evidence-strip">
         <div><strong style={{ color: "var(--color-ink)" }}>148</strong> qualified signals</div>
         <div><strong style={{ color: "var(--color-ink)" }}>+9%</strong> rising demand</div>

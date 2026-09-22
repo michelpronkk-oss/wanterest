@@ -1,12 +1,15 @@
+import Image from "next/image";
 import Link from "next/link";
 
 import { LogoMark } from "@/components/dashboard/nav-icons";
 import { SourceBrandIcon } from "@/components/ui/source-brand-icon";
 import { BeyondSignalsTabs } from "./beyond-signals";
+import { DifferenceSection } from "./difference";
 import { HeroWave } from "./hero-wave";
-import { APP_LOGIN_URL, APP_SIGNUP_URL } from "./links";
+import { APP_LOGIN_URL, APP_START_URL } from "./links";
 import { PricingSection } from "./pricing";
 import { ProofSignalCard } from "./proof-signal-card";
+import { QualificationSection } from "./qualification";
 import { Reveal } from "./reveal";
 import { ScanForm } from "./scan-form";
 
@@ -24,16 +27,17 @@ export function MarketingHome() {
   return (
     <div className="marketing-page">
       <MarketingNav />
-      <Hero />
-      <ProductProofStrip />
-      <HowItWorks />
-      <SignalTypes />
+      <div className="marketing-fold">
+        <Hero />
+        <LogoStrip />
+      </div>
+      <ProcessSection />
       <ProofSection />
-      <Qualification />
+      <QualificationSection />
       <BeyondSignals />
       <WhyWanterest />
       <CompetitorPreview />
-      <Positioning />
+      <DifferenceSection />
       <DailyValue />
       <PricingSection />
       <Faq />
@@ -58,7 +62,7 @@ function MarketingNav() {
         </div>
         <div className="marketing-nav-actions">
           <a className="marketing-nav-signin" href={APP_LOGIN_URL}>Log in</a>
-          <a className="marketing-cta-nav" href={APP_SIGNUP_URL}>Start free</a>
+          <a className="marketing-cta-nav" href={APP_START_URL}>Start free</a>
         </div>
       </div>
     </nav>
@@ -68,90 +72,264 @@ function MarketingNav() {
 function Hero() {
   return (
     <header className="marketing-hero">
-      <div className="marketing-eyebrow-pill">
-        <span className="marketing-eyebrow-pill-dot" />
-        <span className="marketing-eyebrow-pill-text">REAL DEMAND. FOUND.</span>
+      <div className="marketing-hero-bg" aria-hidden="true" />
+      <div className="marketing-hero-sides" aria-hidden="true">
+        <div className="marketing-hero-side is-left">
+          <span>
+            REAL
+            <br />
+            PEOPLE.
+          </span>
+          <i />
+        </div>
+        <div className="marketing-hero-side is-right">
+          <i />
+          <span>
+            REAL
+            <br />
+            DEMAND.
+          </span>
+        </div>
       </div>
-      <h1 className="marketing-display-title marketing-hero-title">The demand already exists.</h1>
-      <p className="marketing-hero-sub">Wanterest just finds it.</p>
-      <ScanForm />
-      <p className="marketing-hero-note">
-        {"No keywords. No setup. "}
-        <br className="marketing-hero-note-break" />
-        Just real conversations.
-      </p>
+      <div className="marketing-hero-inner">
+        <div className="marketing-eyebrow-pill">
+          <span className="marketing-eyebrow-pill-dot" />
+          <span className="marketing-eyebrow-pill-text">REAL DEMAND. FOUND.</span>
+        </div>
+        <h1 className="marketing-display-title marketing-hero-title">
+          {"The demand "}
+          <br className="marketing-hero-title-break" />
+          already exists.
+        </h1>
+        <p className="marketing-hero-sub">Wanterest just finds it.</p>
+        <ScanForm />
+        <p className="marketing-hero-note">No keywords. No setup. Just real conversations.</p>
+        <div className="marketing-hero-proof-row">
+          <div className="marketing-hero-avatars" aria-hidden="true">
+            <span className="marketing-hero-avatar">
+              <Image src="/avatars/avatar-01.png" alt="" width={36} height={36} />
+            </span>
+            <span className="marketing-hero-avatar">
+              <Image src="/avatars/avatar-02.png" alt="" width={36} height={36} />
+            </span>
+            <span className="marketing-hero-avatar">
+              <Image src="/avatars/avatar-03.png" alt="" width={36} height={36} />
+            </span>
+            <span className="marketing-hero-avatar">
+              <Image src="/avatars/avatar-04.png" alt="" width={36} height={36} />
+            </span>
+          </div>
+          <span className="marketing-hero-proof-divider" aria-hidden="true" />
+          <p className="marketing-hero-proof">Built for builders, marketers and product teams finding what customers actually want.</p>
+        </div>
+      </div>
       <HeroWave />
     </header>
   );
 }
 
-function ProductProofStrip() {
+function LogoStrip() {
   return (
-    <div className="marketing-proof-strip">
-      <div className="marketing-proof-step">
-        <div className="marketing-proof-eyebrow">STEP 1 · UNDERSTAND</div>
-        <div className="marketing-proof-title">Wanterest reads your product</div>
-        <div className="marketing-proof-card">
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3 }}>Acme</div>
-          <div style={{ fontSize: 11.5, color: "var(--color-ink-muted)" }}>B2B SaaS · Workflow automation</div>
-        </div>
-        <div className="marketing-proof-arrow">→</div>
-      </div>
-
-      <div className="marketing-proof-step">
-        <div className="marketing-proof-eyebrow">STEP 2 · FIND</div>
-        <div className="marketing-proof-title">Finds qualified demand</div>
-        <div className="marketing-proof-card">
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-            <SourceBrandIcon sourceKey="reddit" size={16} />
-            <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.03em", color: "var(--color-positive)" }}>SWITCHING · 94%</span>
+    <div className="marketing-logo-strip">
+      <div className="marketing-logo-strip-inner">
+        <div className="marketing-logo-strip-caption">REAL CONVERSATIONS. REAL OPPORTUNITIES.</div>
+        <div className="marketing-logo-row">
+          <div className="marketing-logo-mark">stripe</div>
+          <div className="marketing-logo-mark">
+            <span className="marketing-logo-mark-box">N</span>Notion
           </div>
-          <div style={{ fontSize: 12, lineHeight: 1.5 }}>&ldquo;We&rsquo;re paying for half of HubSpot we never use. Has anyone moved to something simpler?&rdquo;</div>
-        </div>
-        <div className="marketing-proof-arrow">→</div>
-      </div>
-
-      <div className="marketing-proof-step">
-        <div className="marketing-proof-eyebrow">STEP 3 · MAP</div>
-        <div className="marketing-proof-title">Turns it into intelligence</div>
-        <div className="marketing-proof-card" style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-          <div style={{ fontSize: 12.5 }}><span style={{ fontWeight: 600 }}>Pricing pressure</span> <span style={{ color: "var(--color-positive)", fontWeight: 700 }}>↑ 31%</span></div>
-          <div style={{ fontSize: 12.5, color: "var(--color-ink-muted)" }}>Workflow simplicity</div>
-          <div style={{ fontSize: 12.5, color: "var(--color-ink-muted)" }}>HubSpot alternative demand</div>
-        </div>
-        <div className="marketing-proof-arrow">→</div>
-      </div>
-
-      <div className="marketing-proof-step">
-        <div className="marketing-proof-eyebrow">STEP 4 · ACT</div>
-        <div className="marketing-proof-title">Recommends the next move</div>
-        <div className="marketing-proof-card is-dark">
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", color: "var(--color-accent)", marginBottom: 6 }}>ACTION</div>
-          <div style={{ fontSize: 12.5, color: "var(--color-dark-ink)", lineHeight: 1.5 }}>Make simplicity explicit in homepage positioning.</div>
+          <div className="marketing-logo-mark">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="4" cy="4" r="3" fill="currentColor" />
+              <circle cx="12" cy="4" r="3" fill="currentColor" />
+              <circle cx="4" cy="12" r="3" fill="currentColor" />
+              <circle cx="12" cy="12" r="3" fill="currentColor" />
+            </svg>
+            Figma
+          </div>
+          <div className="marketing-logo-mark">
+            <span className="marketing-logo-mark-fill">🛍</span>shopify
+          </div>
+          <div className="marketing-logo-mark">
+            <span className="marketing-logo-mark-dot" />Linear
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function HowItWorks() {
-  const steps = [
-    { index: "01", title: "Add your product", body: "Paste your website or describe what you sell." },
-    { index: "02", title: "Wanterest understands it", body: "We map your product, audience, pains, and buying language automatically." },
-    { index: "03", title: "See real demand", body: "Wanterest finds conversations where people already show need, intent, or frustration." },
-  ];
+function DocumentIcon() {
   return (
-    <section className="marketing-section is-tight is-alt" id="how-it-works">
-      <div className="marketing-section-inner">
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M4 2h5l3 3v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" stroke="var(--color-ink-secondary)" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M5.5 8.5h5M5.5 11h3.5" stroke="var(--color-ink-secondary)" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function BarsIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="2" y="8" width="3" height="6" rx="0.8" fill="var(--color-ink-secondary)" />
+      <rect x="6.5" y="4.5" width="3" height="9.5" rx="0.8" fill="var(--color-ink-secondary)" />
+      <rect x="11" y="1.5" width="3" height="12.5" rx="0.8" fill="var(--color-ink-secondary)" />
+    </svg>
+  );
+}
+
+function SparkleIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="var(--color-accent)" aria-hidden="true">
+      <path d="M8 1.5c.35 2.6 1.4 3.65 4 4a.15.15 0 0 1 0 .3c-2.6.35-3.65 1.4-4 4a.15.15 0 0 1-.3 0c-.35-2.6-1.4-3.65-4-4a.15.15 0 0 1 0-.3c2.6-.35 3.65-1.4 4-4a.15.15 0 0 1 .3 0Z" />
+      <path d="M13 10.2c.18 1.3.7 1.83 2 2 .1.02.1.16 0 .18-1.3.17-1.82.7-2 2-.02.1-.16.1-.18 0-.17-1.3-.7-1.83-2-2a.1.1 0 0 1 0-.18c1.3-.17 1.83-.7 2-2 .02-.1.16-.1.18 0Z" />
+    </svg>
+  );
+}
+
+function UnderstandProof() {
+  return (
+    <article className="signal-card marketing-signal-static marketing-proof-signal-card">
+      <div className="marketing-proof-signal-topline">
+        <div className="marketing-proof-signal-source">
+          <span className="marketing-proof-icon-chip"><DocumentIcon /></span>
+          <span className="signal-source-name">Acme</span>
+          <span className="marketing-proof-signal-separator" aria-hidden="true">·</span>
+          <span className="signal-source-time">B2B SaaS</span>
+        </div>
+      </div>
+      <span className="marketing-proof-signal-intent is-accent">Product context</span>
+      <p className="marketing-proof-signal-quote">&ldquo;Helps growing teams automate repetitive work with a simple, flexible workflow builder.&rdquo;</p>
+      <div className="marketing-proof-signal-tags">
+        <span>Product</span>
+        <span>Audience</span>
+        <span>Pains</span>
+        <span>Language</span>
+      </div>
+    </article>
+  );
+}
+
+function FindProof() {
+  return (
+    <article className="signal-card marketing-signal-static marketing-proof-signal-card">
+      <div className="marketing-proof-signal-topline">
+        <div className="marketing-proof-signal-source">
+          <SourceBrandIcon sourceKey="reddit" size={20} />
+          <span className="signal-source-name">Reddit</span>
+          <span className="marketing-proof-signal-separator" aria-hidden="true">·</span>
+          <span className="signal-source-time">2d ago</span>
+        </div>
+        <span className="marketing-proof-signal-score">94% match</span>
+      </div>
+      <span className="marketing-proof-signal-intent is-accent">Switching intent</span>
+      <p className="marketing-proof-signal-quote">&ldquo;We&rsquo;re paying for half of HubSpot we never use. Has anyone moved to something simpler?&rdquo;</p>
+      <div className="marketing-proof-signal-tags">
+        <span>r/SaaS</span>
+      </div>
+    </article>
+  );
+}
+
+function MapProof() {
+  return (
+    <article className="signal-card marketing-signal-static marketing-proof-signal-card">
+      <div className="marketing-proof-signal-topline">
+        <div className="marketing-proof-signal-source">
+          <span className="marketing-proof-icon-chip"><BarsIcon /></span>
+          <span className="signal-source-name">Demand intelligence</span>
+        </div>
+        <span className="marketing-proof-signal-score">↑ 31%</span>
+      </div>
+      <span className="marketing-proof-signal-intent is-accent">Rising theme</span>
+      <p className="marketing-proof-signal-quote">&ldquo;Growing frustration with complexity and pricing across SMB teams.&rdquo;</p>
+      <div className="marketing-proof-signal-tags">
+        <span>Workflow simplicity</span>
+        <span>HubSpot alternative demand</span>
+      </div>
+    </article>
+  );
+}
+
+function ActProof() {
+  return (
+    <article className="signal-card marketing-signal-static marketing-proof-signal-card is-dark">
+      <div className="marketing-proof-signal-topline">
+        <div className="marketing-proof-signal-source">
+          <span className="marketing-proof-icon-chip"><SparkleIcon /></span>
+          <span className="signal-source-name">Recommended action</span>
+        </div>
+      </div>
+      <span className="marketing-proof-signal-intent">Action</span>
+      <p className="marketing-proof-signal-quote">&ldquo;Make simplicity explicit in homepage positioning.&rdquo;</p>
+      <div className="marketing-proof-signal-tags">
+        <span>Turn insight into impact →</span>
+      </div>
+    </article>
+  );
+}
+
+const PROCESS_STEPS = [
+  {
+    key: "understand",
+    number: "01",
+    label: "UNDERSTAND",
+    title: "Wanterest reads your product",
+    body: "Maps your product, audience, pains, and buyer language.",
+    proof: <UnderstandProof />,
+  },
+  {
+    key: "find",
+    number: "02",
+    label: "FIND",
+    title: "Finds qualified demand",
+    body: "Finds real conversations with pain, intent, and switching signals.",
+    proof: <FindProof />,
+  },
+  {
+    key: "map",
+    number: "03",
+    label: "MAP",
+    title: "Turns demand into intelligence",
+    body: "Groups signals into themes, gaps, movement, and competitive context.",
+    proof: <MapProof />,
+  },
+  {
+    key: "act",
+    number: "04",
+    label: "ACT",
+    title: "Recommends the next move",
+    body: "Turns market demand into clear actions for product, positioning, and growth.",
+    proof: <ActProof />,
+  },
+];
+
+function ProcessSection() {
+  return (
+    <section className="marketing-section marketing-process-section is-tight is-alt" id="how-it-works">
+      <div className="marketing-section-inner marketing-process-inner">
         <div className="marketing-section-eyebrow">THE PROCESS</div>
         <h2 className="marketing-heading marketing-section-title is-tight">From product to demand in minutes.</h2>
-        <div className="marketing-steps-grid">
-          {steps.map((step, index) => (
-            <Reveal key={step.index} delay={index * 80}>
-              <div className="marketing-step">
-                <div className="marketing-step-index">{step.index}</div>
-                <div className="marketing-step-title">{step.title}</div>
-                <div className="marketing-step-body">{step.body}</div>
+        <p className="marketing-section-subtitle">
+          Wanterest turns product context into real market demand, clear intelligence, and the next move to make.
+        </p>
+        <div className="marketing-proof-strip">
+          {PROCESS_STEPS.map((step, index) => (
+            <Reveal key={step.key} delay={index * 80}>
+              <div className="marketing-proof-step">
+                <div className="marketing-process-node-row">
+                  <span className="marketing-process-node">{step.number}</span>
+                  {index < PROCESS_STEPS.length - 1 ? (
+                    <>
+                      <span className="marketing-process-node-line" aria-hidden="true" />
+                      <span className="marketing-process-node-arrow" aria-hidden="true">→</span>
+                    </>
+                  ) : null}
+                </div>
+                <div className="marketing-proof-eyebrow">{step.label}</div>
+                <div className="marketing-proof-title">{step.title}</div>
+                <p className="marketing-proof-body">{step.body}</p>
+                {step.proof}
               </div>
             </Reveal>
           ))}
@@ -161,83 +339,50 @@ function HowItWorks() {
   );
 }
 
-function SignalTypes() {
-  return (
-    <section className="marketing-section">
-      <div className="marketing-section-inner">
-        <div className="marketing-section-eyebrow">SIGNAL, NOT NOISE</div>
-        <h2 className="marketing-heading marketing-section-title">Not leads. Signals of real need.</h2>
-        <p className="marketing-section-subtitle">
-          <ResponsiveText
-            full="Find qualified demand across the public conversations that matter to your market."
-            short="Find qualified demand across the conversations that matter."
-          />
-        </p>
-        <div className="marketing-signals-grid">
-          <ProofSignalCard source="reddit" sourceLabel="Reddit" time="—" intentLabel="High intent" intentTone="accent" matchPercent={94} quote="Looking for a tool that can watch our inbox and CRM together. Recommendations?" />
-          <ProofSignalCard source="hacker-news" sourceLabel="Hacker News" time="—" intentLabel="Problem signal" matchPercent={81} quote="Every week I reconcile the same invoices across three spreadsheets by hand." />
-          <ProofSignalCard source="reddit" sourceLabel="Reddit" time="—" intentLabel="Switching intent" intentTone="accent" matchPercent={91} quote="We're paying for half of HubSpot we never use. Anyone moved to something simpler?" />
-          <ProofSignalCard source="bluesky" sourceLabel="Bluesky" time="—" intentLabel="Alternative search" matchPercent={67} quote="Comparing Zapier vs a few newer tools for syncing leads into our CRM." />
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function ProofSection() {
   return (
-    <section className="marketing-section is-tight is-alt" id="examples">
+    <section className="marketing-section is-tight" id="examples">
       <div className="marketing-section-inner">
-        <div className="marketing-section-eyebrow">PROOF</div>
-        <h2 className="marketing-heading marketing-section-title is-tight">See why a conversation matters before you open it.</h2>
+        <div className="marketing-section-eyebrow">SIGNAL, NOT NOISE</div>
+        <h2 className="marketing-heading marketing-section-title marketing-proof-section-title is-tight">See why a conversation matters before you open it.</h2>
+        <p className="marketing-section-subtitle">
+          Wanterest finds public conversations, qualifies the intent, and shows why they matter.
+        </p>
 
-        <div className="marketing-proof-stack">
-          <div className="marketing-proof-stack-shadow is-back"><div className="marketing-proof-stack-shadow-filler" /></div>
-          <div className="marketing-proof-stack-shadow is-mid"><div className="marketing-proof-stack-shadow-filler" /></div>
-          <div className="marketing-proof-stack-main">
-            <ProofSignalCard
-              source="reddit"
-              sourceLabel="Reddit"
-              time="7h ago"
-              intentLabel="High intent · 88%"
-              intentTone="accent"
-              matchPercent={88}
-              quote="Looking for a tool that can watch our inbox and CRM together. Recommendations?"
-              why="A direct request for the category of tool Wanterest belongs to."
-              tags={["CRM sync"]}
-            />
-          </div>
-        </div>
-
-        <div className="marketing-proof-secondary-grid">
-          <ProofSignalCard source="hacker-news" sourceLabel="Hacker News" time="1h ago" intentLabel="Problem · 81%" matchPercent={81} quote="Every week I reconcile the same invoices across three spreadsheets by hand." tags={["Manual ops"]} />
-          <ProofSignalCard source="bluesky" sourceLabel="Bluesky" time="3h ago" intentLabel="Switching · 67%" matchPercent={67} quote="Getting priced out of our current ops tool at renewal. Anyone found a leaner alternative?" tags={["SaaS"]} />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Qualification() {
-  return (
-    <section className="marketing-section is-tight">
-      <div className="marketing-section-inner" style={{ maxWidth: 820, textAlign: "center" }}>
-        <div className="marketing-section-eyebrow">QUALIFICATION</div>
-        <h2 className="marketing-heading" style={{ fontSize: "clamp(28px, 3.7vw, 38px)", marginBottom: 16 }}>Not every mention is demand.</h2>
-        <p style={{ fontSize: 15, color: "var(--color-ink-muted)", marginBottom: 48, lineHeight: 1.55 }}>Popularity doesn&rsquo;t create demand. Intent does.</p>
-        <div className="marketing-qualify-grid">
-          <div className="marketing-card marketing-qualify-card">
-            <div className="marketing-qualify-meta">500K likes</div>
-            <p className="marketing-qualify-quote">&ldquo;HubSpot lol&rdquo;</p>
-            <span className="marketing-qualify-tag">NOT A SIGNAL</span>
-          </div>
-          <div className="marketing-card marketing-qualify-card is-featured">
-            <div className="marketing-qualify-meta">2 likes</div>
-            <p className="marketing-qualify-quote">
-              &ldquo;Looking for a cheaper <mark>HubSpot</mark> alternative with SSO&rdquo;
-            </p>
-            <span className="marketing-qualify-tag is-strong">HIGH-CONFIDENCE SIGNAL</span>
-          </div>
+        <div className="marketing-proof-signal-grid">
+          <ProofSignalCard
+            source="x"
+            sourceLabel="X"
+            time="2h ago"
+            intentLabel="Switching intent"
+            intentTone="accent"
+            matchPercent={84}
+            quote="Looking for a simpler alternative to HubSpot. The setup feels overwhelming for our small team."
+            tags={["CRM tools"]}
+            iconSize={28}
+          />
+          <ProofSignalCard
+            source="reddit"
+            sourceLabel="Reddit"
+            time="7h ago"
+            intentLabel="High intent"
+            intentTone="accent"
+            matchPercent={88}
+            quote="Looking for a tool that can watch our inbox and CRM together. Recommendations?"
+            tags={["CRM sync"]}
+            iconSize={28}
+          />
+          <ProofSignalCard
+            source="hacker-news"
+            sourceLabel="Hacker News"
+            time="1h ago"
+            intentLabel="Problem signal"
+            intentTone="problem"
+            matchPercent={81}
+            quote="Every week I reconcile the same invoices across three spreadsheets by hand."
+            tags={["Operations"]}
+            iconSize={28}
+          />
         </div>
       </div>
     </section>
@@ -246,18 +391,20 @@ function Qualification() {
 
 function BeyondSignals() {
   return (
-    <section className="marketing-section is-tight" style={{ maxWidth: 1100, margin: "0 auto" }}>
-      <div style={{ textAlign: "center", marginBottom: 48 }}>
+    <section className="marketing-section is-tight">
+      <div className="marketing-section-inner marketing-section-wide" style={{ textAlign: "center" }}>
         <div className="marketing-section-eyebrow">BEYOND SIGNALS</div>
-        <h2 className="marketing-display-title" style={{ fontSize: "clamp(28px, 3.7vw, 40px)", marginBottom: 16 }}>Understand demand. Then act on it.</h2>
-        <p style={{ fontSize: 15, color: "var(--color-ink-muted)", maxWidth: 560, margin: "0 auto", lineHeight: 1.55 }}>
+        <h2 className="marketing-heading marketing-section-title">Understand demand. Then act on it.</h2>
+        <p className="marketing-section-copy marketing-beyond-copy">
           <ResponsiveText
-            full="See what your market wants, where you're missing it, what's changing — and what to do next."
+            full="See what your market wants, where you're missing it, what's changing, and what to do next."
             short="See what your market wants, where you're missing it, and what's changing."
           />
         </p>
       </div>
-      <BeyondSignalsTabs />
+      <div className="marketing-beyond-visual">
+        <BeyondSignalsTabs />
+      </div>
     </section>
   );
 }
@@ -270,10 +417,10 @@ function WhyWanterest() {
     { title: "Actionable", body: "Every recommendation is connected to supporting evidence." },
   ];
   return (
-    <section className="marketing-section is-tight">
+    <section className="marketing-section is-tight is-alt">
       <div className="marketing-section-inner">
         <div className="marketing-section-eyebrow">WHY WANTEREST</div>
-        <h2 className="marketing-heading marketing-section-title is-tight">Built for evidence, not guesses.</h2>
+        <h2 className="marketing-heading marketing-section-title marketing-section-title-compact is-tight">Built for evidence, not guesses.</h2>
         <div className="marketing-feature-grid">
           {features.map((feature) => (
             <div className="marketing-feature-card" key={feature.title}>
@@ -289,25 +436,90 @@ function WhyWanterest() {
 
 function CompetitorPreview() {
   return (
-    <section className="marketing-section is-tight is-alt">
-      <div className="marketing-section-inner" style={{ maxWidth: 900, textAlign: "center" }}>
+    <section className="marketing-section is-tight">
+      <div className="marketing-section-inner marketing-competitor-inner">
         <div className="marketing-section-eyebrow">COMING SOON</div>
-        <h2 className="marketing-heading" style={{ fontSize: "clamp(26px, 3.4vw, 36px)", marginBottom: 16 }}>Understand what buyers compare you against.</h2>
-        <p style={{ fontSize: 14.5, color: "var(--color-ink-muted)", marginBottom: 44, maxWidth: 560, marginLeft: "auto", marginRight: "auto", lineHeight: 1.55 }}>
+        <h2 className="marketing-heading marketing-section-title marketing-competitor-title">Understand what buyers compare you against.</h2>
+        <p className="marketing-section-subtitle marketing-competitor-subtitle">
           <ResponsiveText
             full="See which alternatives buyers actually consider, and where neither product owns the demand."
             short="See which alternatives buyers actually consider."
           />
         </p>
-        <div className="marketing-card marketing-competitor-card">
-          <div className="marketing-competitor-columns">
-            <div style={{ fontSize: 14, fontWeight: 600 }}>Your product</div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-ink-muted)" }}>Competitor</div>
+        <div className="marketing-competitor-card">
+          <div className="marketing-competitor-kicker"><BarsIcon /> <span>Comparison intelligence</span></div>
+
+          <div className="marketing-competitor-products">
+            <div className="marketing-competitor-product is-you">
+              <span className="marketing-competitor-dot" />
+              <div>
+                <strong>Your product</strong>
+                <span>Share of buyer conversations</span>
+              </div>
+            </div>
+            <div className="marketing-competitor-vs" aria-hidden="true">VS</div>
+            <div className="marketing-competitor-product is-them">
+              <span className="marketing-competitor-dot" />
+              <div>
+                <strong>Competitor</strong>
+                <span>Share of buyer conversations</span>
+              </div>
+            </div>
           </div>
-          <div className="marketing-competitor-rows">
-            <div>Demand overlap</div>
-            <div>Positioning strength</div>
-            <div>Unmet demand</div>
+
+          <div className="marketing-competitor-metrics">
+            <div className="marketing-competitor-metric">
+              <div className="marketing-competitor-side-stat is-you">
+                <strong>58%</strong>
+                <span className="marketing-competitor-bar"><span style={{ width: "58%" }} /></span>
+              </div>
+              <div className="marketing-competitor-metric-copy">
+                <strong>Demand overlap</strong>
+                <span>Share of conversations where both products are considered.</span>
+                <em>Competitor +13 pts</em>
+              </div>
+              <div className="marketing-competitor-side-stat is-them">
+                <strong>71%</strong>
+                <span className="marketing-competitor-bar"><span style={{ width: "71%" }} /></span>
+              </div>
+            </div>
+
+            <div className="marketing-competitor-metric">
+              <div className="marketing-competitor-side-stat is-you">
+                <strong>44%</strong>
+                <span className="marketing-competitor-bar"><span style={{ width: "44%" }} /></span>
+              </div>
+              <div className="marketing-competitor-metric-copy">
+                <strong>Positioning strength</strong>
+                <span>Share of conversations where your product is the clear preference.</span>
+                <em>Competitor +8 pts</em>
+              </div>
+              <div className="marketing-competitor-side-stat is-them">
+                <strong>52%</strong>
+                <span className="marketing-competitor-bar"><span style={{ width: "52%" }} /></span>
+              </div>
+            </div>
+
+            <div className="marketing-competitor-metric">
+              <div className="marketing-competitor-side-stat is-you">
+                <strong>27%</strong>
+                <span className="marketing-competitor-bar"><span style={{ width: "27%" }} /></span>
+              </div>
+              <div className="marketing-competitor-metric-copy">
+                <strong>Unmet demand</strong>
+                <span>Share of conversations that mention neither product.</span>
+                <em className="is-neutral">Open opportunity</em>
+              </div>
+              <div className="marketing-competitor-side-stat is-them">
+                <strong>27%</strong>
+                <span className="marketing-competitor-bar"><span style={{ width: "27%" }} /></span>
+              </div>
+            </div>
+          </div>
+
+          <div className="marketing-competitor-callout">
+            <span className="marketing-competitor-callout-icon"><LightbulbIcon /></span>
+            <p><strong>27% of conversations mention neither product.</strong><span>Open demand for whoever claims it first.</span></p>
           </div>
         </div>
       </div>
@@ -315,84 +527,100 @@ function CompetitorPreview() {
   );
 }
 
-function Positioning() {
+function LightbulbIcon() {
   return (
-    <section className="marketing-section is-tight" style={{ textAlign: "center" }}>
-      <div className="marketing-section-eyebrow">THE DIFFERENCE</div>
-      <h2 className="marketing-heading" style={{ fontSize: "clamp(26px, 3.6vw, 38px)", maxWidth: 720, margin: "0 auto 18px", lineHeight: 1.22 }}>
-        Lead finders show you who might fit.
-        <br />
-        Wanterest shows you who is showing need.
-      </h2>
-      <p style={{ fontSize: 15, color: "var(--color-ink-muted)", maxWidth: 460, margin: "0 auto 56px", lineHeight: 1.55 }}>
-        <ResponsiveText
-          full="Stop guessing who to contact. Start with people already talking about the problem you solve."
-          short="Stop guessing who to contact."
-        />
-      </p>
-      <div className="marketing-compare-grid">
-        <Reveal>
-          <div className="marketing-compare-card">
-            <div className="marketing-compare-eyebrow">The old way</div>
-            <div className="marketing-compare-title">Lead finder</div>
-            <div className="marketing-compare-list">
-              <div className="marketing-compare-list-item"><span className="marketing-compare-list-item-dot" />Company filters</div>
-              <div className="marketing-compare-list-item"><span className="marketing-compare-list-item-dot" />Contact lists</div>
-              <div className="marketing-compare-list-item"><span className="marketing-compare-list-item-dot" />Cold outreach</div>
-            </div>
-          </div>
-        </Reveal>
-        <Reveal delay={80}>
-          <div className="marketing-compare-card-dark">
-            <div className="marketing-compare-card-dark-glow" />
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--color-accent)", marginBottom: 18, position: "relative" }}>THE MODERN WAY</div>
-            <div className="marketing-compare-brand">
-              <div className="marketing-compare-brand-mark"><LogoMark size={17} /></div>
-              <div className="marketing-compare-brand-text">wanterest</div>
-            </div>
-            <div className="marketing-compare-checks">
-              <div className="marketing-compare-check-item"><span className="marketing-compare-check-mark">✓</span>Real conversations</div>
-              <div className="marketing-compare-check-item"><span className="marketing-compare-check-mark">✓</span>Visible pain</div>
-              <div className="marketing-compare-check-item"><span className="marketing-compare-check-mark">✓</span>Active intent</div>
-              <div className="marketing-compare-check-item"><span className="marketing-compare-check-mark">✓</span>Context and timing</div>
-            </div>
-          </div>
-        </Reveal>
-      </div>
-    </section>
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M9 18h6M10 21h4M8.6 14.7a6 6 0 1 1 6.8 0c-.9.7-1.4 1.4-1.4 2.3h-4c0-.9-.5-1.6-1.4-2.3Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
+
+const DAILY_FEED = [
+  {
+    key: "d1",
+    source: "reddit",
+    label: "Reddit",
+    time: "9m ago",
+    quote: "Anyone found a lightweight HubSpot alternative that doesn’t nickel-and-dime you?",
+    tag: "Switching intent",
+  },
+  {
+    key: "d2",
+    source: "hacker-news",
+    label: "Hacker News",
+    time: "24m ago",
+    quote: "We ended up building our own CRM because nothing fit our workflow.",
+    tag: "Problem signal",
+    tone: "problem",
+  },
+  {
+    key: "d3",
+    source: "bluesky",
+    label: "Bluesky",
+    time: "1h ago",
+    quote: "Paying for a dozen features we never touch. There has to be something simpler.",
+    tag: "High intent",
+  },
+  {
+    key: "d4",
+    source: "x",
+    label: "X",
+    time: "2h ago",
+    quote: "Need a CRM that just works out of the box. Recommendations welcome.",
+    tag: "Switching intent",
+  },
+] as const;
 
 function DailyValue() {
   return (
-    <section className="marketing-section is-tight is-alt">
+    <section className="marketing-section is-tight">
       <div className="marketing-daily-inner">
         <div className="marketing-section-eyebrow">DAILY VALUE</div>
-        <h2 className="marketing-heading" style={{ fontSize: "clamp(28px, 3.7vw, 38px)", marginBottom: 16 }}>Wake up to new opportunities.</h2>
-        <p style={{ fontSize: 14.5, color: "var(--color-ink-muted)", marginBottom: 32, lineHeight: 1.55 }}>
-          Wanterest keeps searching in the background and surfaces new demand every day.
+        <h2 className="marketing-heading marketing-section-title marketing-section-title-compact">Wake up to new opportunities.</h2>
+        <p className="marketing-section-subtitle marketing-daily-subtitle">
+          Wanterest keeps monitoring your market and surfaces new demand as it appears.
         </p>
         <div className="marketing-daily-card">
           <div className="marketing-daily-card-head">
-            <div className="marketing-daily-card-headline">7 new opportunities found today.</div>
-            <div className="marketing-daily-pulse-dot" />
+            <div>
+              <div className="marketing-daily-card-label">Representative daily digest</div>
+              <div className="marketing-daily-card-headline">New demand, sorted for you.</div>
+            </div>
+            <div className="marketing-daily-live">
+              <span className="marketing-daily-pulse-dot" aria-hidden="true" />
+              Monitoring live
+            </div>
           </div>
-          <div className="marketing-daily-ticker">
-            <div className="marketing-daily-ticker-item" style={{ animationDelay: "0s" }}>
-              <SourceBrandIcon sourceKey="reddit" size={14} className="marketing-daily-ticker-mark" decorative />
-              New high-intent signal on Reddit — 94% match
+          <div className="marketing-daily-stats">
+            <div className="marketing-daily-stat">
+              <strong>7</strong>
+              <span>new opportunities</span>
             </div>
-            <div className="marketing-daily-ticker-item" style={{ animationDelay: "3s" }}>
-              <SourceBrandIcon sourceKey="hacker-news" size={14} className="marketing-daily-ticker-mark" decorative />
-              New problem signal on Hacker News — 81% match
+            <div className="marketing-daily-stat">
+              <strong>2</strong>
+              <span>switching signals</span>
             </div>
-            <div className="marketing-daily-ticker-item" style={{ animationDelay: "6s" }}>
-              <SourceBrandIcon sourceKey="bluesky" size={14} className="marketing-daily-ticker-mark" decorative />
-              New switching intent on Bluesky — 67% match
+            <div className="marketing-daily-stat">
+              <strong>1</strong>
+              <span>rising demand theme</span>
             </div>
+          </div>
+          <div className="marketing-daily-feed">
+            {DAILY_FEED.map((item, index) => (
+              <Reveal key={item.key} delay={index * 90}>
+                <div className="marketing-daily-feed-row">
+                  <SourceBrandIcon sourceKey={item.source} label={item.label} size={22} />
+                  <div className="marketing-daily-feed-body">
+                    <p>&ldquo;{item.quote}&rdquo;</p>
+                    <span className="marketing-daily-feed-meta">{item.label} · {item.time}</span>
+                  </div>
+                  <span className={`marketing-daily-feed-tag${"tone" in item && item.tone === "problem" ? " is-problem" : ""}`}>{item.tag}</span>
+                </div>
+              </Reveal>
+            ))}
           </div>
         </div>
-        <a className="marketing-cta is-compact" href={APP_SIGNUP_URL}>See today&rsquo;s signals →</a>
+        <a className="marketing-cta is-compact" href={APP_START_URL}>See today&rsquo;s signals →</a>
       </div>
     </section>
   );
@@ -405,28 +633,28 @@ const FAQ_ITEMS = [
   },
   {
     q: "Is this just social listening with a new name?",
-    a: "No. Social listening tracks mentions of your brand. Wanterest looks for people who've never heard of you but are already describing the exact problem you solve — then ranks how likely they are to buy.",
+    a: "No. Social listening tracks mentions of your brand. Wanterest finds public conversations describing the problem you solve, then ranks their buying intent.",
   },
   {
-    q: "How is data collected — is it compliant?",
-    a: "We only read public posts, the same way a person browsing the site would. We never scrape private messages, gated groups, or anything behind a login.",
+    q: "How is data collected, and is it compliant?",
+    a: "We read public posts only. Nothing private, gated, or behind a login.",
   },
   {
     q: "How accurate is the match score?",
-    a: 'Every match is scored against your specific product description and audience, not generic keywords. You can always see the "Why it matters" reasoning behind each score before you act on it.',
+    a: 'Matches are scored against your product and audience, not generic keywords. Each score includes a visible "Why it matters" explanation.',
   },
   {
     q: "Can I cancel anytime?",
-    a: "Yes — plans cancel anytime from Settings, no calls or emails required.",
+    a: "Yes. Cancel anytime from Settings, with no calls or emails required.",
   },
 ];
 
 function Faq() {
   return (
-    <section className="marketing-section is-tight is-alt">
-      <div className="marketing-section-inner" style={{ maxWidth: 720 }}>
+    <section className="marketing-section is-tight">
+      <div className="marketing-section-inner marketing-section-readable">
         <div className="marketing-section-eyebrow">QUESTIONS</div>
-        <h2 className="marketing-heading" style={{ fontSize: "clamp(26px, 3.4vw, 34px)", textAlign: "center", marginBottom: 48 }}>Before you start.</h2>
+        <h2 className="marketing-heading marketing-section-title marketing-section-title-compact is-content">Before you start.</h2>
         <div className="marketing-faq-list">
           {FAQ_ITEMS.map((item) => (
             <div className="marketing-faq-item" key={item.q}>
@@ -443,7 +671,7 @@ function Faq() {
 function FinalCta() {
   return (
     <section className="marketing-section is-tight is-alt marketing-final-cta">
-      <h2 className="marketing-heading marketing-final-cta-title">The demand is already there.</h2>
+      <h2 className="marketing-heading marketing-section-title marketing-section-title-compact marketing-final-cta-title">The demand is already there.</h2>
       <p className="marketing-final-cta-sub">Find it.</p>
       <ScanForm compact />
     </section>

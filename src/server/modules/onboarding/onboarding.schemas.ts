@@ -1,6 +1,5 @@
 import { z } from "zod";
-
-const PUBLIC_WEBSITE_ERROR = "Enter your product's public website or domain.";
+import { normalizePublicWebsiteUrl } from "../../../shared/validation/public-website";
 
 export const onboardingWorkspaceInputSchema = z.object({
   name: z.string().trim().min(1, "Enter a workspace name.").max(120),
@@ -40,28 +39,7 @@ export type OnboardingProductInput = z.infer<typeof onboardingProductInputSchema
  * performed by onboarding.
  */
 export function normalizeOnboardingWebsiteUrl(input: string): string {
-  const trimmed = input.trim();
-  if (!trimmed || /\s/.test(trimmed)) {
-    throw new Error(PUBLIC_WEBSITE_ERROR);
-  }
-  if (/^[a-z][a-z\d+.-]*:/i.test(trimmed) && !/^https?:\/\//i.test(trimmed)) {
-    throw new Error(PUBLIC_WEBSITE_ERROR);
-  }
-  const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  let parsed: URL;
-  try {
-    parsed = new URL(candidate);
-  } catch {
-    throw new Error(PUBLIC_WEBSITE_ERROR);
-  }
-  if (!/^https?:$/.test(parsed.protocol) || !parsed.hostname || parsed.username || parsed.password || parsed.port) {
-    throw new Error(PUBLIC_WEBSITE_ERROR);
-  }
-  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (hostname === "localhost" || hostname.endsWith(".local") || isIpAddress(hostname) || isPrivateAddress(hostname) || !isRegistrableLookingHostname(hostname)) {
-    throw new Error(PUBLIC_WEBSITE_ERROR);
-  }
-  return `https://${hostname}`;
+  return normalizePublicWebsiteUrl(input);
 }
 
 const MULTI_LABEL_PUBLIC_SUFFIXES = new Set([
@@ -75,20 +53,6 @@ const MULTI_LABEL_PUBLIC_SUFFIXES = new Set([
   "co.in",
   "com.cn",
 ]);
-
-function isIpAddress(hostname: string): boolean {
-  if (hostname.includes(":")) return true;
-  const labels = hostname.split(".");
-  return labels.length === 4 && labels.every((label) => /^\d+$/.test(label));
-}
-
-function isRegistrableLookingHostname(hostname: string): boolean {
-  const labels = hostname.split(".");
-  if (labels.length < 2) return false;
-  if (labels.some((label) => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label))) return false;
-  const tld = labels[labels.length - 1] ?? "";
-  return tld.length >= 2 || tld.startsWith("xn--");
-}
 
 export function onboardingRegistrableDomain(input: string): string {
   const normalized = normalizeOnboardingWebsiteUrl(input);
@@ -109,14 +73,6 @@ export function deriveOnboardingProductName(input: string): string {
     .filter(Boolean)
     .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
     .join(" ");
-}
-
-function isPrivateAddress(hostname: string): boolean {
-  if (hostname.includes(":") && (hostname === "::1" || hostname.startsWith("fc") || hostname.startsWith("fd") || hostname.startsWith("fe80:"))) return true;
-  const octets = hostname.split(".").map(Number);
-  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return false;
-  const [first, second] = octets;
-  return first === 0 || first === 10 || first === 127 || (first === 169 && second === 254) || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168);
 }
 
 export function slugifyOnboardingName(input: string): string {

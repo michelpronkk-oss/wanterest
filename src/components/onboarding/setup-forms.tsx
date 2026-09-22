@@ -59,13 +59,14 @@ function descriptionFieldError(value: string, serverError?: string): string | un
   return undefined;
 }
 
-function WorkspaceSetupFields({ action, state, pending }: { action: FormAction; state: OnboardingActionState; pending: boolean }) {
+function WorkspaceSetupFields({ action, state, pending, initialWebsiteUrl }: { action: FormAction; state: OnboardingActionState; pending: boolean; initialWebsiteUrl: string | null }) {
   const [name, setName] = useState(state.values?.name ?? "");
   const canSubmit = name.trim().length > 0;
   const handleSubmit = useSubmitGuard(pending);
 
   return (
     <form action={action} onSubmit={handleSubmit}>
+      <input type="hidden" name="websiteUrl" value={initialWebsiteUrl ?? ""} />
       <div className="onboarding-field">
         <label className="onboarding-field-label" htmlFor="workspace-name">Workspace name</label>
         <input id="workspace-name" className="onboarding-input" name="name" defaultValue={name} onInput={(event) => setName(event.currentTarget.value)} required maxLength={120} placeholder="Acme research" autoComplete="organization" aria-invalid={Boolean(state.fieldErrors?.name)} aria-describedby={state.fieldErrors?.name ? "workspace-name-error" : undefined} />
@@ -78,13 +79,13 @@ function WorkspaceSetupFields({ action, state, pending }: { action: FormAction; 
   );
 }
 
-export function WorkspaceSetupForm() {
+export function WorkspaceSetupForm({ initialWebsiteUrl = null }: { initialWebsiteUrl?: string | null }) {
   const [state, action, pending] = useActionState(createOnboardingWorkspaceAction, initialState);
-  return <WorkspaceSetupFields key={state.values?.name ?? "initial"} action={action} state={state} pending={pending} />;
+  return <WorkspaceSetupFields key={state.values?.name ?? "initial"} action={action} state={state} pending={pending} initialWebsiteUrl={initialWebsiteUrl} />;
 }
 
-function ProductSetupFields({ workspaceId, action, state, pending }: { workspaceId: string; action: FormAction; state: OnboardingActionState; pending: boolean }) {
-  const [websiteUrl, setWebsiteUrl] = useState(state.values?.websiteUrl ?? "");
+function ProductSetupFields({ workspaceId, action, state, pending, initialWebsiteUrl }: { workspaceId: string; action: FormAction; state: OnboardingActionState; pending: boolean; initialWebsiteUrl: string | null }) {
+  const [websiteUrl, setWebsiteUrl] = useState(state.values?.websiteUrl ?? initialWebsiteUrl ?? "");
   const [description, setDescription] = useState(state.values?.description ?? "");
   const canSubmit = isValidOnboardingProductForm(websiteUrl, description);
   const handleSubmit = useSubmitGuard(pending);
@@ -111,11 +112,11 @@ function ProductSetupFields({ workspaceId, action, state, pending }: { workspace
   );
 }
 
-export function ProductSetupForm({ workspaceId }: { workspaceId: string }) {
+export function ProductSetupForm({ workspaceId, initialWebsiteUrl = null }: { workspaceId: string; initialWebsiteUrl?: string | null }) {
   const [state, action, pending] = useActionState(createOnboardingProductAction, initialState);
   useSuccessNavigation(state);
-  const formKey = `${state.values?.websiteUrl ?? ""}:${state.values?.description ?? ""}`;
-  return <ProductSetupFields key={formKey} workspaceId={workspaceId} action={action} state={state} pending={pending} />;
+  const formKey = `${state.values?.websiteUrl ?? initialWebsiteUrl ?? ""}:${state.values?.description ?? ""}`;
+  return <ProductSetupFields key={formKey} workspaceId={workspaceId} action={action} state={state} pending={pending} initialWebsiteUrl={initialWebsiteUrl} />;
 }
 
 function ProductUnderstandingFields({ workspaceId, productId, websiteUrl, initialDescription, action, state, pending }: { workspaceId: string; productId: string; websiteUrl: string | null; initialDescription?: string | null; action: FormAction; state: OnboardingActionState; pending: boolean }) {

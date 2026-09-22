@@ -94,6 +94,16 @@ function formValue(formData: FormData, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
+function optionalWebsitePath(rawWebsite: string, pathname: string): string {
+  if (!rawWebsite.trim()) return pathname;
+  try {
+    const websiteUrl = normalizeOnboardingWebsiteUrl(rawWebsite);
+    return `${pathname}?website=${encodeURIComponent(websiteUrl)}`;
+  } catch {
+    return pathname;
+  }
+}
+
 function setContextCookies(workspaceId: string, productId?: string): Promise<void> {
   return cookies().then((cookieStore) => {
     cookieStore.set("wanterest_active_workspace", workspaceId, {
@@ -118,6 +128,8 @@ function setContextCookies(workspaceId: string, productId?: string): Promise<voi
 export async function createOnboardingWorkspaceAction(_previous: OnboardingActionState = emptyState, formData: FormData): Promise<OnboardingActionState> {
   void _previous;
   const rawName = formValue(formData, "name");
+  const rawWebsite = formValue(formData, "websiteUrl");
+  const nextProductPath = optionalWebsitePath(rawWebsite, "/app/setup/product");
   const parsed = onboardingWorkspaceInputSchema.safeParse({ name: rawName });
   if (!parsed.success) return validationError(parsed.error, { name: rawName });
   let workspace;
@@ -134,13 +146,13 @@ export async function createOnboardingWorkspaceAction(_previous: OnboardingActio
       const existing = existingWorkspaces.find((candidate) => candidate.slug === slugifyOnboardingName(parsed.data.name));
       if (existing) {
         await setContextCookies(existing.id);
-        redirect("/app/setup/product");
+        redirect(nextProductPath);
       }
     }
     return actionError(error);
   }
   await setContextCookies(workspace.id);
-  redirect("/app/setup/product");
+  redirect(nextProductPath);
 }
 
 async function createProductUnderstanding(product: Awaited<ReturnType<typeof getProductQuery>>, description: string) {
