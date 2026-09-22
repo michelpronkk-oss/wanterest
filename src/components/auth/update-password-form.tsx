@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { clientAuthErrorMessage, passwordConfirmationError } from "@/shared/auth/client-errors";
 import { PasswordField } from "./password-field";
 
 /** Reached via the /auth/callback code exchange from a Supabase password-reset email link,
@@ -11,25 +12,38 @@ import { PasswordField } from "./password-field";
 export function UpdatePasswordForm() {
   const router = useRouter();
   const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    setIsSubmitting(true);
 
-    const supabase = createSupabaseBrowserClient();
-    const { error: authError } = await supabase.auth.updateUser({ password });
-
-    if (authError) {
-      setError("We couldn’t update your password. Request a new reset link and try again.");
-      setIsSubmitting(false);
+    const mismatchError = passwordConfirmationError(password, confirmation);
+    if (mismatchError) {
+      setError(mismatchError);
       return;
     }
 
-    router.replace("/app");
-    router.refresh();
+    setIsSubmitting(true);
+
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { error: authError } = await supabase.auth.updateUser({ password });
+
+      if (authError) {
+        setError(clientAuthErrorMessage("update", authError));
+        setIsSubmitting(false);
+        return;
+      }
+
+      router.replace("/app");
+      router.refresh();
+    } catch (authError) {
+      setError(clientAuthErrorMessage("update", authError));
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -49,6 +63,18 @@ export function UpdatePasswordForm() {
           minLength={6}
           disabled={isSubmitting}
           error={Boolean(error)}
+        />
+
+        <PasswordField
+          label="Confirm new password"
+          autoComplete="new-password"
+          placeholder="Enter the new password again"
+          value={confirmation}
+          onChange={setConfirmation}
+          required
+          minLength={6}
+          disabled={isSubmitting}
+          error={Boolean(error) && Boolean(confirmation) && password !== confirmation}
         />
 
         {error ? <p className="auth-error" role="alert">{error}</p> : null}

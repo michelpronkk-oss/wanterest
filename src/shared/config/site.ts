@@ -12,6 +12,14 @@ const APP_START_PATH = "/start";
 
 export const APP_START_URL = `${APP_ORIGIN}${APP_START_PATH}`;
 
+/** Use the local browser origin for client-side entry links during local development. */
+export function runtimeAppOrigin(): string {
+  if (typeof window !== "undefined" && /^(localhost|127\.0\.0\.1|\[?::1\]?)$/i.test(window.location.hostname)) {
+    return window.location.origin;
+  }
+  return APP_ORIGIN;
+}
+
 export function appPath(pathname: string, search?: URLSearchParams): string {
   const query = search?.toString();
   return `${pathname}${query ? `?${query}` : ""}`;

@@ -5,27 +5,34 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { forgotPasswordUrlForSite, signupUrlForSite } from "@/components/marketing/links";
+import { forgotPasswordPathForSite, signupPathForSite } from "@/components/marketing/links";
+import { clientAuthErrorMessage } from "@/shared/auth/client-errors";
 import { startPathForWebsite } from "@/shared/config/site";
 import { PasswordField } from "./password-field";
 
-export function LoginForm({ websiteUrl = null }: { websiteUrl?: string | null }) {
+export function LoginForm({ websiteUrl = null, initialError = null }: { websiteUrl?: string | null; initialError?: string | null }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setIsSubmitting(true);
 
-    const supabase = createSupabaseBrowserClient();
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (authError) {
-      setError("We couldn’t sign you in with those credentials.");
+      if (authError) {
+        setError(clientAuthErrorMessage("login", authError));
+        setIsSubmitting(false);
+        return;
+      }
+    } catch (authError) {
+      setError(clientAuthErrorMessage("login", authError));
       setIsSubmitting(false);
       return;
     }
@@ -64,7 +71,7 @@ export function LoginForm({ websiteUrl = null }: { websiteUrl?: string | null })
 
         <PasswordField
           label="Password"
-          labelExtra={<Link className="auth-field-forgot" href={forgotPasswordUrlForSite(websiteUrl)}>Forgot password?</Link>}
+          labelExtra={<Link className="auth-field-forgot" href={forgotPasswordPathForSite(websiteUrl)}>Forgot password?</Link>}
           autoComplete="current-password"
           placeholder="Enter your password"
           value={password}
@@ -81,7 +88,7 @@ export function LoginForm({ websiteUrl = null }: { websiteUrl?: string | null })
         </button>
       </form>
 
-      <p className="auth-switch">New to Wanterest? <Link href={signupUrlForSite(websiteUrl)}>Start free</Link></p>
+      <p className="auth-switch">New to Wanterest? <Link href={signupPathForSite(websiteUrl)}>Start free</Link></p>
     </>
   );
 }

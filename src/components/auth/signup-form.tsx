@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { startPathForWebsite } from "@/shared/config/site";
-import { loginUrlForSite } from "@/components/marketing/links";
+import { clientAuthErrorMessage, isExistingSignupAccount } from "@/shared/auth/client-errors";
+import { loginPathForSite } from "@/components/marketing/links";
 import { authCallbackUrl } from "./auth-callback-url";
 import { PasswordField } from "./password-field";
 
@@ -17,34 +18,55 @@ export function SignupForm({ websiteUrl = null }: { websiteUrl?: string | null }
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [existingAccount, setExistingAccount] = useState(false);
+  const submitLockRef = useRef(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
     setError(null);
     setMessage(null);
+    setExistingAccount(false);
     setIsSubmitting(true);
 
-    const supabase = createSupabaseBrowserClient();
-    const { data, error: authError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { emailRedirectTo: authCallbackUrl(startPathForWebsite(websiteUrl), websiteUrl) },
-    });
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { data, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: authCallbackUrl(startPathForWebsite(websiteUrl), websiteUrl) },
+      });
 
-    if (authError) {
-      setError("We couldn’t create your account. Check your details and try again.");
+      if (authError) {
+        setError(clientAuthErrorMessage("signup", authError));
+        setIsSubmitting(false);
+        submitLockRef.current = false;
+        return;
+      }
+
+      if (isExistingSignupAccount(data.user)) {
+        setExistingAccount(true);
+        setMessage("An account with this email already exists. Log in or reset your password.");
+        setIsSubmitting(false);
+        submitLockRef.current = false;
+        return;
+      }
+
+      if (data.session) {
+        router.replace(startPathForWebsite(websiteUrl));
+        router.refresh();
+        return;
+      }
+
+      setMessage("Check your email to confirm your account, then log in to continue.");
       setIsSubmitting(false);
-      return;
+      submitLockRef.current = false;
+    } catch (authError) {
+      setError(clientAuthErrorMessage("signup", authError));
+      setIsSubmitting(false);
+      submitLockRef.current = false;
     }
-
-    if (data.session) {
-      router.replace(startPathForWebsite(websiteUrl));
-      router.refresh();
-      return;
-    }
-
-    setMessage("Check your email to confirm your account, then log in to continue.");
-    setIsSubmitting(false);
   }
 
   return (
@@ -87,7 +109,7 @@ export function SignupForm({ websiteUrl = null }: { websiteUrl?: string | null }
         />
 
         {error ? <p className="auth-error" role="alert">{error}</p> : null}
-        {message ? <p className="auth-success" role="status">{message}</p> : null}
+        {message ? <p className={existingAccount ? "auth-error" : "auth-success"} role={existingAccount ? "alert" : "status"}>{message}</p> : null}
 
         <button className="auth-submit" type="submit" disabled={isSubmitting}>
           {isSubmitting ? "Creating account…" : "Create account"}
@@ -96,7 +118,7 @@ export function SignupForm({ websiteUrl = null }: { websiteUrl?: string | null }
         <p className="auth-hint">No credit card required.</p>
       </form>
 
-      <p className="auth-switch">Already have an account? <Link href={loginUrlForSite(websiteUrl)}>Log in</Link></p>
+      <p className="auth-switch">Already have an account? <Link href={loginPathForSite(websiteUrl)}>Log in</Link></p>
     </>
   );
 }

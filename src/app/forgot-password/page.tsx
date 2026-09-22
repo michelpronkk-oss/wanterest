@@ -1,5 +1,6 @@
 import { AuthShell } from "@/components/auth/auth-shell";
 import { ForgotPasswordForm } from "@/components/auth/forgot-password-form";
+import { authCallbackErrorMessage } from "@/shared/auth/callback";
 import { tryNormalizePublicWebsiteUrl } from "@/shared/validation/public-website";
 
 export const dynamic = "force-dynamic";
@@ -10,11 +11,12 @@ export default async function ForgotPasswordPage({ searchParams }: { searchParam
   const query = await searchParams;
   const rawWebsite = typeof query.website === "string" ? query.website : null;
   const websiteUrl = tryNormalizePublicWebsiteUrl(rawWebsite);
+  const callbackError = authCallbackErrorMessage(typeof query.error === "string" ? query.error : null);
 
   return (
     <main>
       <AuthShell eyebrow="RESET PASSWORD">
-        <ForgotPasswordForm websiteUrl={websiteUrl} />
+        <ForgotPasswordForm websiteUrl={websiteUrl} initialError={callbackError} />
       </AuthShell>
     </main>
   );

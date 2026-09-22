@@ -4,13 +4,14 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { loginUrlForSite } from "@/components/marketing/links";
+import { loginPathForSite } from "@/components/marketing/links";
+import { clientAuthErrorMessage } from "@/shared/auth/client-errors";
 import { authCallbackUrl } from "./auth-callback-url";
 
-export function ForgotPasswordForm({ websiteUrl = null }: { websiteUrl?: string | null }) {
+export function ForgotPasswordForm({ websiteUrl = null, initialError = null }: { websiteUrl?: string | null; initialError?: string | null }) {
   const [email, setEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
   const [message, setMessage] = useState<string | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -19,19 +20,24 @@ export function ForgotPasswordForm({ websiteUrl = null }: { websiteUrl?: string 
     setMessage(null);
     setIsSubmitting(true);
 
-    const supabase = createSupabaseBrowserClient();
-    const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: authCallbackUrl("/forgot-password/update", websiteUrl),
-    });
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: authCallbackUrl("/forgot-password/update", websiteUrl),
+      });
 
-    if (authError) {
-      setError("We couldn’t send a reset link. Check the address and try again.");
+      if (authError) {
+        setError(clientAuthErrorMessage("reset", authError));
+        setIsSubmitting(false);
+        return;
+      }
+
+      setMessage("Check your email for a link to reset your password.");
       setIsSubmitting(false);
-      return;
+    } catch (authError) {
+      setError(clientAuthErrorMessage("reset", authError));
+      setIsSubmitting(false);
     }
-
-    setMessage("Check your email for a link to reset your password.");
-    setIsSubmitting(false);
   }
 
   return (
@@ -69,7 +75,7 @@ export function ForgotPasswordForm({ websiteUrl = null }: { websiteUrl?: string 
         </button>
       </form>
 
-      <p className="auth-switch">Remembered it? <Link href={loginUrlForSite(websiteUrl)}>Log in</Link></p>
+      <p className="auth-switch">Remembered it? <Link href={loginPathForSite(websiteUrl)}>Log in</Link></p>
     </>
   );
 }
