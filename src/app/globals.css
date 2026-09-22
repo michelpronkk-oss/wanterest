@@ -890,17 +890,31 @@ body {
   .marketing-nav-actions { gap: 10px; }
   .marketing-nav-signin { display: none; }
 
-  /* Hero: compact enough to clear the fold */
-  .marketing-hero { padding: 40px 20px 44px; }
-  .marketing-eyebrow-pill { margin-bottom: 18px; padding: 6px 13px; }
-  .marketing-hero-title { font-size: clamp(30px, 9vw, 38px); line-height: 1.1; margin-bottom: 14px; }
-  .marketing-hero-sub { font-size: 15.5px; margin-bottom: 24px; }
+  /* Hero: one deliberate above-the-fold composition. min-height is a floor (svh accounts for
+     mobile browser chrome) so short content never lets the next section peek through — it is
+     not the primary sizing mechanism; the type scale and gaps below do that. Extra slack from
+     the floor lands below the reassurance line via flex-start, which is where it belongs. */
+  .marketing-hero { min-height: calc(100vh - 60px); min-height: calc(100svh - 60px); justify-content: flex-start; padding: 36px 20px 32px; }
+  .marketing-eyebrow-pill { background: var(--color-chip); margin-bottom: 16px; padding: 6px 13px; }
+  .marketing-eyebrow-pill-text { color: var(--color-ink); }
+  .marketing-hero-title { font-size: clamp(36px, 10.5vw, 46px); line-height: 1.07; margin-bottom: 12px; }
+  .marketing-hero-sub { font-size: 16px; margin-bottom: 28px; }
   .marketing-hero-note { margin-top: 12px; }
   .marketing-hero-note-break { display: none; }
 
   /* Scan form: stacked full-width rows read as native mobile, not a squeezed desktop row */
   .marketing-scan-form { flex-direction: column; }
   .marketing-scan-input, .marketing-scan-form .marketing-cta { width: 100%; }
+
+  /* Understated link icon inside the URL field — background-image so no markup changes and
+     desktop stays untouched. */
+  .marketing-scan-input {
+    padding-left: 46px;
+    background-repeat: no-repeat;
+    background-position: 18px center;
+    background-size: 17px 17px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a3a399' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/%3E%3Cpath d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'/%3E%3C/svg%3E");
+  }
 
   /* Section rhythm: denser padding/margins throughout */
   .marketing-section { padding: 48px 20px 40px; }
