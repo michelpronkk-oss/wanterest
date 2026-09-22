@@ -1,4 +1,5 @@
 import { LogoMark } from "@/components/dashboard/nav-icons";
+import { ResponsiveText } from "./responsive-text";
 
 function FilterIcon() {
   return (
@@ -19,10 +20,10 @@ function CheckIcon() {
 }
 
 const MODERN_POINTS = [
-  ["Real conversations", "People discussing your problem in the wild."],
-  ["Visible pain", "See what they are struggling with."],
-  ["Active intent", "Find buyers before they reach out to competitors."],
-  ["Context and timing", "Understand the why, not just the who."],
+  { title: "Real conversations", full: "People discussing your problem in the wild.", short: "People discussing your problem." },
+  { title: "Visible pain", full: "See what they are struggling with.", short: "See what they are struggling with." },
+  { title: "Active intent", full: "Find buyers before they reach out to competitors.", short: "Find buyers before competitors do." },
+  { title: "Context and timing", full: "Understand the why, not just the who.", short: "Understand the why, not just the who." },
 ] as const;
 
 export function DifferenceSection() {
@@ -36,7 +37,10 @@ export function DifferenceSection() {
           {" "}Wanterest shows you who is showing <br className="marketing-difference-final-break" />need.
         </h2>
         <p className="marketing-difference-subtitle">
-          Stop guessing who to contact. Start with people already talking about the problem you solve.
+          <ResponsiveText
+            full="Stop guessing who to contact. Start with people already talking about the problem you solve."
+            short="Stop guessing who to contact. Start with people already talking about it."
+          />
         </p>
 
         <div className="marketing-difference-stage">
@@ -94,10 +98,10 @@ export function DifferenceSection() {
                 <span className="marketing-difference-status"><b />Real demand</span>
               </div>
               <div className="marketing-difference-modern-points">
-                {MODERN_POINTS.map(([title, body]) => (
-                  <div className="marketing-difference-modern-point" key={title}>
+                {MODERN_POINTS.map((point) => (
+                  <div className="marketing-difference-modern-point" key={point.title}>
                     <CheckIcon />
-                    <p><strong>{title}</strong><small>{body}</small></p>
+                    <p><strong>{point.title}</strong><small><ResponsiveText full={point.full} short={point.short} /></small></p>
                   </div>
                 ))}
               </div>

@@ -1118,11 +1118,15 @@ body {
 .marketing-pricing-trust-row > div { display: inline-flex; align-items: center; gap: 12px; white-space: nowrap; }
 .marketing-pricing-trust-row > i { width: 1px; height: 32px; background: rgba(17, 17, 16, 0.14); }
 
-/* FAQ */
+/* FAQ. Desktop keeps answers always expanded; the max-width:640px block below turns this
+   into a tap-to-expand accordion (grid-template-rows 0fr/1fr trick, no JS height reads). */
 .marketing-faq-list { display: flex; flex-direction: column; }
 .marketing-faq-item { padding: 22px 0; border-top: 1px solid var(--color-border); }
 .marketing-faq-item:last-child { border-bottom: 1px solid var(--color-border); }
-.marketing-faq-question { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+.marketing-faq-question { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; margin: 0 0 8px; padding: 0; border: none; background: none; font: inherit; font-size: 16px; font-weight: 600; color: var(--color-ink); text-align: left; cursor: default; }
+.marketing-faq-chevron { display: none; flex-shrink: 0; color: var(--color-ink-faint); transition: transform 0.2s ease; }
+.marketing-faq-answer-wrap { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 0.25s ease; }
+.marketing-faq-answer-wrap > div { overflow: hidden; }
 .marketing-faq-answer { font-size: 14.5px; color: var(--color-ink-muted); line-height: 1.5; }
 
 /* Final CTA */
@@ -1308,6 +1312,14 @@ body {
   .marketing-difference-brand { font-size: 20px; }
   .marketing-difference-brand-row { align-items: flex-start; flex-direction: column; gap: 14px; }
   .marketing-difference-modern-points { gap: 21px; }
+
+  /* FAQ: collapsible accordion on mobile only (desktop stays always-expanded above) */
+  .marketing-faq-question { margin-bottom: 0; cursor: pointer; }
+  .marketing-faq-chevron { display: block; }
+  .marketing-faq-item.is-open .marketing-faq-chevron { transform: rotate(180deg); }
+  .marketing-faq-answer-wrap { grid-template-rows: 0fr; }
+  .marketing-faq-item.is-open .marketing-faq-answer-wrap { grid-template-rows: 1fr; }
+  .marketing-faq-answer { padding-top: 8px; }
 
   /* Final CTA / footer: simple single column */
   .marketing-final-cta-sub { margin-bottom: 24px; }

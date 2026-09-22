@@ -5,23 +5,15 @@ import { LogoMark } from "@/components/dashboard/nav-icons";
 import { SourceBrandIcon } from "@/components/ui/source-brand-icon";
 import { BeyondSignalsTabs } from "./beyond-signals";
 import { DifferenceSection } from "./difference";
+import { Faq } from "./faq";
 import { HeroWave } from "./hero-wave";
 import { APP_LOGIN_URL, APP_START_URL } from "./links";
 import { PricingSection } from "./pricing";
 import { ProofSignalCard } from "./proof-signal-card";
 import { QualificationSection } from "./qualification";
 import { Reveal } from "./reveal";
+import { ResponsiveText } from "./responsive-text";
 import { ScanForm } from "./scan-form";
-
-/** Renders the full desktop copy, swapped via CSS for a shorter mobile variant at narrow widths. */
-function ResponsiveText({ full, short }: { full: string; short: string }) {
-  return (
-    <>
-      <span className="marketing-copy-full">{full}</span>
-      <span className="marketing-copy-short">{short}</span>
-    </>
-  );
-}
 
 export function MarketingHome() {
   return (
@@ -311,7 +303,10 @@ function ProcessSection() {
         <div className="marketing-section-eyebrow">THE PROCESS</div>
         <h2 className="marketing-heading marketing-section-title is-tight">From product to demand in minutes.</h2>
         <p className="marketing-section-subtitle">
-          Wanterest turns product context into real market demand, clear intelligence, and the next move to make.
+          <ResponsiveText
+            full="Wanterest turns product context into real market demand, clear intelligence, and the next move to make."
+            short="Wanterest turns product context into real market demand and clear intelligence."
+          />
         </p>
         <div className="marketing-proof-strip">
           {PROCESS_STEPS.map((step, index) => (
@@ -346,7 +341,10 @@ function ProofSection() {
         <div className="marketing-section-eyebrow">SIGNAL, NOT NOISE</div>
         <h2 className="marketing-heading marketing-section-title marketing-proof-section-title is-tight">See why a conversation matters before you open it.</h2>
         <p className="marketing-section-subtitle">
-          Wanterest finds public conversations, qualifies the intent, and shows why they matter.
+          <ResponsiveText
+            full="Wanterest finds public conversations, qualifies the intent, and shows why they matter."
+            short="Wanterest finds public conversations and qualifies the intent."
+          />
         </p>
 
         <div className="marketing-proof-signal-grid">
@@ -578,7 +576,10 @@ function DailyValue() {
         <div className="marketing-section-eyebrow">DAILY VALUE</div>
         <h2 className="marketing-heading marketing-section-title marketing-section-title-compact">Wake up to new opportunities.</h2>
         <p className="marketing-section-subtitle marketing-daily-subtitle">
-          Wanterest keeps monitoring your market and surfaces new demand as it appears.
+          <ResponsiveText
+            full="Wanterest keeps monitoring your market and surfaces new demand as it appears."
+            short="Wanterest keeps monitoring your market for new demand."
+          />
         </p>
         <div className="marketing-daily-card">
           <div className="marketing-daily-card-head">
@@ -621,48 +622,6 @@ function DailyValue() {
           </div>
         </div>
         <a className="marketing-cta is-compact" href={APP_START_URL}>See today&rsquo;s signals →</a>
-      </div>
-    </section>
-  );
-}
-
-const FAQ_ITEMS = [
-  {
-    q: "Which sources does Wanterest scan?",
-    a: "Reddit, Hacker News, and Bluesky today, with LinkedIn and more forums rolling out. All sources pull only from public, already-visible conversations.",
-  },
-  {
-    q: "Is this just social listening with a new name?",
-    a: "No. Social listening tracks mentions of your brand. Wanterest finds public conversations describing the problem you solve, then ranks their buying intent.",
-  },
-  {
-    q: "How is data collected, and is it compliant?",
-    a: "We read public posts only. Nothing private, gated, or behind a login.",
-  },
-  {
-    q: "How accurate is the match score?",
-    a: 'Matches are scored against your product and audience, not generic keywords. Each score includes a visible "Why it matters" explanation.',
-  },
-  {
-    q: "Can I cancel anytime?",
-    a: "Yes. Cancel anytime from Settings, with no calls or emails required.",
-  },
-];
-
-function Faq() {
-  return (
-    <section className="marketing-section is-tight">
-      <div className="marketing-section-inner marketing-section-readable">
-        <div className="marketing-section-eyebrow">QUESTIONS</div>
-        <h2 className="marketing-heading marketing-section-title marketing-section-title-compact is-content">Before you start.</h2>
-        <div className="marketing-faq-list">
-          {FAQ_ITEMS.map((item) => (
-            <div className="marketing-faq-item" key={item.q}>
-              <div className="marketing-faq-question">{item.q}</div>
-              <div className="marketing-faq-answer">{item.a}</div>
-            </div>
-          ))}
-        </div>
       </div>
     </section>
   );
