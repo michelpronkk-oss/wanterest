@@ -1191,11 +1191,12 @@ body {
   .marketing-scan-form .marketing-cta { padding-top: 20px; padding-bottom: 20px; }
 
   /* Understated link icon inside the URL field — background-image so no markup changes and
-     desktop stays untouched. */
+     desktop stays untouched. Right-aligned so it never sits under the typed/typewriter-
+     animated text, which always starts from the left edge. */
   .marketing-scan-input {
-    padding-left: 46px;
+    padding-right: 46px;
     background-repeat: no-repeat;
-    background-position: 18px center;
+    background-position: right 18px center;
     background-size: 17px 17px;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a3a399' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/%3E%3Cpath d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'/%3E%3C/svg%3E");
   }
