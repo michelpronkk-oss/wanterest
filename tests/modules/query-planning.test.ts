@@ -103,7 +103,7 @@ describe("Query Planning v1", () => {
     const first = await buildFixturePlan(index);
     const second = await buildFixturePlan(index);
     expect(second).toEqual(first);
-    expect(first.version).toBe("query_planning_v1");
+    expect(first.version).toBe("query_planning_v2");
     expect(first.source_routing_version).toBe("source_routing_v1");
     expect(first.source_plans.every((source) => source.query_budget <= 3)).toBe(true);
     expect(allQueries(first).every((query) => query.candidate_budget > 0)).toBe(true);
@@ -115,6 +115,7 @@ describe("Query Planning v1", () => {
     const queries = allQueries(plan);
     expect(queries.some((query) => query.query_family === "alternative_search" && query.competitor_refs.length > 0)).toBe(true);
     expect(queries.some((query) => query.query_family === "switching")).toBe(true);
+    expect(new Set(queries.map((query) => query.demand_surface)).size).toBeGreaterThan(1);
     const x = plan.source_plans.find((source) => source.source_key === "x");
     if (x) {
       expect(x.query_budget).toBeLessThanOrEqual(3);
@@ -222,6 +223,7 @@ describe("Query Planning v1", () => {
     const query: QueryPlanQuery = {
       query_id: "qp-test",
       query_family: "comparison",
+      demand_surface: "competitor_pain",
       intent_type: "comparison_intent",
       query_text: "Jira alternative",
       normalized_query: "jira alternative",
@@ -248,7 +250,7 @@ describe("Query Planning v1", () => {
   it("provides a network-free dry-run", async () => {
     const plan = await buildFixturePlan(0);
     const output = formatQueryPlanDryRun(plan);
-    expect(output).toContain("query_planning_v1");
+    expect(output).toContain("query_planning_v2");
     expect(output).toContain("candidateBudget=");
     expect(output).toContain("reasons=");
     expect(allQueries(plan).every((query) => query.reason_summary.startsWith("Generated from "))).toBe(true);

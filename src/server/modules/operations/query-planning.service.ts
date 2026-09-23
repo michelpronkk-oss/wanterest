@@ -32,6 +32,18 @@ type CandidateContext = {
 };
 
 const familyOrder: QueryFamily[] = ["switching", "alternative_search", "comparison", "recommendation", "feature_requirement", "pain", "jtbd", "objection", "desired_outcome", "category_discovery"];
+const surfaceForFamily: Record<QueryFamily, QueryPlanQuery["demand_surface"]> = {
+  switching: "switching",
+  alternative_search: "alternative_search",
+  comparison: "competitor_pain",
+  recommendation: "category_demand",
+  feature_requirement: "feature_demand",
+  pain: "pain_first",
+  jtbd: "job_demand",
+  objection: "commercial_pain",
+  desired_outcome: "job_demand",
+  category_discovery: "category_demand",
+};
 const commercialWeight: Record<QueryFamily, number> = {
   switching: 0.95,
   alternative_search: 0.9,
@@ -214,6 +226,7 @@ function makeCandidate(input: {
   if (input.context.lowConfidence) codes.push("LOW_PROFILE_CONFIDENCE");
   return {
     query_family: input.family,
+    demand_surface: surfaceForFamily[input.family],
     intent_type: intentForFamily[input.family],
     query_text: text,
     source_key: input.context.route.source_key,
@@ -368,8 +381,13 @@ function selectDiverse(candidates: Candidate[], maxQueries: number): { selected:
   const selected: Candidate[] = [];
   const remaining = [...unique];
   while (selected.length < maxQueries && remaining.length) {
-    const family = familyOrder.find((value) => remaining.some((candidate) => candidate.query_family === value && !selected.some((item) => item.query_family === value)));
-    const index = family ? remaining.findIndex((candidate) => candidate.query_family === family) : 0;
+    const competitorSpecificCount = selected.filter((item) => item.competitorSpecific).length;
+    const nonCompetitorAvailable = remaining.some((item) => !item.competitorSpecific);
+    const eligible = remaining.filter((item) => !(competitorSpecificCount >= 2 && nonCompetitorAvailable && item.competitorSpecific));
+    const pool = eligible.length ? eligible : remaining;
+    const family = familyOrder.find((value) => pool.some((candidate) => candidate.query_family === value && !selected.some((item) => item.query_family === value)));
+    const next = family ? pool.find((candidate) => candidate.query_family === family)! : pool[0];
+    const index = remaining.indexOf(next);
     selected.push(remaining.splice(Math.max(0, index), 1)[0]);
   }
   return { selected, suppressed: suppressed + Math.max(0, unique.length - selected.length) };
@@ -406,6 +424,7 @@ function buildSourcePlan(input: QueryPlanningInput, route: SourceRoutingRoute): 
     return {
       query_id: `qp-${route.source_key}-${slug(candidate.query_family)}-${slug(normalized)}`,
       query_family: candidate.query_family,
+      demand_surface: candidate.demand_surface,
       intent_type: candidate.intent_type,
       query_text: candidate.query_text,
       normalized_query: normalized,
@@ -423,6 +442,7 @@ function buildSourcePlan(input: QueryPlanningInput, route: SourceRoutingRoute): 
       cost_hint: candidate.cost_hint,
       metadata: {
         planner_version: queryPlanningVersion,
+        discovery_intent: { surface: candidate.demand_surface, query_family: candidate.query_family, concept_keys: candidate.concept_keys, competitor_specific: candidate.competitorSpecific },
         semantic_query: candidate.query_text,
         provider_context: {
           product_name: input.demandProfile?.product_name ?? null,
@@ -483,18 +503,21 @@ export function buildQueryPlan(input: QueryPlanningInput): QueryPlan {
   const sourcePlans = applyGlobalQueryCap(built.map((result) => result.plan), input.maxQueries);
   const queries = sourcePlans.flatMap((source) => source.queries);
   const familyDistribution: Record<string, number> = {};
+  const surfaceCoverage: Record<string, "covered" | "uncovered"> = {};
   const queriesPerSource: Record<string, number> = {};
   const budgetPerSource: Record<string, number> = {};
   for (const source of sourcePlans) {
     queriesPerSource[source.source_key] = source.queries.length;
     budgetPerSource[source.source_key] = source.queries.reduce((sum, query) => sum + query.candidate_budget, 0);
     for (const query of source.queries) familyDistribution[query.query_family] = (familyDistribution[query.query_family] ?? 0) + 1;
+    for (const query of source.queries) surfaceCoverage[query.demand_surface] = "covered";
   }
   const lowConfidence = profileConfidence(input) < 0.55;
   const diagnostics: QueryPlanDiagnostics = {
     source_count: sourcePlans.filter((source) => source.queries.length > 0).length,
     query_count: queries.length,
     query_family_distribution: familyDistribution,
+    demand_surface_coverage: Object.fromEntries(Object.entries(surfaceCoverage).sort(([left], [right]) => left.localeCompare(right))),
     queries_per_source: queriesPerSource,
     candidate_budget_per_source: budgetPerSource,
     suppressed_duplicate_count: built.reduce((sum, result) => sum + result.suppressed, 0),

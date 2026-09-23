@@ -6,7 +6,10 @@ import type { BusinessClassification } from "../intelligence/business-classifica
 import type { JsonObject } from "../../db/database.helpers";
 import type { SourceRoutingCostClass, SourceRoutingPlan, SourceRoutingPriority, SourceRoutingScanMode } from "./source-routing.schemas";
 
-export const queryPlanningVersion = "query_planning_v1" as const;
+export const queryPlanningVersion = "query_planning_v2" as const;
+
+export const demandSurfaceSchema = z.enum(["direct_product", "competitor_pain", "alternative_search", "category_demand", "job_demand", "pain_first", "feature_demand", "switching", "substitute_displacement", "commercial_pain"]);
+export type DemandSurface = z.infer<typeof demandSurfaceSchema>;
 
 export const queryFamilySchema = z.enum([
   "pain",
@@ -51,6 +54,7 @@ export type QueryPlanReasonCode = z.infer<typeof queryPlanReasonCodeSchema>;
 export type QueryPlanQuery = {
   query_id: string;
   query_family: QueryFamily;
+  demand_surface: DemandSurface;
   intent_type: BuyingIntentType;
   query_text: string;
   normalized_query: string;
@@ -84,6 +88,7 @@ export type QueryPlanDiagnostics = {
   source_count: number;
   query_count: number;
   query_family_distribution: Record<string, number>;
+  demand_surface_coverage: Record<string, "covered" | "uncovered">;
   queries_per_source: Record<string, number>;
   candidate_budget_per_source: Record<string, number>;
   suppressed_duplicate_count: number;
