@@ -34,6 +34,9 @@ const serverEnvSchema = publicEnvSchema.extend({
   TRIGGER_LOCAL_EXECUTION: z.enum(["direct", "remote"]).default("remote"),
   RESEND_API_KEY: optionalServerString,
   RESEND_FROM_EMAIL: optionalServerString,
+  // Temporary internal validation mechanism — see src/server/modules/operations/internal-scan-bypass.ts.
+  // Comma-separated workspace UUIDs. Leave blank in normal environments.
+  INTERNAL_SCAN_COOLDOWN_BYPASS_WORKSPACE_IDS: optionalServerString,
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
@@ -84,6 +87,7 @@ export function getServerEnv(): ServerEnv {
     TRIGGER_LOCAL_EXECUTION: process.env.TRIGGER_LOCAL_EXECUTION,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL,
+    INTERNAL_SCAN_COOLDOWN_BYPASS_WORKSPACE_IDS: process.env.INTERNAL_SCAN_COOLDOWN_BYPASS_WORKSPACE_IDS,
   });
 }
 

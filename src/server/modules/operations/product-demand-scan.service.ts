@@ -15,6 +15,7 @@ import { recordMonitoringScanOutcome } from "@/server/modules/monitoring/monitor
 import { materializeMonitoringNotifications } from "@/server/modules/monitoring/monitoring.notifications";
 import { isActiveProduct } from "@/server/modules/products/product-lifecycle";
 import { runInitialScan, scanJobKey, type InitialScanExecutionOptions, type InitialScanResult } from "../onboarding/initial-scan.service";
+import { isInternalScanCooldownBypassWorkspace } from "./internal-scan-bypass";
 import { isTrustedProductDemandScanJob } from "./product-demand-scan.authorization";
 import { PRODUCT_DEMAND_SCAN_JOB_TYPE, scanModeFromJob, selectActiveProductDemandScanJob } from "./product-demand-scan.identity";
 import { reconcileActiveProductDemandScanJobs, reconcileProductDemandScanJob } from "./product-demand-scan.recovery";
@@ -123,7 +124,12 @@ export async function prepareProductDemandScan(input: ProductDemandScanInput, tr
 
   if ((parsed.scanMode === "manual" || parsed.scanMode === "manual_refresh" || parsed.scanMode === "manual_deep") && !parsed.forceRebuild) {
     const policy = await resolveMonitoringPolicy(client, parsed.workspaceId);
-    if (policy.manualRefreshCooldownMinutes > 0) {
+    // TEMPORARY internal validation mechanism (see internal-scan-bypass.ts): skips ONLY this
+    // cooldown check for a short, env-configured allowlist of Wanterest-owned workspaces.
+    // Usage limits, entitlements, and source budgets below are all still fully enforced.
+    if (policy.manualRefreshCooldownMinutes > 0 && isInternalScanCooldownBypassWorkspace(parsed.workspaceId)) {
+      console.log("[scan] internal cooldown bypass", { workspaceId: parsed.workspaceId, productId: parsed.productId });
+    } else if (policy.manualRefreshCooldownMinutes > 0) {
       const recent = await client.from("job_runs").select("*").eq("job_type", PRODUCT_DEMAND_SCAN_JOB_TYPE).eq("workspace_id", parsed.workspaceId).eq("product_id", parsed.productId).order("created_at", { ascending: false }).limit(20);
       if (recent.error) throw providerError("Recent scan history could not be loaded.", recent.error.message);
       const now = Date.now();

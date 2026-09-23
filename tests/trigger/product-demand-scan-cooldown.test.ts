@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("../../src/server/providers/trigger/client", () => ({
@@ -134,6 +134,15 @@ describe("prepareProductDemandScan manual refresh cooldown", () => {
     manualScansUsed = 0;
     consumeUsage.mockClear();
     runInitialScan.mockClear();
+    // The internal cooldown-bypass check (internal-scan-bypass.ts) calls the real
+    // getServerEnv(), which requires these regardless of whether this suite exercises it.
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon-key");
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "service-role-key");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it("allows an immediate retry when the last manual scan failed", async () => {
