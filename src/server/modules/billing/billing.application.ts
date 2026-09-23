@@ -1,5 +1,5 @@
 import { requireUser } from "@/server/modules/auth";
-import { AppError } from "@/server/lib/errors";
+import { AppError, type AppErrorCode } from "@/server/lib/errors";
 import { getServerEnv } from "@/server/lib/env";
 import { getTraceId } from "@/server/lib/request-context";
 import { jsonObjectSchema } from "@/server/db/database.helpers";
@@ -7,10 +7,10 @@ import { createSupabaseServerClient } from "@/server/providers/supabase/server";
 import { createSupabaseBillingServiceClient } from "@/server/providers/supabase/service";
 import { recordAuditEvent } from "../observability/audit.service";
 import { DodoBillingProvider } from "@/server/providers/billing/dodo/adapter";
-import type { WebhookHeaders } from "@/server/providers/billing/contracts";
+import { BillingProviderError, type WebhookHeaders } from "@/server/providers/billing/contracts";
 import { SupabaseBillingRepository } from "./billing.repository";
 import { BillingService } from "./billing.service";
-import { changePlanInputSchema, createCheckoutInputSchema, workspaceIdSchema } from "./billing.schemas";
+import { changePlanInputSchema, createCheckoutInputSchema, workspaceIdSchema, type BillingInterval, type BillingPlan } from "./billing.schemas";
 import { getDodoProductCatalog } from "./product-mapping";
 import { getDashboardContext } from "@/server/modules/dashboard/dashboard.context";
 
@@ -43,6 +43,67 @@ function provider() {
   });
 }
 
+/**
+ * Interactive billing actions (checkout, portal, plan change, cancel) actually call the
+ * Dodo API and need a real key, unlike webhook receipt/verification which is HMAC-based
+ * and intentionally tolerates a missing key via provider()'s "webhook-only" placeholder.
+ * DODO_PAYMENTS_ENVIRONMENT silently defaults to "test_mode" (src/server/lib/env.ts) when
+ * unset, which would send a live-mode key/products to the test API and fail every call;
+ * refuse to guess and fail fast with a clear config error instead.
+ */
+function assertDodoBillingConfigured(): void {
+  const env = getServerEnv();
+  if (!env.DODO_PAYMENTS_API_KEY) {
+    throw new AppError("BILLING_CONFIG_ERROR", "Billing is not configured. Support has been notified.", 500, { reason: "missing_api_key" });
+  }
+  if (process.env.DODO_PAYMENTS_ENVIRONMENT === undefined) {
+    console.error("[billing] DODO_PAYMENTS_ENVIRONMENT is not set; refusing to silently default to test_mode for a live billing action.");
+    throw new AppError("BILLING_CONFIG_ERROR", "Billing environment is not configured. Support has been notified.", 500, { reason: "missing_environment" });
+  }
+}
+
+/**
+ * Translates provider/config failures into the safe, machine-readable billing error
+ * contract instead of letting them fall through to a generic INTERNAL_ERROR with no
+ * diagnosable cause. Logs the real provider error (redacted, no secrets/PII) with the
+ * business context needed to find it later, tagged by traceId.
+ */
+function translateBillingError(error: unknown, context: { workspaceId: string; plan?: BillingPlan; interval?: BillingInterval }, defaultCode: AppErrorCode = "CHECKOUT_SESSION_FAILED"): unknown {
+  if (error instanceof AppError) return error;
+  if (error instanceof BillingProviderError) {
+    let environment: string | undefined;
+    try { environment = getServerEnv().DODO_PAYMENTS_ENVIRONMENT; } catch { environment = undefined; }
+    console.error("[billing] provider request failed", {
+      traceId: getTraceId(),
+      environment,
+      workspaceId: context.workspaceId,
+      plan: context.plan ?? null,
+      interval: context.interval ?? null,
+      providerErrorCode: error.code,
+      providerMessage: error.message,
+    });
+    switch (error.code) {
+      case "CONFIGURATION":
+      case "UNAUTHORIZED":
+        return new AppError("BILLING_CONFIG_ERROR", "Billing is not configured correctly. Support has been notified.", 500);
+      case "RATE_LIMITED":
+      case "UNAVAILABLE":
+        return new AppError("BILLING_PROVIDER_UNAVAILABLE", "The billing provider is temporarily unavailable. Please try again shortly.", 503);
+      default:
+        return new AppError(defaultCode, defaultCode === "BILLING_PRODUCT_INVALID" ? "This plan is not available right now. Support has been notified." : "The billing request could not be completed. Please try again.", defaultCode === "BILLING_PRODUCT_INVALID" ? 500 : 502);
+    }
+  }
+  console.error("[billing] unexpected billing failure", {
+    traceId: getTraceId(),
+    workspaceId: context.workspaceId,
+    plan: context.plan ?? null,
+    interval: context.interval ?? null,
+    name: error instanceof Error ? error.name : typeof error,
+    message: error instanceof Error ? error.message : String(error),
+  });
+  return new AppError("INTERNAL_ERROR", "An unexpected error occurred.");
+}
+
 async function service(actorUserId?: string) {
   const client = createSupabaseBillingServiceClient();
   const repository = new SupabaseBillingRepository(client);
@@ -73,9 +134,14 @@ export async function createCheckoutCommand(input: unknown) {
   await assertWorkspaceRole(workspaceId, ["owner"]);
   const interval = parsed.data.cadence ?? parsed.data.interval;
   if (!interval) throw new AppError("VALIDATION_ERROR", "Billing cadence is required.", 422);
-  // The browser may request a plan/cadence, but it never chooses a redirect
-  // destination. Keep checkout returns on the fixed billing surface.
-  return (await service(user.id)).createCheckout({ workspaceId, plan: parsed.data.plan, interval, returnUrl: CHECKOUT_RETURN_URL, idempotencyKey: parsed.data.idempotencyKey });
+  try {
+    assertDodoBillingConfigured();
+    // The browser may request a plan/cadence, but it never chooses a redirect
+    // destination. Keep checkout returns on the fixed billing surface.
+    return await (await service(user.id)).createCheckout({ workspaceId, plan: parsed.data.plan, interval, returnUrl: CHECKOUT_RETURN_URL, idempotencyKey: parsed.data.idempotencyKey });
+  } catch (error) {
+    throw translateBillingError(error, { workspaceId, plan: parsed.data.plan, interval }, "BILLING_PRODUCT_INVALID");
+  }
 }
 
 export async function getBillingOverviewQuery(workspaceId: unknown) {
@@ -91,7 +157,12 @@ export async function cancelSubscriptionCommand(workspaceId: unknown) {
   if (!parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid workspace identifier.");
   const user = await requireUser();
   await assertWorkspaceRole(parsed.data, ["owner"]);
-  await (await service(user.id)).cancelSubscription(parsed.data);
+  try {
+    assertDodoBillingConfigured();
+    await (await service(user.id)).cancelSubscription(parsed.data);
+  } catch (error) {
+    throw translateBillingError(error, { workspaceId: parsed.data });
+  }
   return { requested: true };
 }
 
@@ -100,7 +171,12 @@ export async function changePlanCommand(input: unknown) {
   if (!parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid billing plan change input.", 422);
   const user = await requireUser();
   await assertWorkspaceRole(parsed.data.workspaceId, ["owner"]);
-  await (await service(user.id)).changePlan(parsed.data.workspaceId, parsed.data.plan, parsed.data.interval);
+  try {
+    assertDodoBillingConfigured();
+    await (await service(user.id)).changePlan(parsed.data.workspaceId, parsed.data.plan, parsed.data.interval);
+  } catch (error) {
+    throw translateBillingError(error, { workspaceId: parsed.data.workspaceId, plan: parsed.data.plan, interval: parsed.data.interval }, "BILLING_PRODUCT_INVALID");
+  }
   return { requested: true };
 }
 
@@ -109,7 +185,13 @@ export async function createPortalSessionCommand(workspaceId: unknown) {
   if (!parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid workspace identifier.");
   await requireUser();
   await assertWorkspaceMember(parsed.data);
-  const result = await (await service()).createPortalSession(parsed.data, BILLING_RETURN_URL);
+  assertDodoBillingConfigured();
+  let result: Awaited<ReturnType<BillingService["createPortalSession"]>>;
+  try {
+    result = await (await service()).createPortalSession(parsed.data, BILLING_RETURN_URL);
+  } catch (error) {
+    throw translateBillingError(error, { workspaceId: parsed.data });
+  }
   return result;
 }
 

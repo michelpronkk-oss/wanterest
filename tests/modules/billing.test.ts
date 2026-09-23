@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { JsonObject } from "../../src/server/db/database.helpers";
+import { AppError } from "../../src/server/lib/errors";
 import { BillingService } from "../../src/server/modules/billing/billing.service";
 import { InMemoryBillingRepository } from "../../src/server/modules/billing/billing.repository";
 import { createCheckoutInputSchema } from "../../src/server/modules/billing/billing.schemas";
 import { createDodoProductCatalog } from "../../src/server/modules/billing/product-mapping";
+import { BillingProviderError } from "../../src/server/providers/billing/contracts";
 import { FixtureBillingProvider, fixtureSecret } from "../../src/server/providers/billing/fixture";
 import { DodoBillingProvider, signDodoWebhook } from "../../src/server/providers/billing/dodo/adapter";
 
@@ -249,5 +251,36 @@ describe("Phase 6 billing", () => {
     const portal = await billing.createPortalSession(workspaceId);
     expect(portal.portalUrl).toContain("cus-customer");
     expect(provider.checkoutInputs.size).toBe(0);
+  });
+
+  it("raises a typed, safe config error instead of a bare Error when Dodo product mapping is missing or duplicated", () => {
+    expect(() => createDodoProductCatalog({ proMonthly: "", proAnnual: "pro-y", growthMonthly: "growth-m", growthAnnual: "growth-y" }))
+      .toThrow(expect.objectContaining({ code: "BILLING_CONFIG_ERROR" }));
+    expect(() => createDodoProductCatalog({ proMonthly: "same", proAnnual: "same", growthMonthly: "growth-m", growthAnnual: "growth-y" }))
+      .toThrow(expect.objectContaining({ code: "BILLING_CONFIG_ERROR" }));
+  });
+
+  it("maps the new billing error codes to safe, distinct HTTP statuses", () => {
+    expect(new AppError("BILLING_CONFIG_ERROR", "x").status).toBe(500);
+    expect(new AppError("BILLING_PRODUCT_INVALID", "x").status).toBe(500);
+    expect(new AppError("BILLING_PROVIDER_UNAVAILABLE", "x").status).toBe(503);
+    expect(new AppError("CHECKOUT_SESSION_FAILED", "x").status).toBe(502);
+  });
+
+  it("normalizes a Dodo 4xx checkout rejection to a provider error without throwing on the new failure logging", async () => {
+    const provider = new DodoBillingProvider({
+      apiKey: "test",
+      webhookSecret: fixtureSecret,
+      baseUrl: "https://test.dodopayments.com",
+      catalog,
+      fetcher: async () => new Response(JSON.stringify({ code: "product_not_found", message: "Unknown product_id" }), { status: 400 }),
+    });
+    await expect(provider.createCheckout({
+      workspaceId,
+      internalPlan: "pro",
+      billingInterval: "monthly",
+      providerProductId: "dodo_pro_monthly",
+      checkoutReference: "checkout:bad-product",
+    })).rejects.toMatchObject(new BillingProviderError("PROVIDER_ERROR", "Dodo rejected the billing request."));
   });
 });

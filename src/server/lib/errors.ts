@@ -8,6 +8,10 @@ export type AppErrorCode =
   | "USAGE_LIMIT_EXCEEDED"
   | "RATE_LIMITED"
   | "CAPABILITY_DISABLED"
+  | "BILLING_CONFIG_ERROR"
+  | "BILLING_PRODUCT_INVALID"
+  | "BILLING_PROVIDER_UNAVAILABLE"
+  | "CHECKOUT_SESSION_FAILED"
   | "INTERNAL_ERROR";
 
 export class AppError extends Error {
@@ -42,6 +46,13 @@ function statusForCode(code: AppErrorCode): number {
       return 429;
     case "CAPABILITY_DISABLED":
       return 403;
+    case "BILLING_CONFIG_ERROR":
+    case "BILLING_PRODUCT_INVALID":
+      return 500;
+    case "BILLING_PROVIDER_UNAVAILABLE":
+      return 503;
+    case "CHECKOUT_SESSION_FAILED":
+      return 502;
     default:
       return 500;
   }

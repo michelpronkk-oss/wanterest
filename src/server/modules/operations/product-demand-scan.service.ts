@@ -92,7 +92,7 @@ export async function prepareProductDemandScan(input: ProductDemandScanInput, tr
     return {
       input: { ...parsed, jobRunId: reconciled.job.id, idempotencyKey: reconciled.job.idempotency_key },
       job: reconciled.job,
-      shouldTrigger: (!reconciled.job.trigger_run_id && (reconciled.job.status === "pending" || (reconciled.job.status === "running" && reconciled.job.dispatch_status === "claimed"))) || (reconciled.job.status === "failed" && parsed.forceRebuild),
+      shouldTrigger: (!reconciled.job.trigger_run_id && (reconciled.job.status === "pending" || (reconciled.job.status === "running" && reconciled.job.dispatch_status === "claimed"))) || ((reconciled.job.status === "failed" || reconciled.job.status === "failed_terminal") && parsed.forceRebuild),
       resumedExistingJob: true,
       recoveredOrphan: false,
     };
@@ -188,6 +188,17 @@ export async function executeProductDemandScan(input: ProductDemandScanInput, tr
   const scanEntitlement = await getWorkspaceEntitlement(client, parsed.workspaceId, "scan_frequency");
   if (scanEntitlement.value === null) throw new AppError("CAPABILITY_DISABLED", "Scanning is not enabled for this workspace.");
   try {
+    const result = await runInitialScan(product, getTraceId(), {
+      scanMode: parsed.scanMode,
+      idempotencyKey: parsed.idempotencyKey,
+      jobRunId: parsed.jobRunId,
+      triggerRunId,
+      ...executionOptions,
+    });
+    // Usage is charged only once the scan has actually produced a terminal
+    // outcome. A scan that throws before this point (source/provider/dispatch
+    // failure) must not permanently consume the workspace's scan allowance;
+    // zero qualified signals is still a successful, chargeable outcome.
     await consumeUsage(client, {
       workspaceId: parsed.workspaceId,
       usageType: ["manual", "manual_refresh", "manual_deep"].includes(parsed.scanMode) ? "manual_scan" : "source_scan",
@@ -196,13 +207,6 @@ export async function executeProductDemandScan(input: ProductDemandScanInput, tr
       actorUserId: parsed.requestedByUserId,
       sourceMetadata: { workflow: "product-demand-scan", scanMode: parsed.scanMode, scanProfile: scanProfileForMode(parsed.scanMode), productId: parsed.productId, jobRunId: parsed.jobRunId ?? null, triggerRunId: triggerRunId ?? null },
       traceId: getTraceId(),
-    });
-    const result = await runInitialScan(product, getTraceId(), {
-      scanMode: parsed.scanMode,
-      idempotencyKey: parsed.idempotencyKey,
-      jobRunId: parsed.jobRunId,
-      triggerRunId,
-      ...executionOptions,
     });
     if (parsed.monitoringScheduleId && parsed.jobRunId) {
       await recordMonitoringScanOutcome(client, {
@@ -235,16 +239,26 @@ export async function executeProductDemandScan(input: ProductDemandScanInput, tr
   }
 }
 
-/** Claims a pending job for dispatch so concurrent requests cannot create two Trigger runs. */
-export async function claimProductDemandScanDispatch(jobRunId: string): Promise<boolean> {
-  const { data, error } = await createSupabaseServiceClient()
-    .from("job_runs")
-    .update({ status: "running", dispatch_status: "claimed", dispatch_claimed_at: new Date().toISOString(), dispatch_checked_at: null, started_at: new Date().toISOString() })
-    .eq("id", jobRunId)
-    .eq("status", "pending")
-    .is("trigger_run_id", null)
-    .select("id")
-    .maybeSingle();
+/**
+ * Claims a job for dispatch so concurrent requests cannot create two Trigger runs.
+ * A "pending" claim is the normal first dispatch. A "failed"/"failed_terminal" claim
+ * is a forced retry of a terminal job: it resets the prior terminal state (including
+ * any stale trigger_run_id) so the retry starts a fresh, trackable dispatch instead of
+ * being unable to ever re-link because the row is stuck outside "running".
+ */
+export async function claimProductDemandScanDispatch(jobRunId: string, fromStatus: "pending" | "failed" | "failed_terminal" = "pending"): Promise<boolean> {
+  const isRetry = fromStatus !== "pending";
+  const update = {
+    status: "running" as const,
+    dispatch_status: "claimed" as const,
+    dispatch_claimed_at: new Date().toISOString(),
+    dispatch_checked_at: null,
+    started_at: new Date().toISOString(),
+    ...(isRetry ? { trigger_run_id: null, error_code: null, error_details: null, completed_at: null, terminal_at: null, retry_after_at: null } : {}),
+  };
+  let query = createSupabaseServiceClient().from("job_runs").update(update).eq("id", jobRunId).eq("status", fromStatus);
+  if (!isRetry) query = query.is("trigger_run_id", null);
+  const { data, error } = await query.select("id").maybeSingle();
   if (error) throw providerError("The scan job could not be claimed for dispatch.", error.message);
   return Boolean(data);
 }

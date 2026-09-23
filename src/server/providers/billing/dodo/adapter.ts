@@ -311,6 +311,12 @@ export class DodoBillingProvider implements BillingProvider {
     let body: unknown = {};
     try { body = text ? JSON.parse(text) : {}; } catch { body = {}; }
     if (!response.ok) {
+      const record = asRecord(body);
+      const providerCode = stringAt(record, "code", "error_code", "type");
+      const providerMessage = stringAt(record, "message", "error");
+      // Safe: only the provider's own short code/message is logged, never the
+      // Authorization header, request body, or payment data.
+      console.error("[dodo] request failed", { path, status: response.status, providerCode, providerMessage: providerMessage?.slice(0, 300) });
       if (response.status === 401 || response.status === 403) throw new BillingProviderError("UNAUTHORIZED", "Dodo rejected the request.");
       if (response.status === 429) throw new BillingProviderError("RATE_LIMITED", "Dodo rate limited the request.", true);
       if (response.status >= 500) throw new BillingProviderError("UNAVAILABLE", "Dodo is temporarily unavailable.", true);

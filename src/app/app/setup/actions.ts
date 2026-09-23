@@ -68,9 +68,10 @@ function diagnosticError(error: unknown): Record<string, unknown> {
 
 function actionError(error: unknown, conflictMessage?: string): OnboardingActionState {
   const publicError = toPublicError(error);
-  if (process.env.NODE_ENV !== "production") {
-    console.error("[onboarding] action failed", { publicCode: publicError.code, publicMessage: publicError.message, error: diagnosticError(error) });
-  }
+  // Always log server-side, including in production: this is the only place the
+  // real cause of a generic "couldn't finish" message is recoverable, since the
+  // client only ever sees the redacted public message below.
+  console.error("[onboarding] action failed", { publicCode: publicError.code, publicMessage: publicError.message, error: diagnosticError(error) });
   if (publicError.code === "INTERNAL_ERROR") return { status: "error", error: "We could not complete that step. Please try again." };
   if (publicError.code === "CONFLICT" && conflictMessage) return { status: "error", error: conflictMessage };
   const details = publicError.details;

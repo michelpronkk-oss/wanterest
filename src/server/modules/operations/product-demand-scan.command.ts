@@ -27,8 +27,13 @@ export async function requestProductDemandScanCommand(rawInput: unknown, _reques
     return productDemandScanHandle(prepared.job, prepared.job.trigger_run_id, "resumed", input.scanMode);
   }
 
-  if (prepared.job.status === "pending") {
-    const claimed = await claimProductDemandScanDispatch(prepared.job.id);
+  if (prepared.job.status === "pending" || prepared.job.status === "failed" || prepared.job.status === "failed_terminal") {
+    // prepared.shouldTrigger already guarantees a "failed"/"failed_terminal" job only
+    // reaches here when the caller explicitly requested forceRebuild. The claim atomically
+    // resets the terminal state to "running" so the dispatch below can be linked; without
+    // this, a retried job stays stuck outside "running" and attachTriggerRun can never
+    // record the new run, permanently failing every retry.
+    const claimed = await claimProductDemandScanDispatch(prepared.job.id, prepared.job.status);
     if (!claimed) {
       return productDemandScanHandle(prepared.job, prepared.job.trigger_run_id, "resumed", input.scanMode);
     }
