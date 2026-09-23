@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../src/server/db/database.helpers";
 
 import {
+  githubDiscussionComment,
   githubDiscussionsResponse,
   githubIssue,
   githubIssueComment,
@@ -86,11 +87,22 @@ describe("GitHub source adapter", () => {
     const requestBody = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body));
     expect(new URL(String(fetchImpl.mock.calls[0]?.[0])).pathname).toBe("/graphql");
     expect(requestBody.variables).toMatchObject({ query: "export is:discussion repo:acme/product", first: 10, commentFirst: 5, after: null });
+    expect(requestBody.query).not.toMatch(/\blocation\b/);
     expect(requestBody.query).not.toContain("author { id");
     expect(fetchImpl.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: "Bearer test-token" });
     expect(page.items.map((item) => item.externalId)).toEqual(["github:discussion:D_kwDOdiscussion5", "github:discussion_comment:DC_kwDOfirstcomment"]);
     expect(page.nextCursor).toMatch(/^github:v1:discussions:/);
     expect(page.rateLimit).toMatchObject({ provider: "github-graphql", mode: "authenticated" });
+  });
+
+  it("normalizes discussions when GraphQL authors have no location", () => {
+    const discussion = normalizeGitHubItem(envelope(githubDiscussionsResponse.data.search.nodes[0], "github:discussion:D_kwDOdiscussion5", { itemType: "discussion", repository: "acme/product" }));
+    const comment = normalizeGitHubItem(envelope(githubDiscussionComment, "github:discussion_comment:DC_kwDOfirstcomment", { itemType: "discussion_comment", rootExternalId: "github:discussion:D_kwDOdiscussion5" }));
+
+    expect(discussion).toMatchObject({ externalId: "github:discussion:D_kwDOdiscussion5", status: "active" });
+    expect(discussion.metadata).toMatchObject({ authorLocation: null });
+    expect(comment).toMatchObject({ externalId: "github:discussion_comment:DC_kwDOfirstcomment", status: "active" });
+    expect(comment.metadata).toMatchObject({ authorLocation: null });
   });
 
   it("normalizes stable identities, closed-state metadata, labels, and bot authors", () => {
