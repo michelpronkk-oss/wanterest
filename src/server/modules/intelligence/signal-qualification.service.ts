@@ -197,6 +197,11 @@ function matchedConcepts(input: SignalQualificationInput, value: string): string
     .map((concept) => concept.key);
 }
 
+/** Whether any of the product's own known competitors (from structured product understanding) is named in the conversation. */
+function competitorMatched(input: SignalQualificationInput, value: string): boolean {
+  return profileLabels(input.profile.competitors).some((concept) => concept.label && value.includes(lower(concept.label)));
+}
+
 function geographicAdjustment(input: SignalQualificationInput, value: string, reasonCodes: SignalQualificationReasonCode[]): number {
   const geography = input.profile.geography;
   const dependency = clamp(geography.location_dependency ?? 0);
@@ -256,8 +261,37 @@ function dimensionsFor(input: SignalQualificationInput, profileMatches: string[]
   const value = lower(sourceText(input));
   const strongIntent = STRONG_COMMERCIAL_INTENTS.includes(primaryIntent);
   const profileAlignment = profileMatches.length ? Math.min(1, 0.55 + profileMatches.length * 0.22) : 0;
-  const categoryAlignment = input.profile.primary_category && value.includes(lower(input.profile.primary_category)) ? 0.95 : 0.35;
-  const productRelevance = clamp(input.match.matchConfidence * 0.65 + profileAlignment * 0.25 + categoryAlignment * 0.1 + (input.match.decision === "qualified" ? 0.05 : 0)) * geographicAdjustment(input, value, reasonCodes);
+  // A literal category-name mention ("issue tracking software") is the strongest, most
+  // explicit category signal, but real conversations express category relevance through
+  // competitor names and pain language far more often than the category's own taxonomy
+  // label. A matched competitor (from the product's own structured competitor list) paired
+  // with genuine commercial intent (switching, alternative-seeking, purchase research, ...)
+  // is itself strong evidence of category-relevant demand — not merely incidental keyword
+  // overlap — so it must not be scored as though no category context were present. A
+  // matched pain/feature/JTBD concept without a named competitor is weaker evidence on its
+  // own, so it earns a smaller boost, still gated on genuine commercial intent so an
+  // isolated, out-of-context concept match (no buying signal at all) doesn't count.
+  const hasCompetitorMatch = competitorMatched(input, value);
+  // A named competitor plus genuine commercial intent is at least as strong a category
+  // signal as the category's own taxonomy label (often stronger — a competitor name is
+  // unambiguous, a category label can be generic), so it earns the same top tier.
+  const categoryAlignment = (input.profile.primary_category && value.includes(lower(input.profile.primary_category))) || (hasCompetitorMatch && strongIntent)
+    ? 0.95
+    : profileMatches.length && strongIntent
+      ? 0.65
+      : 0.35;
+  // Relevance must answer "how strongly does this conversation represent demand that could
+  // materially matter to this product", not "how explicitly does it name this product".
+  // matchConfidence (a keyword/token-overlap score against the product's own vocabulary)
+  // previously carried 65% of the weight, which structurally capped competitor/category
+  // demand below the qualification threshold: such conversations rarely share much literal
+  // vocabulary with the product's own profile, no matter how clearly they match the
+  // product's own structured competitors/pains/category. profileAlignment and
+  // categoryAlignment's combined weight is raised (28%/20%, from 25%/10%) so a genuine
+  // competitor/category match — which categoryAlignment above now recognizes even without a
+  // literal category-name mention — can meaningfully close that gap instead of being nearly
+  // powerless against matchConfidence.
+  const productRelevance = clamp(input.match.matchConfidence * 0.47 + profileAlignment * 0.28 + categoryAlignment * 0.2 + (input.match.decision === "qualified" ? 0.05 : 0)) * geographicAdjustment(input, value, reasonCodes);
   const demandIntent = clamp(({ switching_intent: 0.95, alternative_search: 0.9, recommendation_request: 0.82, purchase_research: 0.82, comparison_intent: 0.8, vendor_evaluation: 0.82, renewal_reconsideration: 0.78, feature_requirement: 0.8, explicit_pain: 0.68, problem_solution_search: 0.68, unmet_need: 0.72, unknown: 0.12 } satisfies Record<SignalQualificationPrimaryIntent, number>)[primaryIntent] + (hasAny(value, [/\bneed\b/, /\blooking for\b/, /\bwhat are alternatives\b/, /\bwe(?:'re| are) replacing\b/, /\bdoes anyone know\b/, /\bwish this supported\b/]) ? 0.05 : 0));
   const concreteSignals = [
     /\b(?:our team|we use|for our company|for a \d+[- ]?person team)\b/i.test(value),
