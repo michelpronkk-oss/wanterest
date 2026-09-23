@@ -61,7 +61,7 @@ export function ScannedCandidateReview({ candidates }: { candidates: ScanCandida
             <article className="scan-candidate-card" key={candidate.evaluationId}>
               <div className="scan-candidate-card-header">
                 <span className="badge">{sourceLabel(candidate.source)}</span>
-                <span className="scan-candidate-result">{candidate.status === "weak_candidate" ? "Weak candidate" : "Filtered out"}</span>
+                <span className="scan-candidate-result">{candidate.status === "weak_candidate" ? "Weak candidate" : candidate.status === "qualified" || candidate.status === "high_confidence_signal" ? "Qualified candidate" : "Filtered out"}</span>
               </div>
               <h3>{candidate.title || candidate.excerpt}</h3>
               <p>{candidate.excerpt}</p>

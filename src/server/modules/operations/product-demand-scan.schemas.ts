@@ -86,14 +86,14 @@ export const sourceScanResultSchema = z.object({
 });
 export type SourceScanResult = z.infer<typeof sourceScanResultSchema>;
 
-/** Sanitized review data for candidates that were scanned but did not become Signals. */
+/** Sanitized qualification review data for every evaluated scan candidate. */
 export const scanCandidateReviewSchema = z.object({
   evaluationId: z.string().uuid(),
   source: z.string().trim().min(1).max(120),
   title: z.string().trim().max(300).nullable(),
   excerpt: z.string().trim().min(1).max(500),
   canonicalUrl: z.string().trim().max(2_000).nullable(),
-  status: z.enum(["weak_candidate", "rejected"]),
+  status: z.enum(["qualified", "high_confidence_signal", "weak_candidate", "rejected"]),
   scores: z.object({
     relevance: z.number().min(0).max(1),
     intent: z.number().min(0).max(1),
