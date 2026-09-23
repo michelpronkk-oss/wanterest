@@ -29,6 +29,7 @@ import {
   type XUser,
 } from "./x.schemas";
 import { normalizeXItem } from "./x.normalizer";
+import { getInternalXDiscoveryOverride } from "./x.internal";
 
 type XAdapterOptions = XClientOptions & {
   clock?: () => Date;
@@ -116,9 +117,13 @@ export class XSourceAdapter implements SourceAdapter {
     const items: RawSourceItemEnvelope[] = [];
     let rejected = 0;
     let rateLimit: RateLimitMetadata | undefined;
-    const budget = Math.min(metadata.maxBillablePostsPerDiscovery ?? this.maxPostsPerScan, this.maxPostsPerScan);
     const requestedResults = Math.min(request.limit, metadata.maxResults ?? request.limit, 100);
     const providerPageSize = Math.max(X_PROVIDER_MIN_RESULTS, requestedResults);
+    const internalOverride = getInternalXDiscoveryOverride(metadata.internalWorkspaceId);
+    const plannedBudget = Math.min(metadata.maxBillablePostsPerDiscovery ?? this.maxPostsPerScan, this.maxPostsPerScan);
+    const budget = internalOverride
+      ? Math.min(this.maxPostsPerScan, Math.max(plannedBudget, Math.min(providerPageSize, internalOverride.maxPostsPerScan)))
+      : plannedBudget;
     const estimatedReadCost = estimateXReadCost(providerPageSize, this.postReadCostUsd);
     const baseMetadata: JsonObject = {
       provider: "x-api-v2",

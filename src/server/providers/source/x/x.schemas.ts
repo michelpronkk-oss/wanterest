@@ -62,6 +62,7 @@ export const xRawItemPayloadSchema = z.object({
 }).passthrough();
 
 export const xRequestMetadataSchema = z.object({
+  internalWorkspaceId: z.string().uuid().optional(),
   postId: z.string().regex(/^\d{1,30}$/).optional(),
   maxResults: z.number().int().min(1).max(100).optional(),
   maxPages: z.number().int().min(1).max(2).default(1),

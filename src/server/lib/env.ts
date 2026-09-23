@@ -37,6 +37,8 @@ const serverEnvSchema = publicEnvSchema.extend({
   // Temporary internal validation mechanism — see src/server/modules/operations/internal-scan-bypass.ts.
   // Comma-separated workspace UUIDs. Leave blank in normal environments.
   INTERNAL_SCAN_COOLDOWN_BYPASS_WORKSPACE_IDS: optionalServerString,
+  INTERNAL_X_DISCOVERY_WORKSPACE_IDS: optionalServerString,
+  INTERNAL_X_MAX_POSTS_PER_SCAN: optionalServerPositiveInt,
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
@@ -88,6 +90,8 @@ export function getServerEnv(): ServerEnv {
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL,
     INTERNAL_SCAN_COOLDOWN_BYPASS_WORKSPACE_IDS: process.env.INTERNAL_SCAN_COOLDOWN_BYPASS_WORKSPACE_IDS,
+    INTERNAL_X_DISCOVERY_WORKSPACE_IDS: process.env.INTERNAL_X_DISCOVERY_WORKSPACE_IDS,
+    INTERNAL_X_MAX_POSTS_PER_SCAN: process.env.INTERNAL_X_MAX_POSTS_PER_SCAN,
   });
 }
 

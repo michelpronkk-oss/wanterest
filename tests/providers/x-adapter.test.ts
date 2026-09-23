@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
 
 import {
   xAuthError,
@@ -19,6 +21,7 @@ import {
   xUserAlice,
 } from "../../src/server/providers/source/x/fixtures";
 import { estimateXReadCost } from "../../src/server/providers/source/x/x.cost";
+import { getInternalXDiscoveryOverride } from "../../src/server/providers/source/x/x.internal";
 import { XSourceAdapter } from "../../src/server/providers/source/x";
 import { compileXQuery } from "../../src/server/providers/source/x/x.query";
 
@@ -38,6 +41,79 @@ function envelope(payload: unknown, externalId = "test") {
 }
 
 describe("X source adapter", () => {
+  const internalWorkspaceId = "8b7a4189-54b7-4cc0-a4a3-1502dc2be82a";
+  const normalWorkspaceId = "00000000-0000-4000-8000-000000000001";
+
+  beforeEach(() => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon-key");
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "service-role-key");
+    vi.stubEnv("INTERNAL_X_DISCOVERY_WORKSPACE_IDS", "");
+    vi.stubEnv("INTERNAL_X_MAX_POSTS_PER_SCAN", "10");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("keeps the normal below-minimum X skip for a workspace outside the allowlist", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const adapter = new XSourceAdapter({ fetchImpl, token: "test-token" });
+
+    const page = await adapter.discover({
+      query: "workflow",
+      limit: 3,
+      requestMetadata: { maxResults: 3, maxBillablePostsPerDiscovery: 3, internalWorkspaceId: normalWorkspaceId },
+      expandThreads: false,
+    });
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(page.diagnostics.messages.join(" ")).toContain("billable post budget is below the provider minimum");
+  });
+
+  it("executes the provider-minimum page for an allowlisted internal workspace", async () => {
+    vi.stubEnv("INTERNAL_X_DISCOVERY_WORKSPACE_IDS", internalWorkspaceId);
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response({ data: [], meta: { result_count: 0 } }));
+    const adapter = new XSourceAdapter({ fetchImpl, token: "test-token" });
+
+    const page = await adapter.discover({
+      query: "workflow",
+      limit: 3,
+      requestMetadata: { maxResults: 3, maxBillablePostsPerDiscovery: 3, internalWorkspaceId },
+      expandThreads: false,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(new URL(String(fetchImpl.mock.calls[0]?.[0])).searchParams.get("max_results")).toBe("10");
+    expect(page.estimatedCost).toBe(0.05);
+  });
+
+  it("hard-caps the internal override at one provider-minimum page and bounds its cost", () => {
+    vi.stubEnv("INTERNAL_X_DISCOVERY_WORKSPACE_IDS", internalWorkspaceId);
+    vi.stubEnv("INTERNAL_X_MAX_POSTS_PER_SCAN", "100");
+
+    const override = getInternalXDiscoveryOverride(internalWorkspaceId);
+
+    expect(override?.maxPostsPerScan).toBe(10);
+    expect(estimateXReadCost(2 * (override?.maxPostsPerScan ?? 0))).toBe(0.1);
+  });
+
+  it("does not override an allowlisted workspace when the max-posts env is missing", async () => {
+    vi.stubEnv("INTERNAL_X_DISCOVERY_WORKSPACE_IDS", internalWorkspaceId);
+    vi.stubEnv("INTERNAL_X_MAX_POSTS_PER_SCAN", undefined);
+    const fetchImpl = vi.fn<typeof fetch>();
+    const adapter = new XSourceAdapter({ fetchImpl, token: "test-token" });
+
+    await adapter.discover({
+      query: "workflow",
+      limit: 3,
+      requestMetadata: { maxResults: 3, maxBillablePostsPerDiscovery: 3, internalWorkspaceId },
+      expandThreads: false,
+    });
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("compiles synthetic planner language into a human provider query", () => {
     const compiled = compileXQuery({
       semanticQuery: "switching from productivity_software because Need for better collaboration and workflow tools",

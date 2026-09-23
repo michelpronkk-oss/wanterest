@@ -62,7 +62,7 @@ export const discoverProductSourceTask = schemaTask({
   schema: sourceTaskInputSchema,
   run: async (input) => {
     try {
-      return executeSourceDiscovery({ sourceKey: input.sourceKey, requests: input.requests, traceId: input.traceId, jobRunId: input.jobRunId });
+      return executeSourceDiscovery({ sourceKey: input.sourceKey, requests: input.requests, traceId: input.traceId, jobRunId: input.jobRunId, workspaceId: input.workspaceId });
     } catch (error) {
       return nonRetryable(error);
     }

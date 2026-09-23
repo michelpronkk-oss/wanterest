@@ -13,6 +13,7 @@ import { IngestionService } from "@/server/modules/ingestion/ingestion.service";
 import { createSourceRegistry } from "@/server/providers/source/registry";
 import { getRedditRuntimeConfig } from "@/server/providers/source/reddit/reddit.auth";
 import { getXRuntimeConfig } from "@/server/providers/source/x/x.auth";
+import { getInternalXDiscoveryOverride, logInternalXDiscoveryOverride } from "@/server/providers/source/x/x.internal";
 import { SupabaseIntelligenceRepository } from "@/server/modules/intelligence/intelligence.repository";
 import { IntelligenceService } from "@/server/modules/intelligence/intelligence.service";
 import { qualificationFromEvidence, readBusinessClassification, readDemandProfileV2, readDemandProfileV2RoutingModel } from "@/server/modules/intelligence";
@@ -76,6 +77,7 @@ export type SourceExecutionInput = {
   sourceKey: string;
   requests: SourceDiscoveryRequest[];
   traceId: string;
+  workspaceId: string;
   /**
    * Keeps discovery idempotent within one durable scan while allowing a
    * later manual rescan to execute the same semantic request again.
@@ -114,10 +116,25 @@ export type SourceExecutionBatchResult = {
   error?: string;
 };
 
-function requestScopedToScan(request: SourceDiscoveryRequest, jobRunId: string): SourceDiscoveryRequest {
+function requestScopedToScan(request: SourceDiscoveryRequest, jobRunId: string, sourceKey: string, workspaceId: string): SourceDiscoveryRequest {
   return sourceDiscoveryRequestSchema.parse({
     ...request,
-    requestMetadata: { ...request.requestMetadata, scanJobRunId: jobRunId },
+    requestMetadata: {
+      ...request.requestMetadata,
+      scanJobRunId: jobRunId,
+      ...(sourceKey === "x" ? { internalWorkspaceId: workspaceId } : {}),
+    },
+  });
+}
+
+function logXDiscoveryOverride(workspaceId: string, requests: SourceDiscoveryRequest[]): void {
+  const override = getInternalXDiscoveryOverride(workspaceId);
+  if (!override) return;
+  logInternalXDiscoveryOverride({
+    workspaceId,
+    queryCount: requests.length,
+    maxPosts: override.maxPostsPerScan,
+    postReadCostUsd: getXRuntimeConfig().postReadCostUsd,
   });
 }
 
@@ -481,9 +498,10 @@ export async function executeSourceDiscovery(input: SourceExecutionInput): Promi
   let rateLimitRemaining: number | null = null;
   let estimatedCost: number | null = null;
   const providerMetrics: Record<string, unknown> = {};
+  if (input.sourceKey === "x") logXDiscoveryOverride(input.workspaceId, input.requests);
   for (const rawRequest of input.requests) {
     const request = sourceDiscoveryRequestSchema.parse(rawRequest);
-    const discovery = await ingestion.discoverSource(input.sourceKey, requestScopedToScan(request, input.jobRunId), input.traceId);
+    const discovery = await ingestion.discoverSource(input.sourceKey, requestScopedToScan(request, input.jobRunId, input.sourceKey, input.workspaceId), input.traceId);
     rawSourceItemIds.push(...discovery.rawSourceItemIds);
     rawInserted += discovery.rawInserted;
     diagnostics.push(...discovery.diagnostics);
@@ -796,7 +814,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
           : { limit: fallbackLimit, ...(query ? { query } : {}) };
         const requests = boundMonitoringRequests((plannedRequests.length ? plannedRequests : [fallbackRequest]).map((request) => sourceDiscoveryRequestSchema.parse(request)), sourceKey, scanMode, monitoringPolicy, capabilities)
           .map((request) => sourceKey === "g2" ? g2RequestForProduct(request, product, g2ProductMappings) : request);
-        sourceInputs.push({ input: { sourceKey, requests, traceId, jobRunId: job.id }, fallback: !plannedRequests.length && Boolean(queryPlan), candidateBudget: requests.reduce((sum, request) => sum + request.limit, 0) });
+        sourceInputs.push({ input: { sourceKey, requests, traceId, jobRunId: job.id, workspaceId: product.workspace_id }, fallback: !plannedRequests.length && Boolean(queryPlan), candidateBudget: requests.reduce((sum, request) => sum + request.limit, 0) });
         sources.push(sourceKey);
       }
       // The biggest single opaque operation in the pipeline: in production this dispatches
@@ -875,8 +893,9 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
         const sourceMetrics: Record<string, unknown> = {};
         const sourceResolutions: NonNullable<SourceExecutionResult["resolutions"]> = [];
         if (!plannedRequests.length && queryPlan) diagnostics.push({ sourceKey, state: "fallback", message: "Query Planning produced no executable query; using the existing conservative request." });
+        if (sourceKey === "x") logXDiscoveryOverride(product.workspace_id, requests);
         for (const discoveryRequest of requests) {
-          const discovery = await ingestion.discoverSource(sourceKey, requestScopedToScan(discoveryRequest, job.id));
+          const discovery = await ingestion.discoverSource(sourceKey, requestScopedToScan(discoveryRequest, job.id, sourceKey, product.workspace_id));
           sourceItemsReturned += discovery.rawSourceItemIds.length;
           sourceRawItems += discovery.rawInserted;
           sourceWarnings = [...sourceWarnings, ...discovery.diagnostics];
