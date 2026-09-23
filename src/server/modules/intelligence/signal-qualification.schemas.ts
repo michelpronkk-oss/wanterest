@@ -111,7 +111,13 @@ export const signalQualificationDiagnosticsSchema = z.object({
 export type SignalQualificationDiagnostics = z.infer<typeof signalQualificationDiagnosticsSchema>;
 
 export const signalQualificationSchema = z.object({
-  version: z.literal("signal_qualification_v1_1"),
+  // Intentionally a generic version string, not z.literal(CURRENT_VERSION): this schema also
+  // parses historical evaluation rows persisted under an older SIGNAL_QUALIFICATION_VERSION
+  // (see qualificationFromEvidence). Pinning it to the current literal would make every past
+  // qualification version bump retroactively fail to parse old rows — rankEvaluation and
+  // materializeSignal would then treat every pre-existing qualified signal as unqualified and
+  // archive it the next time it's touched, purely because the version string moved on.
+  version: z.string().trim().min(1).max(120),
   candidate_id: z.string().uuid(),
   product_id: z.string().uuid(),
   status: signalQualificationStatusSchema,

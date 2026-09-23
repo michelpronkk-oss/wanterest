@@ -1,6 +1,16 @@
 import type { SignalQualificationPrimaryIntent } from "./signal-qualification.schemas";
 
-export const SIGNAL_QUALIFICATION_VERSION = "signal_qualification_v1_1" as const;
+// Bump this whenever logic that affects qualification dimensions changes (e.g. the
+// product_relevance composition in signal-qualification.service.ts's dimensionsFor). It is
+// hashed into intelligence.service.ts's evaluation input_fingerprint, so a version bump is
+// what makes a repeat scan recompute qualification against existing conversations/analyses
+// instead of reusing a cached evaluation computed under the old logic — no re-fetching, no
+// duplicate conversations, and (via product_match_evaluations' stable product_match_id)
+// existing signal lifecycle state (dismissed/saved/archived) is preserved automatically.
+export const SIGNAL_QUALIFICATION_VERSION = "signal_qualification_v1_2" as const;
+// Bump this only when the qualified/highConfidence THRESHOLD VALUES below change — they have
+// not; product_relevance's composition changed, which SIGNAL_QUALIFICATION_VERSION already
+// captures.
 export const SIGNAL_QUALIFICATION_THRESHOLD_VERSION = "signal_qualification_thresholds_v1" as const;
 
 export const SIGNAL_QUALIFICATION_THRESHOLDS = {
