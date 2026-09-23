@@ -42,6 +42,7 @@ function fallbackIntent(signal: SignalCardSignal): string {
 
 function userFacingWhy(signal: SignalCardSignal): string {
   const qualification = signal.qualification;
+  if (qualification && qualification.demand_target_type !== "unknown") return bounded(qualification.qualification_reason, 140);
   const intent = qualification?.primary_intent ?? signal.intentType;
   const concept = humanizeConcept(qualification?.matched_profile_concepts[0]);
   const pain = cleanText(signal.painThemes[0] ?? "");

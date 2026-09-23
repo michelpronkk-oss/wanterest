@@ -3,6 +3,15 @@ import { z } from "zod";
 export const signalQualificationStatusSchema = z.enum(["rejected", "weak_candidate", "qualified", "high_confidence_signal"]);
 export type SignalQualificationStatus = z.infer<typeof signalQualificationStatusSchema>;
 
+export const demandDirectionSchema = z.enum(["toward_product", "toward_category", "away_from_product", "contextual", "unknown"]);
+export type DemandDirection = z.infer<typeof demandDirectionSchema>;
+
+export const demandTargetTypeSchema = z.enum(["scanned_product", "category", "third_party_product", "implementation", "unknown"]);
+export type DemandTargetType = z.infer<typeof demandTargetTypeSchema>;
+
+export const speakerRoleSchema = z.enum(["buyer", "maintainer", "unknown"]);
+export type SpeakerRole = z.infer<typeof speakerRoleSchema>;
+
 export const signalQualificationPrimaryIntentSchema = z.enum([
   "switching_intent",
   "alternative_search",
@@ -55,6 +64,7 @@ export const signalQualificationReasonCodeSchema = z.enum([
   "LOW_PROFILE_CONFIDENCE",
   "ENGAGEMENT_NOT_QUALIFYING",
   "QUALIFICATION_FAILED",
+  "NON_POSITIVE_PRODUCT_DIRECTION",
 ]);
 export type SignalQualificationReasonCode = z.infer<typeof signalQualificationReasonCodeSchema>;
 
@@ -129,6 +139,11 @@ export const signalQualificationSchema = z.object({
   dimensions: signalQualificationDimensionsSchema,
   primary_intent: signalQualificationPrimaryIntentSchema,
   intent_target: intentTargetSchema.default("unknown"),
+  demand_direction: demandDirectionSchema.default("unknown"),
+  demand_target_type: demandTargetTypeSchema.default("unknown"),
+  demand_target_name: z.string().trim().max(160).nullable().default(null),
+  source_products: z.array(z.string().trim().min(1).max(160)).max(20).default([]),
+  speaker_role: speakerRoleSchema.default("unknown"),
   matched_profile_concepts: z.array(z.string().trim().min(1).max(300)).max(50),
   evidence_spans: z.array(signalQualificationEvidenceSpanSchema).max(20),
   reason_codes: z.array(signalQualificationReasonCodeSchema).max(30),

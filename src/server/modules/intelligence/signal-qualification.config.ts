@@ -7,7 +7,7 @@ import type { SignalQualificationPrimaryIntent } from "./signal-qualification.sc
 // instead of reusing a cached evaluation computed under the old logic — no re-fetching, no
 // duplicate conversations, and (via product_match_evaluations' stable product_match_id)
 // existing signal lifecycle state (dismissed/saved/archived) is preserved automatically.
-export const SIGNAL_QUALIFICATION_VERSION = "signal_qualification_v1_4" as const;
+export const SIGNAL_QUALIFICATION_VERSION = "signal_qualification_v1_5" as const;
 // Bump this only when the qualified/highConfidence THRESHOLD VALUES below change — they have
 // not; product_relevance's composition changed, which SIGNAL_QUALIFICATION_VERSION already
 // captures.

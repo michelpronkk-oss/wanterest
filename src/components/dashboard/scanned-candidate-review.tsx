@@ -13,6 +13,7 @@ const REASON_LABELS: Record<string, string> = {
   LOW_PROFILE_CONFIDENCE: "Low product-profile confidence",
   ENGAGEMENT_NOT_QUALIFYING: "Not enough engagement context",
   QUALIFICATION_FAILED: "Qualification could not be completed",
+  NON_POSITIVE_PRODUCT_DIRECTION: "Demand is directed elsewhere",
 };
 
 const POSITIVE_REASON_CODES = new Set([

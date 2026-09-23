@@ -220,6 +220,7 @@ export class IntelligenceService {
     const ranking = await this.repository.getRankingById(rankingId);
     const qualification = evaluation ? qualificationFromEvidence(evaluation.evidence) : null;
     if (!evaluation || !ranking || evaluation.decision !== "qualified" || !canMaterializeQualifiedSignal(qualification)) return null;
+    if (!qualification) return null;
     const conversation = await this.repository.getConversation(evaluation.conversation_id);
     const source = conversation ? await this.repository.getSourceItem(conversation.primary_source_item_id) : null;
     if (!conversation || !source) throw new AppError("NOT_FOUND", "Signal source evidence was not found.");
@@ -227,7 +228,7 @@ export class IntelligenceService {
     const analysis = await this.repository.getConversationAnalysisById(evaluation.conversation_analysis_id);
     const duplicate = await this.findDuplicateSignal(product, conversation, source);
     if (duplicate) return null;
-    const signalInput = { workspace_id: product.workspace_id, product_id: product.id, product_match_id: evaluation.product_match_id, product_match_evaluation_id: evaluation.id, match_ranking_id: ranking.id, conversation_id: conversation.id, evidence_node_id: deterministicUuid(`evidence:signal:${evaluation.product_match_id}`), lifecycle_status: existing?.lifecycle_status ?? "active", intent_type: analysis?.intent_type ?? "unknown", excerpt: conversation.body.slice(0, 500), why_it_matters: evaluation.rationale, tags: json([]), buyer_language: json(analysis ? asStrings(analysis.buyer_language) : []), pain_themes: json(analysis ? asStrings(analysis.pain_themes) : []), source_key: source.source_key, canonical_url: source.canonical_url, published_at: source.published_at };
+    const signalInput = { workspace_id: product.workspace_id, product_id: product.id, product_match_id: evaluation.product_match_id, product_match_evaluation_id: evaluation.id, match_ranking_id: ranking.id, conversation_id: conversation.id, evidence_node_id: deterministicUuid(`evidence:signal:${evaluation.product_match_id}`), lifecycle_status: existing?.lifecycle_status ?? "active", intent_type: analysis?.intent_type ?? "unknown", excerpt: conversation.body.slice(0, 500), why_it_matters: qualification.qualification_reason, tags: json([]), buyer_language: json(analysis ? asStrings(analysis.buyer_language) : []), pain_themes: json(analysis ? asStrings(analysis.pain_themes) : []), source_key: source.source_key, canonical_url: source.canonical_url, published_at: source.published_at };
     if (existing) return this.repository.updateSignal(existing.id, signalInput);
     try { await this.repository.consumeSignalUsage(product.workspace_id, `${evaluation.product_match_id}:${evaluation.id}`); } catch (error) { if (error instanceof Error && error.message.includes("usage_limit_exceeded")) throw new AppError("USAGE_LIMIT_EXCEEDED", "The workspace signal limit was reached."); throw error; }
     const signal = await this.repository.createSignal(signalInput);

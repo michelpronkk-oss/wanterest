@@ -36,4 +36,23 @@ describe("signal card presenter", () => {
     expect(presentation.why.toLowerCase()).not.toMatch(/qualified|candidate|evidence gates|commercially relevant/);
     expect(presentation.evidence.length).toBeLessThanOrEqual(180);
   });
+
+  it("renders directional qualification copy as the WHY", () => {
+    const signal: SignalCardSignal = {
+      excerpt: "Orbit needs an importer for teams migrating from Jira or Linear.",
+      whyItMatters: "Internal qualification rationale should not appear on the card.",
+      intentType: "switching_intent",
+      tags: [],
+      buyerLanguage: [],
+      painThemes: [],
+      qualification: {
+        demand_target_type: "third_party_product",
+        qualification_reason: "Conversation wants to move or migrate existing work into Orbit from Jira and Linear.",
+        evidence_spans: [],
+        matched_profile_concepts: [],
+      } as unknown as NonNullable<SignalCardSignal["qualification"]>,
+    };
+
+    expect(formatSignalCard(signal).why).toBe("Conversation wants to move or migrate existing work into Orbit from Jira and Linear.");
+  });
 });

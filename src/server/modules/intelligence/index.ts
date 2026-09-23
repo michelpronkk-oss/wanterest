@@ -14,7 +14,7 @@ export { canMaterializeQualifiedSignal, failClosedQualification, formatSignalQua
 export { inspectSignalContent, isDuplicateSignalContent, normalizeDestinationUrl } from "./signal-quality";
 export { SIGNAL_QUALIFICATION_PENALTIES, SIGNAL_QUALIFICATION_THRESHOLDS, SIGNAL_QUALIFICATION_THRESHOLD_VERSION, SIGNAL_QUALIFICATION_VERSION, SIGNAL_QUALIFICATION_WEIGHTS, STRONG_COMMERCIAL_INTENTS } from "./signal-qualification.config";
 export { conversationAnalysisSchema, demandProfileSchema, evidenceSpanSchema, feedbackTypeSchema, intentTypeSchema, productMatchResultSchema } from "./intelligence.schemas";
-export { marketResonanceSchema, signalQualificationDimensionsSchema, signalQualificationEvidenceSpanSchema, signalQualificationPrimaryIntentSchema, signalQualificationReasonCodeSchema, signalQualificationSchema, signalQualificationStatusSchema } from "./signal-qualification.schemas";
+export { demandDirectionSchema, demandTargetTypeSchema, marketResonanceSchema, signalQualificationDimensionsSchema, signalQualificationEvidenceSpanSchema, signalQualificationPrimaryIntentSchema, signalQualificationReasonCodeSchema, signalQualificationSchema, signalQualificationStatusSchema, speakerRoleSchema } from "./signal-qualification.schemas";
 export { businessClassificationDraftSchema, businessClassificationSchema, businessModelSchema, businessTypeSchema, classificationEvidenceSchema, commerceTypeSchema, deliveryModelSchema, marketScopeSchema, technicalOrientationSchema } from "./business-classification.schemas";
 export { alternativeTypeSchema, buyingIntentTypeSchema, competitorRelationshipTypeSchema, demandProfileV2AudienceSchema, demandProfileV2ConfidenceSchema, demandProfileV2GeographySchema, demandProfileV2Schema, demandProfileV2Version, desiredOutcomeSchema, demandPainSchema, featureDemandSchema, jobToBeDoneSchema, objectionSchema, switchingTriggerSchema } from "./demand-profile-v2.schemas";
 export type { DemandProfileEngine, ConversationAnalysisEngine, ProductMatchingEngine } from "./engines";
@@ -27,9 +27,11 @@ export type { BusinessClassification, BusinessClassificationDraft, BusinessModel
 export type { FeedbackType, IntentType } from "./intelligence.schemas";
 export { classifyConversationIntent, detectIntentTarget } from "./intent-semantics";
 export type { IntentTarget } from "./intent-semantics";
+export { deriveDirectionalDemand } from "./directional-demand";
+export type { DirectionalDemand, DirectionalDemandInput } from "./directional-demand";
 export type { ProductMatchResult } from "./intelligence.schemas";
 export type { SignalFilters, SignalReadModel } from "./intelligence.service";
-export type { MarketResonance, SignalQualification, SignalQualificationDimensions, SignalQualificationEvidenceSpan, SignalQualificationPrimaryIntent, SignalQualificationReasonCode, SignalQualificationStatus } from "./signal-qualification.schemas";
+export type { DemandDirection, DemandTargetType, MarketResonance, SignalQualification, SignalQualificationDimensions, SignalQualificationEvidenceSpan, SignalQualificationPrimaryIntent, SignalQualificationReasonCode, SignalQualificationStatus, SpeakerRole } from "./signal-qualification.schemas";
 export type { SignalQualificationInput, SignalQualificationProfile } from "./signal-qualification.service";
 export type { SignalQualificationFixture } from "./signal-qualification.fixtures";
 export type { IntelligenceRepository } from "./intelligence.repository";
