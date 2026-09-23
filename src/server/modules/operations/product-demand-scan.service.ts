@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/server/db/database.types";
 import { jsonObjectSchema, type JobRunRow, type ProductRow } from "@/server/db/database.helpers";
 import { AppError } from "@/server/lib/errors";
+import { redactMessage } from "@/server/lib/http";
 import { getTraceId } from "@/server/lib/request-context";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
 import { consumeUsage, getUsageTotals, getWorkspaceEntitlement } from "@/server/modules/entitlements/entitlement.repository";
@@ -187,6 +188,11 @@ export async function prepareProductDemandScan(input: ProductDemandScanInput, tr
 
 export async function executeProductDemandScan(input: ProductDemandScanInput, triggerRunId?: string, executionOptions: Pick<InitialScanExecutionOptions, "sourceExecutor" | "sourceBatchExecutor" | "candidateExecutor" | "demandExecutor" | "actionsExecutor"> = {}): Promise<InitialScanResult> {
   const parsed = productDemandScanInputSchema.parse(input);
+  // The single canonical entry point for both Trigger-remote and direct-execution modes.
+  // If this line never appears in logs for a given jobId/triggerRunId, the task never
+  // actually started executing user code (still queued/dequeuing on Trigger.dev's side,
+  // or crashed before this point) — distinct from a hang inside the pipeline itself.
+  console.log("[scan] started", { jobId: parsed.jobRunId ?? null, triggerRunId: triggerRunId ?? null, workspaceId: parsed.workspaceId, productId: parsed.productId, scanMode: parsed.scanMode });
   const client = createSupabaseServiceClient();
   const job = await loadTrustedProductDemandScanJob(client, parsed);
   const product = await loadProductForTask(client, parsed);
@@ -230,6 +236,13 @@ export async function executeProductDemandScan(input: ProductDemandScanInput, tr
     }
     return result;
   } catch (error) {
+    console.error("[scan] failed", {
+      jobId: parsed.jobRunId ?? null,
+      triggerRunId: triggerRunId ?? null,
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorCode: error instanceof AppError ? error.code : null,
+      errorMessage: redactMessage(error instanceof Error ? error.message : String(error)),
+    });
     if (parsed.monitoringScheduleId && parsed.jobRunId) {
       await recordMonitoringScanOutcome(client, {
         scheduleId: parsed.monitoringScheduleId,

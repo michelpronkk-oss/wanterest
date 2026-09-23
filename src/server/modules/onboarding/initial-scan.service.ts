@@ -390,6 +390,9 @@ async function loadLatestScanJob(client: Client, workspaceId: string, productId:
 export type ScanJobUpdate = { status?: string; phase: string; scanMode?: ScanMode; result?: InitialScanResult | null; errorCode?: string | null; errorMessage?: string | null; completed?: boolean; progress?: Partial<ScanProgress> };
 
 export async function setScanJob(client: Client, id: string, input: ScanJobUpdate) {
+  // Every phase transition in the scan pipeline funnels through here, so this is the
+  // single choke point for step/progress-persistence logging across the whole run.
+  console.log("[scan] step started", { jobId: id, phase: input.phase, stage: input.progress?.stage ?? null, percent: input.progress?.percent ?? null });
   const reference = buildScanJobReference(input);
   const { error } = await client.from("job_runs").update({
     ...(input.status === undefined ? {} : { status: input.status }),
@@ -399,7 +402,11 @@ export async function setScanJob(client: Client, id: string, input: ScanJobUpdat
     completed_at: input.completed ? new Date().toISOString() : null,
     terminal_at: input.completed ? new Date().toISOString() : null,
   }).eq("id", id);
-  if (error) throw new AppError("INTERNAL_ERROR", "The first-scan status could not be saved.");
+  if (error) {
+    console.error("[scan] failed", { jobId: id, phase: input.phase, reason: "progress_persist_failed", providerMessage: error.message.slice(0, 300) });
+    throw new AppError("INTERNAL_ERROR", "The first-scan status could not be saved.");
+  }
+  console.log("[scan] progress persisted", { jobId: id, phase: input.phase, status: input.status ?? null, stage: input.progress?.stage ?? null, percent: input.progress?.percent ?? null });
 }
 
 async function createOrResumeScanJob(client: Client, workspaceId: string, productId: string, traceId: string, options: Pick<InitialScanExecutionOptions, "idempotencyKey" | "jobRunId" | "scanMode" | "triggerRunId"> = {}) {
@@ -792,6 +799,11 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
         sourceInputs.push({ input: { sourceKey, requests, traceId, jobRunId: job.id }, fallback: !plannedRequests.length && Boolean(queryPlan), candidateBudget: requests.reduce((sum, request) => sum + request.limit, 0) });
         sources.push(sourceKey);
       }
+      // The biggest single opaque operation in the pipeline: in production this dispatches
+      // child Trigger.dev tasks per source (discover-product-source) and waits on all of
+      // them. A hang here (a blocked source adapter, a stuck child-task queue) is otherwise
+      // invisible — nothing else logs between "planning" progress and this resolving.
+      console.log("[scan] step started", { jobId: job.id, step: "source-discovery", sourceKeys: sourceInputs.map(({ input }) => input.sourceKey) });
       const results = sourceBatchExecutor
         ? await sourceBatchExecutor(sourceInputs.map(({ input }) => input))
         : await Promise.all(sourceInputs.map(async ({ input, fallback }) => {
@@ -801,6 +813,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
               return { sourceKey: input.sourceKey, error: safeSummary(error), fallback };
             }
           }));
+      console.log("[scan] step completed", { jobId: job.id, step: "source-discovery", sourceCount: results.length, failedCount: results.filter((result) => result.error || !result.execution).length });
       for (const result of results) {
         const sourceInput = sourceInputs.find(({ input }) => input.sourceKey === result.sourceKey);
         if (result.error || !result.execution) {
