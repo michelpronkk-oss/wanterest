@@ -386,6 +386,7 @@ function reasonText(status: SignalQualificationStatus, intent: SignalQualificati
   const targetName = demand.demand_target_name ?? "another product";
   const sources = nameList(demand.source_products);
   if (demand.demand_target_type === "implementation") return `${actor} is asking for an implementation or authentication change${demand.demand_target_name ? ` related to ${demand.demand_target_name}` : ""}.`;
+  if (demand.host_product_context && demand.source_products.length) return `${actor} is evaluating ${targetName} as a ${sources} alternative and asking for ${sources}-like features.`;
   if (demand.demand_direction === "away_from_product" && demand.source_products.length) return `${actor} is moving from ${sources} to ${targetName}.`;
   if (demand.demand_target_type === "third_party_product") return `${actor} wants to move or migrate existing work into ${targetName}${demand.source_products.length ? ` from ${sources}` : ""}.`;
   if (demand.demand_target_type === "category" && demand.source_products.length) return `${actor} is looking for an alternative to ${sources}${demand.demand_target_name ? ` for ${demand.demand_target_name}` : ""}.`;

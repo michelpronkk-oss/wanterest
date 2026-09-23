@@ -134,6 +134,36 @@ describe("directional demand semantics", () => {
     expect(result.status).not.toBe("high_confidence_signal");
   });
 
+  it("treats Jira-alternative feature parity in a host repository as third-party demand", () => {
+    const result = qualifySignal(inputFor("Awesome Jira alternative. Do you plan Jira-like transition screens?", { repository: "acme/product-a" }));
+
+    expect(result.demand_direction).toBe("contextual");
+    expect(result.demand_target_type).toBe("third_party_product");
+    expect(result.demand_target_name).toBe("Product-a");
+    expect(result.source_products).toContain("Jira");
+    expect(result.status).not.toBe("qualified");
+    expect(result.status).not.toBe("high_confidence_signal");
+  });
+
+  it("keeps an explicitly evaluated Linear destination positive", () => {
+    const result = qualifySignal(inputFor("We are evaluating Linear as a Jira alternative."));
+
+    expect(result.demand_direction).toBe("toward_product");
+    expect(result.demand_target_type).toBe("scanned_product");
+    expect(result.demand_target_name).toBe("Linear");
+    expect(["qualified", "high_confidence_signal"]).toContain(result.status);
+  });
+
+  it("recognizes an explicitly named non-scanned host product as the destination", () => {
+    const result = qualifySignal(inputFor("We are evaluating Product A as a Jira alternative.", { repository: "acme/product-a" }));
+
+    expect(result.demand_direction).toBe("contextual");
+    expect(result.demand_target_type).toBe("third_party_product");
+    expect(result.demand_target_name).toBe("Product-a");
+    expect(result.status).not.toBe("qualified");
+    expect(result.status).not.toBe("high_confidence_signal");
+  });
+
   it("treats a third-party product feature request as contextual rather than Linear demand", () => {
     const result = qualifySignal(inputFor("Orbit needs an importer for teams migrating from Jira or Linear.", { repository: "Noveum/orbit" }));
 
@@ -143,6 +173,18 @@ describe("directional demand semantics", () => {
     expect(result.source_products).toEqual(expect.arrayContaining(["Jira", "Linear"]));
     expect(result.status).not.toBe("qualified");
     expect(result.qualification_reason).toMatch(/migrate existing work into Orbit/i);
+  });
+
+  it("classifies the Orbit Jira-parity discussion as host-product context", () => {
+    const result = qualifySignal(inputFor("First of all, big thanks to you! Awesome Jira alternative from the beginning. But I wonder if there is roadmap somewhere? For example i wonder do you have transition screens in that roadmap and other Jira like features?", { repository: "Noveum/orbit" }));
+
+    expect(result.demand_direction).toBe("contextual");
+    expect(result.demand_target_type).toBe("third_party_product");
+    expect(result.demand_target_name).toBe("Orbit");
+    expect(result.source_products).toContain("Jira");
+    expect(result.status).not.toBe("qualified");
+    expect(result.status).not.toBe("high_confidence_signal");
+    expect(result.qualification_reason).toMatch(/evaluating Orbit as a Jira alternative/i);
   });
 
   it("keeps an alternative to a competitor as potentially relevant category demand", () => {
@@ -168,5 +210,14 @@ describe("directional demand semantics", () => {
 
     expect(result.speaker_role).toBe("maintainer");
     expect(result.dimensions.buyer_plausibility).toBeLessThanOrEqual(0.5);
+  });
+
+  it("does not treat host-product Jira parity discussion as buyer demand for Linear", () => {
+    const result = qualifySignal(inputFor("Maintainer roadmap discussion: Jira-like feature parity is planned for this project.", { repository: "acme/product-a", authorAssociation: "MEMBER" }));
+
+    expect(result.speaker_role).toBe("maintainer");
+    expect(result.demand_target_type).toBe("third_party_product");
+    expect(result.status).not.toBe("qualified");
+    expect(result.status).not.toBe("high_confidence_signal");
   });
 });

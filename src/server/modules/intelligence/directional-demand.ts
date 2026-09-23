@@ -12,6 +12,7 @@ export type DirectionalDemand = {
   source_products: string[];
   speaker_role: SpeakerRole;
   positive_for_product: boolean | null;
+  host_product_context: boolean;
 };
 
 export type DirectionalDemandInput = {
@@ -61,19 +62,22 @@ function destinationFor(textValue: string, names: string[]): string | null {
       new RegExp(`\\b(?:move|moving|migrate|migrating|switch|switching)\\s+(?:away\\s+)?(?:from\\s+[^.!?]{0,100}\\s+)?to\\s+${escaped}\\b`, "i"),
       new RegExp(`\\b(?:replace|replacing)\\b[^.!?]{0,100}\\bwith\\s+${escaped}\\b`, "i"),
       new RegExp(`\\b(?:set(?:ting)?\\s+up|create|creating)\\s+(?:a|an|the)(?:\\s+new)?\\s+${escaped}\\s+(?:workspace|project|account)\\b`, "i"),
+      new RegExp(`\\b(?:evaluate|evaluating|consider|considering|assess|assessing)\\s+${escaped}\\s+as\\s+(?:a|an)\\s+[^.!?]{0,80}\\b(?:alternative|replacement)\\b`, "i"),
     ];
     if (patterns.some((pattern) => pattern.test(textValue))) return name;
   }
   return null;
 }
 
-function sourceNamesFor(textValue: string, names: string[], destination: string | null): string[] {
+function sourceNamesFor(textValue: string, names: string[], destination: string | null, excludedNames: string[] = []): string[] {
   const clauses = [
-    ...[...textValue.matchAll(/\b(?:leave|leaving|migrat(?:e|ing)\s+from|switch(?:ing)?\s+from|alternative\s+to|from)\b[^.!?]{0,160}/gi)].map((match) => match[0]),
+    ...[...textValue.matchAll(/\b(?:leave|leaving|migrat(?:e|ing)\s+from|switch(?:ing)?\s+from|alternative(?:s)?\s+(?:to|for)|replace|replacing|replacement\s+for|parity\s+with|from)\b[^.!?]{0,160}/gi)].map((match) => match[0]),
+    ...[...textValue.matchAll(/\b[^.!?]{0,80}\b(?:alternative|alternatives|replacement)\b/gi)].map((match) => match[0]),
+    ...[...textValue.matchAll(/\b[^.!?]{0,80}\b(?:like|similar\s+to)\b[^.!?]{0,80}/gi)].map((match) => match[0]),
   ];
   const sourceNames = namesIn(clauses.join(" "), names);
   const genericSystems = [...textValue.matchAll(/\b(?:spreadsheet|spreadsheets|excel|csv)\b/gi)].map((match) => match[0]);
-  return [...new Set([...sourceNames, ...genericSystems])].filter((name) => !destination || name.toLowerCase() !== destination.toLowerCase());
+  return [...new Set([...sourceNames, ...genericSystems])].filter((name) => !destination || name.toLowerCase() !== destination.toLowerCase()).filter((name) => !excludedNames.some((excluded) => name.toLowerCase() === excluded.toLowerCase()));
 }
 
 function repositoryProduct(input: DirectionalDemandInput, names: string[]): string | null {
@@ -82,6 +86,11 @@ function repositoryProduct(input: DirectionalDemandInput, names: string[]): stri
   const rawName = repository?.split("/").at(-1) ?? null;
   const name = rawName ? `${rawName.charAt(0).toUpperCase()}${rawName.slice(1)}` : null;
   return name && names.find((candidate) => candidate.toLowerCase() === name.toLowerCase()) ? names.find((candidate) => candidate.toLowerCase() === name.toLowerCase())! : name;
+}
+
+function hasHostProductContext(textValue: string, hostProduct: string | null, sourceProducts: string[], scannedProduct: string): boolean {
+  if (!hostProduct || hostProduct.toLowerCase() === scannedProduct.toLowerCase() || sourceProducts.length === 0) return false;
+  return /\b(?:alternative|alternatives|replacement|parity|roadmap|feature|features|like)\b/i.test(textValue);
 }
 
 function speakerRole(input: DirectionalDemandInput, textValue: string, positive: boolean | null): SpeakerRole {
@@ -96,16 +105,17 @@ export function deriveDirectionalDemand(input: DirectionalDemandInput): Directio
   const names = knownNames(input);
   const productName = input.productName;
   const destination = destinationFor(textValue, names);
-  const sourceProducts = sourceNamesFor(textValue, names, destination);
+  const repository = repositoryProduct(input, names);
+  const sourceProducts = sourceNamesFor(textValue, names, destination, repository ? [repository] : []);
   const implementation = /\b(?:oauth|authentication|auth|api tokens?|access tokens?|credentials?|login|sign[- ]?in)\b/i.test(textValue)
     && (
       /\b(?:alternative|method)\b[^.!?]{0,80}\b(?:for|to)\b/i.test(textValue)
       || /\b(?:add|change|implement|support)\b[^.!?]{0,100}\b(?:oauth|authentication|auth|api tokens?|access tokens?|credentials?|login|sign[- ]?in)\b[^.!?]{0,100}\bintegration\b/i.test(textValue)
       || /\b(?:integration|implementation)\b[^.!?]{0,80}\b(?:alternative|change|switch)\b/i.test(textValue)
     );
-  const repository = repositoryProduct(input, names);
   const featureRequest = /\b(?:needs?|requires?|wants?|should|must have|add|support|import(?:er|ing)?|bring|there is no way|missing|lacks?)\b/i.test(textValue);
   const productMentioned = namesIn(textValue, names).some((name) => name.toLowerCase() === productName.toLowerCase());
+  const hostProductContext = hasHostProductContext(textValue, repository, sourceProducts, productName);
 
   let demand_direction: DemandDirection = "unknown";
   let demand_target_type: DemandTargetType = "unknown";
@@ -128,6 +138,11 @@ export function deriveDirectionalDemand(input: DirectionalDemandInput): Directio
       demand_target_type = "third_party_product";
       positive_for_product = false;
     }
+  } else if (hostProductContext) {
+    demand_direction = "contextual";
+    demand_target_type = "third_party_product";
+    demand_target_name = repository;
+    positive_for_product = false;
   } else if (repository && repository.toLowerCase() !== productName.toLowerCase() && featureRequest) {
     demand_direction = "contextual";
     demand_target_type = "third_party_product";
@@ -147,5 +162,5 @@ export function deriveDirectionalDemand(input: DirectionalDemandInput): Directio
 
   const role = speakerRole(input, textValue, positive_for_product);
   if (role === "unknown" && demand_target_type === "third_party_product") positive_for_product = false;
-  return { demand_direction, demand_target_type, demand_target_name, source_products: sourceProducts, speaker_role: role, positive_for_product };
+  return { demand_direction, demand_target_type, demand_target_name, source_products: sourceProducts, speaker_role: role, positive_for_product, host_product_context: hostProductContext };
 }
