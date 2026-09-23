@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { getScanProgressAction } from "@/app/app/actions";
+import { getScanProgressAction, triggerRescanAction } from "@/app/app/actions";
 import { StatusBanner } from "@/components/ui/status-banner";
 
 import type { ProductScanState } from "./scan-state";
@@ -37,8 +37,40 @@ export function ScanStatusBanner({ state, workspaceId, productId, retryHref = "/
   const [polledState, setPolledState] = useState<ProductScanState | null>(null);
   const currentState = polledState ?? state;
   const [showCompletionNotice, setShowCompletionNotice] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
   const wasRunningRef = useRef(state.kind === "running");
   const refreshedJobsRef = useRef(new Set<string>());
+
+  // Reuses the exact same server action the top-right "Rescan" button and its
+  // "Retry rescan" flow already call (triggerRescanAction), so an already-onboarded
+  // product's stale/failed latest scan never routes into the onboarding setup wizard.
+  // Once dispatched, the handle feeds the banner's own existing poll loop below —
+  // no separate scan orchestration logic is introduced.
+  async function handleDashboardRetry() {
+    if (retrying) return;
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      const result = await triggerRescanAction({ workspaceId, productId });
+      if (!result.ok) {
+        setRetryError(result.error);
+        return;
+      }
+      setPolledState(dashboardScanStateFromProgress({
+        jobRunId: result.handle.jobRunId,
+        idempotencyKey: result.handle.idempotencyKey,
+        status: "pending",
+        progress: null,
+        errorMessage: null,
+        result: null,
+      }));
+    } catch {
+      setRetryError("We could not start the rescan. Please try again.");
+    } finally {
+      setRetrying(false);
+    }
+  }
 
   const activeJobRunId = currentState.kind === "running" ? currentState.jobRunId : null;
   const activeIdempotencyKey = currentState.kind === "running" ? currentState.idempotencyKey : null;
@@ -134,15 +166,33 @@ export function ScanStatusBanner({ state, workspaceId, productId, retryHref = "/
     );
   }
   if (currentState.kind === "partial_failure") {
-    return <StatusBanner tone="warning">Scan completed with limited source coverage</StatusBanner>;
-  }
-  if (currentState.kind === "failed") {
     return (
       <StatusBanner tone="warning">
         <div className="dashboard-scan-status-content">
-          <span>Your first scan couldn&apos;t finish</span>
-          <Link className="dashboard-scan-retry" href={retryHref}>Retry</Link>
+          <span>The latest scan finished with limited source coverage.</span>
+          <button className="dashboard-scan-retry" type="button" onClick={() => void handleDashboardRetry()} disabled={retrying}>
+            Run another scan
+          </button>
         </div>
+        {retryError ? <p className="dashboard-scan-retry-error" role="alert">{retryError}</p> : null}
+      </StatusBanner>
+    );
+  }
+  if (currentState.kind === "failed") {
+    const { firstScan } = currentState;
+    return (
+      <StatusBanner tone="warning">
+        <div className="dashboard-scan-status-content">
+          <span>{firstScan ? "Your first scan couldn't finish." : "The latest scan couldn't finish."}</span>
+          {firstScan ? (
+            <Link className="dashboard-scan-retry" href={retryHref}>Retry</Link>
+          ) : (
+            <button className="dashboard-scan-retry" type="button" onClick={() => void handleDashboardRetry()} disabled={retrying}>
+              Retry
+            </button>
+          )}
+        </div>
+        {retryError ? <p className="dashboard-scan-retry-error" role="alert">{retryError}</p> : null}
       </StatusBanner>
     );
   }

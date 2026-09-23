@@ -293,7 +293,9 @@ body {
 .dashboard-scan-stage-track { display: inline-flex; gap: 3px; }
 .dashboard-scan-stage-track span { display: block; width: 14px; height: 3px; border-radius: 3px; background: currentColor; opacity: 0.2; }
 .dashboard-scan-stage-track span.is-complete { opacity: 0.82; }
-.dashboard-scan-retry { color: inherit; font-size: 12px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.dashboard-scan-retry { background: transparent; border: none; padding: 0; color: inherit; font: inherit; font-size: 12px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.dashboard-scan-retry:disabled { cursor: wait; opacity: 0.6; }
+.dashboard-scan-retry-error { margin: 6px 0 0; font-size: 12px; color: var(--color-negative); width: 100%; }
 
 .scan-candidate-review { margin-top: 18px; text-align: left; border-top: 1px solid var(--color-border-soft); padding-top: 14px; }
 .scan-candidate-review summary { cursor: pointer; color: var(--color-ink); font-size: 12.5px; font-weight: 700; }
@@ -329,6 +331,14 @@ body {
 
 .ui-modal-scrim { position: fixed; inset: 0; background: rgba(17, 17, 16, 0.4); z-index: 50; display: grid; place-items: center; padding: 24px; }
 .ui-modal { width: 400px; max-width: 100%; background: var(--color-surface); border-radius: 18px; padding: 32px; }
+
+.ui-confirm-dialog-title { margin: 0 0 8px; font-size: 16px; font-weight: 650; color: var(--color-ink); }
+.ui-confirm-dialog-body { margin: 0 0 22px; font-size: 13.5px; line-height: 1.55; color: var(--color-ink-faint); }
+.ui-confirm-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.dashboard-button-quiet-destructive { background: transparent; border: 1px solid var(--color-border); color: var(--color-negative); }
+.dashboard-button-quiet-destructive:hover { background: rgba(197, 61, 51, 0.08); border-color: var(--color-negative); }
+
+.ui-toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 60; background: var(--color-ink); color: #ffffff; font-size: 13px; font-weight: 600; padding: 10px 18px; border-radius: 999px; box-shadow: 0 16px 32px -16px rgba(17, 17, 16, 0.45); }
 
 /* ---------------------------------------------------------------------- */
 /* Filter chips                                                           */
@@ -802,6 +812,8 @@ body {
 .auth-panel a:focus-visible, .auth-panel button:focus-visible { outline: 2px solid var(--color-ink); outline-offset: 2px; border-radius: 4px; }
 
 .auth-hint { margin: 0; font-size: 12.5px; color: var(--color-ink-faint); text-align: center; }
+.auth-hint a { color: var(--color-ink-secondary); text-decoration: underline; text-underline-offset: 2px; }
+.auth-hint a:hover { color: var(--color-ink); }
 .auth-error { margin: 0; color: var(--color-negative); font-size: 13px; line-height: 1.4; }
 .auth-success { margin: 0; color: var(--color-positive); font-size: 13px; line-height: 1.4; }
 
@@ -932,7 +944,257 @@ body {
 .marketing-reveal.is-visible { opacity: 1; transform: translateY(0); }
 
 .marketing-section-copy { color: var(--color-ink-muted); font-size: var(--marketing-intro-size); line-height: 1.5; }
+
+/* Legal pages: left-aligned, document-style reading, not centered marketing copy. */
+.marketing-legal { text-align: left; }
+.marketing-legal-updated { color: var(--color-ink-muted); font-size: 13px; margin: -8px 0 8px; }
+.marketing-legal h2 { font-family: var(--font-sora), sans-serif; font-weight: 700; font-size: 19px; letter-spacing: -0.01em; color: var(--color-ink); margin: 36px 0 12px; }
+.marketing-legal h2:first-of-type { margin-top: 0; }
+.marketing-legal p { font-size: 14.5px; line-height: 1.7; color: var(--color-ink-secondary); margin: 0 0 14px; }
+.marketing-legal ul { margin: 0 0 14px; padding-left: 20px; }
+.marketing-legal li { font-size: 14.5px; line-height: 1.7; color: var(--color-ink-secondary); margin-bottom: 6px; }
+.marketing-legal a { color: var(--color-ink); text-decoration: underline; text-underline-offset: 2px; }
 .marketing-signal-static { cursor: default; }
+
+/* ---------------------------------------------------------------------- */
+/* Content pages: About / Contact — shared split + eyebrow-dot patterns   */
+/* ---------------------------------------------------------------------- */
+.marketing-content-wrap { max-width: 1240px; margin: 0 auto; padding: 0 32px; }
+.marketing-content-split { display: flex; gap: 56px; }
+.marketing-content-eyebrow { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 22px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.2em; color: var(--color-ink-muted); }
+.marketing-content-eyebrow.is-on-dark { color: rgba(245, 244, 238, 0.5); }
+.marketing-content-eyebrow-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); flex-shrink: 0; }
+
+@media (max-width: 860px) {
+  .marketing-content-wrap { padding: 0 20px; }
+  .marketing-content-split { flex-direction: column; }
+}
+
+/* About page */
+.marketing-about-hero { padding: 96px 0 88px; align-items: center; }
+.marketing-about-hero-copy { flex: 0 0 48%; }
+.marketing-about-hero-title { font-family: var(--font-archivo), sans-serif; font-weight: 800; font-size: clamp(40px, 4.5vw, 52px); line-height: 1.08; letter-spacing: -0.03em; margin: 0 0 22px; }
+.marketing-about-hero-body { font-size: 16.5px; color: var(--color-ink-muted); line-height: 1.6; max-width: 440px; margin: 0; }
+.marketing-about-hero-visual { flex: 1; position: relative; background: #111110; border-radius: 20px; padding: 44px; min-height: 340px; overflow: hidden; }
+.marketing-about-hero-visual-glow { position: absolute; inset: 0; background: radial-gradient(circle at 78% 15%, rgba(215, 255, 61, 0.06), rgba(215, 255, 61, 0) 55%); }
+.marketing-about-hero-visual-line { position: absolute; inset: 0; opacity: 0.9; }
+.marketing-about-hero-visual-content { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 16px; height: 100%; justify-content: center; }
+.marketing-about-quote-card { background: #faf9f5; border-radius: 14px; padding: 22px 24px; max-width: 320px; box-shadow: 0 20px 44px -16px rgba(0, 0, 0, 0.5); }
+.marketing-about-quote-eyebrow { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.16em; color: var(--color-ink-muted); }
+.marketing-about-quote-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--color-accent); flex-shrink: 0; }
+.marketing-about-quote-text { font-size: 15px; color: var(--color-ink); line-height: 1.4; margin: 0; }
+.marketing-about-movement-chip { display: inline-flex; margin-left: 16px; background: rgba(245, 244, 238, 0.06); border: 1px solid rgba(245, 244, 238, 0.12); border-radius: 9px; padding: 8px 13px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: rgba(245, 244, 238, 0.55); }
+.marketing-about-movement-chip strong { color: var(--color-accent); font-weight: 700; }
+
+.marketing-about-belief { padding: 72px 0; border-top: 1px solid var(--color-border); }
+.marketing-about-belief-label { flex: 0 0 34%; }
+.marketing-about-belief-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.2em; color: var(--color-ink-muted); margin: 0 0 14px; }
+.marketing-about-belief-title { font-family: var(--font-archivo), sans-serif; font-weight: 800; font-size: 32px; line-height: 1.2; letter-spacing: -0.02em; margin: 0; }
+.marketing-about-belief-copy { flex: 1; max-width: 520px; display: flex; flex-direction: column; gap: 16px; font-size: 16px; color: var(--color-ink-muted); line-height: 1.65; }
+.marketing-about-belief-copy p { margin: 0; }
+.marketing-about-belief-copy .is-strong { color: var(--color-ink); }
+
+.marketing-about-principles { padding: 72px 0; border-top: 1px solid var(--color-border); }
+.marketing-about-principles-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.marketing-about-principle-card { padding: 28px 26px; border: 1px solid var(--color-border); border-radius: 14px; background: var(--color-surface); }
+.marketing-about-principle-bar { width: 24px; height: 2px; background: var(--color-accent); margin-bottom: 18px; }
+.marketing-about-principle-title { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; color: var(--color-ink); margin: 0 0 10px; }
+.marketing-about-principle-body { font-size: 14.5px; color: var(--color-ink-muted); line-height: 1.55; margin: 0; }
+
+.marketing-about-closing { background: #111110; color: #f5f4ee; padding: 88px 0; position: relative; overflow: hidden; }
+.marketing-about-closing-glow { position: absolute; inset: 0; background: radial-gradient(circle at 85% 20%, rgba(215, 255, 61, 0.06), rgba(215, 255, 61, 0) 55%); pointer-events: none; }
+.marketing-about-closing-inner { align-items: center; justify-content: space-between; position: relative; z-index: 1; }
+.marketing-about-closing-title { font-family: var(--font-archivo), sans-serif; font-weight: 800; font-size: 36px; line-height: 1.28; letter-spacing: -0.02em; margin: 0; }
+.marketing-about-closing-side { flex: 0 0 auto; display: flex; flex-direction: column; gap: 22px; align-items: flex-start; }
+.marketing-about-closing-copy { font-size: 16px; color: rgba(245, 244, 238, 0.6); line-height: 1.5; max-width: 340px; margin: 0; }
+.marketing-about-closing-actions { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+.marketing-about-closing-cta { font-size: 14.5px; font-weight: 600; color: #111110; background: var(--color-accent); padding: 14px 24px; border-radius: 11px; text-decoration: none; display: inline-block; }
+.marketing-about-closing-link { font-size: 14.5px; font-weight: 600; color: rgba(245, 244, 238, 0.75); text-decoration: none; }
+.marketing-about-closing-link:hover { color: #f5f4ee; }
+
+@media (max-width: 860px) {
+  .marketing-about-hero-copy, .marketing-about-hero-visual { flex: 1 1 auto; max-width: 100%; }
+  .marketing-about-belief-label, .marketing-about-belief-copy { flex: 1 1 auto; max-width: 100%; }
+  .marketing-about-principles-grid { grid-template-columns: 1fr; }
+  .marketing-about-closing-inner { align-items: flex-start; }
+}
+
+/* Contact page */
+.marketing-contact-hero { padding: 96px 0 80px; align-items: center; }
+.marketing-contact-hero-copy { flex: 0 0 40%; }
+.marketing-contact-hero-title { font-family: var(--font-archivo), sans-serif; font-weight: 800; font-size: clamp(38px, 4.3vw, 50px); line-height: 1.08; letter-spacing: -0.03em; margin: 0 0 22px; }
+.marketing-contact-hero-body { font-size: 16.5px; color: var(--color-ink-muted); line-height: 1.6; max-width: 380px; margin: 0 0 32px; }
+.marketing-contact-topics { display: flex; flex-direction: column; gap: 16px; margin: 0; padding: 0; list-style: none; }
+.marketing-contact-topic { display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--color-ink); font-weight: 600; }
+.marketing-contact-topic-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-ink); border: 2px solid var(--color-accent); flex-shrink: 0; }
+
+.marketing-contact-card { flex: 1; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 18px; padding: 36px 38px; box-shadow: 0 24px 56px -24px rgba(17, 17, 16, 0.16); }
+.marketing-contact-card-title { font-family: var(--font-archivo), sans-serif; font-weight: 700; font-size: 21px; letter-spacing: -0.01em; margin: 0 0 24px; }
+.marketing-contact-form { display: flex; flex-direction: column; gap: 18px; }
+.marketing-contact-field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--color-ink); margin-bottom: 7px; }
+.marketing-contact-input, .marketing-contact-select, .marketing-contact-textarea { width: 100%; padding: 14px 16px; border-radius: 10px; border: 1px solid rgba(17, 17, 16, 0.12); background: var(--color-surface); color: var(--color-ink); font-size: 14.5px; font-family: var(--font-inter), sans-serif; outline: none; transition: border-color 0.15s ease; }
+.marketing-contact-input:focus, .marketing-contact-select:focus, .marketing-contact-textarea:focus { border-color: var(--color-accent); }
+.marketing-contact-select { appearance: none; }
+.marketing-contact-textarea { resize: none; }
+.marketing-contact-submit { font-size: 14.5px; font-weight: 600; color: #ffffff; background: var(--color-ink); padding: 15px; border-radius: 11px; border: 0; cursor: pointer; text-align: center; margin-top: 4px; font: inherit; }
+.marketing-contact-submit:disabled { cursor: wait; opacity: 0.7; }
+.marketing-contact-alt { text-align: center; font-size: 12.5px; color: var(--color-ink-faint); margin: 2px 0 0; }
+.marketing-contact-alt a { color: var(--color-ink-muted); font-weight: 600; }
+
+.marketing-contact-success { text-align: center; padding: 44px 12px; }
+.marketing-contact-success-icon { width: 44px; height: 44px; border-radius: 50%; background: var(--color-accent); display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; }
+.marketing-contact-success-title { font-family: var(--font-archivo), sans-serif; font-weight: 700; font-size: 19px; margin: 0 0 8px; }
+.marketing-contact-success-body { font-size: 14.5px; color: var(--color-ink-muted); margin: 0; }
+
+.marketing-contact-secondary { padding: 40px 0 80px; border-top: 1px solid var(--color-border); font-size: 14.5px; color: var(--color-ink-muted); }
+
+@media (max-width: 860px) {
+  .marketing-contact-hero-copy, .marketing-contact-card { flex: 1 1 auto; max-width: 100%; }
+}
+
+/* ============ PRODUCT PAGE ============ */
+.marketing-product-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.2em; color: var(--color-ink-muted); margin: 0 0 14px; }
+.marketing-product-block-title { font-family: var(--font-archivo), sans-serif; font-weight: 800; font-size: 32px; letter-spacing: -0.02em; margin: 0 0 16px; max-width: 640px; }
+.marketing-product-block-title.is-standalone { margin-bottom: 44px; }
+.marketing-product-block-title.is-compact { font-size: 30px; line-height: 1.3; max-width: 700px; margin-bottom: 44px; }
+.marketing-product-block-subtitle { font-size: 16px; color: var(--color-ink-muted); line-height: 1.55; max-width: 560px; margin: 0 0 40px; }
+.marketing-product-link-muted { font-size: 14.5px; font-weight: 600; color: var(--color-ink-muted); text-decoration: none; }
+.marketing-product-link-muted:hover { color: var(--color-ink); }
+
+.marketing-product-section { max-width: 1240px; margin: 0 auto; padding: 72px 32px; border-top: 1px solid var(--color-border); }
+
+/* 1. Hero */
+.marketing-product-hero { display: flex; gap: 56px; max-width: 1240px; margin: 0 auto; padding: 96px 32px 88px; align-items: center; }
+.marketing-product-hero-copy { flex: 0 0 47%; }
+.marketing-product-hero-title { font-family: var(--font-archivo), sans-serif; font-weight: 800; font-size: clamp(36px, 4.2vw, 50px); line-height: 1.1; letter-spacing: -0.03em; margin: 0 0 22px; }
+.marketing-product-hero-body { font-size: 16.5px; color: var(--color-ink-muted); line-height: 1.6; max-width: 440px; margin: 0 0 32px; }
+.marketing-product-hero-actions { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+.marketing-product-hero-visual { flex: 1; position: relative; background: var(--color-ink); border-radius: 20px; padding: 44px; min-height: 360px; overflow: hidden; }
+.marketing-product-hero-visual-glow { position: absolute; inset: 0; background: radial-gradient(circle at 80% 10%, rgba(215, 255, 61, 0.07), rgba(215, 255, 61, 0) 55%); }
+.marketing-product-movement-chip { position: absolute; top: 32px; right: 32px; background: rgba(245, 244, 238, 0.06); border: 1px solid rgba(245, 244, 238, 0.12); border-radius: 9px; padding: 8px 13px; display: flex; align-items: center; gap: 7px; }
+.marketing-product-movement-chip-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; color: rgba(245, 244, 238, 0.5); }
+.marketing-product-movement-chip-value { font-family: var(--font-sora), sans-serif; font-weight: 700; font-size: 13px; color: var(--color-accent); }
+.marketing-product-hero-trajectory { position: absolute; left: 0; bottom: 0; width: 100%; height: 55%; }
+.marketing-product-demand-card { position: relative; z-index: 1; margin-top: 14px; background: #faf9f5; border-radius: 14px; padding: 22px 24px; max-width: 340px; box-shadow: 0 24px 50px -18px rgba(0, 0, 0, 0.55); }
+.marketing-product-demand-card-eyebrow { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.14em; color: var(--color-ink-muted); }
+.marketing-product-demand-card-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--color-accent); flex-shrink: 0; }
+.marketing-product-demand-card-quote { font-size: 14.5px; color: var(--color-ink); line-height: 1.45; margin: 0; }
+
+/* 2. Product flow */
+.marketing-product-flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; position: relative; }
+.marketing-product-flow-line { position: absolute; top: 11px; left: 5%; right: 5%; height: 1px; background: rgba(17, 17, 16, 0.1); z-index: 0; }
+.marketing-product-flow-step { position: relative; padding-right: 20px; }
+.marketing-product-flow-num { width: 22px; height: 22px; border-radius: 50%; background: var(--color-ink); color: var(--color-dark-ink); font-size: 10.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-bottom: 18px; position: relative; z-index: 1; }
+.marketing-product-flow-num.is-accent { background: var(--color-accent); color: var(--color-ink); }
+.marketing-product-flow-label { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: var(--color-ink); margin: 0 0 8px; }
+.marketing-product-flow-body { font-size: 14px; color: var(--color-ink-muted); line-height: 1.5; margin: 0; }
+
+/* 3. Signals: noise vs. qualified */
+.marketing-product-signals-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.marketing-product-noise-card { border: 1px solid var(--color-border); border-radius: 16px; padding: 30px; background: var(--color-surface); opacity: 0.6; }
+.marketing-product-noise-label { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; color: var(--color-ink-faint); margin: 0 0 18px; }
+.marketing-product-noise-quote { font-size: 17px; color: var(--color-ink); line-height: 1.4; margin: 0 0 18px; }
+.marketing-product-noise-meta { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; color: var(--color-ink-faint); }
+.marketing-product-qualified-card { border: 1px solid rgba(17, 17, 16, 0.12); border-radius: 16px; padding: 30px; background: var(--color-ink); color: var(--color-dark-ink); box-shadow: 0 24px 50px -20px rgba(17, 17, 16, 0.35); }
+.marketing-product-qualified-label-row { display: flex; align-items: center; gap: 7px; margin-bottom: 18px; }
+.marketing-product-qualified-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--color-accent); flex-shrink: 0; }
+.marketing-product-qualified-label { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; color: var(--color-accent); }
+.marketing-product-qualified-quote { font-size: 18px; line-height: 1.4; margin: 0 0 18px; }
+.marketing-product-qualified-meta { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; color: rgba(245, 244, 238, 0.55); }
+.marketing-product-qualified-meta .is-accent { color: var(--color-accent); font-weight: 600; }
+
+/* 4. Demand map */
+.marketing-product-bars { display: flex; flex-direction: column; gap: 12px; }
+.marketing-product-bar-row { display: flex; align-items: center; gap: 20px; }
+.marketing-product-bar-label { width: 180px; font-size: 14px; color: var(--color-ink); font-weight: 600; flex-shrink: 0; }
+.marketing-product-bar-track { flex: 1; height: 10px; background: rgba(17, 17, 16, 0.06); border-radius: 5px; overflow: hidden; display: block; }
+.marketing-product-bar-fill { display: block; height: 100%; background: rgba(17, 17, 16, 0.7); border-radius: 5px; }
+.marketing-product-bar-fill.is-accent { background: var(--color-accent); }
+.marketing-product-bar-value { width: 60px; font-size: 13px; color: var(--color-ink-muted); text-align: right; flex-shrink: 0; }
+
+/* 5. Demand gap */
+.marketing-product-gap-visual { position: relative; height: 210px; max-width: 560px; margin: 0 auto 28px; }
+.marketing-product-gap-circle { position: absolute; width: 210px; height: 210px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.marketing-product-gap-circle.is-product { left: calc(50% - 190px); background: rgba(17, 17, 16, 0.85); padding-right: 36px; }
+.marketing-product-gap-circle.is-competitor { left: calc(50% - 20px); background: rgba(215, 255, 61, 0.9); padding-left: 36px; }
+.marketing-product-gap-circle span { font-size: 13px; font-weight: 600; }
+.marketing-product-gap-circle.is-product span { color: var(--color-dark-ink); }
+.marketing-product-gap-circle.is-competitor span { color: var(--color-ink); }
+.marketing-product-gap-caption-row { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 36px; }
+.marketing-product-gap-caption { font-size: 14px; color: var(--color-ink-muted); margin: 0; }
+.marketing-product-gap-conclusion { text-align: center; font-size: 16px; font-weight: 600; color: var(--color-ink); margin: 0; }
+
+/* 6. Demand drift */
+.marketing-product-drift-list { display: flex; flex-direction: column; border-top: 1px solid var(--color-border); }
+.marketing-product-drift-row { display: flex; align-items: center; justify-content: space-between; padding: 18px 0; border-bottom: 1px solid var(--color-border); }
+.marketing-product-drift-label { font-size: 14.5px; color: var(--color-ink); }
+.marketing-product-drift-value { font-size: 14.5px; font-weight: 700; }
+.marketing-product-drift-value.is-up { color: var(--color-positive); }
+.marketing-product-drift-value.is-down { color: var(--color-ink-muted); }
+
+/* 7. Geography */
+.marketing-product-geo-row { display: flex; gap: 32px; align-items: center; }
+.marketing-product-geo-map { flex: 1.2; background: var(--color-ink); border-radius: 16px; min-height: 220px; position: relative; overflow: hidden; }
+.marketing-product-geo-map img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.marketing-product-geo-stats { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.marketing-product-geo-country { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: var(--color-ink-muted); margin: 0; }
+.marketing-product-geo-count { font-family: var(--font-sora), sans-serif; font-weight: 700; font-size: 22px; color: var(--color-ink); margin: 0; }
+.marketing-product-geo-count span { font-size: 14px; color: var(--color-ink-muted); font-weight: 500; }
+.marketing-product-geo-change { font-size: 14px; font-weight: 600; color: var(--color-positive); margin: 0 0 6px; }
+.marketing-product-geo-top { font-size: 13.5px; color: var(--color-ink-muted); margin: 0; }
+
+/* 8. Actions */
+.marketing-product-action-card { background: var(--color-ink); color: var(--color-dark-ink); border-radius: 18px; padding: 40px 44px; max-width: 640px; }
+.marketing-product-action-summary { font-size: 15px; line-height: 1.5; margin: 0 0 22px; }
+.marketing-product-action-rec { border-top: 1px solid rgba(245, 244, 238, 0.12); padding-top: 22px; }
+.marketing-product-action-rec-label { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; color: var(--color-accent); margin: 0 0 8px; }
+.marketing-product-action-rec-title { font-size: 16px; margin: 0 0 16px; }
+.marketing-product-action-rec-meta { font-size: 12.5px; color: rgba(245, 244, 238, 0.5); margin: 0; }
+
+/* 9. Difference (why Wanterest) */
+.marketing-product-compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.marketing-product-compare-card { border: 1px solid var(--color-border); border-radius: 16px; padding: 30px; background: var(--color-surface); }
+.marketing-product-compare-label { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; margin: 0 0 20px; }
+.marketing-product-compare-label.is-muted { color: var(--color-ink-faint); }
+.marketing-product-compare-label.is-ink { color: var(--color-ink); }
+.marketing-product-compare-list { display: flex; flex-direction: column; gap: 13px; font-size: 14.5px; }
+.marketing-product-compare-list.is-muted { color: var(--color-ink-muted); }
+.marketing-product-compare-list.is-strong { color: var(--color-ink); font-weight: 500; }
+
+/* 10. Philosophy */
+.marketing-product-philosophy { text-align: center; padding: 88px 32px; border-top: 1px solid var(--color-border); }
+.marketing-product-philosophy-title { font-family: var(--font-archivo), sans-serif; font-weight: 800; font-size: 34px; line-height: 1.3; letter-spacing: -0.02em; max-width: 680px; margin: 0 auto 20px; }
+.marketing-product-philosophy-body { font-size: 15.5px; color: var(--color-ink-muted); max-width: 480px; margin: 0 auto; }
+
+/* 11. Closing CTA */
+.marketing-product-closing { background: var(--color-ink); color: var(--color-dark-ink); padding: 88px 32px; position: relative; overflow: hidden; }
+.marketing-product-closing-glow { position: absolute; inset: 0; background: radial-gradient(circle at 85% 20%, rgba(215, 255, 61, 0.06), rgba(215, 255, 61, 0) 55%); pointer-events: none; }
+.marketing-product-closing-inner { display: flex; gap: 56px; align-items: flex-start; justify-content: space-between; max-width: 1240px; margin: 0 auto; position: relative; z-index: 1; }
+.marketing-product-closing-title { font-family: var(--font-archivo), sans-serif; font-weight: 800; font-size: 36px; line-height: 1.28; letter-spacing: -0.02em; margin: 0; }
+.marketing-product-closing-side { display: flex; flex-direction: column; gap: 22px; align-items: flex-start; padding-top: 6px; }
+.marketing-product-closing-copy { font-size: 16px; color: rgba(245, 244, 238, 0.6); line-height: 1.5; max-width: 340px; margin: 0; }
+.marketing-product-closing-actions { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+.marketing-product-closing-cta { font-size: 14.5px; font-weight: 600; color: var(--color-ink); background: var(--color-accent); padding: 14px 24px; border-radius: 11px; text-decoration: none; display: inline-block; }
+.marketing-product-closing-link { font-size: 14.5px; font-weight: 600; color: rgba(245, 244, 238, 0.75); text-decoration: none; }
+.marketing-product-closing-link:hover { color: var(--color-dark-ink); }
+
+@media (max-width: 860px) {
+  .marketing-product-hero { flex-direction: column; padding: 72px 20px 64px; gap: 40px; }
+  .marketing-product-hero-copy, .marketing-product-hero-visual { flex: 1 1 auto; max-width: 100%; }
+  .marketing-product-hero-title { font-size: 36px; }
+  .marketing-product-section { padding: 56px 20px; }
+  .marketing-product-flow { grid-template-columns: 1fr; gap: 28px; }
+  .marketing-product-flow-line { display: none; }
+  .marketing-product-flow-step { padding-right: 0; }
+  .marketing-product-signals-grid { grid-template-columns: 1fr; }
+  .marketing-product-compare-grid { grid-template-columns: 1fr; }
+  .marketing-product-geo-row { flex-direction: column; align-items: stretch; }
+  .marketing-product-bar-label { width: 130px; font-size: 13px; }
+  .marketing-product-closing { padding: 64px 20px; }
+  .marketing-product-closing-inner { flex-direction: column; gap: 32px; }
+  .marketing-product-philosophy { padding: 64px 20px; }
+  .marketing-product-philosophy-title { font-size: 27px; }
+}
 
 /** Full desktop copy vs. a shorter mobile variant of the same message; swapped via the mobile media query below. */
 .marketing-copy-full { display: inline; }
@@ -946,6 +1208,7 @@ body {
 .marketing-nav-links { display: flex; align-items: center; gap: 28px; font-size: 14px; color: var(--color-ink-muted); }
 .marketing-nav-links a { color: inherit; text-decoration: none; }
 .marketing-nav-links a:hover { color: var(--color-ink); }
+.marketing-nav-links a.is-active { color: var(--color-ink); font-weight: 600; }
 .marketing-nav-actions { display: flex; align-items: center; gap: 18px; }
 .marketing-nav-signin { font-size: 14px; color: var(--color-ink-muted); text-decoration: none; }
 .marketing-nav-signin:hover { color: var(--color-ink); }
@@ -980,8 +1243,39 @@ body {
 .marketing-hero-proof { margin: 0; font-size: 12.5px; color: var(--color-ink-muted); text-align: left; line-height: 1.5; max-width: 300px; }
 
 /* Hero background: a soft, low-opacity lime radial gradient — no hard edge, fades to fully
-   transparent well before the section boundary. Desktop only (≥1024px). */
+   transparent well before the section boundary. Desktop only (≥1024px). Deliberately faint:
+   the signal-dot field below now carries most of the hero's atmosphere. */
 .marketing-hero-bg { display: none; }
+
+/* Signal-dot field: a small set of quiet drifting points standing in for individual demand
+   signals. Positions/timings are hand-authored (not randomized) so server and client markup
+   always match exactly — no hydration mismatch, no JS required for the motion itself.
+   Each dot gets a hairline dark ring (not just a flat fill) so it stays legible against the
+   warm off-white page instead of washing out — a fill alone was too close in luminance to
+   the background to read as a "point" rather than a smudge. */
+.marketing-hero-signal-field { position: absolute; inset: 0; z-index: 1; overflow: hidden; pointer-events: none; }
+.marketing-hero-dot { position: absolute; border-radius: 50%; opacity: 0.4; transform: translate3d(0, 0, 0); box-shadow: 0 0 0 1px rgba(17, 17, 16, 0.1); }
+.marketing-hero-dot.is-accent { background: var(--color-accent); box-shadow: 0 0 0 1px rgba(17, 17, 16, 0.14); }
+.marketing-hero-dot.is-neutral { background: var(--color-ink-secondary); }
+.marketing-hero-dot.is-desktop-only { display: none; }
+
+@media (min-width: 1024px) {
+  .marketing-hero-dot.is-desktop-only { display: block; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .marketing-hero-dot { animation-name: marketing-hero-dot-drift; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
+}
+
+@keyframes marketing-hero-dot-drift {
+  0%, 100% { transform: translate3d(0, 0, 0); opacity: 0.32; }
+  50% { transform: translate3d(var(--dot-dx, 6px), var(--dot-dy, -6px), 0); opacity: 0.62; }
+}
+
+@media (max-width: 640px) {
+  .marketing-hero-dot { opacity: 0.3; }
+  .marketing-hero-dot:not(.is-desktop-only) { animation-duration: 18s !important; }
+}
 
 /* Hero side microcopy: decorative only, wide-desktop only (≥1280px — narrower desktop widths
    don't have room beside the centered 880px column without colliding with it). */
@@ -1017,11 +1311,11 @@ body {
     position: absolute;
     top: 38px;
     left: 50%;
-    width: min(1060px, 90vw);
-    height: min(1060px, 90vw);
+    width: min(900px, 80vw);
+    height: min(900px, 80vw);
     transform: translateX(-50%);
     border-radius: 50%;
-    background: radial-gradient(circle at 50% 30%, rgba(215, 255, 61, 0.07), rgba(215, 255, 61, 0.02) 45%, rgba(215, 255, 61, 0) 70%);
+    background: radial-gradient(circle at 50% 30%, rgba(215, 255, 61, 0.045), rgba(215, 255, 61, 0.013) 45%, rgba(215, 255, 61, 0) 70%);
     z-index: 1;
     pointer-events: none;
   }
@@ -1067,7 +1361,11 @@ body {
 /* Product proof strip — the single definitive process section (merged with the former
    "How it works" 3-step explanation), nested inside a standard .marketing-section, so it no
    longer needs its own top-level section chrome (padding/border/background). */
-.marketing-proof-strip { display: flex; align-items: stretch; overflow-x: auto; }
+/* overflow-y is explicit, not left to default "visible": per spec, a lone overflow-x:
+   auto forces the other axis's "visible" to "auto" too, which is what was surfacing a
+   stray vertical scrollbar in this section whenever content was even a hair taller
+   than the container. This is a horizontal-only scroller. */
+.marketing-proof-strip { display: flex; align-items: stretch; overflow-x: auto; overflow-y: hidden; }
 .marketing-proof-strip > .marketing-reveal { display: flex; flex: 1 0 240px; }
 .marketing-proof-strip > .marketing-reveal:first-child .marketing-proof-step { padding-left: 0; }
 .marketing-proof-strip > .marketing-reveal:last-child .marketing-proof-step { padding-right: 0; }
@@ -1170,8 +1468,11 @@ body {
 .marketing-difference-inner { max-width: 1240px; text-align: center; }
 .marketing-difference-title { max-width: 920px; margin: 0 auto 20px; font-size: var(--marketing-h2-size); line-height: var(--marketing-h2-line); letter-spacing: -0.04em; }
 .marketing-difference-subtitle { max-width: 600px; margin: 0 auto 56px; color: var(--color-ink-muted); font-size: var(--marketing-intro-size); line-height: 1.5; }
-.marketing-difference-stage { position: relative; max-width: 1240px; margin: 0 auto; }
-.marketing-difference-cards { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; max-width: 960px; margin: 0 auto; text-align: left; }
+/* The two annotations are real grid columns flanking the 960px card block, not
+   absolutely-positioned overlays — so the brace/text can never drift into the
+   card's box regardless of text length; the grid guarantees the gap. */
+.marketing-difference-stage { position: relative; max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 960px) minmax(0, 1fr); align-items: center; }
+.marketing-difference-cards { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; margin: 0 auto; text-align: left; }
 .marketing-difference-old-card, .marketing-difference-modern-card { min-height: 392px; border-radius: 18px; padding: 28px; }
 .marketing-difference-old-card { border: 1px solid rgba(17, 17, 16, 0.12); background: rgba(255, 255, 255, 0.45); color: var(--color-ink-muted); }
 .marketing-difference-modern-card { position: relative; overflow: hidden; background: #111110; color: var(--color-dark-ink); box-shadow: 0 30px 64px -28px rgba(17, 17, 16, 0.55), 0 0 0 1px rgba(215, 255, 61, 0.2); }
@@ -1205,15 +1506,16 @@ body {
 .marketing-difference-vs { position: absolute; top: 50%; left: 50%; z-index: 2; display: flex; width: 52px; height: 210px; transform: translate(-50%, -50%); flex-direction: column; align-items: center; justify-content: space-between; color: #b7b6ad; }
 .marketing-difference-vs span { width: 1px; flex: 1; background: rgba(17, 17, 16, 0.15); }
 .marketing-difference-vs b { display: grid; width: 48px; height: 48px; flex: 0 0 48px; place-items: center; margin: 14px 0; border-radius: 50%; background: #eeede7; font-size: 14px; }
-.marketing-difference-annotation { position: absolute; z-index: 3; top: 44%; display: flex; flex-direction: column; gap: 3px; color: var(--color-ink-muted); font-family: Georgia, serif; font-size: 15px; font-style: italic; line-height: 1.25; text-align: left; }
-.marketing-difference-annotation.is-left { left: 0; }
-.marketing-difference-annotation.is-right { right: 0; color: var(--color-positive); }
-.marketing-difference-annotation i { position: absolute; top: 70px; width: 92px; height: 36px; border-bottom: 1.5px solid currentColor; }
-.marketing-difference-annotation i::after { content: ""; position: absolute; bottom: -4px; width: 8px; height: 8px; border-bottom: 1.5px solid currentColor; border-left: 1.5px solid currentColor; }
-.marketing-difference-annotation.is-left i { right: -72px; transform: rotate(28deg); }
-.marketing-difference-annotation.is-left i::after { right: -1px; transform: rotate(225deg); }
-.marketing-difference-annotation.is-right i { left: -72px; transform: rotate(-28deg); }
-.marketing-difference-annotation.is-right i::after { left: -1px; transform: rotate(45deg); }
+.marketing-difference-annotation { z-index: 3; display: flex; align-items: center; gap: 8px; color: var(--color-ink-muted); font-family: Georgia, serif; font-size: 15px; font-style: italic; line-height: 1.25; text-align: left; }
+.marketing-difference-annotation-text { display: flex; flex-direction: column; gap: 3px; white-space: nowrap; }
+/* justify-self anchors each annotation to the grid line shared with its card, so
+   the brace (the last/first flex child) always lands right at that line — outside
+   the card, never inside it. */
+.marketing-difference-annotation.is-left { justify-self: end; }
+.marketing-difference-annotation.is-right { justify-self: start; color: var(--color-positive); }
+/* A drawn curly-brace, not a stretched text glyph — stays crisp at any size. */
+.marketing-difference-brace-svg { width: 14px; height: 68px; flex-shrink: 0; color: currentColor; opacity: 0.55; overflow: visible; pointer-events: none; }
+.marketing-difference-brace-svg.is-flipped { transform: scaleX(-1); }
 
 /* Beyond Signals tabs */
 .marketing-beyond-visual { max-width: var(--marketing-wide-max); margin: 0 auto; }
@@ -1330,6 +1632,10 @@ body {
 .marketing-price-description { color: var(--color-ink-muted); font-size: var(--marketing-card-copy-size); line-height: 1.4; }
 .marketing-price-value { margin-top: 22px; font-family: var(--font-sora), sans-serif; font-weight: 700; font-size: clamp(38px, 3.3vw, 46px); letter-spacing: -0.05em; }
 .marketing-price-value span { font-family: var(--font-inter), sans-serif; font-size: 16px; font-weight: 500; letter-spacing: 0; color: var(--color-ink-muted); }
+/* Overrides the generic "span" rule above (higher specificity): the animated count
+   keeps the big bold price styling, and tabular-nums stops digit width from
+   jittering the layout while it counts. */
+.marketing-price-value .marketing-price-amount { font: inherit; letter-spacing: inherit; color: inherit; font-variant-numeric: tabular-nums; }
 .marketing-price-annual-note { min-height: 18px; font-size: 11px; color: var(--color-ink-faint); margin-top: 3px; margin-bottom: 14px; }
 .marketing-price-features { display: flex; flex-direction: column; gap: 10px; font-size: var(--marketing-card-copy-size); color: var(--color-ink-muted); margin: 10px 0 22px; flex: 1; }
 .marketing-price-features > div { display: flex; align-items: center; gap: 13px; }
@@ -1362,17 +1668,25 @@ body {
 .marketing-final-cta .marketing-scan-form { margin: 0 auto; }
 
 /* Footer */
-.marketing-footer { padding: 44px 24px; display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; border-top: 1px solid var(--color-border); max-width: 1240px; margin: 0 auto; }
-.marketing-footer-brand { display: flex; align-items: center; gap: 9px; color: var(--color-ink); }
-.marketing-footer-tagline { font-size: 13px; color: var(--color-ink-muted); }
-.marketing-footer-links { display: flex; gap: 26px; font-size: 13px; color: var(--color-ink-muted); flex-wrap: wrap; }
-.marketing-footer-links a { color: inherit; text-decoration: none; transition: color 0.15s ease; }
-.marketing-footer-links a:hover { color: var(--color-ink); }
-.marketing-footer-links span { color: var(--color-ink-faint); }
+.marketing-footer { border-top: 1px solid var(--color-border); }
+.marketing-footer-inner { max-width: 1240px; margin: 0 auto; padding: 56px 32px 28px; }
+.marketing-footer-top { display: flex; justify-content: space-between; gap: 48px; flex-wrap: wrap; padding-bottom: 36px; }
+.marketing-footer-brand { display: flex; flex-direction: column; gap: 11px; max-width: 280px; color: var(--color-ink); }
+.marketing-footer-tagline { font-size: 13px; color: var(--color-ink-muted); line-height: 1.5; margin: 0; }
+.marketing-footer-groups { display: flex; gap: 56px; flex-wrap: wrap; }
+.marketing-footer-group { display: flex; flex-direction: column; gap: 13px; min-width: 92px; }
+.marketing-footer-group-heading { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; color: var(--color-ink-faint); margin: 0; text-transform: uppercase; }
+.marketing-footer-group-links { display: flex; flex-direction: column; gap: 11px; list-style: none; margin: 0; padding: 0; }
+.marketing-footer-group-links a { font-size: 13.5px; color: var(--color-ink-muted); text-decoration: none; transition: color 0.15s ease; }
+.marketing-footer-group-links a:hover { color: var(--color-ink); }
+.marketing-footer-bottom { display: flex; justify-content: space-between; gap: 12px; padding-top: 22px; border-top: 1px solid var(--color-border-soft); font-size: 12px; color: var(--color-ink-faint); flex-wrap: wrap; }
 
 @media (max-width: 860px) {
   .marketing-nav-links { display: none; }
   .marketing-qualification-grid { grid-template-columns: 1fr; max-width: 620px; }
+  /* Annotations are hidden below, so the stage collapses to one column and the
+     cards grid is the only remaining grid-flow child. */
+  .marketing-difference-stage { grid-template-columns: 1fr; }
   .marketing-difference-cards { gap: 24px; max-width: 720px; }
   .marketing-difference-vs { display: none; }
   .marketing-difference-annotation { display: none; }
@@ -1380,6 +1694,7 @@ body {
 }
 
 @media (min-width: 861px) and (max-width: 1350px) {
+  .marketing-difference-stage { grid-template-columns: 1fr; }
   .marketing-difference-annotation { display: none; }
 }
 
@@ -1549,8 +1864,10 @@ body {
 
   /* Final CTA / footer: simple single column */
   .marketing-final-cta-sub { margin-bottom: 24px; }
-  .marketing-footer { flex-direction: column; align-items: flex-start; gap: 16px; padding: 32px 20px; }
-  .marketing-footer-links { gap: 16px 20px; }
+  .marketing-footer-inner { padding: 40px 20px 24px; }
+  .marketing-footer-top { flex-direction: column; gap: 32px; padding-bottom: 28px; }
+  .marketing-footer-groups { gap: 32px; }
+  .marketing-footer-bottom { flex-direction: column; gap: 6px; }
 }
 
 @media (max-width: 359px) {

@@ -52,6 +52,23 @@ describe("Phase 3 intelligence migration contract", () => {
     expect(privilegeCorrection).not.toContain("drop policy");
   });
 
+  it("makes signal dismissal server-authoritative and workspace-scoped, with no physical deletion", () => {
+    expect(migration).toContain("lifecycle_status text not null default 'active' check (lifecycle_status in ('active', 'saved', 'dismissed', 'archived'))");
+    expect(migration).toContain("create or replace function public.set_signal_lifecycle(");
+    // Membership is checked before any mutation, and only a service role may bypass it.
+    expect(migration).toContain("if not public.is_service_role() and not public.is_workspace_member(p_workspace_id) then");
+    expect(migration).toContain("raise exception using errcode = '42501', message = 'workspace_access_denied';");
+    // The update itself is scoped by workspace_id, so a signal from another
+    // workspace can never be reached even if a caller passed its raw id.
+    expect(migration).toContain("update public.signals set lifecycle_status = p_lifecycle_status\n   where workspace_id = p_workspace_id and id = p_signal_id returning * into v_signal;");
+    expect(migration).toContain("if v_signal.id is null then raise exception using errcode = 'P0002', message = 'signal_not_found'; end if;");
+    expect(migration).toContain("grant execute on function public.set_signal_lifecycle(uuid, uuid, text) to authenticated, service_role;");
+    // No direct table-level update/delete grant exists for authenticated users;
+    // the RPC above is the only sanctioned mutation path, and nothing deletes rows.
+    expect(migration).not.toMatch(/grant\s+(update|delete|all)\s+on\s+public\.signals\s+to\s+authenticated/i);
+    expect(migration).not.toContain("delete from public.signals");
+  });
+
   it("resolves pgcrypto digest explicitly without widening product table access", () => {
     expect(digestCorrection).toContain("create extension if not exists pgcrypto with schema extensions");
     expect(digestCorrection).toContain("extensions.digest(v_product.id::text, 'sha256'::text)");

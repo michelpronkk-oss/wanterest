@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { AnimatedNumber } from "./animated-number";
 import { APP_START_URL } from "./links";
 
 type BillingCycle = "monthly" | "annual";
@@ -154,7 +155,7 @@ export function PricingSection() {
                   </div>
                 </div>
                 <div className="marketing-price-value">
-                  ${displayPrice}
+                  $<AnimatedNumber value={displayPrice} className="marketing-price-amount" />
                   {!isFree ? <span> / {isAnnual ? "year" : "month"}</span> : null}
                 </div>
                 <div className="marketing-price-annual-note" style={{ visibility: showAnnualNote ? "visible" : "hidden" }}>

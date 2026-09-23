@@ -19,6 +19,26 @@ function CheckIcon() {
   );
 }
 
+/** A drawn curly-brace, not a stretched text glyph — stays crisp at any size. `flip` mirrors it for the right-hand side. */
+function DifferenceBrace({ flip = false }: { flip?: boolean }) {
+  return (
+    <svg
+      className={`marketing-difference-brace-svg${flip ? " is-flipped" : ""}`}
+      viewBox="0 0 20 160"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M14,2 C18,2 18,9 18,22 L18,58 C18,72 2,73 2,80 C2,87 18,88 18,102 L18,138 C18,151 18,158 14,158"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 const MODERN_POINTS = [
   { title: "Real conversations", full: "People discussing your problem in the wild.", short: "People discussing your problem." },
   { title: "Visible pain", full: "See what they are struggling with.", short: "See what they are struggling with." },
@@ -47,16 +67,14 @@ export function DifferenceSection() {
         </p>
 
         <div className="marketing-difference-stage">
+          {/* DOM order matches the stage's 3-column grid (annotation, cards, annotation) —
+              grid auto-placement is source-order-based, so this can't be reshuffled freely. */}
           <div className="marketing-difference-annotation is-left" aria-hidden="true">
-            <span>Lots of data.</span>
-            <span>Not enough signal.</span>
-            <i />
-          </div>
-          <div className="marketing-difference-annotation is-right" aria-hidden="true">
-            <span>Real people.</span>
-            <span>Real problems.</span>
-            <span>Real opportunities.</span>
-            <i />
+            <div className="marketing-difference-annotation-text">
+              <span>Lots of data.</span>
+              <span>Not enough signal.</span>
+            </div>
+            <DifferenceBrace />
           </div>
 
           <div className="marketing-difference-cards">
@@ -109,6 +127,15 @@ export function DifferenceSection() {
                 ))}
               </div>
             </article>
+          </div>
+
+          <div className="marketing-difference-annotation is-right" aria-hidden="true">
+            <DifferenceBrace flip />
+            <div className="marketing-difference-annotation-text">
+              <span>Real people.</span>
+              <span>Real problems.</span>
+              <span>Real opportunities.</span>
+            </div>
           </div>
 
           <div className="marketing-difference-vs" aria-hidden="true">

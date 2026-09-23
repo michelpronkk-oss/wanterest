@@ -1,9 +1,16 @@
+import type { Metadata } from "next";
+
 import { AuthShell } from "@/components/auth/auth-shell";
 import { ForgotPasswordForm } from "@/components/auth/forgot-password-form";
 import { authCallbackErrorMessage } from "@/shared/auth/callback";
 import { tryNormalizePublicWebsiteUrl } from "@/shared/validation/public-website";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Reset password",
+  robots: { index: false, follow: false },
+};
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 

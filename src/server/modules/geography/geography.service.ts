@@ -163,7 +163,11 @@ export class GeographyService {
     const conversationIds = [...new Set(observations.map((row) => row.conversation_id))];
     const conversations = await this.intelligence.listConversations(conversationIds);
     const sourceIds = [...new Set(conversations.map((row) => row.primary_source_item_id))];
-    const [sources, analyses, signals] = await Promise.all([this.intelligence.listSourceItems(sourceIds), this.intelligence.listConversationAnalyses([...new Set(observations.map((row) => row.conversation_analysis_id))]), this.intelligence.listSignals(input.product.workspace_id, input.product.id)]);
+    const [sources, analyses, rawSignals] = await Promise.all([this.intelligence.listSourceItems(sourceIds), this.intelligence.listConversationAnalyses([...new Set(observations.map((row) => row.conversation_analysis_id))]), this.intelligence.listSignals(input.product.workspace_id, input.product.id)]);
+    // Demand counts come from immutable demand_observations and must not be
+    // rewritten by a later dismiss; only the representative-signal id/link
+    // attached to a geo point should avoid pointing at a dismissed signal.
+    const signals = rawSignals.filter((signal) => signal.lifecycle_status === "active" || signal.lifecycle_status === "saved");
     return aggregateGeoIntelligence({ current: buildSignals(currentObservations, conversations, sources, analyses, signals), previous: buildSignals(previousObservations, conversations, sources, analyses, signals), periodEnd, periodStart, window, access: input.access, selection: input.selection });
   }
 }

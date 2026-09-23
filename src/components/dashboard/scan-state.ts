@@ -3,7 +3,7 @@ import "server-only";
 import { getActiveScanState, getLatestScanState } from "@/server/modules/onboarding";
 import { scanResultSummarySchema } from "@/server/modules/operations/product-demand-scan.schemas";
 
-import { completedDashboardScanStages, DASHBOARD_SCAN_STAGES, dashboardScanLabel, isManualScanKey, type DashboardScanState } from "./scan-status.view-model";
+import { completedDashboardScanStages, DASHBOARD_SCAN_STAGES, dashboardScanLabel, isManualScanKey, isOnboardingScanKey, type DashboardScanState } from "./scan-status.view-model";
 
 export type ProductScanState = DashboardScanState;
 
@@ -35,7 +35,7 @@ export async function getProductScanState(workspaceId: string, productId: string
     };
   }
   if (scan.status === "failed" || scan.status === "failed_terminal" || scan.status === "cancelled") {
-    return { kind: "failed", message: scan.errorMessage, manual: isManualScanKey(scan.idempotencyKey) };
+    return { kind: "failed", message: scan.errorMessage, manual: isManualScanKey(scan.idempotencyKey), firstScan: isOnboardingScanKey(scan.idempotencyKey) };
   }
   const warnings = scan.progress?.warnings ?? [];
   const manual = isManualScanKey(scan.idempotencyKey);

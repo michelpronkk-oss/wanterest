@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { completedDashboardScanStages, dashboardScanLabel, dashboardScanStateFromProgress, isManualScanKey } from "../../src/components/dashboard/scan-status.view-model";
+import { completedDashboardScanStages, dashboardScanLabel, dashboardScanStateFromProgress, isManualScanKey, isOnboardingScanKey } from "../../src/components/dashboard/scan-status.view-model";
 import { scanCoverageCopy, scanResultDestination, scanStatusLabel } from "../../src/components/dashboard/scan-progress.view-model";
 import { scanResultEmptyBody } from "../../src/components/dashboard/scan-status.view-model";
 
@@ -80,6 +80,47 @@ describe("dashboard scan status view model", () => {
     expect(scanResultDestination(withSignals)).toBe("/app/signals");
     expect(scanResultDestination(withMap)).toBe("/app/insights/map");
     expect(scanCoverageCopy(noSignals, true)).toBe("3 sources scanned · Limited coverage");
+  });
+
+  it("only classifies the deterministic onboarding job key as the first scan", () => {
+    expect(isOnboardingScanKey("initial-scan:workspace:product")).toBe(true);
+    expect(isOnboardingScanKey("manual-scan:workspace:product:123")).toBe(false);
+    expect(isOnboardingScanKey("monitoring:workspace:product:2026-09-23")).toBe(false);
+  });
+
+  it("marks a failed onboarding job as the first-scan case, routable to setup", () => {
+    const failedOnboarding = dashboardScanStateFromProgress({
+      jobRunId: "00000000-0000-4000-8000-000000000001",
+      idempotencyKey: "initial-scan:workspace:product",
+      status: "failed",
+      progress: null,
+      errorMessage: "The scan failed.",
+    });
+    expect(failedOnboarding).toMatchObject({ kind: "failed", firstScan: true });
+  });
+
+  it("marks a failed later (manual/monitoring) job as NOT the first scan, even though onboarding once ran", () => {
+    // getLatestScanState only ever returns the single most-recent job_runs row
+    // across every scan mode, so a failed manual/monitoring job here means an
+    // onboarding job already succeeded (or never ran) and must never route into
+    // the /app/setup/scan wizard.
+    const failedManual = dashboardScanStateFromProgress({
+      jobRunId: "00000000-0000-4000-8000-000000000002",
+      idempotencyKey: "manual-scan:workspace:product:456",
+      status: "failed_terminal",
+      progress: null,
+      errorMessage: "The scan failed.",
+    });
+    expect(failedManual).toMatchObject({ kind: "failed", firstScan: false });
+
+    const failedMonitoring = dashboardScanStateFromProgress({
+      jobRunId: "00000000-0000-4000-8000-000000000003",
+      idempotencyKey: "monitoring:workspace:product:2026-09-23",
+      status: "cancelled",
+      progress: null,
+      errorMessage: null,
+    });
+    expect(failedMonitoring).toMatchObject({ kind: "failed", firstScan: false });
   });
 
   it("describes weak and rejected candidates accurately", () => {

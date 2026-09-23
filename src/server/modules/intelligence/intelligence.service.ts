@@ -250,7 +250,15 @@ export class IntelligenceService {
     const limit = Math.min(Math.max(Math.trunc(filters.limit ?? 50), 1), 100);
     const offset = Math.max(Math.trunc(filters.offset ?? 0), 0);
     const rankedRows = (await Promise.all(rows.map(async (row) => {
-      if (!filters.lifecycleStatus && row.lifecycle_status === "archived") return null;
+      // ACTIVE and SAVED are both part of the normal active experience; DISMISSED
+      // and ARCHIVED are not and must never inflate default counts/feeds. An
+      // explicit lifecycleStatus filter (e.g. the Saved page, or ?status=dismissed)
+      // is an exact match against the stored status instead of the default set.
+      if (filters.lifecycleStatus) {
+        if (row.lifecycle_status !== filters.lifecycleStatus) return null;
+      } else if (row.lifecycle_status !== "active" && row.lifecycle_status !== "saved") {
+        return null;
+      }
       if (filters.intentType && row.intent_type !== filters.intentType) return null;
       if (filters.sourceKey && row.source_key !== filters.sourceKey) return null;
       if (filters.from && (row.published_at ?? row.created_at) < filters.from) return null;

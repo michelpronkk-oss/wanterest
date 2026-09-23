@@ -12,6 +12,19 @@ const APP_START_PATH = "/start";
 
 export const APP_START_URL = `${APP_ORIGIN}${APP_START_PATH}`;
 
+/**
+ * The canonical, indexable marketing origin. NEXT_PUBLIC_SITE_URL should be set to
+ * https://www.wanterest.com in production; local development falls back to the
+ * local Next.js origin so metadata/canonicals resolve during `npm run dev`.
+ */
+const configuredSiteOrigin = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "");
+export const SITE_ORIGIN = configuredSiteOrigin || (process.env.NODE_ENV === "production" ? "https://www.wanterest.com" : "http://localhost:3000");
+
+/** Real, confirmed Wanterest contact/social details. Do not invent alternatives. */
+export const SUPPORT_EMAIL = "support@wanterest.com";
+export const X_HANDLE = "@wanterestHQ";
+export const X_PROFILE_URL = "https://x.com/wanterestHQ";
+
 /** Use the local browser origin for client-side entry links during local development. */
 export function runtimeAppOrigin(): string {
   if (typeof window !== "undefined" && /^(localhost|127\.0\.0\.1|\[?::1\]?)$/i.test(window.location.hostname)) {

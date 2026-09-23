@@ -64,3 +64,105 @@ describe("Phase 3 intelligence pipeline", () => {
     expect(calculateOpportunityScore({ semanticRelevance: 1, painAlignment: 1, buyerAlignment: 1, intentStrength: 1, specificity: 1, freshness: 1, sourceQuality: 1 })).toBe(1);
   });
 });
+
+describe("Signal lifecycle (dismiss/save)", () => {
+  async function qualifiedSignal() {
+    const { service, product, source, conversation, repository } = fixtures();
+    const snapshot = await service.createSnapshot(product, { pageType: "manual", rawText: "Workflow automation for teams that need faster reporting." });
+    const profile = await service.generateDemandProfile({ ...product, current_snapshot_id: snapshot.id }, "88888888-8888-4888-8888-888888888888", new FixtureDemandProfileEngine());
+    const analysis = await service.analyzeConversation(conversation, source, "99999999-9999-4999-8999-999999999999", new FixtureConversationAnalysisEngine());
+    const evaluation = await service.matchProduct(product, profile.id, analysis.id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", new FixtureProductMatchingEngine());
+    const ranking = await service.rankEvaluation(product, evaluation.id, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+    if (!ranking) throw new Error("Expected qualified evaluation to rank.");
+    const signal = await service.materializeSignal(product, evaluation.id, ranking.id);
+    if (!signal) throw new Error("Expected a materialized signal.");
+    return { service, product, repository, evaluation, ranking, signal, profile };
+  }
+
+  it("excludes dismissed (and archived) signals from the default active view, but includes active and saved", async () => {
+    const { service, product, repository, signal } = await qualifiedSignal();
+    await repository.updateSignal(signal.id, { lifecycle_status: "dismissed" });
+
+    const defaultView = await service.listSignals(product.workspace_id, product.id);
+    expect(defaultView.find((row) => row.signalId === signal.id)).toBeUndefined();
+
+    await repository.updateSignal(signal.id, { lifecycle_status: "saved" });
+    const afterSaved = await service.listSignals(product.workspace_id, product.id);
+    expect(afterSaved.find((row) => row.signalId === signal.id)).toBeDefined();
+  });
+
+  it("filters explicitly by lifecycleStatus (the Saved page / dismissed filter contract)", async () => {
+    const { service, product, repository, signal } = await qualifiedSignal();
+    await repository.updateSignal(signal.id, { lifecycle_status: "saved" });
+
+    const saved = await service.listSignals(product.workspace_id, product.id, { lifecycleStatus: "saved" });
+    expect(saved.map((row) => row.signalId)).toEqual([signal.id]);
+
+    const dismissed = await service.listSignals(product.workspace_id, product.id, { lifecycleStatus: "dismissed" });
+    expect(dismissed).toHaveLength(0);
+
+    await repository.updateSignal(signal.id, { lifecycle_status: "dismissed" });
+    const dismissedAfter = await service.listSignals(product.workspace_id, product.id, { lifecycleStatus: "dismissed" });
+    expect(dismissedAfter.map((row) => row.signalId)).toEqual([signal.id]);
+    // Saved+dismissed is not an ambiguous combined state: setting dismissed clears "saved".
+    const savedAfter = await service.listSignals(product.workspace_id, product.id, { lifecycleStatus: "saved" });
+    expect(savedAfter).toHaveLength(0);
+  });
+
+  it("does not resurrect a dismissed signal when the same evidence is re-materialized (rescan/monitoring)", async () => {
+    const { service, product, repository, evaluation, ranking, signal } = await qualifiedSignal();
+    await repository.updateSignal(signal.id, { lifecycle_status: "dismissed" });
+
+    // materializeSignal is the single shared re-discovery path used by manual
+    // rescans, monitoring cycles, and onboarding alike; it is scanMode-agnostic.
+    const rematerialized = await service.materializeSignal(product, evaluation.id, ranking.id);
+    expect(rematerialized?.id).toBe(signal.id);
+    expect(rematerialized?.lifecycle_status).toBe("dismissed");
+
+    const activeView = await service.listSignals(product.workspace_id, product.id);
+    expect(activeView).toHaveLength(0);
+  });
+
+  it("never auto-archives a user-dismissed (or saved) signal when re-qualification later fails", async () => {
+    const { service, product, repository, evaluation, signal } = await qualifiedSignal();
+    await repository.updateSignal(signal.id, { lifecycle_status: "dismissed" });
+
+    // Force the stored evaluation's qualification to look like it no longer
+    // qualifies (re-evaluation regressed it), then rank again.
+    const stored = await repository.getEvaluationById(evaluation.id);
+    if (!stored) throw new Error("Expected evaluation to exist.");
+    const evidence = stored.evidence as Record<string, unknown>;
+    const qualification = evidence.qualification as Record<string, unknown>;
+    repository.evaluations.set(evaluation.id, { ...stored, evidence: { ...evidence, qualification: { ...qualification, status: "weak_candidate" } } });
+
+    const result = await service.rankEvaluation(product, evaluation.id, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+    expect(result).toBeNull();
+
+    const untouched = await repository.getSignal(signal.id);
+    expect(untouched?.lifecycle_status).toBe("dismissed");
+  });
+
+  it("still creates a new signal from genuinely different evidence even when a related signal was dismissed", async () => {
+    const { service, product, repository, signal } = await qualifiedSignal();
+    await repository.updateSignal(signal.id, { lifecycle_status: "dismissed" });
+
+    const otherSourceId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const otherConversationId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+    const otherSource = { ...repository.sourceItems.get(sourceItemId)!, id: otherSourceId, external_id: "fixture-2", canonical_url: "https://example.com/other-thread", body: "Completely different topic: pricing page localization for EU buyers.", content_hash: sha256Text("a genuinely different conversation") };
+    const otherConversation = { ...repository.conversations.get(conversationId)!, id: otherConversationId, primary_source_item_id: otherSourceId, canonical_url: otherSource.canonical_url, body: otherSource.body, content_hash: otherSource.content_hash };
+    repository.sourceItems.set(otherSource.id, otherSource);
+    repository.conversations.set(otherConversation.id, otherConversation);
+
+    const snapshot = await service.createSnapshot(product, { pageType: "manual", rawText: "Workflow automation for teams that need faster reporting.", forceNewSnapshot: true });
+    const profile = await service.generateDemandProfile({ ...product, current_snapshot_id: snapshot.id }, "88888888-8888-4888-8888-888888888888", new FixtureDemandProfileEngine());
+    const analysis = await service.analyzeConversation(otherConversation, otherSource, "99999999-9999-4999-8999-999999999999", new FixtureConversationAnalysisEngine());
+    const evaluation = await service.matchProduct(product, profile.id, analysis.id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", new FixtureProductMatchingEngine());
+    const ranking = await service.rankEvaluation(product, evaluation.id, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+    if (!ranking) throw new Error("Expected the new conversation to qualify and rank.");
+    const newSignal = await service.materializeSignal(product, evaluation.id, ranking.id);
+
+    expect(newSignal).not.toBeNull();
+    expect(newSignal?.id).not.toBe(signal.id);
+    expect(newSignal?.lifecycle_status).toBe("active");
+  });
+});

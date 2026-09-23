@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ZeroState } from "@/components/ui/zero-state";
 import { SignalGhostPreview } from "@/components/dashboard/signal-ghost-preview";
 import { ScanStatusBanner } from "@/components/dashboard/scan-status-banner";
+import { RescanRetryLink } from "@/components/dashboard/rescan-retry-link";
 import { getDashboardContext } from "@/server/modules/dashboard/dashboard.context";
 import { intentTypeSchema, type SignalFilters as SignalFilterInput } from "@/server/modules/intelligence";
 import { listSignalsQuery } from "@/server/modules/intelligence/commands";
@@ -124,13 +125,20 @@ export default async function SignalsPage({ searchParams }: { searchParams: Sear
         ) : scanState?.kind === "running" ? (
           <EmptyState title="Finding qualified demand" body="Signals will appear here as soon as Wanterest finishes qualifying this scan." />
         ) : scanState?.kind === "failed" ? (
-          <EmptyState title="The last scan couldn't finish" body={scanState.message ?? "Try running the scan again."} cta={{ label: "Try again", href: "/app/setup/scan" }} />
+          scanState.firstScan ? (
+            <EmptyState title="Your first scan couldn't finish" body={scanState.message ?? "Try running the scan again."} cta={{ label: "Try again", href: "/app/setup/scan" }} />
+          ) : (
+            <EmptyState title="The latest scan couldn't finish" body={scanState.message ?? "Try running the scan again."}>
+              <RescanRetryLink workspaceId={workspace.id} productId={product.id} label="Try again" />
+            </EmptyState>
+          )
         ) : (
           <EmptyState
             title={scanState?.summary ? "No high-confidence demand found in this scan" : "No qualified demand found yet"}
             body={scanState?.summary ? scanResultEmptyBody(scanState.summary) : "Wanterest filtered out weak or irrelevant conversations from this scan. Qualified signals will appear here as they're found."}
-            cta={{ label: "Run another scan", href: "/app/setup/scan" }}
-          />
+          >
+            <RescanRetryLink workspaceId={workspace.id} productId={product.id} label="Run another scan" />
+          </EmptyState>
         )
       ) : (
         <SignalList signals={signals} workspaceId={workspace.id} />

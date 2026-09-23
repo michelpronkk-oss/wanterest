@@ -126,12 +126,17 @@ export async function prepareProductDemandScan(input: ProductDemandScanInput, tr
       const recent = await client.from("job_runs").select("*").eq("job_type", PRODUCT_DEMAND_SCAN_JOB_TYPE).eq("workspace_id", parsed.workspaceId).eq("product_id", parsed.productId).order("created_at", { ascending: false }).limit(20);
       if (recent.error) throw providerError("Recent scan history could not be loaded.", recent.error.message);
       const now = Date.now();
-      const recentManual = (recent.data ?? []).find((candidate) => {
+      // The cooldown clock is keyed off the *last* manual-mode attempt for this
+      // product, not any recent row of that mode. A failed/failed_terminal last
+      // attempt produced no successful intelligence refresh, so it must not start
+      // or be blocked by the refresh cooldown, monitoring cadence, or any earlier
+      // successful-scan timestamp — only a recent *succeeded* manual scan does.
+      const lastManual = (recent.data ?? []).find((candidate) => {
         const mode = scanModeFromJob(candidate);
-        return (mode === "manual" || mode === "manual_refresh" || mode === "manual_deep") && now - Date.parse(candidate.created_at) < policy.manualRefreshCooldownMinutes * 60_000;
+        return mode === "manual" || mode === "manual_refresh" || mode === "manual_deep";
       });
-      if (recentManual) {
-        const retryAfterSeconds = Math.max(1, Math.ceil((Date.parse(recentManual.created_at) + policy.manualRefreshCooldownMinutes * 60_000 - now) / 1_000));
+      if (lastManual && lastManual.status === "succeeded" && now - Date.parse(lastManual.created_at) < policy.manualRefreshCooldownMinutes * 60_000) {
+        const retryAfterSeconds = Math.max(1, Math.ceil((Date.parse(lastManual.created_at) + policy.manualRefreshCooldownMinutes * 60_000 - now) / 1_000));
         throw new AppError("RATE_LIMITED", "Refresh intelligence is available again soon.", 429, { retryAfterSeconds });
       }
     }

@@ -2,6 +2,7 @@ import type { ProductRow, WorkspaceRow } from "@/server/db/database.helpers";
 import { ZeroState } from "@/components/ui/zero-state";
 import { EmptyState } from "@/components/ui/empty-state";
 import { InsightsModulePreview } from "./insights-module-preview";
+import { RescanRetryLink } from "./rescan-retry-link";
 import { getProductScanState } from "./scan-state";
 import { ScanStatusBanner } from "./scan-status-banner";
 import { scanResultEmptyBody } from "./scan-status.view-model";
@@ -72,11 +73,9 @@ export async function InsightsDataEmptyState({
     return (
       <div style={{ marginTop: 20 }}>
         <ScanStatusBanner state={scanState} workspaceId={workspaceId} productId={productId} />
-        <EmptyState
-          title="No high-confidence demand found in this scan"
-          body={scanResultEmptyBody(scanState.summary)}
-          cta={{ label: "Run another scan", href: "/app/setup/scan" }}
-        />
+        <EmptyState title="No high-confidence demand found in this scan" body={scanResultEmptyBody(scanState.summary)}>
+          <RescanRetryLink workspaceId={workspaceId} productId={productId} label="Run another scan" />
+        </EmptyState>
       </div>
     );
   }

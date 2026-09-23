@@ -14,6 +14,7 @@ import { formatPercent, themeLabel } from "@/components/dashboard/dashboard-util
 import { getProductScanState } from "@/components/dashboard/scan-state";
 import { scanResultEmptyBody } from "@/components/dashboard/scan-status.view-model";
 import { ScanStatusBanner } from "@/components/dashboard/scan-status-banner";
+import { RescanRetryLink } from "@/components/dashboard/rescan-retry-link";
 import { getMonitoringOverview } from "@/server/modules/monitoring/monitoring.read-model";
 import { UpgradeTrigger } from "@/components/dashboard/upgrade-surface";
 
@@ -134,11 +135,9 @@ export default async function HomePage() {
 
       {signals.length === 0 && (scanState.kind === "completed_no_signals" || scanState.kind === "partial_failure") ? (
         <div className="home-section">
-          <EmptyState
-            title="No high-confidence demand found in this scan"
-            body={scanResultEmptyBody(scanState.summary)}
-            cta={{ label: "Run another scan", href: "/app/setup/scan" }}
-          />
+          <EmptyState title="No high-confidence demand found in this scan" body={scanResultEmptyBody(scanState.summary)}>
+            <RescanRetryLink workspaceId={workspace.id} productId={product.id} label="Run another scan" />
+          </EmptyState>
         </div>
       ) : null}
 

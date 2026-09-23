@@ -5,7 +5,7 @@ import { FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { startPathForWebsite } from "@/shared/config/site";
+import { SITE_ORIGIN, startPathForWebsite } from "@/shared/config/site";
 import { clientAuthErrorMessage, isExistingSignupAccount } from "@/shared/auth/client-errors";
 import { loginPathForSite } from "@/components/marketing/links";
 import { authCallbackUrl } from "./auth-callback-url";
@@ -116,6 +116,11 @@ export function SignupForm({ websiteUrl = null }: { websiteUrl?: string | null }
         </button>
 
         <p className="auth-hint">No credit card required.</p>
+        <p className="auth-hint">
+          By creating an account, you agree to the{" "}
+          <a href={`${SITE_ORIGIN}/terms`} target="_blank" rel="noopener noreferrer">Terms</a> and acknowledge the{" "}
+          <a href={`${SITE_ORIGIN}/privacy`} target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
+        </p>
       </form>
 
       <p className="auth-switch">Already have an account? <Link href={loginPathForSite(websiteUrl)}>Log in</Link></p>

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Archivo:wght@700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { margin: 0; }
+    *, *::before, *::after { box-sizing: border-box; }
+    a { color: #111110; }
+    a:hover { color: #5c6b1a; }
+    @media (max-width: 860px) {
+      .split { flex-direction: column !important; }
+      .split-side { flex: 1 1 auto !important; max-width: 100% !important; }
+      .h1 { font-size: 40px !important; }
+      .grid3 { grid-template-columns: 1fr !important; }
+    }
+  </style>
+</helmet>
+
+<div style="font-family:'Inter',sans-serif; background:#F7F6F1; color:#111110;">
+
+  <!-- NAV -->
+  <div style="position:sticky; top:0; z-index:30; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 32px; background:rgba(247,246,241,0.85); border-bottom:1px solid rgba(17,17,16,0.08); backdrop-filter:blur(8px); flex-wrap:wrap;">
+    <div style="display:flex; align-items:center; gap:9px;">
+      <svg viewBox="0 0 120 118" width="20" height="20"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#111110" stroke-width="16" stroke-linejoin="miter" stroke-linecap="butt"></polyline><polygon points="60,19 51,42 69,42" fill="#D7FF3D"></polygon></svg>
+      <div style="font-family:'Sora',sans-serif; font-weight:600; font-size:16px; letter-spacing:-0.01em;">wanterest</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:28px; font-size:14px; color:#8c8c82; flex-wrap:wrap;">
+      <div>Product</div><div>Pricing</div><div style="color:#111110; font-weight:600;">About</div><div>Contact</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+      <div style="font-size:14px; color:#8c8c82; cursor:pointer;">Log in</div>
+      <div style="font-size:13.5px; font-weight:600; color:#FFFFFF; background:#111110; padding:9px 16px; border-radius:8px; cursor:pointer; white-space:nowrap;">Start free</div>
+    </div>
+  </div>
+
+  <!-- SECTION 1: HERO -->
+  <div class="split" style="display:flex; gap:56px; max-width:1240px; margin:0 auto; padding:96px 32px 88px; align-items:center;">
+    <div class="split-side" style="flex:0 0 48%;">
+      <div style="display:inline-flex; align-items:center; gap:8px; margin-bottom:22px;">
+        <div style="width:6px; height:6px; border-radius:50%; background:#D7FF3D;"></div>
+        <div style="font-size:11.5px; font-weight:700; letter-spacing:0.2em; color:#8c8c82;">ABOUT WANTEREST</div>
+      </div>
+      <div class="h1" style="font-family:'Archivo',sans-serif; font-weight:800; font-size:52px; line-height:1.08; letter-spacing:-0.03em; margin-bottom:22px;">Stop guessing what the market wants.</div>
+      <div style="font-size:16.5px; color:#8c8c82; line-height:1.6; max-width:440px;">Wanterest turns real public conversations into qualified demand intelligence, so teams can see what buyers want, where markets are moving, and what to act on next.</div>
+    </div>
+
+    <div class="split-side" style="flex:1; position:relative; background:#111110; border-radius:20px; padding:44px; min-height:340px; overflow:hidden;">
+      <div style="position:absolute; inset:0; background:radial-gradient(circle at 78% 15%, rgba(215,255,61,0.06), rgba(215,255,61,0) 55%);"></div>
+      <svg viewBox="0 0 500 260" width="100%" height="100%" style="position:absolute; inset:0; opacity:0.9;" preserveAspectRatio="none">
+        <polyline points="20,190 110,170 190,200 270,130 350,150 430,70" fill="none" stroke="#D7FF3D" stroke-width="1.5" opacity="0.22"></polyline>
+      </svg>
+      <div style="position:relative; z-index:1; display:flex; flex-direction:column; gap:16px; height:100%; justify-content:center;">
+        <div style="background:#FAF9F5; border-radius:14px; padding:22px 24px; max-width:320px; box-shadow:0 20px 44px -16px rgba(0,0,0,0.5);">
+          <div style="display:flex; align-items:center; gap:7px; margin-bottom:10px;">
+            <div style="width:5px; height:5px; border-radius:50%; background:#D7FF3D;"></div>
+            <div style="font-size:10.5px; font-weight:700; letter-spacing:0.16em; color:#8c8c82;">QUALIFIED DEMAND</div>
+          </div>
+          <div style="font-size:15px; color:#111110; line-height:1.4;">"Looking for a cheaper alternative with SSO."</div>
+        </div>
+        <div style="display:flex; gap:10px; margin-left:16px;">
+          <div style="background:rgba(245,244,238,0.06); border:1px solid rgba(245,244,238,0.12); border-radius:9px; padding:8px 13px; font-size:11px; font-weight:700; letter-spacing:0.06em; color:rgba(245,244,238,0.55);">MARKET MOVEMENT <span style="color:#D7FF3D;">+28%</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 2: BELIEF -->
+  <div class="split" style="display:flex; gap:56px; max-width:1240px; margin:0 auto; padding:72px 32px; border-top:1px solid rgba(17,17,16,0.08);">
+    <div class="split-side" style="flex:0 0 34%;">
+      <div style="font-size:11px; font-weight:700; letter-spacing:0.2em; color:#8c8c82; margin-bottom:14px;">OUR BELIEF</div>
+      <div style="font-family:'Archivo',sans-serif; font-weight:800; font-size:32px; line-height:1.2; letter-spacing:-0.02em;">The market already tells you what it wants.</div>
+    </div>
+    <div class="split-side" style="flex:1; max-width:520px; font-size:16px; color:#8c8c82; line-height:1.65; display:flex; flex-direction:column; gap:16px;">
+      <div>Every day, buyers describe their problems, compare alternatives, ask for missing capabilities, and explain why they switch.</div>
+      <div>That demand already exists in public conversations.</div>
+      <div style="color:#111110;">Wanterest finds those conversations, qualifies the evidence, and turns it into intelligence teams can actually use.</div>
+    </div>
+  </div>
+
+  <!-- SECTION 3: PRINCIPLES -->
+  <div style="max-width:1240px; margin:0 auto; padding:72px 32px; border-top:1px solid rgba(17,17,16,0.08);">
+    <div class="grid3" style="display:grid; grid-template-columns:repeat(3,1fr); gap:20px;">
+      <div style="padding:28px 26px; border:1px solid rgba(17,17,16,0.1); border-radius:14px; background:#FFFFFF;">
+        <div style="width:24px; height:2px; background:#D7FF3D; margin-bottom:18px;"></div>
+        <div style="font-size:12px; font-weight:700; letter-spacing:0.12em; color:#111110; margin-bottom:10px;">REAL CONVERSATIONS</div>
+        <div style="font-size:14.5px; color:#8c8c82; line-height:1.55;">Wanterest starts with actual public conversations, not assumptions.</div>
+      </div>
+      <div style="padding:28px 26px; border:1px solid rgba(17,17,16,0.1); border-radius:14px; background:#FFFFFF;">
+        <div style="width:24px; height:2px; background:#D7FF3D; margin-bottom:18px;"></div>
+        <div style="font-size:12px; font-weight:700; letter-spacing:0.12em; color:#111110; margin-bottom:10px;">QUALIFIED DEMAND</div>
+        <div style="font-size:14.5px; color:#8c8c82; line-height:1.55;">Not every mention matters. Wanterest qualifies evidence for pain, intent, specificity, and commercial relevance.</div>
+      </div>
+      <div style="padding:28px 26px; border:1px solid rgba(17,17,16,0.1); border-radius:14px; background:#FFFFFF;">
+        <div style="width:24px; height:2px; background:#D7FF3D; margin-bottom:18px;"></div>
+        <div style="font-size:12px; font-weight:700; letter-spacing:0.12em; color:#111110; margin-bottom:10px;">CLEARER DECISIONS</div>
+        <div style="font-size:14.5px; color:#8c8c82; line-height:1.55;">Turn market evidence into better product, positioning, and growth decisions.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 4: CLOSING CTA BAND -->
+  <div style="background:#111110; color:#F5F4EE; padding:88px 32px; position:relative; overflow:hidden;">
+    <div style="position:absolute; inset:0; background:radial-gradient(circle at 85% 20%, rgba(215,255,61,0.06), rgba(215,255,61,0) 55%); pointer-events:none;"></div>
+    <div class="split" style="display:flex; gap:56px; align-items:center; justify-content:space-between; max-width:1240px; margin:0 auto; position:relative; z-index:1;">
+      <div class="split-side" style="flex:0 0 auto;">
+        <div style="display:inline-flex; align-items:center; gap:8px; margin-bottom:20px;">
+          <div style="width:6px; height:6px; border-radius:50%; background:#D7FF3D;"></div>
+          <div style="font-size:11px; font-weight:700; letter-spacing:0.2em; color:rgba(245,244,238,0.5);">FROM SIGNAL TO DECISION</div>
+        </div>
+        <div class="h1" style="font-family:'Archivo',sans-serif; font-weight:800; font-size:36px; line-height:1.28; letter-spacing:-0.02em;">Stop guessing.<br/>Start finding.</div>
+      </div>
+      <div class="split-side" style="flex:0 0 auto; display:flex; flex-direction:column; gap:22px; align-items:flex-start;">
+        <div style="font-size:16px; color:rgba(245,244,238,0.6); line-height:1.5; max-width:340px;">See what your market is already telling you.</div>
+        <div style="display:flex; align-items:center; gap:22px; flex-wrap:wrap;">
+          <div style="font-size:14.5px; font-weight:600; color:#111110; background:#D7FF3D; padding:14px 24px; border-radius:11px; cursor:pointer;">Scan your product</div>
+          <div style="font-size:14.5px; font-weight:600; color:rgba(245,244,238,0.75); cursor:pointer;">Explore Wanterest →</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div style="border-top:1px solid rgba(17,17,16,0.08); padding:40px 32px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; max-width:1240px; margin:0 auto;">
+    <div style="font-size:13px; color:#a3a399;">© 2026 Wanterest</div>
+    <div style="display:flex; gap:24px; font-size:13px; color:#8c8c82; flex-wrap:wrap;">
+      <div>Product</div><div>Pricing</div><div>About</div><div>Contact</div><div>Privacy</div><div>Terms</div><div>Cookies</div><div>X</div>
+    </div>
+  </div>
+
+</div>
+
+</x-dc>
+</body>
+</html>

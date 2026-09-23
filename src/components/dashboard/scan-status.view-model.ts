@@ -25,7 +25,7 @@ export type DashboardScanState =
   | { kind: "completed_with_signals"; manual: boolean; summary: ScanResultSummary | null }
   | { kind: "completed_no_signals"; manual: boolean; summary: ScanResultSummary | null }
   | { kind: "partial_failure"; warnings: string[]; manual: boolean; summary: ScanResultSummary | null }
-  | { kind: "failed"; message: string | null; manual: boolean };
+  | { kind: "failed"; message: string | null; manual: boolean; firstScan: boolean };
 
 const STAGE_ALIASES: Record<string, DashboardScanStage | "queued" | "completed" | "partial_failure" | "failed"> = {
   queued: "queued",
@@ -86,6 +86,19 @@ export function isManualScanKey(idempotencyKey: string): boolean {
   return idempotencyKey.startsWith("manual-scan:");
 }
 
+/**
+ * The onboarding scan job uses one deterministic, reused key per product
+ * (initial-scan:{workspaceId}:{productId}). Once it ever succeeds, that exact row
+ * stays "succeeded" permanently (prepareProductDemandScan never re-triggers a
+ * succeeded job), so a *failed* row under this key can only mean the product's
+ * first scan has never actually completed — never a later scan on an
+ * already-onboarded product, whose failure would surface under a different key
+ * (manual-scan:/monitoring:/etc.) as the most recent job instead.
+ */
+export function isOnboardingScanKey(idempotencyKey: string): boolean {
+  return idempotencyKey.startsWith("initial-scan:");
+}
+
 export function dashboardScanStateFromProgress(input: {
   jobRunId: string;
   idempotencyKey: string;
@@ -111,7 +124,7 @@ export function dashboardScanStateFromProgress(input: {
   }
 
   if (["failed", "failed_terminal", "cancelled"].includes(input.status) || stage === "failed") {
-    return { kind: "failed", message: input.errorMessage, manual };
+    return { kind: "failed", message: input.errorMessage, manual, firstScan: isOnboardingScanKey(input.idempotencyKey) };
   }
 
   if (input.status === "completed_with_warnings" || input.status === "partial_failure" || stage === "partial_failure" || warnings.length > 0) {
