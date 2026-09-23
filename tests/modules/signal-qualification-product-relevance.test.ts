@@ -48,6 +48,7 @@ type Case = {
   confidence?: number;
   matchConfidence?: number;
   matchDecision?: "qualified" | "weak" | "rejected";
+  profile?: SignalQualificationProfile;
 };
 
 function inputFor(testCase: Case): Parameters<typeof qualifySignal>[0] {
@@ -129,7 +130,7 @@ function inputFor(testCase: Case): Parameters<typeof qualifySignal>[0] {
     rationale: "Fixture match for relevance regression coverage.",
     evidence: { painAlignment: testCase.painThemes ?? [], buyerAlignment: testCase.audienceSignals ?? [], capabilityAlignment: [], intentRelevance: [testCase.analysisIntent] },
   };
-  return { candidateId: conversation.id, productId, productName: "Streamline", conversation, sourceItem: source, analysis, match, profile: issueTrackerProfile(), now: new Date("2026-09-20T00:00:00.000Z") };
+  return { candidateId: conversation.id, productId, productName: "Streamline", conversation, sourceItem: source, analysis, match, profile: testCase.profile ?? issueTrackerProfile(), now: new Date("2026-09-20T00:00:00.000Z") };
 }
 
 describe("Product relevance — competitor and category demand", () => {
@@ -236,5 +237,77 @@ describe("Product relevance — competitor and category demand", () => {
       matchDecision: "qualified",
     }));
     expect(result.dimensions.product_relevance).toBeGreaterThanOrEqual(0.65);
+  });
+});
+
+// Regression coverage for the v1.2 -> v1.3 fix: production evidence (Linear/Jira, evaluations
+// scoring exactly 0.59799) proved that a competitor the demand-profiling LLM classified as an
+// `alternatives` entry with alternative_type "competitor_product" — rather than under
+// `competitors.known_competitors` — was invisible to competitorMatched(), so categoryAlignment
+// landed on the middle tier (0.65) instead of the intended top tier (0.95) even with a matched
+// concept and strong commercial intent. This profile shape is the ACTUAL real production shape
+// (competitors.known_competitors: [], Jira modeled only under alternatives), not a synthetic
+// simplification — see the read-only production query in this session's investigation.
+function issueTrackerProfileWithCompetitorAsAlternative(): SignalQualificationProfile {
+  return {
+    relevant_pains: [{ key: "inefficient_software_development_workflows", label: "inefficient software development workflows", confidence: 0.9 }],
+    relevant_outcomes: [{ key: "streamlined_software_development_process", label: "streamlined software development process", confidence: 0.9 }],
+    relevant_intents: [{ intent_type: "problem_solution_search", relevance: 0.9 }],
+    relevant_jtbd: [{ key: "manage_software_projects", job: "manage software development projects", desired_result: "plan, build, and ship software efficiently", confidence: 0.9 }],
+    relevant_features: [{ key: "project_management_features", feature: "project management features", confidence: 0.9 }],
+    buyer_roles: ["product_manager", "engineering_manager", "team_lead"],
+    // The exact production shape: no known_competitors, Jira only under alternatives.
+    competitors: [],
+    alternatives: [{ key: "jira", label: "Jira", alternative_type: "competitor_product", confidence: 0.9 }],
+    geography: { market_scope: "global", primary_country_code: null, primary_region: null, primary_city: null, location_dependency: 0, demand_geography_terms: [] },
+    profile_confidence: 0.9,
+    primary_category: "productivity_software",
+    profile_version: "demand_profile_v2",
+  };
+}
+
+describe("Product relevance — competitor modeled as a competitor-type alternative", () => {
+  const productionShapeProfile = issueTrackerProfileWithCompetitorAsAlternative();
+
+  it("recognizes a competitor classified under alternatives (alternative_type: competitor_product), matching the exact real production values that previously stuck at 0.59799", () => {
+    const result = qualifySignal(inputFor({
+      name: "jira-feature-request-alternative-shaped",
+      body: "[Feature] Add atomic Jira issue label operations",
+      analysisIntent: "switching_intent",
+      painThemes: ["inefficient software development workflows"],
+      buyerLanguage: ["switching from other tools"],
+      audienceSignals: ["engineering team"],
+      specificity: 0.81,
+      confidence: 0.82,
+      // The real match_confidence reverse-engineered from the reported 0.59799 relevance
+      // under the pre-fix categoryAlignment=0.65 branch (0.537*0.47 + 0.77*0.28 + 0.65*0.2).
+      matchConfidence: 0.537,
+      matchDecision: "weak",
+      profile: productionShapeProfile,
+    }));
+
+    expect(result.matched_profile_concepts).toContain("jira");
+    // 0.537*0.47 + 0.77*0.28 + 0.95*0.2 = 0.65799 once categoryAlignment correctly reaches
+    // its top tier; the old bug capped this at 0.59799 (categoryAlignment stuck at 0.65).
+    expect(result.dimensions.product_relevance).toBeGreaterThanOrEqual(0.65);
+    expect(result.dimensions.product_relevance).not.toBeCloseTo(0.59799, 3);
+  });
+
+  it("does NOT take the high competitor-alignment branch for generic Jira implementation chatter with no real commercial intent", () => {
+    const result = qualifySignal(inputFor({
+      name: "jira-implementation-detail-alternative-shaped",
+      body: "Refactor the internal Jira webhook parser to use the new event schema.",
+      analysisIntent: "informational",
+      specificity: 0.3,
+      confidence: 0.5,
+      matchConfidence: 0.3,
+      matchDecision: "rejected",
+      profile: productionShapeProfile,
+    }));
+
+    // "jira" still matches as a concept (it's genuinely named), but with no switching/
+    // alternative-seeking/purchase-research language, strong commercial intent is false, so
+    // categoryAlignment must not reach the competitor-match top tier just from the name alone.
+    expect(result.dimensions.product_relevance).toBeLessThan(0.65);
   });
 });

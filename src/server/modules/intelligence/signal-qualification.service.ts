@@ -197,9 +197,20 @@ function matchedConcepts(input: SignalQualificationInput, value: string): string
     .map((concept) => concept.key);
 }
 
-/** Whether any of the product's own known competitors (from structured product understanding) is named in the conversation. */
+/**
+ * Whether any of the product's own known competitors (from structured product understanding)
+ * is named in the conversation. Demand Profile v2's own schema (alternativeTypeSchema)
+ * distinguishes a competitor-type alternative (alternative_type: "competitor_product") from
+ * other alternative types (manual_process, internal_build, generic_tool, ...) — and the
+ * profiling engine sometimes classifies a well-known competitor there instead of under
+ * competitors.known_competitors (the two concepts genuinely overlap for an LLM). Checking
+ * only `profile.competitors` silently missed those, even though matchedConcepts() (which
+ * aggregates all six profile groups, alternatives included) already found the same name.
+ */
 function competitorMatched(input: SignalQualificationInput, value: string): boolean {
-  return profileLabels(input.profile.competitors).some((concept) => concept.label && value.includes(lower(concept.label)));
+  const competitorAlternatives = input.profile.alternatives.filter((entry) => typeof entry !== "string" && entry.alternative_type === "competitor_product");
+  const candidates = [...profileLabels(input.profile.competitors), ...profileLabels(competitorAlternatives)];
+  return candidates.some((concept) => concept.label && value.includes(lower(concept.label)));
 }
 
 function geographicAdjustment(input: SignalQualificationInput, value: string, reasonCodes: SignalQualificationReasonCode[]): number {
