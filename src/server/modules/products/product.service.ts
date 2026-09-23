@@ -20,7 +20,14 @@ export async function createProductCommand(workspaceId: unknown, input: unknown)
   const capabilities = await resolveWorkspaceCapabilities(createSupabaseServiceClient(), workspace.data);
   const activeProducts = await listProducts(serverClient, workspace.data);
   if (activeProducts.filter((candidate) => candidate.status === "active").length >= capabilities.products.maxProducts) {
-    throw new AppError("USAGE_LIMIT_EXCEEDED", "The workspace product limit was reached.");
+    throw new AppError("USAGE_LIMIT_EXCEEDED", "The workspace product limit was reached.", 429, {
+      entitlementCode: "PRODUCT_LIMIT_REACHED",
+      capability: "products_max",
+      current: activeProducts.filter((candidate) => candidate.status === "active").length,
+      limit: capabilities.products.maxProducts,
+      currentPlan: capabilities.plan,
+      upgradeTarget: capabilities.plan === "free" ? "pro" : capabilities.plan === "pro" ? "growth" : null,
+    });
   }
   const product = await createProduct(serverClient, { workspaceId: workspace.data, name: parsed.data.name, slug: parsed.data.slug, websiteUrl: parsed.data.websiteUrl });
   await ensureMonitoringScheduleForProduct(createSupabaseServiceClient(), workspace.data, product.id);

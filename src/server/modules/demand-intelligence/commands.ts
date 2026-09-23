@@ -35,12 +35,19 @@ export async function getGeographyQuery(workspaceId: unknown, productId: unknown
   const capabilities = await resolveWorkspaceCapabilities(client, product.workspace_id);
   const requestedDays = Number(parsedWindow.slice(0, -1));
   if (requestedDays > 30 && capabilities.geography.historyDays < requestedDays) {
-    throw new AppError("CAPABILITY_DISABLED", "Geography history is not enabled for this workspace window.");
+    throw new AppError("CAPABILITY_DISABLED", "Geography history is not enabled for this workspace window.", 403, {
+      entitlementCode: "GEOGRAPHY_HISTORY_REQUIRED",
+      capability: "geography_history_days",
+      current: capabilities.geography.historyDays,
+      limit: requestedDays,
+      upgradeTarget: requestedDays <= 30 ? "pro" : "growth",
+    });
   }
   return service.getGeography({
     product,
     window: parsedWindow,
     access: {
+      plan: capabilities.plan,
       enabled: capabilities.geography.enabled,
       historyDays: capabilities.geography.historyDays,
       trendEnabled: capabilities.geography.trendEnabled && capabilities.geography.historyDays >= requestedDays,
@@ -75,7 +82,13 @@ export async function getDemandDriftQuery(workspaceId: unknown, productId: unkno
   await requireUser();
   const policy = await resolveMonitoringPolicy(createSupabaseServiceClient(), product.workspace_id);
   if (!demandDriftWindowAllowed(policy, windowDays(window))) {
-    throw new AppError("CAPABILITY_DISABLED", "Demand drift history is not enabled for this workspace window.");
+    throw new AppError("CAPABILITY_DISABLED", "Demand drift history is not enabled for this workspace window.", 403, {
+      entitlementCode: "DEMAND_DRIFT_REQUIRED",
+      capability: "demand_drift_days",
+      current: policy.demandDriftDays,
+      limit: windowDays(window),
+      upgradeTarget: policy.demandDriftDays === 0 ? "pro" : "growth",
+    });
   }
   return readService().getDemandDrift(product.workspace_id, product.id, window);
 }

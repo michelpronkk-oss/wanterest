@@ -83,6 +83,7 @@ export type GeographyMarketSummary = {
 };
 
 export type GeographyAccessProjection = {
+  plan?: "free" | "pro" | "growth";
   enabled: boolean;
   historyDays: number;
   trendEnabled: boolean;

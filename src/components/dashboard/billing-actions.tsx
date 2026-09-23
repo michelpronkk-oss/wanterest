@@ -2,35 +2,19 @@
 
 import { useState } from "react";
 
+import { UpgradeTrigger, type UpgradePlan } from "./upgrade-surface";
+
 type BillingActionsProps = {
   workspaceId: string;
-  paid: boolean;
+  currentPlan: UpgradePlan;
 };
 
-export function BillingActions({ workspaceId, paid }: BillingActionsProps) {
-  const [busy, setBusy] = useState<string | null>(null);
+export function BillingActions({ workspaceId, currentPlan }: BillingActionsProps) {
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function openCheckout(plan: "pro" | "growth") {
-    setBusy(plan);
-    setError(null);
-    try {
-      const response = await fetch("/api/billing/checkout", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ workspaceId, plan, interval: "monthly", idempotencyKey: crypto.randomUUID() }),
-      });
-      const body = await response.json() as { checkoutUrl?: string; error?: { message?: string } };
-      if (!response.ok || !body.checkoutUrl) throw new Error(body.error?.message ?? "Checkout could not be started.");
-      window.location.assign(body.checkoutUrl);
-    } catch (value) {
-      setError(value instanceof Error ? value.message : "Checkout could not be started.");
-      setBusy(null);
-    }
-  }
-
   async function openPortal() {
-    setBusy("portal");
+    setBusy(true);
     setError(null);
     try {
       const response = await fetch("/api/billing/portal", {
@@ -43,25 +27,19 @@ export function BillingActions({ workspaceId, paid }: BillingActionsProps) {
       window.location.assign(body.portalUrl);
     } catch (value) {
       setError(value instanceof Error ? value.message : "The billing portal is not available yet.");
-      setBusy(null);
+      setBusy(false);
     }
   }
 
   return (
     <div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-        {paid ? (
-          <button type="button" className="dashboard-button dashboard-button-primary" onClick={openPortal} disabled={busy !== null}>
-            {busy === "portal" ? "Opening portal…" : "Manage subscription"}
-          </button>
-        ) : (
+        {currentPlan === "free" ? <UpgradeTrigger workspaceId={workspaceId} currentPlan={currentPlan} label="Upgrade plan" /> : (
           <>
-            <button type="button" className="dashboard-button dashboard-button-primary" onClick={() => openCheckout("pro")} disabled={busy !== null}>
-              {busy === "pro" ? "Opening checkout…" : "Upgrade to Pro"}
+            <button type="button" className="dashboard-button dashboard-button-primary" onClick={() => void openPortal()} disabled={busy}>
+              {busy ? "Opening portal…" : "Manage subscription"}
             </button>
-            <button type="button" className="dashboard-button" onClick={() => openCheckout("growth")} disabled={busy !== null}>
-              {busy === "growth" ? "Opening checkout…" : "Upgrade to Growth"}
-            </button>
+            {currentPlan === "pro" ? <UpgradeTrigger workspaceId={workspaceId} currentPlan={currentPlan} plan="growth" label="Upgrade to Growth" variant="secondary" /> : null}
           </>
         )}
       </div>

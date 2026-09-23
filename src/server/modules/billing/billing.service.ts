@@ -6,6 +6,7 @@ import type { BillingProvider, VerifiedBillingEvent } from "../../providers/bill
 import { productFor, type DodoProductCatalog } from "./product-mapping";
 import type { BillingInterval, BillingPlan } from "./billing.schemas";
 import type { BillingOverview, BillingRepository } from "./billing.repository";
+import { resolveInternalPlan } from "../entitlements/plan-capabilities";
 
 export type BillingAuditLogger = (input: {
   workspaceId: string;
@@ -62,6 +63,16 @@ export class BillingService {
   }
 
   private async createCheckoutOnce(input: { workspaceId: string; plan: BillingPlan; interval: BillingInterval; returnUrl?: string }, providerProductId: string, reference: string) {
+    const current = await this.repository.getCurrentSubscription(input.workspaceId);
+    const currentPlan = resolveInternalPlan(current ? { internalPlan: current.internal_plan, status: current.status } : null);
+    if (currentPlan !== "free") {
+      throw new AppError("CONFLICT", "This workspace already has a paid subscription. Manage it through the billing portal.", 409, {
+        reason: "ACTIVE_SUBSCRIPTION",
+        currentPlan,
+        requestedPlan: input.plan,
+        upgradeTarget: currentPlan === "pro" ? "growth" : null,
+      });
+    }
     const reservation = await this.repository.reserveCheckout({ workspaceId: input.workspaceId, checkoutReference: reference, plan: input.plan, interval: input.interval });
     if (reservation.checkout_url) return { checkoutUrl: reservation.checkout_url, checkoutReference: reference };
     const checkout = await this.provider.createCheckout({

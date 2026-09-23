@@ -142,15 +142,37 @@ const rescanActionSchema = z.object({
   productId: productIdSchema,
 });
 
+export type RescanUpgradeDetails = {
+  capability: string;
+  current?: number;
+  limit?: number;
+  upgradeTarget: "pro" | "growth";
+};
+
+export type RescanActionResult =
+  | { ok: true; handle: ProductDemandScanHandle }
+  | { ok: false; error: string; upgrade?: RescanUpgradeDetails };
+
 /** Triggers the same product-demand-scan orchestration used for onboarding, tagged as a manual rescan. */
-export async function triggerRescanAction(input: unknown): Promise<ProductDemandScanHandle> {
+export async function triggerRescanAction(input: unknown): Promise<RescanActionResult> {
   const parsed = rescanActionSchema.safeParse(input);
-  if (!parsed.success) throw new Error("The rescan request is invalid.");
-  return requestProductDemandScanCommand({
-    workspaceId: parsed.data.workspaceId,
-    productId: parsed.data.productId,
-    scanMode: "manual",
-  });
+  if (!parsed.success) return { ok: false, error: "The rescan request is invalid." };
+  try {
+    const handle = await requestProductDemandScanCommand({
+      workspaceId: parsed.data.workspaceId,
+      productId: parsed.data.productId,
+      scanMode: "manual",
+    });
+    return { ok: true, handle };
+  } catch (error) {
+    const publicError = toPublicError(error);
+    const details = publicError.details;
+    const upgradeTarget = details?.upgradeTarget === "pro" || details?.upgradeTarget === "growth" ? details.upgradeTarget : null;
+    const upgrade: RescanUpgradeDetails | undefined = upgradeTarget && typeof details?.capability === "string"
+      ? { capability: details.capability, current: typeof details.current === "number" ? details.current : undefined, limit: typeof details.limit === "number" ? details.limit : undefined, upgradeTarget }
+      : undefined;
+    return { ok: false, error: publicError.message, ...(upgrade ? { upgrade } : {}) };
+  }
 }
 
 const scanProgressActionSchema = z.object({

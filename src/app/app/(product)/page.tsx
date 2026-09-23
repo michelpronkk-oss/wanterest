@@ -15,6 +15,7 @@ import { getProductScanState } from "@/components/dashboard/scan-state";
 import { scanResultEmptyBody } from "@/components/dashboard/scan-status.view-model";
 import { ScanStatusBanner } from "@/components/dashboard/scan-status-banner";
 import { getMonitoringOverview } from "@/server/modules/monitoring/monitoring.read-model";
+import { UpgradeTrigger } from "@/components/dashboard/upgrade-surface";
 
 const HOME_PIPELINE = [
   { label: "Understand", hint: "Wanterest reads your product and market." },
@@ -98,7 +99,20 @@ export default async function HomePage() {
 
       <ScanStatusBanner state={scanState} workspaceId={workspace.id} productId={product.id} />
 
-      {monitoring ? (
+      {monitoring?.plan === "free" ? (
+        <div className="home-section monitoring-summary" aria-label="Automatic monitoring">
+          <div className="capability-gate">
+            <div>
+              <div className="ui-section-label" style={{ marginBottom: 4 }}>Automatic monitoring</div>
+              <div style={{ fontSize: 15, fontWeight: 650 }}>Locked on Free</div>
+              <p className="capability-gate-copy">Upgrade to keep demand intelligence fresh automatically. Free workspaces can still run manual scans.</p>
+            </div>
+            <UpgradeTrigger workspaceId={workspace.id} currentPlan="free" label="Unlock monitoring" />
+          </div>
+        </div>
+      ) : null}
+
+      {monitoring && monitoring.plan !== "free" ? (
         <div className="home-section monitoring-summary" aria-label="Automatic monitoring">
           <div className="home-section-header">
             <div>

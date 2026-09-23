@@ -5,6 +5,7 @@ import { resolveMonitoringPolicy } from "@/server/modules/entitlements/monitorin
 import { deriveMonitoringStatus, type MonitoringDisplayStatus } from "./monitoring.view-model";
 
 export type MonitoringOverview = {
+  plan: "free" | "pro" | "growth";
   enabled: boolean;
   cadenceLabel: string;
   lastCycleAt: string | null;
@@ -41,6 +42,7 @@ export async function getMonitoringOverview(workspaceId: string, productId: stri
     resultState: typeof result.state === "string" ? result.state : null,
   });
   return {
+    plan: policy.plan ?? "free",
     enabled: schedule.enabled && policy.monitoringEnabled,
     cadenceLabel: policy.intelligenceCyclesPerDay >= 12 ? "Throughout the day" : policy.intelligenceCyclesPerDay > 0 ? "Every few hours" : "Manual refreshes only",
     lastCycleAt: schedule.last_success_at ?? schedule.last_cycle_at,

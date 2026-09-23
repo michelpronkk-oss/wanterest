@@ -22,7 +22,11 @@ function databaseError(error: { code?: string; message: string }, message: strin
     return new AppError("NOT_FOUND", message);
   }
   if (error.code === "22003" && error.message.includes("seat_limit_exceeded")) {
-    return new AppError("USAGE_LIMIT_EXCEEDED", "The workspace seat limit was reached.");
+    return new AppError("USAGE_LIMIT_EXCEEDED", "The workspace seat limit was reached.", 429, {
+      entitlementCode: "SEAT_LIMIT_REACHED",
+      capability: "team_members",
+      upgradeTarget: "growth",
+    });
   }
   if (error.code === "22023") {
     return new AppError("VALIDATION_ERROR", "The workspace operation is not valid.");

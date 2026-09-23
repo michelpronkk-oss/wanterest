@@ -2,10 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 import { getScanProgressAction, type ScanProgressState } from "@/app/app/actions";
 import { scanCoverageCopy, scanResultDestination, scanStatusLabel, scanSteps } from "./scan-progress.view-model";
 import { scanResultEmptyBody } from "./scan-status.view-model";
+import { UpgradeTrigger, type UpgradePlan } from "./upgrade-surface";
 
 type Props = {
   open: boolean;
@@ -17,11 +19,12 @@ type Props = {
   productId: string;
   errorMessage?: string | null;
   onRetry?: () => void;
+  upgrade?: { workspaceId: string; currentPlan: UpgradePlan; capability: string; current?: number; limit?: number; upgradeTarget: "pro" | "growth" };
 };
 
 const POLL_INTERVAL_MS = 2500;
 
-export function ScanProgressModal({ open, onClose, productName, jobRunId, idempotencyKey, workspaceId, productId, errorMessage, onRetry }: Props) {
+export function ScanProgressModal({ open, onClose, productName, jobRunId, idempotencyKey, workspaceId, productId, errorMessage, onRetry, upgrade }: Props) {
   const router = useRouter();
   const [state, setState] = useState<ScanProgressState | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -94,6 +97,7 @@ export function ScanProgressModal({ open, onClose, productName, jobRunId, idempo
         ) : null}
         {terminal && !failed && state?.result && signalCount === 0 ? <p className="scan-progress-warning">{scanResultEmptyBody(state.result)}</p> : null}
         {displayedError ? <p className="scan-progress-warning">{displayedError}</p> : null}
+        {upgrade ? upgrade.currentPlan === "growth" ? <Link className="dashboard-button dashboard-button-secondary" href="/app/settings/billing">Manage billing</Link> : <UpgradeTrigger workspaceId={upgrade.workspaceId} currentPlan={upgrade.currentPlan} plan={upgrade.upgradeTarget} label={upgrade.upgradeTarget === "growth" ? "Upgrade to Growth" : "Upgrade to Pro"} /> : null}
         {resultPath ? (
           <button className="dashboard-button dashboard-button-primary" type="button" style={{ marginTop: 20 }} onClick={() => {
             router.push(resultPath);

@@ -12,8 +12,10 @@ import { SupabaseBillingRepository } from "./billing.repository";
 import { BillingService } from "./billing.service";
 import { changePlanInputSchema, createCheckoutInputSchema, workspaceIdSchema } from "./billing.schemas";
 import { getDodoProductCatalog } from "./product-mapping";
+import { getDashboardContext } from "@/server/modules/dashboard/dashboard.context";
 
 export const BILLING_RETURN_URL = "https://app.wanterest.com/app/settings/billing";
+export const CHECKOUT_RETURN_URL = `${BILLING_RETURN_URL}?checkout=success`;
 
 async function assertWorkspaceRole(workspaceId: string, roles: string[]) {
   const client = await createSupabaseServerClient();
@@ -66,10 +68,14 @@ export async function createCheckoutCommand(input: unknown) {
   const parsed = createCheckoutInputSchema.safeParse(input);
   if (!parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid billing checkout input.", 422);
   const user = await requireUser();
-  await assertWorkspaceRole(parsed.data.workspaceId, ["owner"]);
+  const workspaceId = parsed.data.workspaceId ?? (await getDashboardContext()).workspace?.id;
+  if (!workspaceId) throw new AppError("NOT_FOUND", "No active workspace is available for billing.");
+  await assertWorkspaceRole(workspaceId, ["owner"]);
+  const interval = parsed.data.cadence ?? parsed.data.interval;
+  if (!interval) throw new AppError("VALIDATION_ERROR", "Billing cadence is required.", 422);
   // The browser may request a plan/cadence, but it never chooses a redirect
   // destination. Keep checkout returns on the fixed billing surface.
-  return (await service(user.id)).createCheckout({ ...parsed.data, returnUrl: BILLING_RETURN_URL });
+  return (await service(user.id)).createCheckout({ workspaceId, plan: parsed.data.plan, interval, returnUrl: CHECKOUT_RETURN_URL, idempotencyKey: parsed.data.idempotencyKey });
 }
 
 export async function getBillingOverviewQuery(workspaceId: unknown) {

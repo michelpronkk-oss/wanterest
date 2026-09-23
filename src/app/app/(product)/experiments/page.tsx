@@ -7,6 +7,9 @@ import { ExperimentCard } from "@/components/dashboard/experiment-card";
 import { ExperimentGhostPreview } from "@/components/dashboard/experiment-ghost-preview";
 import { PipelineFlow } from "@/components/dashboard/pipeline-flow";
 import { formatPercent } from "@/components/dashboard/dashboard-utils";
+import { CapabilityGate, UpgradeTrigger } from "@/components/dashboard/upgrade-surface";
+import { resolveWorkspaceCapabilities } from "@/server/modules/entitlements/plan-capabilities";
+import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
 
 const EXPERIMENT_PIPELINE = ["Evidence", "Action", "Hypothesis", "Variant", "Result", "Learning"].map((label) => ({ label }));
 
@@ -30,6 +33,27 @@ export default async function ExperimentsPage() {
         <div style={{ marginTop: 24, maxWidth: 460 }}>
           <ExperimentGhostPreview />
         </div>
+      </section>
+    );
+  }
+
+  const capabilities = await resolveWorkspaceCapabilities(createSupabaseServiceClient(), workspace.id);
+  if (capabilities.experiments.maxActiveExperiments === 0) {
+    return (
+      <section className="dashboard-page">
+        <header className="dashboard-page-header">
+          <p className="dashboard-eyebrow">Experiments</p>
+          <h1>Experiments</h1>
+          <p className="dashboard-subtitle">Measure whether evidence-backed changes actually move real outcomes.</p>
+        </header>
+        <CapabilityGate
+          workspaceId={workspace.id}
+          currentPlan={capabilities.plan}
+          enabled={false}
+          requiredPlan="pro"
+          title="Experiments are available on Pro"
+          body="Turn approved Actions into measurable tests with variants, outcomes, and validated learning."
+        />
       </section>
     );
   }
@@ -58,6 +82,13 @@ export default async function ExperimentsPage() {
           <div className="actions-summary-item"><strong>{running}</strong><span>Running</span></div>
           <div className="actions-summary-item"><strong>{completed.length}</strong><span>Completed</span></div>
           <div className="actions-summary-item"><strong style={{ color: "var(--color-positive)" }}>{avgLift !== null ? formatPercent(avgLift) : "—"}</strong><span>Average validated lift</span></div>
+        </div>
+      ) : null}
+
+      {running >= capabilities.experiments.maxActiveExperiments ? (
+        <div className="capability-gate" style={{ marginBottom: 18 }}>
+          <div className="capability-gate-copy"><span className="capability-gate-kicker">Experiment capacity</span><h2>Active experiment limit reached</h2><p>You&apos;re using {running} of {capabilities.experiments.maxActiveExperiments} active experiments.</p></div>
+          {capabilities.plan === "growth" ? <Link className="dashboard-button dashboard-button-secondary" href="/app/settings/billing">Manage billing</Link> : <UpgradeTrigger workspaceId={workspace.id} currentPlan={capabilities.plan} plan="growth" label="Upgrade to Growth" />}
         </div>
       ) : null}
 

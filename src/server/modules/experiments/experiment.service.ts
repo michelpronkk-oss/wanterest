@@ -56,10 +56,22 @@ export class ExperimentService {
     if (!action || action.product_id !== parsed.data.productId) throw new AppError("FORBIDDEN", "The experiment Action is not in this workspace/product.");
     if (action.status !== "approved") throw new AppError("CONFLICT", "Experiments require an approved Action.");
     if (!actionTypeSupportsExperiment(action.action_type as ActionType, parsed.data.experimentType)) throw new AppError("VALIDATION_ERROR", "The experiment type is not compatible with the Action type.");
-    if (!(await this.entitlements.can(parsed.data.workspaceId, "actions_enabled"))) throw new AppError("CAPABILITY_DISABLED", "Actions and experiments are not enabled for this workspace.");
+    if (!(await this.entitlements.can(parsed.data.workspaceId, "actions_enabled"))) throw new AppError("CAPABILITY_DISABLED", "Actions and experiments are not enabled for this workspace.", 403, {
+      entitlementCode: "EXPERIMENTS_NOT_INCLUDED",
+      capability: "actions_enabled",
+      current: 0,
+      limit: 0,
+      upgradeTarget: "pro",
+    });
     const max = await this.entitlements.limit(parsed.data.workspaceId, "experiments_max");
     const current = (await this.options.repository.listExperiments(parsed.data.workspaceId)).filter((row) => !["completed", "canceled"].includes(row.status)).length;
-    if (typeof max === "number" && current >= max) throw new AppError("USAGE_LIMIT_EXCEEDED", "The workspace experiment limit was reached.");
+    if (typeof max === "number" && current >= max) throw new AppError("USAGE_LIMIT_EXCEEDED", "The workspace experiment limit was reached.", 429, {
+      entitlementCode: "EXPERIMENT_LIMIT_REACHED",
+      capability: "experiments_max",
+      current,
+      limit: max,
+      upgradeTarget: max === 0 ? "pro" : max < 10 ? "growth" : null,
+    });
     const id = crypto.randomUUID();
     const evidenceNodeId = crypto.randomUUID();
     const row = await this.options.repository.createExperiment({

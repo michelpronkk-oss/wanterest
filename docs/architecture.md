@@ -1662,3 +1662,25 @@ city visualization, or 3D globe is introduced.
 No phase should silently expand into a general analytics platform, source crawler, or provider-
 specific domain model. Revisit this architecture when a measured requirement justifies a new
 boundary.
+
+### Paywalls + Upgrade UX v1
+
+Paywalls are a projection of the existing entitlement authority, not a second pricing or
+authorization model. The flow remains Dodo provider state -> normalized subscription -> internal
+plan -> `PlanCapabilities`/`workspace_entitlements` -> server enforcement -> UI capability
+projection. Client plan selection never mutates entitlements; only the verified webhook changes
+persisted billing state.
+
+Browser checkout requests contain only the canonical internal plan and cadence (plus an
+application idempotency key). The server resolves the active workspace, owner authorization, and
+configured Dodo product mapping. Paid workspaces are directed to the Dodo customer portal rather
+than receiving a second checkout session. Checkout returns use a bounded billing-state poll, and
+the webhook route invalidates the authenticated dashboard layout after durable processing.
+
+The shared upgrade surface is used by settings and contextual capability gates for monitoring,
+Drift, Geo, experiments, product limits, manual scan limits, and seats. Public API errors expose
+only allow-listed entitlement metadata (`capability`, `current`, `limit`, `upgradeTarget`, and
+safe plan/reason codes); provider diagnostics remain server-only. Manual scans have a distinct
+`manual_scan` usage ledger type so recurring monitoring scans do not consume the user-facing
+monthly manual-scan allowance. The associated forward migration is
+`supabase/migrations/20261005000000_paywall_usage_contract_v1.sql`.

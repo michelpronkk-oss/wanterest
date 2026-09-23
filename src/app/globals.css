@@ -575,8 +575,8 @@ body {
 
 .settings-layout { display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 32px; align-items: start; }
 .settings-nav { display: flex; flex-direction: column; gap: 2px; }
-.settings-nav button { text-align: left; border: 0; background: transparent; padding: 9px 12px; border-radius: 8px; font: inherit; font-size: 13px; color: var(--color-ink-secondary); cursor: pointer; }
-.settings-nav button.is-active { background: var(--color-chip); color: var(--color-ink); font-weight: 700; }
+.settings-nav button, .settings-nav a { display: block; text-align: left; border: 0; background: transparent; padding: 9px 12px; border-radius: 8px; font: inherit; font-size: 13px; color: var(--color-ink-secondary); cursor: pointer; text-decoration: none; }
+.settings-nav button.is-active, .settings-nav a.is-active { background: var(--color-chip); color: var(--color-ink); font-weight: 700; }
 .settings-section { display: flex; flex-direction: column; gap: 16px; }
 .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--color-border-soft); }
 .settings-row:last-child { border-bottom: 0; }
@@ -588,6 +588,57 @@ body {
 .settings-usage-row { padding: 10px 0; }
 .settings-usage-bar-track { flex: 1; height: 7px; background: var(--color-track); border-radius: 4px; margin-top: 6px; }
 .settings-usage-bar-fill { height: 100%; border-radius: 4px; }
+
+/* Upgrade and capability access states */
+.capability-gate { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 22px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
+.capability-gate-copy { min-width: 0; }
+.capability-gate-kicker { display: block; color: var(--color-ink-muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.capability-gate h2 { margin: 6px 0 5px; font-family: var(--font-sora), sans-serif; font-size: 16px; }
+.capability-gate p { margin: 0; max-width: 560px; color: var(--color-ink-muted); font-size: 12.5px; line-height: 1.5; }
+.upgrade-overlay { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(17, 17, 16, .34); }
+.upgrade-dialog { width: min(100%, 780px); max-height: min(760px, calc(100vh - 48px)); overflow-y: auto; padding: 26px; border: 1px solid rgba(17, 17, 16, .12); border-radius: 18px; background: var(--color-page); color: var(--color-ink); box-shadow: 0 24px 80px rgba(17, 17, 16, .22); }
+.upgrade-dialog-header { display: flex; justify-content: space-between; gap: 18px; }
+.upgrade-dialog-header h2 { margin: 5px 0 8px; font-family: var(--font-sora), sans-serif; font-size: 24px; letter-spacing: -.025em; }
+.upgrade-dialog-header p:last-child { margin: 0; color: var(--color-ink-muted); font-size: 13px; line-height: 1.5; }
+.upgrade-close { width: 30px; height: 30px; flex: 0 0 auto; border: 1px solid var(--color-border); border-radius: 50%; background: var(--color-surface); color: var(--color-ink-muted); font-size: 20px; line-height: 1; cursor: pointer; }
+.upgrade-close:hover { color: var(--color-ink); border-color: var(--color-ink-faint); }
+.upgrade-cadence { display: inline-flex; gap: 3px; margin: 22px 0 16px; padding: 4px; border-radius: 999px; background: var(--color-chip); }
+.upgrade-cadence button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 11px; border: 0; border-radius: 999px; background: transparent; color: var(--color-ink-muted); font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; }
+.upgrade-cadence button.is-active { background: var(--color-surface); color: var(--color-ink); box-shadow: 0 1px 3px rgba(17, 17, 16, .08); }
+.upgrade-cadence button span { color: var(--color-positive); font-size: 10px; }
+.upgrade-plan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.upgrade-plan-card { display: flex; flex-direction: column; padding: 18px; border: 1px solid var(--color-border); border-radius: 14px; background: var(--color-surface); }
+.upgrade-plan-card.is-selected { border-color: var(--color-ink); box-shadow: 0 0 0 1px var(--color-ink); }
+.upgrade-plan-card.is-growth { background: #fbfcf0; }
+.upgrade-plan-card-topline { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 22px; }
+.upgrade-plan-price { margin-top: 16px; font-family: var(--font-sora), sans-serif; font-size: 25px; font-weight: 700; letter-spacing: -.025em; }
+.upgrade-plan-monthly-equivalent { margin-top: 3px; color: var(--color-ink-faint); font-size: 10.5px; }
+.upgrade-plan-good-for { min-height: 38px; margin: 13px 0 10px; color: var(--color-ink-muted); font-size: 12px; line-height: 1.45; }
+.upgrade-plan-card ul { display: grid; gap: 8px; margin: 0 0 18px; padding: 0; list-style: none; color: var(--color-ink-secondary); font-size: 12px; line-height: 1.35; }
+.upgrade-plan-card li { position: relative; padding-left: 16px; }
+.upgrade-plan-card li::before { position: absolute; top: 1px; left: 0; color: var(--color-positive); content: "✓"; font-weight: 700; }
+.upgrade-plan-card .dashboard-button { width: 100%; margin-top: auto; }
+.upgrade-current-note, .upgrade-dialog-note { color: var(--color-ink-muted); font-size: 11.5px; line-height: 1.45; }
+.upgrade-current-note { margin: 16px 0 0; }
+.upgrade-dialog-note { margin: 18px 0 0; }
+.upgrade-error { margin: 14px 0 0; color: var(--color-negative); font-size: 12px; }
+.billing-warning { margin: 0 0 16px; padding: 12px 14px; border: 1px solid #e5d6c6; border-radius: 10px; background: #fffaf4; color: #775d43; font-size: 12.5px; line-height: 1.45; }
+.billing-checkout-notice { margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-subtle); color: var(--color-ink-secondary); font-size: 12.5px; line-height: 1.45; }
+.plan-summary-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, .9fr); gap: 16px; }
+.plan-summary-card { padding: 20px; border: 1px solid var(--color-border); border-radius: 14px; background: var(--color-surface); }
+.plan-summary-card.is-current { border-color: var(--color-ink); box-shadow: 0 0 0 1px var(--color-ink); }
+.plan-summary-card h2 { margin: 4px 0 6px; font-family: var(--font-sora), sans-serif; font-size: 20px; text-transform: capitalize; }
+.plan-summary-card p { margin: 0; color: var(--color-ink-muted); font-size: 12.5px; line-height: 1.5; }
+.plan-summary-details { display: grid; gap: 10px; margin-top: 18px; }
+.plan-summary-detail { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 9px; border-bottom: 1px solid var(--color-border-soft); font-size: 12px; }
+.plan-summary-detail span { color: var(--color-ink-muted); }
+.plan-summary-detail strong { font-weight: 650; text-align: right; }
+.plan-summary-usage { display: grid; gap: 12px; }
+.plan-summary-usage-row { display: grid; gap: 5px; }
+.plan-summary-usage-head { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+.plan-summary-usage-head span { color: var(--color-ink-muted); }
+.plan-summary-usage-track { height: 6px; overflow: hidden; border-radius: 999px; background: var(--color-track); }
+.plan-summary-usage-track span { display: block; height: 100%; border-radius: inherit; background: var(--color-accent); }
 
 /* ---------------------------------------------------------------------- */
 /* Intelligence Inbox                                                      */
@@ -808,6 +859,7 @@ body {
   .theme-table-row { grid-template-columns: 1fr; gap: 4px; }
   .settings-layout { grid-template-columns: 1fr; }
   .settings-nav { flex-direction: row; overflow-x: auto; gap: 6px; }
+  .settings-nav button, .settings-nav a { white-space: nowrap; }
   .ui-drawer { width: 100%; max-width: 100%; }
   .signal-filter-grid { grid-template-columns: 1fr 1fr; }
   .experiment-metrics { grid-template-columns: 1fr 1fr; }
@@ -849,6 +901,11 @@ body {
   .geo-breadcrumb ol { gap: 4px; }
   .geo-table-card { padding-left: 13px; padding-right: 13px; }
   .geo-sort { flex-shrink: 0; }
+  .capability-gate { align-items: flex-start; flex-direction: column; }
+  .plan-summary-grid, .upgrade-plan-grid { grid-template-columns: 1fr; }
+  .upgrade-overlay { align-items: end; padding: 0; }
+  .upgrade-dialog { max-height: 92vh; border-radius: 18px 18px 0 0; padding: 22px 18px 24px; }
+  .upgrade-plan-good-for { min-height: 0; }
 }
 
 /* ---------------------------------------------------------------------- */

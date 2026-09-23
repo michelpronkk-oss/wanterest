@@ -2,18 +2,23 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 import type { ProductRow } from "@/server/db/database.helpers";
 import { archiveProductAction } from "@/app/app/actions";
 import { domainFromUrl } from "./dashboard-utils";
+import { UpgradeTrigger, type UpgradePlan } from "./upgrade-surface";
 
 type Props = {
   workspaceId: string;
   activeProduct: Pick<ProductRow, "id" | "name" | "website_url"> | null;
+  activeProductCount: number;
+  maxProducts: number;
+  currentPlan: UpgradePlan;
   archivedProducts: Array<Pick<ProductRow, "id" | "name" | "website_url">>;
 };
 
-export function ProductLifecycle({ workspaceId, activeProduct, archivedProducts }: Props) {
+export function ProductLifecycle({ workspaceId, activeProduct, activeProductCount, maxProducts, currentPlan, archivedProducts }: Props) {
   const router = useRouter();
   const [pendingProductId, setPendingProductId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +54,13 @@ export function ProductLifecycle({ workspaceId, activeProduct, archivedProducts 
       ) : (
         <p style={{ fontSize: 12.5, color: "var(--color-ink-muted)", margin: "8px 0 0" }}>No active product is currently being tracked.</p>
       )}
+
+      {activeProductCount >= maxProducts ? (
+        <div className="capability-gate" style={{ marginTop: 18 }}>
+          <div className="capability-gate-copy"><span className="capability-gate-kicker">Product access</span><h2>Product limit reached</h2><p>Your {currentPlan} plan includes {maxProducts} active product{maxProducts === 1 ? "" : "s"}. Archive one to free a slot or upgrade your plan.</p></div>
+          {currentPlan === "growth" ? <Link className="dashboard-button dashboard-button-secondary" href="/app/settings/billing">Manage billing</Link> : <UpgradeTrigger workspaceId={workspaceId} currentPlan={currentPlan} label="Upgrade plan" />}
+        </div>
+      ) : null}
 
       <div style={{ borderTop: "1px solid var(--color-border-soft)", marginTop: 18, paddingTop: 14 }}>
         <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 8 }}>Archived products</div>

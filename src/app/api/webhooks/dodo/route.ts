@@ -1,3 +1,5 @@
+import { revalidatePath } from "next/cache";
+
 import { BillingProviderError } from "@/server/providers/billing/contracts";
 import { receiveDodoWebhook } from "@/server/modules/billing";
 import { AppError } from "@/server/lib/errors";
@@ -14,6 +16,10 @@ export async function POST(request: Request) {
       "webhook-timestamp": request.headers.get("webhook-timestamp") ?? undefined,
       "webhook-signature": request.headers.get("webhook-signature") ?? undefined,
     }, traceId);
+    // Billing state is persisted by the webhook processor; invalidate only
+    // the dashboard tree so the next navigation reflects the new entitlements.
+    revalidatePath("/app", "layout");
+    revalidatePath("/app/settings/billing");
     return Response.json({ accepted: true, duplicate: result.duplicate, eventId: result.eventId, processing: result.processing.status, traceId }, { headers: { "x-request-id": traceId } });
   } catch (error) {
     if (error instanceof BillingProviderError) {

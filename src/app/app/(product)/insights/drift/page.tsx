@@ -3,10 +3,27 @@ import { getDemandDriftQuery } from "@/server/modules/demand-intelligence/comman
 import { formatPercent, themeLabel } from "@/components/dashboard/dashboard-utils";
 import { InsightsDataEmptyState, InsightsScopeEmptyState } from "@/components/dashboard/insights-empty-states";
 import { DriftLists } from "@/components/dashboard/drift-lists";
+import { CapabilityGate } from "@/components/dashboard/upgrade-surface";
+import { resolveWorkspaceCapabilities } from "@/server/modules/entitlements/plan-capabilities";
+import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
 
 export default async function DemandDriftPage() {
   const { workspace, product } = await getDashboardContext();
   if (!workspace || !product) return <InsightsScopeEmptyState workspace={workspace} product={product} />;
+
+  const capabilities = await resolveWorkspaceCapabilities(createSupabaseServiceClient(), workspace.id);
+  if (capabilities.history.driftHistoryDays === 0) {
+    return (
+      <CapabilityGate
+        workspaceId={workspace.id}
+        currentPlan={capabilities.plan}
+        enabled={false}
+        requiredPlan="pro"
+        title="Demand Drift is a paid insight"
+        body="Compare changing themes and emerging language across scans with 30 days of history."
+      />
+    );
+  }
 
   const driftResult = await getDemandDriftQuery(workspace.id, product.id).catch(() => null);
   if (!driftResult) {

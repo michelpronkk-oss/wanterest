@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { triggerRescanAction } from "@/app/app/actions";
+import { triggerRescanAction, type RescanUpgradeDetails } from "@/app/app/actions";
 import type { ProductDemandScanHandle } from "@/server/modules/operations/product-demand-scan.schemas";
 import { InboxIcon, SearchIcon } from "./nav-icons";
 import { ScanProgressModal } from "./scan-progress-modal";
@@ -16,27 +16,35 @@ type Props = {
   productName: string;
   productDomain: string | null;
   userInitial: string;
+  currentPlan: "free" | "pro" | "growth";
   inboxItems: InboxItem[];
 };
 
-export function TopBar({ workspaceId, productId, productName, productDomain, userInitial, inboxItems }: Props) {
+export function TopBar({ workspaceId, productId, productName, productDomain, userInitial, currentPlan, inboxItems }: Props) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [scanOpen, setScanOpen] = useState(false);
   const [scanHandle, setScanHandle] = useState<ProductDemandScanHandle | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [scanUpgrade, setScanUpgrade] = useState<RescanUpgradeDetails | null>(null);
   const [inboxOpen, setInboxOpen] = useState(false);
 
   async function handleRescan(allowOpenModal = false) {
     if (scanning || (scanOpen && !allowOpenModal)) return;
     setScanOpen(true);
     setScanError(null);
+    setScanUpgrade(null);
     setScanHandle(null);
     setScanning(true);
     try {
-      const handle = await triggerRescanAction({ workspaceId, productId });
-      setScanHandle(handle);
+      const result = await triggerRescanAction({ workspaceId, productId });
+      if (!result.ok) {
+        setScanError(result.error);
+        setScanUpgrade(result.upgrade ?? null);
+        return;
+      }
+      setScanHandle(result.handle);
       // One refresh publishes the new active job to the server-rendered
       // dashboard banner. Subsequent progress comes from its narrow poll.
       router.refresh();
@@ -49,6 +57,7 @@ export function TopBar({ workspaceId, productId, productName, productDomain, use
 
   function handleRetry() {
     setScanError(null);
+    setScanUpgrade(null);
     void handleRescan(true);
   }
 
@@ -92,6 +101,7 @@ export function TopBar({ workspaceId, productId, productName, productDomain, use
         onClose={() => {
           setScanOpen(false);
           setScanError(null);
+          setScanUpgrade(null);
         }}
         productName={productName}
         jobRunId={scanHandle?.jobRunId ?? null}
@@ -99,6 +109,7 @@ export function TopBar({ workspaceId, productId, productName, productDomain, use
         workspaceId={workspaceId}
         productId={productId}
         errorMessage={scanError}
+        upgrade={scanUpgrade ? { ...scanUpgrade, workspaceId, currentPlan } : undefined}
         onRetry={handleRetry}
       />
       <IntelligenceInbox

@@ -54,6 +54,20 @@ describe("Phase 6 billing", () => {
     const parsed = createCheckoutInputSchema.safeParse({ workspaceId, plan: "pro", interval: "monthly", product_id: "attacker-price" });
     expect(parsed.success).toBe(true);
     expect(parsed.success && "product_id" in parsed.data).toBe(false);
+    expect(createCheckoutInputSchema.safeParse({ plan: "pro", cadence: "annual" }).success).toBe(true);
+    expect(createCheckoutInputSchema.safeParse({ plan: "pro", cadence: "weekly" }).success).toBe(false);
+  });
+
+  it("does not start a second checkout for an already-paid workspace", async () => {
+    const { billing, provider, repository } = service();
+    provider.seedSubscription({ providerSubscriptionId: "sub-paid", providerCustomerId: "cus-paid", internalPlan: "pro", billingInterval: "monthly" });
+    const event = await provider.emit("sub-paid", "active");
+    await billing.processVerifiedEvent(workspaceId, event);
+    await expect(billing.createCheckout({ workspaceId, plan: "growth", interval: "monthly" })).rejects.toMatchObject({
+      code: "CONFLICT",
+      details: { reason: "ACTIVE_SUBSCRIPTION", currentPlan: "pro", upgradeTarget: "growth" },
+    });
+    expect(repository.checkoutRequests.size).toBe(0);
   });
 
   it("rejects invalid webhook signatures before payload parsing", async () => {
@@ -227,12 +241,13 @@ describe("Phase 6 billing", () => {
     expect(requests[1]?.url).toContain("/customers/cus_123/customer-portal/session");
   });
 
-  it("reuses the persisted provider customer for future checkout and keeps Free safe without a customer", async () => {
+  it("reuses the persisted provider customer for the portal and keeps Free safe without a customer", async () => {
     const { billing, provider } = service();
     await expect(billing.createPortalSession(workspaceId)).rejects.toThrow("No Dodo billing customer");
     provider.seedSubscription({ providerSubscriptionId: "sub-customer", providerCustomerId: "cus-customer", internalPlan: "pro", billingInterval: "monthly" });
     await billing.processVerifiedEvent(workspaceId, await provider.emit("sub-customer", "active"));
-    await billing.createCheckout({ workspaceId, plan: "growth", interval: "annual", idempotencyKey: "customer-reuse" });
-    expect([...provider.checkoutInputs.values()].at(-1)?.providerCustomerId).toBe("cus-customer");
+    const portal = await billing.createPortalSession(workspaceId);
+    expect(portal.portalUrl).toContain("cus-customer");
+    expect(provider.checkoutInputs.size).toBe(0);
   });
 });

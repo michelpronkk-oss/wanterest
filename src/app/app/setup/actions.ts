@@ -35,6 +35,7 @@ export type OnboardingActionState = {
   error: string | null;
   fieldErrors?: OnboardingFieldErrors;
   values?: OnboardingFormValues;
+  upgrade?: { capability: string; current?: number; limit?: number; currentPlan?: "free" | "pro" | "growth"; upgradeTarget: "pro" | "growth" };
   productId?: string;
   nextPath?: "/app/setup/scan";
 };
@@ -72,7 +73,18 @@ function actionError(error: unknown, conflictMessage?: string): OnboardingAction
   }
   if (publicError.code === "INTERNAL_ERROR") return { status: "error", error: "We could not complete that step. Please try again." };
   if (publicError.code === "CONFLICT" && conflictMessage) return { status: "error", error: conflictMessage };
-  return { status: "error", error: publicError.message };
+  const details = publicError.details;
+  const upgradeTarget = details?.upgradeTarget === "pro" || details?.upgradeTarget === "growth" ? details.upgradeTarget : null;
+  const upgrade: NonNullable<OnboardingActionState["upgrade"]> | undefined = upgradeTarget && typeof details?.capability === "string"
+    ? {
+        capability: details.capability,
+        current: typeof details.current === "number" ? details.current : undefined,
+        limit: typeof details.limit === "number" ? details.limit : undefined,
+        currentPlan: details.currentPlan === "pro" || details.currentPlan === "growth" || details.currentPlan === "free" ? details.currentPlan : undefined,
+        upgradeTarget,
+      }
+    : undefined;
+  return { status: "error", error: publicError.message, ...(upgrade ? { upgrade } : {}) };
 }
 
 function validationError(error: { issues: Array<{ path: PropertyKey[]; message: string }> }, values: OnboardingFormValues): OnboardingActionState {

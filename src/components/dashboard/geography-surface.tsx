@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { Drawer } from "../ui/drawer";
+import { UpgradeTrigger } from "./upgrade-surface";
 import { loadRegionGeometry } from "./geo-geometry/loader";
 import type { RegionGeometry } from "./geo-geometry/types";
 
@@ -22,7 +23,7 @@ export type GeographySurfaceData = {
   window: "7d" | "30d" | "90d"; periodEnd: string; periodStart: string; totalQualifiedSignalCount: number; reliableGeoSignalCount: number; unknownGeoSignalCount: number; geoCoveragePercent: number;
   markets: Market[]; topMarkets: Market[]; fastestGrowing: Market[]; selectedMarket: Market | null; parentMarket: Market | null; regionalDataAvailable: boolean; regionalQualifiedSignalCount: number; regionalCoveragePercent: number;
   coverage: { label: string; percent: number; numerator: number; denominator: number; description: string };
-  access: { enabled: boolean; historyDays: number; trendEnabled: boolean; maxMarkets: number; countryDrilldown: boolean; regionDrilldown?: boolean; regionalHistoryDays?: number; comparisonEnabled?: boolean; upgradeHint: string | null };
+  access: { plan?: "free" | "pro" | "growth"; enabled: boolean; historyDays: number; trendEnabled: boolean; maxMarkets: number; countryDrilldown: boolean; regionDrilldown?: boolean; regionalHistoryDays?: number; comparisonEnabled?: boolean; upgradeHint: string | null };
   filters: { themes: string[]; intents: string[]; competitors: string[]; sources: string[] };
 };
 
@@ -72,7 +73,11 @@ function MarketDrawer({ market, onClose, comparisonEnabled }: { market: Market |
   return <Drawer open title={`${marketLabel(market)} market`} onClose={onClose}><div className="geo-drawer-kicker"><span className="geo-sample-badge">{confidenceLabel(market.sampleState)}</span><span>{region ? market.regionCode : market.countryCode}</span></div><h2 className="insights-drawer-title">{region ? `${marketLabel(market)}, ${market.countryName}` : `Qualified demand in ${market.countryName}`}</h2><div className="insights-drawer-grid"><div><div className="insights-drawer-stat-label">Qualified signals</div><div className="insights-drawer-stat-value">{market.qualifiedSignalCount}</div></div>{region ? <div><div className="insights-drawer-stat-label">Share of country</div><div className="insights-drawer-stat-value">{percent(market.shareOfParentMarket)}</div></div> : null}<div><div className="insights-drawer-stat-label">Trend</div><div className={`insights-drawer-stat-value ${trendClass(market.trend)}`}>{trendText(market.trend)}</div></div><div><div className="insights-drawer-stat-label">Top pain</div><div className="insights-drawer-stat-value">{market.topPain ?? "—"}</div></div><div><div className="insights-drawer-stat-label">Top intent</div><div className="insights-drawer-stat-value">{market.topIntent ?? "—"}</div></div><div><div className="insights-drawer-stat-label">Most compared</div><div className="insights-drawer-stat-value">{market.topCompetitor ?? "—"}</div></div><div><div className="insights-drawer-stat-label">Top source</div><div className="insights-drawer-stat-value">{market.topSource ?? "—"}</div></div></div>{comparisonEnabled && region && market.parentCountryName ? <p className="insights-drawer-meta">Compared with the {market.parentCountryName} average: {percent(market.shareOfParentMarket)} of selected-country geo-qualified demand.</p> : null}{market.topFeatureDemand ? <p className="insights-drawer-meta">Top feature demand: <strong>{market.topFeatureDemand}</strong></p> : null}{market.recommendedAction ? <div className="insights-drawer-callout">{market.recommendedAction}</div> : <p className="insights-drawer-meta">Geo intelligence is still forming; a market-aware action will appear when the sample is stronger.</p>}<div className="geo-drawer-signals"><div className="ui-section-label">Representative demand</div>{market.representativeSignals.length ? market.representativeSignals.map((signal) => <article className="geo-signal" key={signal.id}><div className="geo-signal-meta"><span>{signal.source}</span><span>{formatDate(signal.publishedAt)}</span></div><p>{signal.excerpt}</p><div className="geo-signal-meta"><span>{signal.intent.replaceAll("_", " ")}</span><span>{signal.theme ?? "Qualified demand"}</span></div></article>) : <p className="insights-drawer-meta">No representative signals available.</p>}</div></Drawer>;
 }
 
-export function GeographySurface({ data }: { data: GeographySurfaceData }) {
+export function GeographySurface({ data, workspaceId }: { data: GeographySurfaceData; workspaceId: string }) {
+  return <><GeographySurfaceBody data={data} />{data.level === "country" && !regionAccess(data) ? <div className="geo-upgrade-note"><UpgradeTrigger workspaceId={workspaceId} currentPlan={data.access.plan ?? "free"} label="Unlock regional intelligence" /></div> : null}</>;
+}
+
+function GeographySurfaceBody({ data }: { data: GeographySurfaceData }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();

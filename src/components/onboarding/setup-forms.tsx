@@ -7,6 +7,7 @@ import type { OnboardingActionState } from "@/app/app/setup/actions";
 import { completeProductUnderstandingAction, createOnboardingProductAction, createOnboardingWorkspaceAction } from "@/app/app/setup/actions";
 import { getOnboardingSuccessPath } from "@/lib/onboarding-transition";
 import { isValidOnboardingDescription, isValidOnboardingProductForm, isValidOnboardingWebsiteInput } from "./form-validation";
+import { UpgradeTrigger } from "@/components/dashboard/upgrade-surface";
 
 const initialState: OnboardingActionState = { status: "idle", error: null };
 type FormAction = (formData: FormData) => void;
@@ -106,6 +107,7 @@ function ProductSetupFields({ workspaceId, action, state, pending, initialWebsit
         <FieldError id="product-description-error" message={descriptionError} />
       </div>
       <ActionError error={state.error} />
+      {state.upgrade ? <UpgradeTrigger workspaceId={workspaceId} currentPlan={state.upgrade.currentPlan ?? "free"} plan={state.upgrade.upgradeTarget} label={state.upgrade.upgradeTarget === "growth" ? "Upgrade to Growth" : "Upgrade to Pro"} /> : null}
       <button className={`onboarding-cta${pending ? " is-pending" : ""}`} type="submit" disabled={pending || !canSubmit} aria-busy={pending}>{pending ? "Preparing your product…" : "Find my demand signals →"}</button>
       <p className="onboarding-note">Takes about 30 seconds. No credit card required.</p>
     </form>

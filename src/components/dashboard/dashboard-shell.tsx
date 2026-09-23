@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
 import type { DashboardContext } from "@/server/modules/dashboard/dashboard.context";
+import { getBillingOverviewQuery } from "@/server/modules/billing";
 import { ContextSwitchers } from "./context-switchers";
 import { DashboardNav } from "./dashboard-nav";
 import { UserAccount } from "./user-account";
@@ -16,6 +17,7 @@ type TopBarProps = {
   productName: string;
   productDomain: string | null;
   userInitial: string;
+  currentPlan: "free" | "pro" | "growth";
 };
 
 async function DeferredTopBar({ props, inboxItemsPromise }: { props: TopBarProps; inboxItemsPromise: Promise<Awaited<ReturnType<typeof getInboxItems>>> }) {
@@ -23,14 +25,16 @@ async function DeferredTopBar({ props, inboxItemsPromise }: { props: TopBarProps
   return <TopBar {...props} inboxItems={inboxItems} />;
 }
 
-export function DashboardShell({ context, children }: { context: DashboardContext; children: ReactNode }) {
+export async function DashboardShell({ context, children }: { context: DashboardContext; children: ReactNode }) {
   const { workspace, product } = context;
+  const billing = workspace ? await getBillingOverviewQuery(workspace.id).catch(() => null) : null;
   const topBarProps = workspace && product ? {
     workspaceId: workspace.id,
     productId: product.id,
     productName: product.name,
     productDomain: domainFromUrl(product.website_url),
     userInitial: (context.userEmail?.[0] ?? "U").toUpperCase(),
+    currentPlan: billing?.effectivePlan ?? "free",
   } : null;
   const inboxItemsPromise = topBarProps
     ? getInboxItems(topBarProps.workspaceId, topBarProps.productId).catch(() => [])

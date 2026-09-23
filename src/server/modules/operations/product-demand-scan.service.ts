@@ -7,7 +7,7 @@ import { jsonObjectSchema, type JobRunRow, type ProductRow } from "@/server/db/d
 import { AppError } from "@/server/lib/errors";
 import { getTraceId } from "@/server/lib/request-context";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
-import { consumeUsage, getWorkspaceEntitlement } from "@/server/modules/entitlements/entitlement.repository";
+import { consumeUsage, getUsageTotals, getWorkspaceEntitlement } from "@/server/modules/entitlements/entitlement.repository";
 import { resolveMonitoringPolicy } from "@/server/modules/entitlements/monitoring-policy";
 import { scanProfileForMode } from "@/server/modules/entitlements/plan-capabilities";
 import { recordMonitoringScanOutcome } from "@/server/modules/monitoring/monitoring.repository";
@@ -70,7 +70,11 @@ export async function prepareProductDemandScan(input: ProductDemandScanInput, tr
   const client = createSupabaseServiceClient();
   await loadProductForTask(client, parsed);
   const scanEntitlement = await getWorkspaceEntitlement(client, parsed.workspaceId, "scan_frequency");
-  if (scanEntitlement.value === null) throw new AppError("CAPABILITY_DISABLED", "Scanning is not enabled for this workspace.");
+  if (scanEntitlement.value === null) throw new AppError("CAPABILITY_DISABLED", "Scanning is not enabled for this workspace.", 403, {
+    entitlementCode: "SCAN_FREQUENCY_DISABLED",
+    capability: "scan_frequency",
+    upgradeTarget: "pro",
+  });
   const existingResult = await client
     .from("job_runs")
     .select("*")
@@ -133,6 +137,24 @@ export async function prepareProductDemandScan(input: ProductDemandScanInput, tr
     }
   }
 
+  if (parsed.scanMode === "manual" || parsed.scanMode === "manual_refresh" || parsed.scanMode === "manual_deep") {
+    const manualEntitlement = await getWorkspaceEntitlement(client, parsed.workspaceId, "manual_scans_monthly");
+    if (typeof manualEntitlement.value === "number") {
+      const totals = await getUsageTotals(client, parsed.workspaceId);
+      const used = totals.find((entry) => entry.usage_type === "manual_scan")?.amount ?? 0;
+      const limit = manualEntitlement.value;
+      if (used >= limit) {
+        throw new AppError("USAGE_LIMIT_EXCEEDED", "The monthly manual scan limit was reached.", 429, {
+          entitlementCode: "MANUAL_SCAN_LIMIT_REACHED",
+          capability: "manual_scans_monthly",
+          current: used,
+          limit,
+          upgradeTarget: limit <= 3 ? "pro" : "growth",
+        });
+      }
+    }
+  }
+
   const reference = jsonObjectSchema.parse({
     workflow: "product-demand-scan",
     scanMode: parsed.scanMode,
@@ -168,7 +190,7 @@ export async function executeProductDemandScan(input: ProductDemandScanInput, tr
   try {
     await consumeUsage(client, {
       workspaceId: parsed.workspaceId,
-      usageType: "source_scan",
+      usageType: ["manual", "manual_refresh", "manual_deep"].includes(parsed.scanMode) ? "manual_scan" : "source_scan",
       amount: 1,
       idempotencyKey: `source_scan:${job?.idempotency_key ?? parsed.idempotencyKey}`,
       actorUserId: parsed.requestedByUserId,

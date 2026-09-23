@@ -3,6 +3,8 @@ import Link from "next/link";
 import { getDashboardContext } from "@/server/modules/dashboard/dashboard.context";
 import { getCurrentProductSnapshotQuery } from "@/server/modules/intelligence/commands";
 import { getBillingOverviewQuery } from "@/server/modules/billing";
+import { getPlanCapabilities } from "@/server/modules/entitlements";
+import { getActiveExperimentsQuery } from "@/server/modules/experiments/commands";
 import { listWorkspaceMembersQuery } from "@/server/modules/workspaces";
 import { initialSourceAvailability } from "@/server/modules/operations/source-control.service";
 import { getProductDemandScanSummary } from "@/server/modules/operations/product-demand-scan.service";
@@ -11,23 +13,28 @@ import { formatDate, sourceLabel } from "@/components/dashboard/dashboard-utils"
 import { SourceBrandIcon } from "@/components/ui/source-brand-icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProductLifecycle } from "@/components/dashboard/product-lifecycle";
+import { PlanUsageSummary } from "@/components/dashboard/plan-usage-summary";
+import { UpgradeTrigger } from "@/components/dashboard/upgrade-surface";
 
 type BusinessClassification = { business_type?: string; market_scope?: string; primary_category?: string };
 
 export default async function SettingsPage() {
-  const { workspace, product, archivedProducts } = await getDashboardContext();
+  const { workspace, product, products, archivedProducts } = await getDashboardContext();
   if (!workspace) {
     return <section className="dashboard-page dashboard-state"><p className="dashboard-eyebrow">Settings</p><h1>Create a workspace first</h1><Link className="dashboard-button dashboard-button-primary" href="/app/setup/workspace">Create workspace</Link></section>;
   }
 
-  const [snapshot, billing, members, scanSummary] = await Promise.all([
+  const [snapshot, billing, members, scanSummary, activeExperiments] = await Promise.all([
     product ? getCurrentProductSnapshotQuery(workspace.id, product.id).catch(() => null) : Promise.resolve(null),
     getBillingOverviewQuery(workspace.id).catch(() => null),
     listWorkspaceMembersQuery(workspace.id).catch(() => []),
     product ? getProductDemandScanSummary(workspace.id, product.id).catch(() => null) : Promise.resolve(null),
+    getActiveExperimentsQuery(workspace.id).catch(() => []),
   ]);
 
   const classification = (snapshot?.metadata as { business_classification?: BusinessClassification } | null)?.business_classification ?? null;
+  const currentPlan = billing?.effectivePlan ?? "free";
+  const capabilities = getPlanCapabilities(currentPlan, billing?.subscription?.billing_interval === "monthly" || billing?.subscription?.billing_interval === "annual" ? billing.subscription.billing_interval : null);
 
   const generalSection = (
     <>
@@ -61,7 +68,7 @@ export default async function SettingsPage() {
       ) : (
         <EmptyState title="No active product yet" body="Add a product to start tracking demand. Archived product history remains available below." cta={{ label: "Add product", href: "/app/setup/product?new=1" }} />
       )}
-      <ProductLifecycle workspaceId={workspace.id} activeProduct={product} archivedProducts={archivedProducts} />
+      <ProductLifecycle workspaceId={workspace.id} activeProduct={product} activeProductCount={products.length} maxProducts={capabilities.products.maxProducts} currentPlan={currentPlan} archivedProducts={archivedProducts} />
     </>
   );
 
@@ -91,26 +98,47 @@ export default async function SettingsPage() {
     </>
   );
 
+  const usageByType = new Map((billing?.usage ?? []).map((usage) => [usage.usageType, usage.amount]));
+  const planDescription = currentPlan === "free"
+    ? "For trying Wanterest and validating demand manually."
+    : currentPlan === "pro"
+      ? "For founders and small product teams building a continuous view of demand."
+      : "For teams tracking multiple products and markets.";
+  const included = [
+    capabilities.monitoring.enabled ? `Automatic monitoring every ~${capabilities.monitoring.monitoringIntervalMinutes === 120 ? "2 hours" : "6 hours"}` : "Manual demand validation",
+    capabilities.history.driftHistoryDays > 0 ? `${capabilities.history.driftHistoryDays}-day Demand Drift history` : "No historical Demand Drift",
+    capabilities.geography.regionDrilldown ? "Regional Geo intelligence" : "Country-level Geo snapshot",
+    `${capabilities.experiments.maxActiveExperiments} active experiments`,
+    `${capabilities.team.seats} seat${capabilities.team.seats === 1 ? "" : "s"}`,
+  ];
   const planSection = !billing ? (
     <p style={{ fontSize: 13, color: "var(--color-ink-muted)" }}>Plan and usage details are unavailable right now.</p>
   ) : (
-    <>
-      <div className="ui-card ui-card-pad-lg" style={{ marginBottom: 16, border: "1.5px solid var(--color-ink)" }}>
-        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, textTransform: "capitalize" }}>{billing.effectivePlan} plan</div>
-        <div style={{ fontSize: 12.5, color: "var(--color-ink-muted)" }}>{billing.subscription?.status ?? "No active subscription"}</div>
-      </div>
-      {billing.usage.map((usage) => (
-        <div className="settings-usage-row" key={usage.usageType}>
-          <div className="settings-row-label">{usage.usageType.replaceAll("_", " ")}</div>
-          <div style={{ fontSize: 13.5, fontWeight: 600 }}>{usage.amount}</div>
-        </div>
-      ))}
-      {billing.usage.length === 0 ? <p style={{ fontSize: 13, color: "var(--color-ink-muted)" }}>No usage recorded yet this period.</p> : null}
-    </>
+    <PlanUsageSummary
+      workspaceId={workspace.id}
+      currentPlan={currentPlan}
+      description={planDescription}
+      status={billing.subscription?.status ?? "No active subscription"}
+      cadence={currentPlan === "free" ? null : billing.subscription?.billing_interval === "annual" ? "annual" : "monthly"}
+      price={currentPlan === "pro" ? (billing.subscription?.billing_interval === "annual" ? "$468/year" : "$49/month") : currentPlan === "growth" ? (billing.subscription?.billing_interval === "annual" ? "$948/year" : "$99/month") : null}
+      onPaidPlan={currentPlan !== "free"}
+      metrics={[
+        { label: "Manual scans", used: usageByType.get("manual_scan") ?? 0, limit: capabilities.manual.manualScansPerMonth },
+        { label: "Products", used: products.length, limit: capabilities.products.maxProducts },
+        { label: "Active experiments", used: activeExperiments.length, limit: capabilities.experiments.maxActiveExperiments },
+      ]}
+      included={included}
+    />
   );
 
   const teamSection = (
     <>
+      {members.filter((member) => member.status === "active").length >= capabilities.team.seats ? (
+        <div className="capability-gate" style={{ marginBottom: 14 }}>
+          <div className="capability-gate-copy"><span className="capability-gate-kicker">Seat limit reached</span><h2>Invite more teammates on Growth</h2><p>{capabilities.team.seats} seat{capabilities.team.seats === 1 ? "" : "s"} included in {currentPlan === "free" ? "Free" : currentPlan === "pro" ? "Pro" : "Growth"}.</p></div>
+          {currentPlan === "growth" ? <Link className="dashboard-button dashboard-button-secondary" href="/app/settings/billing">Manage billing</Link> : <UpgradeTrigger workspaceId={workspace.id} currentPlan={currentPlan} plan="growth" label="Unlock more seats" />}
+        </div>
+      ) : null}
       {members.length === 0 ? <p style={{ fontSize: 13, color: "var(--color-ink-muted)" }}>No members found.</p> : members.map((member) => (
         <div className="settings-row" key={member.id}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

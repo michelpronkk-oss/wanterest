@@ -86,10 +86,19 @@ export async function consumeUsage(
   const { data, error } = await client.rpc("consume_usage", args);
   if (error) {
     if (error.code === "22003" || error.message.includes("usage_limit_exceeded")) {
-      throw new AppError("USAGE_LIMIT_EXCEEDED", "The workspace usage limit was reached.");
+      const detailByUsageType: Record<string, { entitlementCode: string; capability: string; upgradeTarget: "pro" | "growth" | null }> = {
+        manual_scan: { entitlementCode: "MANUAL_SCAN_LIMIT_REACHED", capability: "manual_scans_monthly", upgradeTarget: "pro" },
+        experiment_created: { entitlementCode: "EXPERIMENT_LIMIT_REACHED", capability: "experiments_max", upgradeTarget: "growth" },
+      };
+      const details = detailByUsageType[input.usageType];
+      throw new AppError("USAGE_LIMIT_EXCEEDED", "The workspace usage limit was reached.", 429, details);
     }
     if (error.code === "P0001" || error.message.includes("usage_capability_disabled")) {
-      throw new AppError("CAPABILITY_DISABLED", "This workspace capability is not enabled.");
+      throw new AppError("CAPABILITY_DISABLED", "This workspace capability is not enabled.", 403, {
+        entitlementCode: "CAPABILITY_DISABLED",
+        capability: input.usageType === "manual_scan" ? "manual_scans_monthly" : input.usageType,
+        upgradeTarget: input.usageType === "manual_scan" ? "pro" : null,
+      });
     }
     if (error.code === "42501" || error.message.includes("workspace_access_denied")) {
       throw new AppError("FORBIDDEN", "You cannot use this workspace.");
