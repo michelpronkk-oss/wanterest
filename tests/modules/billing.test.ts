@@ -284,6 +284,71 @@ describe("Phase 6 billing", () => {
     })).rejects.toMatchObject(new BillingProviderError("PROVIDER_ERROR", "Dodo rejected the billing request."));
   });
 
+  // Regression: checkout creation must call Dodo's real POST /checkouts endpoint, never
+  // the old, nonexistent /checkout-sessions path that produced a live 403 on every
+  // attempt. Also pins the exact request shape (Bearer auth, mapped product ID,
+  // quantity 1) and response mapping (checkout_url/session_id) to the documented
+  // /checkouts contract.
+  it("calls POST /checkouts (never /checkout-sessions) with Bearer auth and the mapped product, and maps the response", async () => {
+    let requestedUrl: string | undefined;
+    let requestedMethod: string | undefined;
+    let requestedAuth: string | undefined;
+    let requestedBody: Record<string, unknown> | undefined;
+    const provider = new DodoBillingProvider({
+      apiKey: "sk_live_regression",
+      webhookSecret: fixtureSecret,
+      baseUrl: "https://live.dodopayments.com",
+      catalog,
+      fetcher: async (url, init) => {
+        requestedUrl = String(url);
+        requestedMethod = init?.method;
+        requestedAuth = init?.headers ? (init.headers as Record<string, string>).Authorization : undefined;
+        requestedBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return new Response(JSON.stringify({ session_id: "cks_regression_1", checkout_url: "https://checkout.dodopayments.com/cks_regression_1" }), { status: 200 });
+      },
+    });
+
+    const result = await provider.createCheckout({
+      workspaceId,
+      internalPlan: "pro",
+      billingInterval: "monthly",
+      providerProductId: "dodo_pro_monthly",
+      providerCustomerId: "cus_existing_1",
+      returnUrl: "https://app.wanterest.com/app/settings/billing?checkout=success",
+      checkoutReference: "checkout:regression-1",
+    });
+
+    expect(requestedUrl).toBe("https://live.dodopayments.com/checkouts");
+    expect(requestedUrl).not.toContain("/checkout-sessions");
+    expect(requestedMethod).toBe("POST");
+    expect(requestedAuth).toBe("Bearer sk_live_regression");
+    expect(requestedBody).toMatchObject({
+      product_cart: [{ product_id: "dodo_pro_monthly", quantity: 1 }],
+      customer: { customer_id: "cus_existing_1" },
+      return_url: "https://app.wanterest.com/app/settings/billing?checkout=success",
+    });
+    expect(result).toEqual({ providerCheckoutId: "cks_regression_1", checkoutUrl: "https://checkout.dodopayments.com/cks_regression_1" });
+  });
+
+  it("rejects a /checkouts response missing checkout_url instead of falling back to an unverified field name", async () => {
+    const provider = new DodoBillingProvider({
+      apiKey: "test",
+      webhookSecret: fixtureSecret,
+      baseUrl: "https://live.dodopayments.com",
+      catalog,
+      // "url" was a guessed fallback for the old wrong endpoint; the real /checkouts
+      // contract only ever returns checkout_url, so this must NOT be accepted.
+      fetcher: async () => new Response(JSON.stringify({ session_id: "cks_2", url: "https://not-the-real-field.example" }), { status: 200 }),
+    });
+    await expect(provider.createCheckout({
+      workspaceId,
+      internalPlan: "pro",
+      billingInterval: "monthly",
+      providerProductId: "dodo_pro_monthly",
+      checkoutReference: "checkout:missing-url",
+    })).rejects.toMatchObject({ code: "PROVIDER_ERROR" });
+  });
+
   // Regression: a Dodo 403 ("credentials accepted, action denied") used to be collapsed
   // into the exact same BillingProviderError code as a 401 ("credentials not accepted"),
   // which made a working-but-unauthorized-for-this-action key indistinguishable in logs

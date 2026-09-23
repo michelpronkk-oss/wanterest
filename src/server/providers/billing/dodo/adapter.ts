@@ -131,7 +131,11 @@ export class DodoBillingProvider implements BillingProvider {
   }
 
   async createCheckout(input: CheckoutRequest): Promise<CheckoutResult> {
-    const response = await this.request("/checkout-sessions", {
+    // Dodo's hosted checkout-creation endpoint is POST /checkouts (a prior "/checkout-sessions"
+    // path does not exist on the live API and returned 403, not 404, because it never reached
+    // real request handling). The request body contract (product_cart/customer/return_url/
+    // metadata) is unchanged between the two — only the path was wrong.
+    const response = await this.request("/checkouts", {
       method: "POST",
       headers: { "Idempotency-Key": input.checkoutReference },
       body: {
@@ -147,9 +151,13 @@ export class DodoBillingProvider implements BillingProvider {
         },
       },
     });
+    // /checkouts responds with { session_id, checkout_url, ... } — not the { session_id |
+    // checkout_id | id } / { checkout_url | url } guesswork the old code carried over
+    // unverified from the wrong endpoint. checkout_url is nullable in Dodo's own schema
+    // (e.g. when a payment is confirmed immediately), so this can legitimately fail.
     const record = asRecord(response);
-    const checkoutUrl = stringAt(record, "checkout_url", "url");
-    const checkoutId = stringAt(record, "session_id", "checkout_id", "id");
+    const checkoutUrl = stringAt(record, "checkout_url");
+    const checkoutId = stringAt(record, "session_id");
     if (!checkoutUrl || !checkoutId) throw new BillingProviderError("PROVIDER_ERROR", "Dodo did not return a checkout URL.");
     return { providerCheckoutId: checkoutId, checkoutUrl };
   }

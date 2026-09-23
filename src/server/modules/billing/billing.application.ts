@@ -11,7 +11,7 @@ import { BillingProviderError, type WebhookHeaders } from "@/server/providers/bi
 import { SupabaseBillingRepository } from "./billing.repository";
 import { BillingService } from "./billing.service";
 import { changePlanInputSchema, createCheckoutInputSchema, workspaceIdSchema, type BillingInterval, type BillingPlan } from "./billing.schemas";
-import { getDodoProductCatalog } from "./product-mapping";
+import { getDodoProductCatalog, productFor } from "./product-mapping";
 import { getDashboardContext } from "@/server/modules/dashboard/dashboard.context";
 
 export const BILLING_RETURN_URL = "https://app.wanterest.com/app/settings/billing";
@@ -120,6 +120,29 @@ export async function checkDodoConnectivity(): Promise<{ ok: true } | { ok: fals
   const billingProvider = provider();
   if (!billingProvider.checkConnectivity) throw new AppError("INTERNAL_ERROR", "The configured billing provider does not support a connectivity check.");
   return billingProvider.checkConnectivity();
+}
+
+/**
+ * Creates one real (uncompleted, non-billed) Dodo checkout session against the actual
+ * `/checkouts` endpoint and product mapping used in production, without ever confirming
+ * it or visiting the returned URL — proving the exact request path/shape this app sends
+ * is accepted, not just that the key authenticates (see checkDodoConnectivity). Intended
+ * only for the `smoke:dodo` script's opt-in checkout check; never called from a normal
+ * request path. The synthetic checkoutReference makes any resulting session obviously
+ * identifiable (and safely ignorable) in the Dodo dashboard.
+ */
+export async function checkDodoCheckoutSmoke(): Promise<{ providerCheckoutId: string; checkoutUrl: string }> {
+  assertDodoBillingConfigured();
+  const catalog = getDodoProductCatalog();
+  const mapping = productFor(catalog, "pro", "monthly");
+  return provider().createCheckout({
+    workspaceId: "00000000-0000-4000-8000-000000000000",
+    internalPlan: mapping.internalPlan,
+    billingInterval: mapping.billingInterval,
+    providerProductId: mapping.providerProductId,
+    returnUrl: CHECKOUT_RETURN_URL,
+    checkoutReference: `smoke-test:dodo-connectivity:${Date.now()}`,
+  });
 }
 
 /**
