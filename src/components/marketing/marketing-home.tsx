@@ -673,10 +673,11 @@ function DailyValue() {
 
 function FinalCta() {
   return (
-    <section className="marketing-section is-tight is-alt marketing-final-cta">
+    <section className="marketing-section is-tight marketing-final-cta is-dark">
+      <div className="marketing-final-cta-glow" aria-hidden="true" />
       <h2 className="marketing-heading marketing-section-title marketing-section-title-compact marketing-final-cta-title">The demand is already there.</h2>
       <p className="marketing-final-cta-sub">Find it.</p>
-      <ScanForm compact />
+      <ScanForm compact ctaVariant="accent" />
     </section>
   );
 }

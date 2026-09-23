@@ -3,7 +3,15 @@ import Link from "next/link";
 import { LogoMark } from "@/components/dashboard/nav-icons";
 import { X_PROFILE_URL } from "@/shared/config/site";
 
-type FooterLink = { label: string; href: string; external?: boolean };
+function XLogoIcon() {
+  return (
+    <svg className="marketing-footer-x-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  );
+}
+
+type FooterLink = { label: string; href: string; external?: boolean; icon?: boolean };
 type FooterGroup = { heading: string; links: FooterLink[] };
 
 const FOOTER_GROUPS: FooterGroup[] = [
@@ -19,7 +27,7 @@ const FOOTER_GROUPS: FooterGroup[] = [
     links: [
       { label: "About", href: "/about" },
       { label: "Contact", href: "/contact" },
-      { label: "X", href: X_PROFILE_URL, external: true },
+      { label: "X", href: X_PROFILE_URL, external: true, icon: true },
     ],
   },
   {
@@ -53,8 +61,8 @@ export function MarketingFooter() {
                   {group.links.map((link) => (
                     <li key={link.label}>
                       {link.external ? (
-                        <a href={link.href} target="_blank" rel="noopener noreferrer">
-                          {link.label}
+                        <a href={link.href} target="_blank" rel="noopener noreferrer" aria-label={link.icon ? link.label : undefined}>
+                          {link.icon ? <XLogoIcon /> : link.label}
                         </a>
                       ) : (
                         <Link href={link.href}>{link.label}</Link>

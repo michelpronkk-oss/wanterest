@@ -26,6 +26,11 @@ export function createDodoProductCatalog(values: {
   if (productIds.some((value) => value.length === 0)) {
     throw new AppError("BILLING_CONFIG_ERROR", "Dodo product mapping is not configured.", 500, { reason: "missing_product_mapping" });
   }
+  // A pasted product ID with an internal line break/space is otherwise indistinguishable
+  // from a correctly configured one until Dodo rejects it at request time.
+  if (productIds.some((value) => /\s/.test(value))) {
+    throw new AppError("BILLING_CONFIG_ERROR", "Dodo product mapping contains a malformed product ID.", 500, { reason: "malformed_product_mapping" });
+  }
   if (new Set(productIds).size !== productIds.length) {
     throw new AppError("BILLING_CONFIG_ERROR", "Dodo product mapping contains duplicate product IDs.", 500, { reason: "duplicate_product_mapping" });
   }

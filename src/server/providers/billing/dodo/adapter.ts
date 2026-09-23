@@ -154,6 +154,23 @@ export class DodoBillingProvider implements BillingProvider {
     return { providerCheckoutId: checkoutId, checkoutUrl };
   }
 
+  /**
+   * Read-only, non-mutating probe of whether the configured key authenticates against
+   * the resolved base URL at all, independent of checkout-specific authorization. Lists
+   * one product; never creates, updates, or deletes anything. Used to distinguish "the
+   * key/host itself is broken" (this also fails) from "checkout specifically is denied"
+   * (this succeeds, checkout still 403s) without ever touching billing state.
+   */
+  async checkConnectivity(): Promise<{ ok: true } | { ok: false; code: BillingProviderError["code"]; message: string }> {
+    try {
+      await this.request("/products?page_size=1", { method: "GET" });
+      return { ok: true };
+    } catch (error) {
+      if (error instanceof BillingProviderError) return { ok: false, code: error.code, message: error.message };
+      throw error;
+    }
+  }
+
   async createPortalSession(providerCustomerId: string, returnUrl?: string) {
     const query = new URLSearchParams();
     if (returnUrl) query.set("return_url", returnUrl);
@@ -317,7 +334,15 @@ export class DodoBillingProvider implements BillingProvider {
       // Safe: only the provider's own short code/message is logged, never the
       // Authorization header, request body, or payment data.
       console.error("[dodo] request failed", { path, status: response.status, providerCode, providerMessage: providerMessage?.slice(0, 300) });
-      if (response.status === 401 || response.status === 403) throw new BillingProviderError("UNAUTHORIZED", "Dodo rejected the request.");
+      // 401 means the credentials were not accepted at all (bad/missing key) — a genuine
+      // config error. 403 means the credentials WERE accepted but this specific account/key
+      // is not permitted to perform the action (e.g. live mode not activated, product/key
+      // environment mismatch, IP allowlist). Collapsing these two hid exactly the signal
+      // needed to rule out "the key is wrong" once the key is already confirmed valid.
+      if (response.status === 401) throw new BillingProviderError("UNAUTHORIZED", "Dodo did not accept the configured API credentials.");
+      if (response.status === 403) throw new BillingProviderError("FORBIDDEN", "Dodo authenticated the request but denied this action.");
+      if (response.status === 404) throw new BillingProviderError("NOT_FOUND", "Dodo could not find the referenced resource.");
+      if (response.status === 422) throw new BillingProviderError("INVALID_REQUEST", "Dodo rejected the request payload.");
       if (response.status === 429) throw new BillingProviderError("RATE_LIMITED", "Dodo rate limited the request.", true);
       if (response.status >= 500) throw new BillingProviderError("UNAVAILABLE", "Dodo is temporarily unavailable.", true);
       throw new BillingProviderError("PROVIDER_ERROR", "Dodo rejected the billing request.");

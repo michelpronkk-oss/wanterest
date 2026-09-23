@@ -46,7 +46,7 @@ function useTypingPlaceholder(defaultText: string, enabled: boolean): string {
   return display;
 }
 
-export function ScanForm({ compact = false }: { compact?: boolean }) {
+export function ScanForm({ compact = false, ctaVariant = "ink" }: { compact?: boolean; ctaVariant?: "ink" | "accent" }) {
   const [site, setSite] = useState("");
   const [error, setError] = useState<string | null>(null);
   const defaultPlaceholder = compact ? "yourcompany.com" : "yourwebsite.com";
@@ -79,7 +79,7 @@ export function ScanForm({ compact = false }: { compact?: boolean }) {
         aria-invalid={Boolean(error)}
         aria-describedby={error ? "marketing-site-error" : undefined}
       />
-      <button type="submit" className={`marketing-cta${compact ? " is-compact" : ""}`}>
+      <button type="submit" className={`marketing-cta${compact ? " is-compact" : ""}${ctaVariant === "accent" ? " is-accent" : ""}`}>
         Scan my website →
       </button>
       {error ? <p id="marketing-site-error" className="marketing-scan-error" role="alert">{error}</p> : null}

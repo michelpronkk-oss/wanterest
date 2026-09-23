@@ -15,6 +15,8 @@ import { getInitialScanState } from "@/server/modules/onboarding";
 import { scanResultSummarySchema, type ScanResultSummary } from "@/server/modules/operations/product-demand-scan.schemas";
 import type { ProductDemandScanHandle, ScanProgress } from "@/server/modules/operations/product-demand-scan.schemas";
 import { toPublicError } from "@/server/lib/errors";
+import { redactMessage } from "@/server/lib/http";
+import { getTraceId } from "@/server/lib/request-context";
 import { nextActiveProductId } from "@/server/modules/products/product-lifecycle";
 
 const returnToSchema = z.string().trim().max(400).refine(
@@ -151,7 +153,7 @@ export type RescanUpgradeDetails = {
 
 export type RescanActionResult =
   | { ok: true; handle: ProductDemandScanHandle }
-  | { ok: false; error: string; upgrade?: RescanUpgradeDetails };
+  | { ok: false; error: string; upgrade?: RescanUpgradeDetails; traceId?: string };
 
 /** Triggers the same product-demand-scan orchestration used for onboarding, tagged as a manual rescan. */
 export async function triggerRescanAction(input: unknown): Promise<RescanActionResult> {
@@ -171,7 +173,23 @@ export async function triggerRescanAction(input: unknown): Promise<RescanActionR
     const upgrade: RescanUpgradeDetails | undefined = upgradeTarget && typeof details?.capability === "string"
       ? { capability: details.capability, current: typeof details.current === "number" ? details.current : undefined, limit: typeof details.limit === "number" ? details.limit : undefined, upgradeTarget }
       : undefined;
-    return { ok: false, error: publicError.message, ...(upgrade ? { upgrade } : {}) };
+    // Server actions have no HTTP response to attach a request id to, so unlike
+    // route handlers (see jsonError) a 5xx here would otherwise vanish with no
+    // way to correlate the client's generic message back to a server log line.
+    let traceId: string | undefined;
+    if (publicError.status >= 500) {
+      traceId = getTraceId();
+      console.error("[action] triggerRescanAction failed", {
+        traceId,
+        code: publicError.code,
+        status: publicError.status,
+        workspaceId: parsed.data.workspaceId,
+        productId: parsed.data.productId,
+        name: error instanceof Error ? error.name : typeof error,
+        message: redactMessage(error instanceof Error ? error.message : String(error)),
+      });
+    }
+    return { ok: false, error: publicError.message, ...(upgrade ? { upgrade } : {}), ...(traceId ? { traceId } : {}) };
   }
 }
 

@@ -31,14 +31,52 @@ async function assertWorkspaceMember(workspaceId: string) {
   if (!data) throw new AppError("FORBIDDEN", "You cannot access this workspace billing state.");
 }
 
+/**
+ * process.env values can arrive with incidental leading/trailing whitespace (a stray
+ * newline from a copy-pasted dashboard secret is the classic case), which is invisible
+ * in any UI that shows the value but silently breaks header/URL construction. Every
+ * Dodo-bound string is trimmed exactly once here so the rest of the module never has to
+ * think about it again.
+ */
+function trimmedOrUndefined(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+function resolveDodoBaseUrl(env: ReturnType<typeof getServerEnv>): string {
+  const override = trimmedOrUndefined(env.DODO_API_BASE_URL);
+  if (override) return override;
+  return env.DODO_PAYMENTS_ENVIRONMENT === "test_mode" ? "https://test.dodopayments.com" : "https://live.dodopayments.com";
+}
+
+/** Safe to log unconditionally: booleans, lengths, and the resolved host, never the key/secret itself. */
+function logDodoBillingDiagnostics(env: ReturnType<typeof getServerEnv>, baseUrl: string): void {
+  const apiKey = trimmedOrUndefined(env.DODO_PAYMENTS_API_KEY);
+  let resolvedApiHost: string | null = null;
+  try { resolvedApiHost = new URL(baseUrl).host; } catch { resolvedApiHost = null; }
+  console.info("[billing] dodo config diagnostics", {
+    environment: env.DODO_PAYMENTS_ENVIRONMENT,
+    resolvedApiHost,
+    baseUrlOverridden: Boolean(trimmedOrUndefined(env.DODO_API_BASE_URL)),
+    apiKeyConfigured: Boolean(apiKey),
+    apiKeyLength: apiKey?.length ?? 0,
+    productMappingConfigured: {
+      proMonthly: Boolean(trimmedOrUndefined(env.DODO_PRODUCT_PRO_MONTHLY)),
+      proAnnual: Boolean(trimmedOrUndefined(env.DODO_PRODUCT_PRO_ANNUAL)),
+      growthMonthly: Boolean(trimmedOrUndefined(env.DODO_PRODUCT_GROWTH_MONTHLY)),
+      growthAnnual: Boolean(trimmedOrUndefined(env.DODO_PRODUCT_GROWTH_ANNUAL)),
+    },
+  });
+}
+
 function provider() {
   const env = getServerEnv();
-  const webhookSecret = env.DODO_WEBHOOK_SECRET;
+  const webhookSecret = trimmedOrUndefined(env.DODO_WEBHOOK_SECRET);
   if (!webhookSecret) throw new AppError("INTERNAL_ERROR", "Dodo webhook configuration is missing.");
   return new DodoBillingProvider({
-    apiKey: env.DODO_PAYMENTS_API_KEY ?? "webhook-only",
+    apiKey: trimmedOrUndefined(env.DODO_PAYMENTS_API_KEY) ?? "webhook-only",
     webhookSecret,
-    baseUrl: env.DODO_API_BASE_URL ?? (env.DODO_PAYMENTS_ENVIRONMENT === "test_mode" ? "https://test.dodopayments.com" : "https://live.dodopayments.com"),
+    baseUrl: resolveDodoBaseUrl(env),
     catalog: getDodoProductCatalog(),
   });
 }
@@ -53,13 +91,35 @@ function provider() {
  */
 function assertDodoBillingConfigured(): void {
   const env = getServerEnv();
-  if (!env.DODO_PAYMENTS_API_KEY) {
+  const apiKey = trimmedOrUndefined(env.DODO_PAYMENTS_API_KEY);
+  if (!apiKey) {
     throw new AppError("BILLING_CONFIG_ERROR", "Billing is not configured. Support has been notified.", 500, { reason: "missing_api_key" });
+  }
+  // A real API key is a single contiguous token; internal whitespace (a line break
+  // pasted mid-value, a doubled space) always means the value is corrupted, and Dodo's
+  // own error message for that case is indistinguishable from a routine 401/403.
+  if (/\s/.test(apiKey)) {
+    throw new AppError("BILLING_CONFIG_ERROR", "Billing is not configured correctly. Support has been notified.", 500, { reason: "malformed_api_key" });
   }
   if (process.env.DODO_PAYMENTS_ENVIRONMENT === undefined) {
     console.error("[billing] DODO_PAYMENTS_ENVIRONMENT is not set; refusing to silently default to test_mode for a live billing action.");
     throw new AppError("BILLING_CONFIG_ERROR", "Billing environment is not configured. Support has been notified.", 500, { reason: "missing_environment" });
   }
+  logDodoBillingDiagnostics(env, resolveDodoBaseUrl(env));
+}
+
+/**
+ * Read-only diagnostic entry point (see DodoBillingProvider.checkConnectivity): proves
+ * whether the configured live/test key authenticates against the resolved API host at
+ * all, independent of whether a specific action (like checkout) is authorized. Intended
+ * for the `smoke:dodo` script and manual incident diagnosis, never called from a normal
+ * request path. Never mutates billing data.
+ */
+export async function checkDodoConnectivity(): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
+  assertDodoBillingConfigured();
+  const billingProvider = provider();
+  if (!billingProvider.checkConnectivity) throw new AppError("INTERNAL_ERROR", "The configured billing provider does not support a connectivity check.");
+  return billingProvider.checkConnectivity();
 }
 
 /**
@@ -85,7 +145,16 @@ function translateBillingError(error: unknown, context: { workspaceId: string; p
     switch (error.code) {
       case "CONFIGURATION":
       case "UNAUTHORIZED":
+        // The API credentials themselves were missing or rejected outright (HTTP 401).
         return new AppError("BILLING_CONFIG_ERROR", "Billing is not configured correctly. Support has been notified.", 500);
+      case "FORBIDDEN":
+        // HTTP 403: Dodo accepted the credentials but denied the action. Do not
+        // describe this as "not configured" — the key is configured and valid; the
+        // account/action itself is what's being denied (e.g. live mode not yet
+        // activated on the Dodo account, or a live/test product-environment mismatch).
+        return new AppError("BILLING_CONFIG_ERROR", "Billing could not be authorized for this account. Support has been notified.", 500);
+      case "NOT_FOUND":
+        return new AppError(defaultCode, "This plan is not available right now. Support has been notified.", 500);
       case "RATE_LIMITED":
       case "UNAVAILABLE":
         return new AppError("BILLING_PROVIDER_UNAVAILABLE", "The billing provider is temporarily unavailable. Please try again shortly.", 503);

@@ -76,11 +76,20 @@ export interface BillingProvider {
   }): Promise<ProviderSubscription>;
   verifyWebhook(rawBody: string, headers: WebhookHeaders, now?: Date): Promise<VerifiedBillingEvent>;
   normalizeStoredWebhook(payload: JsonObject, context: { providerEventId: string; occurredAt: string; eventType: string }): VerifiedBillingEvent;
+  /** Read-only auth/connectivity probe against a harmless list endpoint. Never mutates billing data. */
+  checkConnectivity?(): Promise<{ ok: true } | { ok: false; code: BillingProviderError["code"]; message: string }>;
 }
 
 export class BillingProviderError extends Error {
   constructor(
-    public readonly code: "CONFIGURATION" | "INVALID_REQUEST" | "UNAUTHORIZED" | "RATE_LIMITED" | "UNAVAILABLE" | "PROVIDER_ERROR",
+    // UNAUTHORIZED (HTTP 401) means the credentials themselves were not accepted;
+    // FORBIDDEN (HTTP 403) means the credentials were accepted but the account/key
+    // is not permitted to perform this specific action. Collapsing the two loses the
+    // exact signal needed to tell "misconfigured key" apart from "key configured,
+    // account/action not authorized" (e.g. live mode not activated, wrong product
+    // environment, IP allowlist). NOT_FOUND (404) is likewise kept distinct from a
+    // 422 payload/product validation failure (INVALID_REQUEST).
+    public readonly code: "CONFIGURATION" | "INVALID_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "RATE_LIMITED" | "UNAVAILABLE" | "PROVIDER_ERROR",
     message: string,
     public readonly retryable = false,
   ) {

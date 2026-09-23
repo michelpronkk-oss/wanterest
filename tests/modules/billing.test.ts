@@ -283,4 +283,60 @@ describe("Phase 6 billing", () => {
       checkoutReference: "checkout:bad-product",
     })).rejects.toMatchObject(new BillingProviderError("PROVIDER_ERROR", "Dodo rejected the billing request."));
   });
+
+  // Regression: a Dodo 403 ("credentials accepted, action denied") used to be collapsed
+  // into the exact same BillingProviderError code as a 401 ("credentials not accepted"),
+  // which made a working-but-unauthorized-for-this-action key indistinguishable in logs
+  // from a genuinely misconfigured one. 401/403/404/422 must each surface distinctly.
+  it("distinguishes 401/403/404/422 instead of collapsing them into one auth error", async () => {
+    function providerRespondingWith(status: number, body: Record<string, unknown> = {}) {
+      return new DodoBillingProvider({
+        apiKey: "test",
+        webhookSecret: fixtureSecret,
+        baseUrl: "https://live.dodopayments.com",
+        catalog,
+        fetcher: async () => new Response(JSON.stringify(body), { status }),
+      });
+    }
+    const checkout = (provider: DodoBillingProvider) => provider.createCheckout({
+      workspaceId,
+      internalPlan: "pro",
+      billingInterval: "monthly",
+      providerProductId: "dodo_pro_monthly",
+      checkoutReference: "checkout:status-mapping",
+    });
+
+    await expect(checkout(providerRespondingWith(401))).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(checkout(providerRespondingWith(403))).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(checkout(providerRespondingWith(404))).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(checkout(providerRespondingWith(422))).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+  });
+
+  it("checkConnectivity distinguishes a working key (200) from a denied one (403) without mutating anything", async () => {
+    let requestedMethod: string | undefined;
+    let requestedPath: string | undefined;
+    const ok = new DodoBillingProvider({
+      apiKey: "test",
+      webhookSecret: fixtureSecret,
+      baseUrl: "https://live.dodopayments.com",
+      catalog,
+      fetcher: async (url, init) => {
+        requestedMethod = init?.method;
+        requestedPath = String(url);
+        return new Response(JSON.stringify({ items: [] }), { status: 200 });
+      },
+    });
+    await expect(ok.checkConnectivity()).resolves.toEqual({ ok: true });
+    expect(requestedMethod).toBe("GET");
+    expect(requestedPath).toContain("/products");
+
+    const denied = new DodoBillingProvider({
+      apiKey: "test",
+      webhookSecret: fixtureSecret,
+      baseUrl: "https://live.dodopayments.com",
+      catalog,
+      fetcher: async () => new Response(JSON.stringify({}), { status: 403 }),
+    });
+    await expect(denied.checkConnectivity()).resolves.toMatchObject({ ok: false, code: "FORBIDDEN" });
+  });
 });

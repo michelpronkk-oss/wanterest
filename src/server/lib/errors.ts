@@ -8,6 +8,7 @@ export type AppErrorCode =
   | "USAGE_LIMIT_EXCEEDED"
   | "RATE_LIMITED"
   | "CAPABILITY_DISABLED"
+  | "SCAN_DISPATCH_FAILED"
   | "BILLING_CONFIG_ERROR"
   | "BILLING_PRODUCT_INVALID"
   | "BILLING_PROVIDER_UNAVAILABLE"
@@ -46,6 +47,8 @@ function statusForCode(code: AppErrorCode): number {
       return 429;
     case "CAPABILITY_DISABLED":
       return 403;
+    case "SCAN_DISPATCH_FAILED":
+      return 502;
     case "BILLING_CONFIG_ERROR":
     case "BILLING_PRODUCT_INVALID":
       return 500;

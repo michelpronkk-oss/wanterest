@@ -59,7 +59,12 @@ export async function requestProductDemandScanCommand(rawInput: unknown, _reques
     });
   } catch (error) {
     await markProductDemandScanTriggerFailure(prepared.job.id, error);
-    throw error;
+    // The Trigger.dev SDK throws its own (non-AppError) error shapes. Wrap it so
+    // the client gets a safe, typed message instead of toPublicError's generic
+    // "An unexpected error occurred." fallback, while the redacted provider
+    // message above is already persisted on the job row for diagnosis.
+    const message = error instanceof Error ? error.message : "Trigger.dev could not start the scan.";
+    throw new AppError("SCAN_DISPATCH_FAILED", "The scan could not be started. Please try again.", 502, { providerMessage: message.slice(0, 500) });
   }
   try {
     await attachTriggerRun(prepared.job.id, handle.id);

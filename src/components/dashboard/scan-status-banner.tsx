@@ -54,7 +54,7 @@ export function ScanStatusBanner({ state, workspaceId, productId, retryHref = "/
     try {
       const result = await triggerRescanAction({ workspaceId, productId });
       if (!result.ok) {
-        setRetryError(result.error);
+        setRetryError(result.traceId ? `${result.error} (ref: ${result.traceId})` : result.error);
         return;
       }
       setPolledState(dashboardScanStateFromProgress({

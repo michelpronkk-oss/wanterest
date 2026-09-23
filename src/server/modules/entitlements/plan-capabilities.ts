@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "../../db/database.types";
+import { AppError } from "../../lib/errors";
 import type { ScanMode } from "../operations/product-demand-scan.schemas";
 
 /** Wanterest-owned plans. Billing providers must map into this union. */
@@ -327,7 +328,7 @@ export async function resolveWorkspaceCapabilities(client: Client, workspaceId: 
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (result.error) throw result.error;
+  if (result.error) throw new AppError("INTERNAL_ERROR", "Workspace plan capabilities could not be loaded.", 500, { providerMessage: result.error.message });
   const row = result.data as SubscriptionPlanRow | null;
   const cadence: BillingCadence = row?.billing_interval === "monthly" || row?.billing_interval === "annual" ? row.billing_interval : null;
   return getPlanCapabilities(resolveInternalPlan(row), cadence);

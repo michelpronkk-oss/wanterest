@@ -1124,6 +1124,16 @@ body {
 .marketing-product-gap-caption { font-size: 14px; color: var(--color-ink-muted); margin: 0; }
 .marketing-product-gap-conclusion { text-align: center; font-size: 16px; font-weight: 600; color: var(--color-ink); margin: 0; }
 
+/* Reveal-driven motion for the demand map bars and demand gap circles (no-preference only,
+   so reduced-motion users see the final state immediately with no forced starting state). */
+@media (prefers-reduced-motion: no-preference) {
+  .marketing-product-bar-fill { transition: width 1.1s cubic-bezier(0.16, 1, 0.3, 1); }
+  .marketing-reveal:not(.is-visible) .marketing-product-bar-fill { width: 0 !important; }
+  .marketing-product-gap-circle { transition: transform 1.1s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.9s ease; }
+  .marketing-reveal:not(.is-visible) .marketing-product-gap-circle.is-product { transform: translateX(-72px); opacity: 0; }
+  .marketing-reveal:not(.is-visible) .marketing-product-gap-circle.is-competitor { transform: translateX(72px); opacity: 0; }
+}
+
 /* 6. Demand drift */
 .marketing-product-drift-list { display: flex; flex-direction: column; border-top: 1px solid var(--color-border); }
 .marketing-product-drift-row { display: flex; align-items: center; justify-content: space-between; padding: 18px 0; border-bottom: 1px solid var(--color-border); }
@@ -1134,14 +1144,34 @@ body {
 
 /* 7. Geography */
 .marketing-product-geo-row { display: flex; gap: 32px; align-items: center; }
-.marketing-product-geo-map { flex: 1.2; background: var(--color-ink); border-radius: 16px; min-height: 220px; position: relative; overflow: hidden; }
-.marketing-product-geo-map img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.marketing-product-geo-map { flex: 1.2; aspect-ratio: 924 / 330; background: var(--color-ink); border-radius: 16px; min-height: 220px; position: relative; overflow: hidden; box-shadow: 0 30px 64px -30px rgba(17, 17, 16, 0.4); }
+.marketing-product-geo-map-img { opacity: 0.9; }
+.marketing-product-geo-map-glow { position: absolute; inset: 0; z-index: 1; background: radial-gradient(circle at 24% 34%, rgba(215, 255, 61, 0.18), rgba(215, 255, 61, 0) 45%); pointer-events: none; }
+.marketing-product-geo-map-fade { position: absolute; inset: 0; z-index: 1; background: linear-gradient(180deg, rgba(17, 17, 16, 0) 60%, rgba(17, 17, 16, 0.5) 100%); pointer-events: none; }
+.marketing-geo-marker { position: absolute; z-index: 2; transform: translate(-50%, -50%); }
+.marketing-geo-marker-dot { position: relative; display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); box-shadow: 0 0 0 3px rgba(215, 255, 61, 0.16); }
+.marketing-geo-marker.is-md .marketing-geo-marker-dot { width: 8px; height: 8px; }
+.marketing-geo-marker.is-primary .marketing-geo-marker-dot { width: 12px; height: 12px; box-shadow: 0 0 0 4px rgba(215, 255, 61, 0.2), 0 0 26px rgba(215, 255, 61, 0.55); }
+.marketing-geo-marker-dot::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; background: var(--color-accent); opacity: 0.5; animation: marketing-pulse-ring 2.6s ease-out infinite; }
+.marketing-geo-marker.is-primary .marketing-geo-marker-dot::after { inset: -10px; animation-duration: 2.8s; }
+.marketing-product-geo-map-chip { position: absolute; left: 16px; bottom: 16px; z-index: 3; display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 9px; background: rgba(245, 244, 238, 0.08); border: 1px solid rgba(245, 244, 238, 0.14); font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; color: rgba(245, 244, 238, 0.85); }
+.marketing-product-geo-map-chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); flex-shrink: 0; }
 .marketing-product-geo-stats { flex: 1; display: flex; flex-direction: column; gap: 8px; }
 .marketing-product-geo-country { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: var(--color-ink-muted); margin: 0; }
 .marketing-product-geo-count { font-family: var(--font-sora), sans-serif; font-weight: 700; font-size: 22px; color: var(--color-ink); margin: 0; }
 .marketing-product-geo-count span { font-size: 14px; color: var(--color-ink-muted); font-weight: 500; }
 .marketing-product-geo-change { font-size: 14px; font-weight: 600; color: var(--color-positive); margin: 0 0 6px; }
 .marketing-product-geo-top { font-size: 13.5px; color: var(--color-ink-muted); margin: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .marketing-product-geo-map-img { animation: marketing-geo-pan 24s ease-in-out infinite alternate; transform-origin: 26% 30%; }
+}
+@keyframes marketing-geo-pan {
+  from { transform: scale(1); }
+  to { transform: scale(1.05); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marketing-geo-marker-dot::after { animation: none; opacity: 0; }
+}
 
 /* 8. Actions */
 .marketing-product-action-card { background: var(--color-ink); color: var(--color-dark-ink); border-radius: 18px; padding: 40px 44px; max-width: 640px; }
@@ -1150,16 +1180,6 @@ body {
 .marketing-product-action-rec-label { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; color: var(--color-accent); margin: 0 0 8px; }
 .marketing-product-action-rec-title { font-size: 16px; margin: 0 0 16px; }
 .marketing-product-action-rec-meta { font-size: 12.5px; color: rgba(245, 244, 238, 0.5); margin: 0; }
-
-/* 9. Difference (why Wanterest) */
-.marketing-product-compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-.marketing-product-compare-card { border: 1px solid var(--color-border); border-radius: 16px; padding: 30px; background: var(--color-surface); }
-.marketing-product-compare-label { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; margin: 0 0 20px; }
-.marketing-product-compare-label.is-muted { color: var(--color-ink-faint); }
-.marketing-product-compare-label.is-ink { color: var(--color-ink); }
-.marketing-product-compare-list { display: flex; flex-direction: column; gap: 13px; font-size: 14.5px; }
-.marketing-product-compare-list.is-muted { color: var(--color-ink-muted); }
-.marketing-product-compare-list.is-strong { color: var(--color-ink); font-weight: 500; }
 
 /* 10. Philosophy */
 .marketing-product-philosophy { text-align: center; padding: 88px 32px; border-top: 1px solid var(--color-border); }
@@ -1187,7 +1207,6 @@ body {
   .marketing-product-flow-line { display: none; }
   .marketing-product-flow-step { padding-right: 0; }
   .marketing-product-signals-grid { grid-template-columns: 1fr; }
-  .marketing-product-compare-grid { grid-template-columns: 1fr; }
   .marketing-product-geo-row { flex-direction: column; align-items: stretch; }
   .marketing-product-bar-label { width: 130px; font-size: 13px; }
   .marketing-product-closing { padding: 64px 20px; }
@@ -1218,6 +1237,8 @@ body {
 .marketing-cta:hover { transform: translateY(-1px); box-shadow: 0 3px 6px rgba(17, 17, 16, 0.14), 0 22px 38px -14px rgba(17, 17, 16, 0.5); }
 .marketing-cta.is-compact { padding: 13px 20px; font-size: 14px; border-radius: 9px; box-shadow: none; }
 .marketing-cta.is-compact:hover { transform: none; box-shadow: none; opacity: 0.85; }
+.marketing-cta.is-accent { color: var(--color-ink); background: var(--color-accent); box-shadow: none; }
+.marketing-cta.is-accent:hover { transform: none; box-shadow: none; opacity: 0.88; }
 .marketing-cta-nav { font-size: 13.5px; font-weight: 600; color: #ffffff; background: var(--color-ink); padding: 9px 16px; border-radius: 8px; text-decoration: none; transition: opacity 0.15s ease; }
 .marketing-cta-nav:hover { opacity: 0.85; }
 /* Hero */
@@ -1666,6 +1687,11 @@ body {
 .marketing-final-cta-title { max-width: 620px; margin: 0 auto 16px; }
 .marketing-final-cta-sub { font-size: 15px; color: var(--color-ink-muted); margin-bottom: 32px; }
 .marketing-final-cta .marketing-scan-form { margin: 0 auto; }
+.marketing-final-cta.is-dark { position: relative; overflow: hidden; background: var(--color-ink); color: var(--color-dark-ink); }
+.marketing-final-cta-glow { position: absolute; inset: 0; background: radial-gradient(circle at 50% 0%, rgba(215, 255, 61, 0.08), rgba(215, 255, 61, 0) 55%); pointer-events: none; }
+.marketing-final-cta.is-dark .marketing-final-cta-title { position: relative; z-index: 1; color: var(--color-dark-ink); }
+.marketing-final-cta.is-dark .marketing-final-cta-sub { position: relative; z-index: 1; color: rgba(245, 244, 238, 0.6); }
+.marketing-final-cta.is-dark .marketing-scan-form { position: relative; z-index: 1; }
 
 /* Footer */
 .marketing-footer { border-top: 1px solid var(--color-border); }
@@ -1677,8 +1703,9 @@ body {
 .marketing-footer-group { display: flex; flex-direction: column; gap: 13px; min-width: 92px; }
 .marketing-footer-group-heading { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; color: var(--color-ink-faint); margin: 0; text-transform: uppercase; }
 .marketing-footer-group-links { display: flex; flex-direction: column; gap: 11px; list-style: none; margin: 0; padding: 0; }
-.marketing-footer-group-links a { font-size: 13.5px; color: var(--color-ink-muted); text-decoration: none; transition: color 0.15s ease; }
+.marketing-footer-group-links a { display: inline-flex; align-items: center; font-size: 13.5px; color: var(--color-ink-muted); text-decoration: none; transition: color 0.15s ease; }
 .marketing-footer-group-links a:hover { color: var(--color-ink); }
+.marketing-footer-x-icon { display: block; }
 .marketing-footer-bottom { display: flex; justify-content: space-between; gap: 12px; padding-top: 22px; border-top: 1px solid var(--color-border-soft); font-size: 12px; color: var(--color-ink-faint); flex-wrap: wrap; }
 
 @media (max-width: 860px) {

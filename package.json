@@ -24,6 +24,7 @@
     "smoke:reddit": "node scripts/smoke-reddit.mjs",
     "smoke:github": "node scripts/smoke-github.mjs",
     "smoke:x": "node scripts/smoke-x.mjs",
+    "smoke:dodo": "node scripts/smoke-dodo.mjs",
     "smoke:system": "vitest run tests/smoke/system.test.ts --reporter=verbose",
     "smoke:fixture": "vitest run tests/modules/ingestion.test.ts --reporter=verbose",
     "test:trigger": "vitest run tests/trigger --reporter=verbose",

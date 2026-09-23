@@ -30,7 +30,7 @@ export function RescanRetryLink({ workspaceId, productId, label }: Props) {
     try {
       const result = await triggerRescanAction({ workspaceId, productId });
       if (!result.ok) {
-        setError(result.error);
+        setError(result.traceId ? `${result.error} (ref: ${result.traceId})` : result.error);
         return;
       }
       router.refresh();

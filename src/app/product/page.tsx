@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 
+import { DifferenceStage } from "@/components/marketing/difference";
 import { APP_START_URL } from "@/components/marketing/links";
 import { MarketingPageShell } from "@/components/marketing/marketing-page-shell";
 import { Reveal } from "@/components/marketing/reveal";
@@ -32,6 +33,14 @@ const DEMAND_MAP = [
   { label: "AI automation", value: 35, pct: 18 },
 ];
 
+const GEO_MARKERS = [
+  { label: "United States", x: 24, y: 34, size: "lg", primary: true, delay: 0 },
+  { label: "United Kingdom", x: 42, y: 23, size: "sm", primary: false, delay: 0.4 },
+  { label: "Germany", x: 45, y: 21, size: "sm", primary: false, delay: 0.9 },
+  { label: "India", x: 59, y: 46, size: "md", primary: false, delay: 1.3 },
+  { label: "Australia", x: 70, y: 78, size: "sm", primary: false, delay: 0.7 },
+] as const;
+
 const DEMAND_DRIFT = [
   { label: "Pricing pain", value: "↑ 31%", direction: "up" },
   { label: "SSO demand", value: "↑ 9%", direction: "up" },
@@ -39,8 +48,21 @@ const DEMAND_DRIFT = [
   { label: "Competitor X mentions", value: "↑ 12%", direction: "up" },
 ] as const;
 
-const TRADITIONAL_POINTS = ["Company filters", "Contact lists", "Enrichment", "Outbound targets"];
-const WANTEREST_POINTS = ["Real conversations", "Visible pain", "Switching intent", "Feature demand", "Market movement", "Competitive context"];
+const TRADITIONAL_POINTS = [
+  { title: "Company filters", full: "Find companies that match your ICP.", short: "Find companies that match your ICP." },
+  { title: "Contact lists", full: "Get names and email addresses.", short: "Get names and email addresses." },
+  { title: "Enrichment", full: "Fill in firmographic and contact data.", short: "Fill in firmographic and contact data." },
+  { title: "Outbound targets", full: "Build cold outreach lists to hit quota.", short: "Build cold outreach lists to hit quota." },
+];
+
+const WANTEREST_POINTS = [
+  { title: "Real conversations", full: "People discussing your problem in the wild.", short: "People discussing your problem." },
+  { title: "Visible pain", full: "See exactly what they are struggling with.", short: "See what they are struggling with." },
+  { title: "Switching intent", full: "Buyers looking for an alternative right now.", short: "Buyers looking for an alternative." },
+  { title: "Feature demand", full: "What buyers wish your category could do.", short: "What buyers wish your category could do." },
+  { title: "Market movement", full: "Track pain and intent as they shift over time.", short: "Track pain and intent over time." },
+  { title: "Competitive context", full: "See how you stack up in real conversations.", short: "See how you stack up against rivals." },
+];
 
 export default function ProductPage() {
   return (
@@ -153,14 +175,19 @@ export default function ProductPage() {
             </p>
 
             <div className="marketing-product-bars">
-              {DEMAND_MAP.map((row) => (
-                <div className="marketing-product-bar-row" key={row.label}>
-                  <span className="marketing-product-bar-label">{row.label}</span>
-                  <span className="marketing-product-bar-track">
-                    <span className={`marketing-product-bar-fill${row.accent ? " is-accent" : ""}`} style={{ width: `${row.pct}%` }} />
-                  </span>
-                  <span className="marketing-product-bar-value">{row.value}</span>
-                </div>
+              {DEMAND_MAP.map((row, index) => (
+                <Reveal key={row.label} delay={index * 90}>
+                  <div className="marketing-product-bar-row">
+                    <span className="marketing-product-bar-label">{row.label}</span>
+                    <span className="marketing-product-bar-track">
+                      <span
+                        className={`marketing-product-bar-fill${row.accent ? " is-accent" : ""}`}
+                        style={{ width: `${row.pct}%`, transitionDelay: `${index * 90 + 120}ms` }}
+                      />
+                    </span>
+                    <span className="marketing-product-bar-value">{row.value}</span>
+                  </div>
+                </Reveal>
               ))}
             </div>
           </div>
@@ -175,14 +202,18 @@ export default function ProductPage() {
               Compare market demand against your product and competitors to uncover unmet needs and open positioning territory.
             </p>
 
-            <div className="marketing-product-gap-visual" aria-hidden="true">
-              <div className="marketing-product-gap-circle is-product"><span>Your product</span></div>
-              <div className="marketing-product-gap-circle is-competitor"><span>Competitor</span></div>
-            </div>
-            <div className="marketing-product-gap-caption-row">
-              <p className="marketing-product-gap-caption">27% of conversations mention neither product.</p>
-            </div>
-            <p className="marketing-product-gap-conclusion">Open demand for whoever claims it first.</p>
+            <Reveal>
+              <div className="marketing-product-gap-visual" aria-hidden="true">
+                <div className="marketing-product-gap-circle is-product"><span>Your product</span></div>
+                <div className="marketing-product-gap-circle is-competitor"><span>Competitor</span></div>
+              </div>
+            </Reveal>
+            <Reveal delay={200}>
+              <div className="marketing-product-gap-caption-row">
+                <p className="marketing-product-gap-caption">27% of conversations mention neither product.</p>
+              </div>
+              <p className="marketing-product-gap-conclusion">Open demand for whoever claims it first.</p>
+            </Reveal>
           </div>
         </section>
 
@@ -215,17 +246,42 @@ export default function ProductPage() {
               See which countries and regions show the strongest qualified demand, what each market cares about, and where momentum is shifting.
             </p>
 
-            <div className="marketing-product-geo-row">
-              <div className="marketing-product-geo-map">
-                <Image src="/marketing/geo-map.png" alt="World map highlighting regions with qualified demand" width={924} height={540} />
+            <Reveal>
+              <div className="marketing-product-geo-row">
+                <div className="marketing-product-geo-map">
+                  <Image
+                    src="/marketing/geo-map.png"
+                    alt="World map highlighting regions with qualified demand"
+                    fill
+                    sizes="(max-width: 860px) 100vw, 620px"
+                    className="marketing-product-geo-map-img"
+                    style={{ objectFit: "cover", objectPosition: "top" }}
+                  />
+                  <div className="marketing-product-geo-map-glow" aria-hidden="true" />
+                  <div className="marketing-product-geo-map-fade" aria-hidden="true" />
+                  {GEO_MARKERS.map((marker) => (
+                    <span
+                      key={marker.label}
+                      className={`marketing-geo-marker is-${marker.size}${marker.primary ? " is-primary" : ""}`}
+                      style={{ left: `${marker.x}%`, top: `${marker.y}%` }}
+                      aria-hidden="true"
+                    >
+                      <span className="marketing-geo-marker-dot" style={{ animationDelay: `${marker.delay}s` }} />
+                    </span>
+                  ))}
+                  <div className="marketing-product-geo-map-chip">
+                    <span className="marketing-product-geo-map-chip-dot" />
+                    UNITED STATES · 184 SIGNALS
+                  </div>
+                </div>
+                <div className="marketing-product-geo-stats">
+                  <p className="marketing-product-geo-country">UNITED STATES</p>
+                  <p className="marketing-product-geo-count">184 <span>qualified signals</span></p>
+                  <p className="marketing-product-geo-change">+28% this quarter</p>
+                  <p className="marketing-product-geo-top">Top demand: predictable pricing</p>
+                </div>
               </div>
-              <div className="marketing-product-geo-stats">
-                <p className="marketing-product-geo-country">UNITED STATES</p>
-                <p className="marketing-product-geo-count">184 <span>qualified signals</span></p>
-                <p className="marketing-product-geo-change">+28% this quarter</p>
-                <p className="marketing-product-geo-top">Top demand: predictable pricing</p>
-              </div>
-            </div>
+            </Reveal>
           </div>
         </section>
 
@@ -259,24 +315,13 @@ export default function ProductPage() {
               Wanterest shows you what the market actually wants.
             </h2>
 
-            <div className="marketing-product-compare-grid">
-              <Reveal>
-                <div className="marketing-product-compare-card">
-                  <p className="marketing-product-compare-label is-muted">TRADITIONAL LEAD FINDER</p>
-                  <div className="marketing-product-compare-list is-muted">
-                    {TRADITIONAL_POINTS.map((point) => <div key={point}>{point}</div>)}
-                  </div>
-                </div>
-              </Reveal>
-              <Reveal delay={80}>
-                <div className="marketing-product-compare-card">
-                  <p className="marketing-product-compare-label is-ink">WANTEREST</p>
-                  <div className="marketing-product-compare-list is-strong">
-                    {WANTEREST_POINTS.map((point) => <div key={point}>{point}</div>)}
-                  </div>
-                </div>
-              </Reveal>
-            </div>
+            <Reveal>
+              <DifferenceStage
+                oldCardTitle="Lead finder"
+                oldPoints={TRADITIONAL_POINTS}
+                modernPoints={WANTEREST_POINTS}
+              />
+            </Reveal>
           </div>
         </section>
 

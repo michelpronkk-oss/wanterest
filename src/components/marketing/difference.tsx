@@ -39,12 +39,122 @@ function DifferenceBrace({ flip = false }: { flip?: boolean }) {
   );
 }
 
-const MODERN_POINTS = [
+type DifferencePoint = { title: string; full: string; short: string };
+
+const DEFAULT_OLD_TITLE = "Lead finder";
+
+const DEFAULT_OLD_POINTS: DifferencePoint[] = [
+  { title: "Company filters", full: "Find companies that match your ICP.", short: "Find companies that match your ICP." },
+  { title: "Contact lists", full: "Get names and email addresses.", short: "Get names and email addresses." },
+  { title: "Cold outreach", full: "Hope your message gets a response.", short: "Hope your message gets a response." },
+];
+
+const DEFAULT_MODERN_POINTS: DifferencePoint[] = [
   { title: "Real conversations", full: "People discussing your problem in the wild.", short: "People discussing your problem." },
   { title: "Visible pain", full: "See what they are struggling with.", short: "See what they are struggling with." },
   { title: "Active intent", full: "Find buyers before they reach out to competitors.", short: "Find buyers before competitors do." },
   { title: "Context and timing", full: "Understand the why, not just the who.", short: "Understand the why, not just the who." },
-] as const;
+];
+
+const DEFAULT_LEFT_ANNOTATION = ["Lots of data.", "Not enough signal."];
+const DEFAULT_RIGHT_ANNOTATION = ["Real people.", "Real problems.", "Real opportunities."];
+
+/**
+ * The old-way-vs-Wanterest comparison visual (cards, braces, VS badge). Shared by the
+ * homepage difference section and the /product "why Wanterest" section so both carry the
+ * same high-end visual with page-appropriate copy.
+ */
+export function DifferenceStage({
+  oldCardTitle = DEFAULT_OLD_TITLE,
+  oldPoints = DEFAULT_OLD_POINTS,
+  modernPoints = DEFAULT_MODERN_POINTS,
+  brandStatusLabel = "Real demand",
+  leftAnnotation = DEFAULT_LEFT_ANNOTATION,
+  rightAnnotation = DEFAULT_RIGHT_ANNOTATION,
+}: {
+  oldCardTitle?: string;
+  oldPoints?: DifferencePoint[];
+  modernPoints?: DifferencePoint[];
+  brandStatusLabel?: string;
+  leftAnnotation?: string[];
+  rightAnnotation?: string[];
+}) {
+  return (
+    <div className="marketing-difference-stage">
+      {/* DOM order matches the stage's 3-column grid (annotation, cards, annotation) —
+          grid auto-placement is source-order-based, so this can't be reshuffled freely. */}
+      <div className="marketing-difference-annotation is-left" aria-hidden="true">
+        <div className="marketing-difference-annotation-text">
+          {leftAnnotation.map((line) => (
+            <span key={line}>{line}</span>
+          ))}
+        </div>
+        <DifferenceBrace />
+      </div>
+
+      <div className="marketing-difference-cards">
+        <article className="marketing-difference-old-card">
+          <div className="marketing-difference-card-eyebrow">THE OLD WAY</div>
+          <h3>{oldCardTitle}</h3>
+          <div className="marketing-difference-fake-tool" aria-hidden="true">
+            <div className="marketing-difference-fake-list">
+              {["", "", "", ""].map((_, index) => (
+                <div className="marketing-difference-fake-row" key={index}>
+                  <span />
+                  <span />
+                  <b />
+                </div>
+              ))}
+            </div>
+            <div className="marketing-difference-filter"><FilterIcon /></div>
+          </div>
+          <div className="marketing-difference-old-points">
+            {oldPoints.map((point) => (
+              <div key={point.title}>
+                <span className="marketing-difference-cross" aria-hidden="true">×</span>
+                <p><strong>{point.title}</strong><small><ResponsiveText full={point.full} short={point.short} /></small></p>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="marketing-difference-modern-card">
+          <div className="marketing-difference-card-eyebrow">THE MODERN WAY</div>
+          <div className="marketing-difference-brand-row">
+            <div className="marketing-difference-brand">
+              <span className="marketing-difference-brand-mark"><LogoMark size={18} /></span>
+              <span>wanterest</span>
+            </div>
+            <span className="marketing-difference-status"><b />{brandStatusLabel}</span>
+          </div>
+          <div className="marketing-difference-modern-points">
+            {modernPoints.map((point) => (
+              <div className="marketing-difference-modern-point" key={point.title}>
+                <CheckIcon />
+                <p><strong>{point.title}</strong><small><ResponsiveText full={point.full} short={point.short} /></small></p>
+              </div>
+            ))}
+          </div>
+        </article>
+      </div>
+
+      <div className="marketing-difference-annotation is-right" aria-hidden="true">
+        <DifferenceBrace flip />
+        <div className="marketing-difference-annotation-text">
+          {rightAnnotation.map((line) => (
+            <span key={line}>{line}</span>
+          ))}
+        </div>
+      </div>
+
+      <div className="marketing-difference-vs" aria-hidden="true">
+        <span />
+        <b>VS</b>
+        <span />
+      </div>
+    </div>
+  );
+}
 
 export function DifferenceSection() {
   return (
@@ -66,84 +176,7 @@ export function DifferenceSection() {
           />
         </p>
 
-        <div className="marketing-difference-stage">
-          {/* DOM order matches the stage's 3-column grid (annotation, cards, annotation) —
-              grid auto-placement is source-order-based, so this can't be reshuffled freely. */}
-          <div className="marketing-difference-annotation is-left" aria-hidden="true">
-            <div className="marketing-difference-annotation-text">
-              <span>Lots of data.</span>
-              <span>Not enough signal.</span>
-            </div>
-            <DifferenceBrace />
-          </div>
-
-          <div className="marketing-difference-cards">
-            <article className="marketing-difference-old-card">
-              <div className="marketing-difference-card-eyebrow">THE OLD WAY</div>
-              <h3>Lead finder</h3>
-              <div className="marketing-difference-fake-tool" aria-hidden="true">
-                <div className="marketing-difference-fake-list">
-                  {["", "", "", ""].map((_, index) => (
-                    <div className="marketing-difference-fake-row" key={index}>
-                      <span />
-                      <span />
-                      <b />
-                    </div>
-                  ))}
-                </div>
-                <div className="marketing-difference-filter"><FilterIcon /></div>
-              </div>
-              <div className="marketing-difference-old-points">
-                <div>
-                  <span className="marketing-difference-cross" aria-hidden="true">×</span>
-                  <p><strong>Company filters</strong><small>Find companies that match your ICP.</small></p>
-                </div>
-                <div>
-                  <span className="marketing-difference-cross" aria-hidden="true">×</span>
-                  <p><strong>Contact lists</strong><small>Get names and email addresses.</small></p>
-                </div>
-                <div>
-                  <span className="marketing-difference-cross" aria-hidden="true">×</span>
-                  <p><strong>Cold outreach</strong><small>Hope your message gets a response.</small></p>
-                </div>
-              </div>
-            </article>
-
-            <article className="marketing-difference-modern-card">
-              <div className="marketing-difference-card-eyebrow">THE MODERN WAY</div>
-              <div className="marketing-difference-brand-row">
-                <div className="marketing-difference-brand">
-                  <span className="marketing-difference-brand-mark"><LogoMark size={18} /></span>
-                  <span>wanterest</span>
-                </div>
-                <span className="marketing-difference-status"><b />Real demand</span>
-              </div>
-              <div className="marketing-difference-modern-points">
-                {MODERN_POINTS.map((point) => (
-                  <div className="marketing-difference-modern-point" key={point.title}>
-                    <CheckIcon />
-                    <p><strong>{point.title}</strong><small><ResponsiveText full={point.full} short={point.short} /></small></p>
-                  </div>
-                ))}
-              </div>
-            </article>
-          </div>
-
-          <div className="marketing-difference-annotation is-right" aria-hidden="true">
-            <DifferenceBrace flip />
-            <div className="marketing-difference-annotation-text">
-              <span>Real people.</span>
-              <span>Real problems.</span>
-              <span>Real opportunities.</span>
-            </div>
-          </div>
-
-          <div className="marketing-difference-vs" aria-hidden="true">
-            <span />
-            <b>VS</b>
-            <span />
-          </div>
-        </div>
+        <DifferenceStage />
       </div>
     </section>
   );

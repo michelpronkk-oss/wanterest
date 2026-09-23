@@ -20,7 +20,7 @@ function publicDetails(details: Record<string, unknown> | undefined): Record<str
   return Object.keys(safe).length > 0 ? safe : undefined;
 }
 
-function redactMessage(message: string): string {
+export function redactMessage(message: string): string {
   return message.replace(/(authorization|bearer|secret|token|api[_-]?key)\s*[:=]\s*[^\s,;]+/gi, "$1=[redacted]").slice(0, 500);
 }
 
