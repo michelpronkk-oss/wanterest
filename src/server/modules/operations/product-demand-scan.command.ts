@@ -3,10 +3,12 @@ import "server-only";
 import { requireUser } from "@/server/modules/auth";
 import { getProductQuery } from "@/server/modules/products";
 import { AppError } from "@/server/lib/errors";
+import { redactMessage } from "@/server/lib/http";
+import { getTraceId } from "@/server/lib/request-context";
 import { attachTriggerRun, claimProductDemandScanDispatch, executeProductDemandScan, markProductDemandScanDispatchNotApplicable, markProductDemandScanDispatchPersistenceFailure, markProductDemandScanTriggerFailure, prepareProductDemandScan, productDemandScanHandle } from "./product-demand-scan.service";
 import { productDemandScanRequestSchema, type ProductDemandScanHandle } from "./product-demand-scan.schemas";
 import { buildProductDemandScanInput, initialScanIdempotencyKey, manualScanIdempotencyKey } from "./product-demand-scan.identity";
-import { getTriggerRuntimeConfig, triggerProductDemandScan } from "@/server/providers/trigger/client";
+import { describeTriggerDispatchError, getTriggerDispatchDiagnostics, getTriggerRuntimeConfig, triggerProductDemandScan } from "@/server/providers/trigger/client";
 
 export async function requestProductDemandScanCommand(rawInput: unknown, _request?: Request): Promise<ProductDemandScanHandle> {
   void _request;
@@ -59,12 +61,30 @@ export async function requestProductDemandScanCommand(rawInput: unknown, _reques
     });
   } catch (error) {
     await markProductDemandScanTriggerFailure(prepared.job.id, error);
+    // Log the full, structured diagnosis BEFORE wrapping: the wrapped AppError only ever
+    // carries a truncated, already-safe message to the client. Everything logged here is
+    // safe by construction — booleans, a key-format prefix (never the token), the public
+    // task/project identifiers, and the SDK error's own name/status/code/message (redacted
+    // as a last defense in case a provider error ever echoed a header value back).
+    const details = describeTriggerDispatchError(error);
+    const diagnostics = getTriggerDispatchDiagnostics();
+    console.error("[trigger] product-demand-scan dispatch failed", {
+      traceId: getTraceId(),
+      taskId: diagnostics.taskId,
+      projectRef: diagnostics.projectRef,
+      apiKeyConfigured: diagnostics.apiKeyConfigured,
+      apiKeyPrefix: diagnostics.apiKeyPrefix,
+      vercelEnv: diagnostics.vercelEnv,
+      errorName: details.errorName,
+      errorMessage: redactMessage(details.errorMessage),
+      errorCode: details.errorCode,
+      status: details.status,
+    });
     // The Trigger.dev SDK throws its own (non-AppError) error shapes. Wrap it so
     // the client gets a safe, typed message instead of toPublicError's generic
     // "An unexpected error occurred." fallback, while the redacted provider
     // message above is already persisted on the job row for diagnosis.
-    const message = error instanceof Error ? error.message : "Trigger.dev could not start the scan.";
-    throw new AppError("SCAN_DISPATCH_FAILED", "The scan could not be started. Please try again.", 502, { providerMessage: message.slice(0, 500) });
+    throw new AppError("SCAN_DISPATCH_FAILED", "The scan could not be started. Please try again.", 502, { providerMessage: details.errorMessage.slice(0, 500) });
   }
   try {
     await attachTriggerRun(prepared.job.id, handle.id);

@@ -96,6 +96,22 @@ const triggerProductDemandScan = vi.fn();
 vi.mock("@/server/providers/trigger/client", () => ({
   getTriggerRuntimeConfig: () => ({ executionMode: "remote", triggerConfigured: true, triggerSecretPresent: true }),
   triggerProductDemandScan: (...args: unknown[]) => triggerProductDemandScan(...args),
+  getTriggerDispatchDiagnostics: () => ({
+    taskId: "product-demand-scan",
+    projectRef: "proj_test",
+    apiKeyConfigured: true,
+    apiKeyPrefix: "tr_test_",
+    vercelEnv: null,
+  }),
+  describeTriggerDispatchError: (error: unknown) => {
+    const record = error as Record<string, unknown>;
+    return {
+      errorName: typeof record.name === "string" ? record.name : "UnknownError",
+      errorMessage: typeof record.message === "string" ? record.message : String(error),
+      errorCode: typeof record.code === "string" ? record.code : null,
+      status: typeof record.status === "number" ? record.status : null,
+    };
+  },
 }));
 
 const { requestProductDemandScanCommand } = await import("../../src/server/modules/operations/product-demand-scan.command");
@@ -116,8 +132,9 @@ describe("requestProductDemandScanCommand dispatch failure translation", () => {
   });
 
   it("wraps a raw Trigger.dev SDK error in a typed AppError instead of leaking it", async () => {
-    const sdkError = { name: "ApiError", status: 401, message: "Unauthorized" };
+    const sdkError = { name: "AuthenticationError", status: 401, code: "unauthorized", message: "Unauthorized" };
     triggerProductDemandScan.mockRejectedValueOnce(sdkError);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const failure = await requestProductDemandScanCommand({ workspaceId, productId, scanMode: "manual" }).catch((error: unknown) => error);
 
@@ -128,5 +145,20 @@ describe("requestProductDemandScanCommand dispatch failure translation", () => {
 
     // The job row is still marked failed for diagnosis/retry, independent of the client-facing wrap.
     expect(updateCalls.some((call) => call.status === "failed" && call.error_code === "TRIGGER_START_FAILED")).toBe(true);
+
+    // The full, structured diagnosis is logged before wrapping (task id, key-format prefix,
+    // and the SDK error's own name/status/code/message), so an incident is diagnosable from
+    // logs alone instead of only the client's truncated, generic AppError.
+    const call = consoleError.mock.calls.find(([label]) => label === "[trigger] product-demand-scan dispatch failed");
+    expect(call?.[1]).toMatchObject({
+      taskId: "product-demand-scan",
+      apiKeyConfigured: true,
+      apiKeyPrefix: "tr_test_",
+      errorName: "AuthenticationError",
+      errorMessage: "Unauthorized",
+      errorCode: "unauthorized",
+      status: 401,
+    });
+    consoleError.mockRestore();
   });
 });
