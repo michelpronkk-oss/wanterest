@@ -5,6 +5,7 @@ export const xUserSchema = z.object({
   name: z.string().max(500),
   username: z.string().regex(/^[A-Za-z0-9_]{1,15}$/),
   protected: z.boolean().optional(),
+  location: z.string().max(500).nullable().optional(),
 }).passthrough();
 
 export const xReferencedTweetSchema = z.object({

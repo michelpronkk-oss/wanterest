@@ -47,6 +47,10 @@ export class FixtureBillingProvider implements BillingProvider {
     return result;
   }
 
+  async createPortalSession(providerCustomerId: string) {
+    return { portalUrl: `https://portal.fixture.test/${encodeURIComponent(providerCustomerId)}` };
+  }
+
   async getSubscription(providerSubscriptionId: string): Promise<ProviderSubscription> {
     const subscription = this.subscriptions.get(providerSubscriptionId);
     if (!subscription) throw new Error("fixture_subscription_not_found");
@@ -120,8 +124,17 @@ export class FixtureBillingProvider implements BillingProvider {
     };
     this.subscriptions.set(providerSubscriptionId, updated);
     const eventId = `fixture_event_${++this.eventCounter}`;
+    const eventType = event === "past_due"
+      ? "payment.failed"
+      : event === "canceling"
+        ? "subscription.updated"
+        : event === "canceled"
+          ? "subscription.cancelled"
+          : event === "upgrade" || event === "downgrade"
+            ? "subscription.plan_changed"
+            : `subscription.${event}`;
     const payload = {
-      type: event === "past_due" ? "payment.failed" : `subscription.${event}`,
+      type: eventType,
       created_at: updated.providerUpdatedAt,
       data: {
         id: updated.providerSubscriptionId,

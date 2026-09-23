@@ -8,6 +8,7 @@ const TABS = [
   ["Demand Map", "/app/insights/map"],
   ["Demand Gap", "/app/insights/gap"],
   ["Demand Drift", "/app/insights/drift"],
+  ["Geography", "/app/insights/geography"],
 ] as const;
 
 export function InsightsTabs() {

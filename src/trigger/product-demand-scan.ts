@@ -32,6 +32,7 @@ const candidateTaskInputSchema = z.object({
   profileId: z.string().uuid(),
   normalizedSourceItemIds: z.array(z.string().uuid()).max(500),
   conversationIds: z.array(z.string().uuid()).max(500),
+  maxLlmEvaluations: z.number().int().nonnegative().max(500),
   traceId: z.string().trim().min(1).max(120),
 });
 
@@ -142,13 +143,14 @@ export const productDemandScanTask = schemaTask({
           }
         : undefined;
       const candidateExecutor = input.jobRunId
-        ? async (candidate: { product: { workspace_id: string; id: string }; profileId: string; normalizedSourceItemIds: string[]; conversationIds: string[]; traceId: string }) => {
+        ? async (candidate: { product: { workspace_id: string; id: string }; profileId: string; normalizedSourceItemIds: string[]; conversationIds: string[]; traceId: string; maxLlmEvaluations: number }) => {
             const child = await processProductCandidatesTask.triggerAndWait({
               workspaceId: candidate.product.workspace_id,
               productId: candidate.product.id,
               profileId: candidate.profileId,
               normalizedSourceItemIds: candidate.normalizedSourceItemIds,
               conversationIds: candidate.conversationIds,
+              maxLlmEvaluations: candidate.maxLlmEvaluations,
               traceId: candidate.traceId,
             });
             if (!child.ok) throw new Error("Candidate processing task failed.");

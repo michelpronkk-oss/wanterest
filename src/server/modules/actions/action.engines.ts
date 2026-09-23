@@ -79,16 +79,17 @@ export class FixtureDemandActionEngine implements DemandActionEngine {
     const targetKey = targetFor(input);
     const priorityScore = calculateActionPriority(input);
     const triggerLabel = input.conceptLabel.trim();
+    const geoQualifier = input.geoContext ? ` in ${input.geoContext.market}` : "";
     const observation = input.triggerType === "demand_drift"
       ? `${triggerLabel} is showing a notable upward change in observed demand.`
       : input.triggerType === "signal"
         ? `A high-fit signal specifically mentions ${triggerLabel}.`
-        : `${triggerLabel} has meaningful observed demand while current positioning is limited.`;
+        : `${triggerLabel} has meaningful observed demand${geoQualifier} while current positioning is limited.`;
     const target = targetKey === "homepage_hero" ? "homepage hero" : targetKey.replace(/_/g, " ");
     const metric = input.triggerType === "signal" ? "research qualification and action usefulness" : "CTA click or signup conversion later";
     const hypothesis = businessHypothesisSchema.parse({
       observation,
-      hypothesis: `Making ${triggerLabel} more explicit may better match observed demand; this is worth testing, not a guaranteed outcome.`,
+      hypothesis: `Making ${triggerLabel} more explicit${geoQualifier} may better match observed demand; this is worth testing, not a guaranteed outcome.`,
       target,
       metric,
     });
@@ -104,7 +105,9 @@ export class FixtureDemandActionEngine implements DemandActionEngine {
       ? `Create a landing page explaining how ${input.productName} addresses ${triggerLabel}.`
       : input.triggerType === "signal"
         ? `Investigate the missing capability and validate it with additional buyer conversations.`
-        : `Lead with the buyer pain around ${triggerLabel} and connect it to the product's current capability.`;
+        : input.geoContext
+          ? `Test regional positioning around ${input.geoContext.topTheme ?? triggerLabel} for ${input.geoContext.market}; keep the hypothesis tied to qualified demand evidence.`
+          : `Lead with the buyer pain around ${triggerLabel} and connect it to the product's current capability.`;
     const result = {
       actionType,
       targetKey,

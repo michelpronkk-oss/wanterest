@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const scanModeSchema = z.enum(["onboarding", "baseline", "manual", "manual_refresh", "scheduled", "monitoring", "intelligence_cycle", "deep", "deep_refresh"]);
+export const scanModeSchema = z.enum(["onboarding", "baseline", "manual", "manual_refresh", "manual_deep", "scheduled", "monitoring", "intelligence_cycle", "deep", "deep_refresh"]);
 export type ScanMode = z.infer<typeof scanModeSchema>;
 
 export const productDemandScanInputSchema = z.object({
@@ -55,6 +55,18 @@ export type ScanProgress = z.infer<typeof scanProgressSchema>;
 export const scanStatusSchema = z.enum(["queued", "running", "succeeded", "completed_with_warnings", "failed", "cancelled"]);
 export type ScanStatus = z.infer<typeof scanStatusSchema>;
 
+export const sourceResolutionSchema = z.object({
+  status: z.enum(["resolved", "no_match", "ambiguous_match"]),
+  targetKey: z.string().trim().min(1).max(180),
+  targetFingerprint: z.string().trim().min(1).max(500),
+  productId: z.string().trim().max(200).optional(),
+  matchedBy: z.enum(["domain", "name", "slug", "vendor_product_metadata"]).optional(),
+  candidateProductIds: z.array(z.string().trim().min(1).max(200)).max(25),
+  resolvedAt: z.string().datetime({ offset: true }),
+  resolverVersion: z.string().trim().min(1).max(120),
+});
+export type SourceResolution = z.infer<typeof sourceResolutionSchema>;
+
 export const sourceScanResultSchema = z.object({
   sourceKey: z.string(),
   planned: z.boolean(),
@@ -69,6 +81,8 @@ export const sourceScanResultSchema = z.object({
   errorCode: z.string().nullable(),
   rateLimitRemaining: z.number().int().nonnegative().nullable(),
   estimatedCost: z.number().nonnegative().nullable(),
+  providerMetrics: z.record(z.string(), z.unknown()).optional(),
+  resolutions: z.array(sourceResolutionSchema).max(25).optional(),
 });
 export type SourceScanResult = z.infer<typeof sourceScanResultSchema>;
 

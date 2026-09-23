@@ -13,6 +13,8 @@ import { BillingService } from "./billing.service";
 import { changePlanInputSchema, createCheckoutInputSchema, workspaceIdSchema } from "./billing.schemas";
 import { getDodoProductCatalog } from "./product-mapping";
 
+export const BILLING_RETURN_URL = "https://app.wanterest.com/app/settings/billing";
+
 async function assertWorkspaceRole(workspaceId: string, roles: string[]) {
   const client = await createSupabaseServerClient();
   const { data, error } = await client.rpc("has_workspace_role", { p_workspace_id: workspaceId, p_roles: roles });
@@ -65,7 +67,9 @@ export async function createCheckoutCommand(input: unknown) {
   if (!parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid billing checkout input.", 422);
   const user = await requireUser();
   await assertWorkspaceRole(parsed.data.workspaceId, ["owner"]);
-  return (await service(user.id)).createCheckout(parsed.data);
+  // The browser may request a plan/cadence, but it never chooses a redirect
+  // destination. Keep checkout returns on the fixed billing surface.
+  return (await service(user.id)).createCheckout({ ...parsed.data, returnUrl: BILLING_RETURN_URL });
 }
 
 export async function getBillingOverviewQuery(workspaceId: unknown) {
@@ -94,11 +98,24 @@ export async function changePlanCommand(input: unknown) {
   return { requested: true };
 }
 
-export async function receiveDodoWebhook(rawBody: string, headers: WebhookHeaders) {
+export async function createPortalSessionCommand(workspaceId: unknown) {
+  const parsed = workspaceIdSchema.safeParse(workspaceId);
+  if (!parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid workspace identifier.");
+  await requireUser();
+  await assertWorkspaceMember(parsed.data);
+  const result = await (await service()).createPortalSession(parsed.data, BILLING_RETURN_URL);
+  return result;
+}
+
+export async function receiveDodoWebhook(rawBody: string, headers: WebhookHeaders, traceId?: string) {
   const repository = new SupabaseBillingRepository(createSupabaseBillingServiceClient());
   const catalog = getDodoProductCatalog();
   const billing = new BillingService(repository, provider(), catalog);
-  return billing.receiveWebhook(rawBody, headers);
+  const received = await billing.receiveWebhook(rawBody, headers);
+  // The inbox is durable before this bounded normalization step. A failure
+  // leaves the event retryable and causes Dodo to redeliver it.
+  const processing = await billing.processWebhook(received.eventId, traceId);
+  return { ...received, processing };
 }
 
 export async function processBillingWebhookJob(eventId: string, traceId?: string) {

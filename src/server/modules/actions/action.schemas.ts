@@ -107,6 +107,12 @@ export const actionGenerationInputSchema = z.object({
   highIntentShare: z.number().min(0).max(1).default(0),
   specificity: z.number().min(0).max(1).default(0),
   buyerLanguage: z.array(z.string()).max(10).default([]),
+  geoContext: z.object({
+    market: z.string().trim().min(1).max(160),
+    topTheme: z.string().trim().min(1).max(180).nullable(),
+    trendPercentage: z.number().nullable(),
+    sampleSize: z.number().int().nonnegative(),
+  }).optional(),
   supportingEvidence: z.array(z.string().uuid()).max(50).default([]),
   actionEngineVersionId: z.string().uuid().optional(),
 });

@@ -9,13 +9,20 @@ import { createProductInputSchema, productIdSchema, updateProductMetadataInputSc
 import { ensureMonitoringScheduleForProduct } from "../monitoring/monitoring.schedule";
 import { disableMonitoringSchedule } from "../monitoring/monitoring.repository";
 import { createSupabaseServiceClient } from "../../providers/supabase/service";
+import { resolveWorkspaceCapabilities } from "../entitlements/plan-capabilities";
 
 export async function createProductCommand(workspaceId: unknown, input: unknown) {
   const workspace = workspaceIdSchema.safeParse(workspaceId);
   const parsed = createProductInputSchema.safeParse(input);
   if (!workspace.success || !parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid product input.", 422);
   await requireUser();
-  const product = await createProduct(await createSupabaseServerClient(), { workspaceId: workspace.data, name: parsed.data.name, slug: parsed.data.slug, websiteUrl: parsed.data.websiteUrl });
+  const serverClient = await createSupabaseServerClient();
+  const capabilities = await resolveWorkspaceCapabilities(createSupabaseServiceClient(), workspace.data);
+  const activeProducts = await listProducts(serverClient, workspace.data);
+  if (activeProducts.filter((candidate) => candidate.status === "active").length >= capabilities.products.maxProducts) {
+    throw new AppError("USAGE_LIMIT_EXCEEDED", "The workspace product limit was reached.");
+  }
+  const product = await createProduct(serverClient, { workspaceId: workspace.data, name: parsed.data.name, slug: parsed.data.slug, websiteUrl: parsed.data.websiteUrl });
   await ensureMonitoringScheduleForProduct(createSupabaseServiceClient(), workspace.data, product.id);
   return product;
 }

@@ -9,6 +9,9 @@ import { SupabaseDemandRepository } from "./demand.repository";
 import { AppError } from "../../lib/errors";
 import { demandDriftWindowAllowed, resolveMonitoringPolicy } from "../entitlements/monitoring-policy";
 import { windowDays } from "./demand.schemas";
+import { geographyWindowSchema, type GeographyReadModel, type GeographySelection, type GeographyWindow } from "../geography/geography.schemas";
+import { GeographyService } from "../geography/geography.service";
+import { resolveWorkspaceCapabilities } from "../entitlements/plan-capabilities";
 
 export const DEMAND_JOB_TYPES = ["aggregate-demand", "calculate-demand-gap", "calculate-demand-drift", "backfill-demand-snapshots"] as const;
 export type DemandJobType = (typeof DEMAND_JOB_TYPES)[number];
@@ -16,6 +19,40 @@ export type DemandJobType = (typeof DEMAND_JOB_TYPES)[number];
 function readService() {
   const client = createSupabaseServiceClient();
   return new DemandIntelligenceService(new SupabaseDemandRepository(client), new SupabaseIntelligenceRepository(client));
+}
+
+function geographyService() {
+  const client = createSupabaseServiceClient();
+  return { client, service: new GeographyService(new SupabaseDemandRepository(client), new SupabaseIntelligenceRepository(client)) };
+}
+
+/** Server-side geography aggregation. The browser receives only public-safe summaries. */
+export async function getGeographyQuery(workspaceId: unknown, productId: unknown, window: GeographyWindow = "30d", selection?: GeographySelection): Promise<GeographyReadModel> {
+  const product = await getProductQuery(workspaceId, productId);
+  await requireUser();
+  const parsedWindow = geographyWindowSchema.parse(window);
+  const { client, service } = geographyService();
+  const capabilities = await resolveWorkspaceCapabilities(client, product.workspace_id);
+  const requestedDays = Number(parsedWindow.slice(0, -1));
+  if (requestedDays > 30 && capabilities.geography.historyDays < requestedDays) {
+    throw new AppError("CAPABILITY_DISABLED", "Geography history is not enabled for this workspace window.");
+  }
+  return service.getGeography({
+    product,
+    window: parsedWindow,
+    access: {
+      enabled: capabilities.geography.enabled,
+      historyDays: capabilities.geography.historyDays,
+      trendEnabled: capabilities.geography.trendEnabled && capabilities.geography.historyDays >= requestedDays,
+      maxMarkets: capabilities.geography.maxMarkets,
+      countryDrilldown: capabilities.geography.countryDrilldown,
+      regionDrilldown: capabilities.geography.regionDrilldown,
+      regionalHistoryDays: capabilities.geography.regionalHistoryDays,
+      comparisonEnabled: capabilities.geography.comparisonEnabled,
+      upgradeHint: capabilities.geography.trendEnabled ? null : "Unlock market movement and country drilldowns with a paid plan.",
+    },
+    selection,
+  });
 }
 
 /** Thin read wrapper over DemandIntelligenceService.getDemandMap — no ranking/aggregation logic here. */

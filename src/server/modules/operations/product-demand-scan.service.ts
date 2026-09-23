@@ -9,6 +9,7 @@ import { getTraceId } from "@/server/lib/request-context";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
 import { consumeUsage, getWorkspaceEntitlement } from "@/server/modules/entitlements/entitlement.repository";
 import { resolveMonitoringPolicy } from "@/server/modules/entitlements/monitoring-policy";
+import { scanProfileForMode } from "@/server/modules/entitlements/plan-capabilities";
 import { recordMonitoringScanOutcome } from "@/server/modules/monitoring/monitoring.repository";
 import { materializeMonitoringNotifications } from "@/server/modules/monitoring/monitoring.notifications";
 import { isActiveProduct } from "@/server/modules/products/product-lifecycle";
@@ -115,7 +116,7 @@ export async function prepareProductDemandScan(input: ProductDemandScanInput, tr
     };
   }
 
-  if ((parsed.scanMode === "manual" || parsed.scanMode === "manual_refresh") && !parsed.forceRebuild) {
+  if ((parsed.scanMode === "manual" || parsed.scanMode === "manual_refresh" || parsed.scanMode === "manual_deep") && !parsed.forceRebuild) {
     const policy = await resolveMonitoringPolicy(client, parsed.workspaceId);
     if (policy.manualRefreshCooldownMinutes > 0) {
       const recent = await client.from("job_runs").select("*").eq("job_type", PRODUCT_DEMAND_SCAN_JOB_TYPE).eq("workspace_id", parsed.workspaceId).eq("product_id", parsed.productId).order("created_at", { ascending: false }).limit(20);
@@ -123,7 +124,7 @@ export async function prepareProductDemandScan(input: ProductDemandScanInput, tr
       const now = Date.now();
       const recentManual = (recent.data ?? []).find((candidate) => {
         const mode = scanModeFromJob(candidate);
-        return (mode === "manual" || mode === "manual_refresh") && now - Date.parse(candidate.created_at) < policy.manualRefreshCooldownMinutes * 60_000;
+        return (mode === "manual" || mode === "manual_refresh" || mode === "manual_deep") && now - Date.parse(candidate.created_at) < policy.manualRefreshCooldownMinutes * 60_000;
       });
       if (recentManual) {
         const retryAfterSeconds = Math.max(1, Math.ceil((Date.parse(recentManual.created_at) + policy.manualRefreshCooldownMinutes * 60_000 - now) / 1_000));
@@ -171,7 +172,7 @@ export async function executeProductDemandScan(input: ProductDemandScanInput, tr
       amount: 1,
       idempotencyKey: `source_scan:${job?.idempotency_key ?? parsed.idempotencyKey}`,
       actorUserId: parsed.requestedByUserId,
-      sourceMetadata: { workflow: "product-demand-scan", scanMode: parsed.scanMode, productId: parsed.productId, jobRunId: parsed.jobRunId ?? null, triggerRunId: triggerRunId ?? null },
+      sourceMetadata: { workflow: "product-demand-scan", scanMode: parsed.scanMode, scanProfile: scanProfileForMode(parsed.scanMode), productId: parsed.productId, jobRunId: parsed.jobRunId ?? null, triggerRunId: triggerRunId ?? null },
       traceId: getTraceId(),
     });
     const result = await runInitialScan(product, getTraceId(), {

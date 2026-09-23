@@ -6,6 +6,7 @@ const authorSchema = z.object({
   did: z.string().regex(/^did:[a-z0-9]+:.+$/),
   handle: z.string().trim().min(1).max(500).optional(),
   displayName: z.string().max(500).optional(),
+  location: z.string().max(500).nullable().optional(),
 }).passthrough();
 
 const replyReferenceSchema = z.object({

@@ -12,6 +12,7 @@ import { AppError } from "../../lib/errors";
 import type { BillingInterval, BillingPlan } from "./billing.schemas";
 import type { ProviderSubscription, VerifiedBillingEvent } from "../../providers/billing/contracts";
 import { ensureMonitoringSchedulesForActiveProducts } from "../monitoring/monitoring.schedule";
+import { resolveInternalPlan } from "../entitlements/plan-capabilities";
 
 export type EffectiveEntitlement = {
   capabilityKey: string;
@@ -42,6 +43,7 @@ export type BillingRepository = {
     event: VerifiedBillingEvent;
     payloadHash: string;
   }): Promise<{ row: BillingWebhookEventRow; duplicate: boolean }>;
+  claimWebhook(eventId: string): Promise<boolean>;
   getWebhook(eventId: string): Promise<BillingWebhookEventRow | null>;
   markWebhook(eventId: string, update: { processingStatus: BillingWebhookEventRow["processing_status"]; processedAt?: string; errorCode?: string; sanitizedError?: string }): Promise<void>;
   applySubscription(input: {
@@ -53,6 +55,8 @@ export type BillingRepository = {
   }): Promise<SubscriptionRow>;
   getCurrentSubscription(workspaceId: string): Promise<SubscriptionRow | null>;
   findWorkspaceByProviderSubscriptionId(providerSubscriptionId: string): Promise<string | null>;
+  findWorkspaceByProviderCustomerId(providerCustomerId: string): Promise<string | null>;
+  getProviderCustomerId(workspaceId: string): Promise<string | null>;
   getOverview(workspaceId: string): Promise<BillingOverview>;
 };
 
@@ -85,22 +89,22 @@ function publicSubscription(row: SubscriptionRow | null): BillingSubscriptionVie
 // normalized workspace_entitlements rows in Supabase.
 const catalogValues: Record<BillingPlan | "free", EffectiveEntitlement[]> = {
   free: [
-    ["products_max", "integer", 1], ["signals_monthly", "integer", 5], ["scan_frequency", "enum", "manual"],
+    ["products_max", "integer", 1], ["signals_monthly", "integer", 5], ["manual_scans_monthly", "integer", 3], ["scan_frequency", "enum", "manual"],
     ["demand_map", "enum", "preview"], ["demand_gap", "enum", "preview"], ["demand_drift_days", "integer", 0],
     ["actions_enabled", "boolean", false], ["experiments_max", "integer", 0], ["exports", "boolean", false], ["team_members", "integer", 1],
-    ["monitoring_enabled", "boolean", false], ["intelligence_cycles_per_day", "integer", 0], ["intelligence_cycle_interval_minutes", "integer", 0], ["deep_refreshes_per_week", "integer", 0], ["manual_refresh_cooldown_minutes", "integer", 1440], ["digest_enabled", "boolean", false], ["priority_alerts_enabled", "boolean", false],
+    ["monitoring_enabled", "boolean", false], ["intelligence_cycles_per_day", "integer", 0], ["intelligence_cycle_interval_minutes", "integer", 0], ["deep_refreshes_per_week", "integer", 0], ["intelligence_cycle_max_sources", "integer", 0], ["intelligence_cycle_query_budget", "integer", 0], ["intelligence_cycle_candidate_budget", "integer", 0], ["deep_refresh_max_sources", "integer", 0], ["deep_refresh_query_budget", "integer", 0], ["deep_refresh_candidate_budget", "integer", 0], ["manual_refresh_cooldown_minutes", "integer", 1440], ["digest_enabled", "boolean", false], ["priority_alerts_enabled", "boolean", false],
   ].map(([capabilityKey, valueType, value]) => ({ capabilityKey: capabilityKey as string, valueType: valueType as EffectiveEntitlement["valueType"], value: value as EffectiveEntitlement["value"] })),
   pro: [
-    ["products_max", "integer", 3], ["signals_monthly", "integer", 500], ["scan_frequency", "enum", "daily"],
+    ["products_max", "integer", 3], ["signals_monthly", "integer", 500], ["manual_scans_monthly", "integer", 30], ["scan_frequency", "enum", "daily"],
     ["demand_map", "enum", "full"], ["demand_gap", "enum", "full"], ["demand_drift_days", "integer", 30],
     ["actions_enabled", "boolean", true], ["experiments_max", "integer", 2], ["exports", "boolean", false], ["team_members", "integer", 1],
-    ["monitoring_enabled", "boolean", true], ["intelligence_cycles_per_day", "integer", 4], ["intelligence_cycle_interval_minutes", "integer", 360], ["deep_refreshes_per_week", "integer", 1], ["manual_refresh_cooldown_minutes", "integer", 180], ["digest_enabled", "boolean", true], ["priority_alerts_enabled", "boolean", false],
+    ["monitoring_enabled", "boolean", true], ["intelligence_cycles_per_day", "integer", 4], ["intelligence_cycle_interval_minutes", "integer", 360], ["deep_refreshes_per_week", "integer", 1], ["intelligence_cycle_max_sources", "integer", 4], ["intelligence_cycle_query_budget", "integer", 5], ["intelligence_cycle_candidate_budget", "integer", 30], ["deep_refresh_max_sources", "integer", 6], ["deep_refresh_query_budget", "integer", 10], ["deep_refresh_candidate_budget", "integer", 60], ["manual_refresh_cooldown_minutes", "integer", 180], ["digest_enabled", "boolean", true], ["priority_alerts_enabled", "boolean", false],
   ].map(([capabilityKey, valueType, value]) => ({ capabilityKey: capabilityKey as string, valueType: valueType as EffectiveEntitlement["valueType"], value: value as EffectiveEntitlement["value"] })),
   growth: [
-    ["products_max", "integer", 10], ["signals_monthly", "integer", 2000], ["scan_frequency", "enum", "frequent"],
+    ["products_max", "integer", 10], ["signals_monthly", "integer", 2000], ["manual_scans_monthly", "integer", 100], ["scan_frequency", "enum", "frequent"],
     ["demand_map", "enum", "advanced"], ["demand_gap", "enum", "advanced"], ["demand_drift_days", "integer", 90],
     ["actions_enabled", "boolean", true], ["experiments_max", "integer", 10], ["exports", "boolean", true], ["team_members", "integer", 3],
-    ["monitoring_enabled", "boolean", true], ["intelligence_cycles_per_day", "integer", 12], ["intelligence_cycle_interval_minutes", "integer", 120], ["deep_refreshes_per_week", "integer", 3], ["manual_refresh_cooldown_minutes", "integer", 60], ["digest_enabled", "boolean", true], ["priority_alerts_enabled", "boolean", true],
+    ["monitoring_enabled", "boolean", true], ["intelligence_cycles_per_day", "integer", 12], ["intelligence_cycle_interval_minutes", "integer", 120], ["deep_refreshes_per_week", "integer", 3], ["intelligence_cycle_max_sources", "integer", 6], ["intelligence_cycle_query_budget", "integer", 8], ["intelligence_cycle_candidate_budget", "integer", 50], ["deep_refresh_max_sources", "integer", 8], ["deep_refresh_query_budget", "integer", 12], ["deep_refresh_candidate_budget", "integer", 100], ["manual_refresh_cooldown_minutes", "integer", 60], ["digest_enabled", "boolean", true], ["priority_alerts_enabled", "boolean", true],
   ].map(([capabilityKey, valueType, value]) => ({ capabilityKey: capabilityKey as string, valueType: valueType as EffectiveEntitlement["valueType"], value: value as EffectiveEntitlement["value"] })),
 };
 
@@ -147,10 +151,17 @@ export class InMemoryBillingRepository implements BillingRepository {
       provider_event_id: input.event.providerEventId, event_type: input.event.eventType,
       received_at: now(), provider_occurred_at: input.event.occurredAt, signature_verified: true,
       payload_hash: input.payloadHash, payload: input.event.payload, processing_status: "received",
-      processed_at: null, error_code: null, sanitized_error: null, trace_id: null, created_at: now(),
+      processed_at: null, attempts: 0, error_code: null, sanitized_error: null, trace_id: null, created_at: now(),
     };
     this.webhookEvents.set(row.id, row);
     return { row, duplicate: false };
+  }
+
+  async claimWebhook(eventId: string): Promise<boolean> {
+    const row = this.webhookEvents.get(eventId);
+    if (!row || !["received", "failed"].includes(row.processing_status)) return false;
+    this.webhookEvents.set(eventId, { ...row, processing_status: "processing", attempts: row.attempts + 1 });
+    return true;
   }
 
   async getWebhook(eventId: string): Promise<BillingWebhookEventRow | null> {
@@ -166,6 +177,9 @@ export class InMemoryBillingRepository implements BillingRepository {
   async applySubscription(input: { workspaceId: string; subscription: ProviderSubscription; providerEventId: string; actorUserId?: string | null; traceId?: string | null }): Promise<SubscriptionRow> {
     this.seedWorkspace(input.workspaceId);
     const current = this.subscriptions.get(input.subscription.providerSubscriptionId);
+    if (current && current.workspace_id !== input.workspaceId) throw new AppError("FORBIDDEN", "Billing workspace association does not match.");
+    const existingCustomer = [...this.customers.values()].find((candidate) => candidate.provider_customer_id === input.subscription.providerCustomerId);
+    if (existingCustomer && existingCustomer.workspace_id !== input.workspaceId) throw new AppError("FORBIDDEN", "Billing customer association does not match.");
     if (current?.provider_updated_at && input.subscription.providerUpdatedAt < current.provider_updated_at) return current;
     const customer: BillingCustomerRow = {
       id: this.customers.get(input.workspaceId)?.id ?? createId(), workspace_id: input.workspaceId, provider: "dodo",
@@ -195,6 +209,14 @@ export class InMemoryBillingRepository implements BillingRepository {
 
   async findWorkspaceByProviderSubscriptionId(providerSubscriptionId: string): Promise<string | null> {
     return this.subscriptions.get(providerSubscriptionId)?.workspace_id ?? null;
+  }
+
+  async findWorkspaceByProviderCustomerId(providerCustomerId: string): Promise<string | null> {
+    return [...this.customers.values()].find((row) => row.provider_customer_id === providerCustomerId)?.workspace_id ?? null;
+  }
+
+  async getProviderCustomerId(workspaceId: string): Promise<string | null> {
+    return this.customers.get(workspaceId)?.provider_customer_id ?? null;
   }
 
   async getOverview(workspaceId: string): Promise<BillingOverview> {
@@ -248,6 +270,12 @@ export class SupabaseBillingRepository implements BillingRepository {
     return { row: inserted.data, duplicate: false };
   }
 
+  async claimWebhook(eventId: string): Promise<boolean> {
+    const response = await this.client.rpc("claim_billing_webhook", { p_event_id: eventId });
+    if (response.error) throw repositoryError("Billing webhook could not be claimed.", response.error);
+    return response.data === true;
+  }
+
   async getWebhook(eventId: string): Promise<BillingWebhookEventRow | null> {
     const response = await this.client.from("billing_webhook_events").select("*").eq("id", eventId).maybeSingle();
     if (response.error) throw repositoryError("Billing webhook could not be loaded.", response.error);
@@ -261,14 +289,11 @@ export class SupabaseBillingRepository implements BillingRepository {
 
   async applySubscription(input: { workspaceId: string; subscription: ProviderSubscription; providerEventId: string; actorUserId?: string | null; traceId?: string | null }): Promise<SubscriptionRow> {
     const subscription = input.subscription;
-    if (!subscription.customerEmail?.trim()) {
-      throw new AppError("VALIDATION_ERROR", "Billing customer email is required to normalize a subscription.");
-    }
     type ApplyArgs = Database["public"]["Functions"]["apply_normalized_subscription"]["Args"];
     const args: ApplyArgs = {
       p_workspace_id: input.workspaceId,
       p_provider_customer_id: subscription.providerCustomerId,
-      p_customer_email: subscription.customerEmail,
+      p_customer_email: subscription.customerEmail ?? null,
       p_provider_subscription_id: subscription.providerSubscriptionId,
       p_internal_plan: subscription.internalPlan,
       p_billing_interval: subscription.billingInterval,
@@ -306,6 +331,18 @@ export class SupabaseBillingRepository implements BillingRepository {
     return response.data?.workspace_id ?? null;
   }
 
+  async findWorkspaceByProviderCustomerId(providerCustomerId: string): Promise<string | null> {
+    const response = await this.client.from("billing_customers").select("workspace_id").eq("provider_customer_id", providerCustomerId).maybeSingle();
+    if (response.error) throw repositoryError("Billing customer owner could not be loaded.", response.error);
+    return response.data?.workspace_id ?? null;
+  }
+
+  async getProviderCustomerId(workspaceId: string): Promise<string | null> {
+    const response = await this.client.from("billing_customers").select("provider_customer_id").eq("workspace_id", workspaceId).eq("provider", "dodo").maybeSingle();
+    if (response.error) throw repositoryError("Billing customer could not be loaded.", response.error);
+    return response.data?.provider_customer_id ?? null;
+  }
+
   async getOverview(workspaceId: string): Promise<BillingOverview> {
     const [subscription, entitlements, usage] = await Promise.all([
       this.getCurrentSubscription(workspaceId),
@@ -314,7 +351,7 @@ export class SupabaseBillingRepository implements BillingRepository {
     ]);
     if (entitlements.error) throw repositoryError("Entitlements could not be loaded.", entitlements.error);
     if (usage.error) throw repositoryError("Usage could not be loaded.", usage.error);
-    const plan = subscription?.status && ["active", "trialing", "past_due", "canceling"].includes(subscription.status) ? subscription.internal_plan : "free";
+    const plan = resolveInternalPlan(subscription);
     return {
       subscription: publicSubscription(subscription),
       effectivePlan: plan as BillingOverview["effectivePlan"],

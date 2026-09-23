@@ -10,6 +10,8 @@ import {
   formatQueryPlanDryRun,
   toSourceDiscoveryRequest,
   type QueryPlan,
+  type QueryPlanQuery,
+  type QueryPlanSource,
   type SourceRoutingSourceState,
 } from "../../src/server/modules/operations";
 
@@ -214,6 +216,33 @@ describe("Query Planning v1", () => {
       expect(request.requestMetadata.semanticQuery).toBe(hn.queries[0].query_text);
       expect(request.requestMetadata.executionMode).toBe("filtered_newstories_feed");
     }
+  });
+
+  it("adds bounded provider-native budgets for YouTube and GitLab", () => {
+    const query: QueryPlanQuery = {
+      query_id: "qp-test",
+      query_family: "comparison",
+      intent_type: "comparison_intent",
+      query_text: "Jira alternative",
+      normalized_query: "jira alternative",
+      source_key: "youtube",
+      priority: "high",
+      confidence: 0.9,
+      candidate_budget: 8,
+      reason_codes: ["COMPARISON_INTENT"],
+      reason_summary: "Generated from comparison intent.",
+      concept_keys: ["competitor"],
+      competitor_refs: [],
+      alternative_refs: [],
+      geo_context: null,
+      language_context: null,
+      cost_hint: "paid_medium",
+      metadata: { provider_context: {} },
+    };
+    const youtube = toSourceDiscoveryRequest({ sourcePlan: { source_key: "youtube" } as QueryPlanSource, query, maxPages: 2 });
+    const gitlab = toSourceDiscoveryRequest({ sourcePlan: { source_key: "gitlab" } as QueryPlanSource, query: { ...query, source_key: "gitlab", query_family: "feature_requirement" }, maxPages: 2 });
+    expect(youtube.requestMetadata).toMatchObject({ maxVideos: 5, maxCommentsPerVideo: 3, includeReplies: false, maxPages: 2, providerQuery: "Jira alternative" });
+    expect(gitlab.requestMetadata).toMatchObject({ maxProjects: 2, maxIssuesPerProject: 5, maxNotesPerIssue: 4, includeDiscussions: true, maxPages: 2, providerQuery: "Jira alternative" });
   });
 
   it("provides a network-free dry-run", async () => {

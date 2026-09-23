@@ -67,7 +67,8 @@ src/
     (app)/                       # authenticated product UI
     api/                         # thin HTTP/webhook boundaries only
       auth/
-      billing/webhooks/dodo/
+      webhooks/dodo/               # verified Dodo webhook boundary
+      billing/                     # authenticated checkout/portal routes
       health/
   components/                   # reusable UI; no server-only imports
   server/
@@ -701,11 +702,51 @@ Implement and test adapters in this order:
 4. Reddit
 5. GitHub
 6. X
-7. open-web/search adapters
+7. Product Hunt, Stack Exchange, and approved review APIs
+8. YouTube and GitLab
+9. open-web/search adapters
 
 This order is an implementation sequence, not a downstream domain dependency. Discovery,
 normalization, deduplication, analysis, matching, ranking, and aggregation consume only the
 shared contracts and must not branch on Hacker News, Bluesky, Reddit, or search behavior.
+
+### Source Expansion v1 decision
+
+Source Expansion v1 adds Product Hunt, Stack Exchange, Public Web, G2, and Trustpilot as
+provider adapters over the existing source port. Product Hunt uses its official GraphQL API and
+is disabled unless a server token and the provider's commercial-use approval are present. Stack
+Exchange uses the official advanced-search API and may run anonymously with its public quota.
+Public Web is intentionally a bounded explicit-URL adapter over the existing SSRF-safe website
+fetcher; it does not crawl, scrape search-result pages, bypass robots/paywalls, or invent a search
+provider. G2 and Trustpilot use their approved API surfaces only. G2 requires only its server API
+key and resolves each product, competitor, or alternative through the official Products API;
+resolved IDs are cached in product-scoped G2 discovery-strategy metadata. Trustpilot is optional;
+it runs only when its API key and business identity are configured and is otherwise treated as an
+unavailable source without affecting scan health.
+
+All five adapters preserve raw payloads and source-category metadata, normalize through the same
+canonical source-item contract, and leave qualification responsible for deciding whether launch
+discussion, developer discussion, web pages, or reviews represent actionable demand. No new
+scheduler, monitoring state, qualification threshold, or database table is introduced by this
+expansion.
+
+### Source Expansion v2 decision
+
+Source Expansion v2 adds exactly two provider adapters over the existing source port: YouTube
+Data API v3 and GitLab REST. YouTube uses only the server-side `YOUTUBE_API_KEY` with bounded
+`search.list` video discovery followed by bounded `commentThreads.list` retrieval; it does not
+use OAuth or private/user-specific content. GitLab uses only the server-side `GITLAB_TOKEN` with
+read-only public project, project-scoped issue, and issue-discussion endpoints; it does not crawl
+repositories or fetch repository contents.
+
+Both adapters preserve provider IDs, timestamps, canonical URLs, query metadata, and source
+semantics in the existing raw -> canonical pipeline. Stable provider IDs make ingestion and
+canonicalization idempotent before analysis. YouTube records structured request/quota metrics;
+both adapters apply bounded retries and stop on rate-limit/quota failures. Missing credentials
+classify the provider as unavailable with `missing_credentials`, skip only that provider, and do
+not degrade scan health or block Automatic Monitoring. Partial provider failures retain results
+from other sources. No new scheduler, monitoring system, qualification pipeline, qualification
+threshold, or database table is introduced by this expansion.
 
 Phase 2 ingestion tables are global system tables, not browser-facing read models. RLS is enabled
 with no `anon` or `authenticated` policies, direct browser privileges are revoked, and only the
@@ -810,8 +851,10 @@ job or blindly create a replacement while the existing provider run remains vali
    server-generated checkout reference plus `workspace_id`, internal plan code, and interval as
    metadata.
 2. The browser return page is informational. It does not grant access.
-3. Dodo sends lifecycle webhooks. The webhook route verifies the Dodo signature, records the
-   event in `billing_webhook_events`, and returns safely for a duplicate event.
+3. Dodo sends lifecycle webhooks to `POST /api/webhooks/dodo`. The route reads the exact raw
+   body, verifies the Standard Webhooks signature, durably records the event, atomically claims
+   processing, and returns safely for a duplicate event. Unsupported signed events remain in the
+   inbox without changing subscription state.
 4. A billing application service translates provider events into normalized
    `billing_customers`/`subscriptions` state. It never stores product access rules in Dodo
    product IDs.
@@ -821,7 +864,8 @@ job or blindly create a replacement while the existing provider run remains vali
 6. Access checks call `can`, `limit`, and `consume` against Wanterest's entitlement/usage
    primitives, not the browser, checkout result, or provider counters.
 7. Renewal, cancellation, past-due, failed-payment, and expiration events update normalized
-   state and audit records. A scheduled reconciliation task can compare provider state without
+   state and audit records. Subscription lifecycle events may retrieve the authoritative Dodo
+   subscription before applying state. A scheduled reconciliation task can compare provider state without
    making the provider the product-access authority.
 
 Initial internal catalog:
@@ -1217,6 +1261,31 @@ projection exposes relevant pains, outcomes, intents, JTBD, features, buyer role
 alternatives, and geography. These projections remain separate contracts: Source Routing decides
 where to look, while Signal Qualification decides whether what was found is actually demand.
 
+### Plan Entitlements + Source Budget Matrix v1
+
+Wanterest resolves billing state into one provider-independent internal plan:
+free, pro, or growth. Billing cadence remains metadata (monthly or annual) and never creates
+a second capability set. A missing or inactive paid subscription resolves to Free. The
+authoritative runtime contract is plan-capabilities.ts; normalized plan_catalog,
+plan_entitlements, and workspace_entitlements remain the database materialization used by
+atomic limits and usage RPCs.
+
+The plan contract owns product count, monitoring cadence, deep-discovery cadence, manual scan
+allowance, Drift history visibility, active experiment count, seats, explicit scan profiles
+(onboarding, manual_standard, manual_deep, monitoring, scheduled_deep_discovery), and global
+source/query/candidate/LLM budgets. Provider adapters do not contain plan conditionals.
+Provider guardrails (including X spend caps and YouTube quota/comment caps) are selected by
+the same capability layer and applied before adapter execution.
+
+Monitoring uses the current plan on every scheduling and execution boundary. Deterministic
+rotation uses the durable scan idempotency/slot key to order secondary sources, while
+high-fit sources remain preferred and unhealthy sources are deprioritized. Manual scan usage
+is recorded through the existing idempotent source_scan ledger event with a manual_standard or
+manual_deep profile; onboarding and monitoring do not consume that allowance. Product
+creation, experiment creation, and membership RPCs enforce their materialized limits
+server-side. Downgrades preserve data and historical experiments but stop new work above the
+new plan; Drift visibility is restricted without deleting stored observations.
+
 ### Source Routing v1
 
 Source Routing v1 is a deterministic, provider-neutral orchestration layer. It consumes Business
@@ -1227,11 +1296,12 @@ confidence, reason codes, cost class, health and availability status, per-source
 caps, selected budget weights, coverage status, and missing-capability diagnostics. No new table
 is required; onboarding stores a compact routing summary in its existing job result.
 
-Provider-neutral capability profiles are centralized for the initial source set (Hacker News,
-Bluesky, Reddit, GitHub, and X, plus the fixture adapter). They describe software, consumer,
-developer, ecommerce, local, switching, recommendation, problem, feature, comparison, long-form,
-reply, and recency fit, as well as cost class. Business type and structured intent modifiers are
-bounded and deterministic; raw website keyword matching is not used to score routes.
+Provider-neutral capability profiles are centralized for the source set (Hacker News, Bluesky,
+Reddit, GitHub, GitLab, X, YouTube, Product Hunt, Stack Exchange, Public Web, G2, and Trustpilot, plus the fixture
+adapter). They describe software, consumer, developer, ecommerce, local, switching,
+recommendation, problem, feature, comparison, long-form, reply, and recency fit, as well as cost
+class. Business type and structured intent modifiers are bounded and deterministic; raw website
+keyword matching is not used to score routes.
 
 Source relevance and operational availability are separate. A relevant but unconfigured, paused,
 disabled, or blocked source remains visible as an operational exclusion and contributes to
@@ -1282,11 +1352,17 @@ request port: X compiles each selected semantic family into a bounded human quer
 competitor, alternative, pain, and category context, validates it before HTTP, and retains any
 fallback reason as sanitized diagnostics; X operators remain in the provider layer. GitHub retains
 issue/discussion qualifiers in its adapter, Reddit receives natural-language demand queries,
-Bluesky remains short and bounded, and Hacker News applies bounded lexical product/category/
-competitor anchors to a recent-stories window because HN search is not supported. Empty results do
-not trigger adaptive second-wave search. If Query Planning fails, onboarding falls back to its
-existing conservative query behavior. Source Routing chooses where to look. Query Planning
-chooses what to look for. Signal Qualification decides whether what we found is actually demand.
+Bluesky remains short and bounded, Hacker News applies bounded lexical product/category/
+competitor anchors to a recent-stories window because HN search is not supported, Product Hunt
+uses bounded recent posts plus comments, Stack Exchange uses advanced search, G2 resolves
+product/business targets before fetching reviews, and Trustpilot uses its business identity at the
+server boundary. YouTube turns a small set of high-value semantic queries into a bounded video
+shortlist and comment retrieval, while GitLab searches public projects before bounded issue and
+discussion expansion. Public Web requires explicit
+URLs from an approved discovery provider. Empty results do not trigger adaptive second-wave
+search. If Query Planning fails, onboarding falls back to its existing conservative query
+behavior. Source Routing chooses where to look. Query Planning chooses what to look for. Signal
+Qualification decides whether what we found is actually demand.
 
 ### Signal Qualification v1
 
@@ -1531,6 +1607,57 @@ Monitoring tables are member-readable and service-role writable under RLS, and a
 relationships use the existing composite-tenant integrity pattern. Trigger task definitions,
 policy resolution, schedule repositories, notification delivery, and the dashboard status
 read-model are covered by module, migration-contract, system, and Trigger configuration tests.
+
+### Geo Intelligence v1
+
+Geo Intelligence is a read-only, qualified-demand projection. It is not visitor analytics,
+IP geolocation, person tracking, or a lead/outreach system. During source normalization,
+deterministic enrichment stores a bounded `geo` object in the existing `source_items.metadata`
+record. The object contains country, optional region/city, confidence, evidence type, and an
+internal raw location string. Raw location strings never cross the public read-model boundary.
+
+The resolver is local and static: it supports explicit ISO country codes/names, conservative
+country aliases, selected region aliases, and well-known city aliases. Ambiguous or vague values
+remain unknown/low confidence. High and medium evidence may drive market totals; low and unknown
+evidence is retained for coverage accounting but never drives a market claim. YouTube comments and
+Hacker News items remain unknown unless a provider explicitly supplies reliable public location
+metadata. Geo enrichment is optional and cannot weaken or reject an otherwise valid signal.
+
+`GeographyService` aggregates existing qualified `demand_observations`, bulk-loads their
+conversation/source/analysis context through the existing intelligence repository port, and
+returns only country-level market summaries, deterministic facets, representative signal
+summaries, and sample-guarded trend values. Current, previous-equivalent periods are compared
+only when the central plan capability grants history and a minimum baseline exists. Free retains a
+current snapshot/top-market projection; Pro and Growth receive 30/90-day history respectively.
+The `/app/insights/geography` route is a fifth Insights tab and uses an inline lightweight SVG
+2D map with keyboard-accessible country controls, table values, tooltips, and a responsive drawer.
+No paid geocoder, GIS service, 3D globe, or separate geo table is introduced.
+
+### Geo Intelligence v1.1 — Regional Drilldown
+
+Regional Drilldown extends the same `source_items.metadata.geo` projection. Region identifiers are
+normalized to ISO 3166-2-style codes such as `US-CA`, `CA-ON`, `DE-BY`, and `NL-NH`; legacy local
+codes are normalized on read. The server read model has an explicit `world -> country -> region`
+selection, validated URL state, server-side filters, breadcrumbs, parent-market shares, regional
+coverage, and sample-guarded representative signals. Country totals include direct country evidence
+and reliable region-resolved evidence; a region total includes only evidence resolved to that exact
+region.
+
+Regional claims activate only when at least five high/medium-confidence region-resolved signals exist
+for the selected country. Regions below that threshold remain neutral and cannot be selected; 5–14
+signals are marked emerging, 15–29 directional, and 30+ higher confidence. Low/unknown evidence
+never fills a region. The resolver handles the highest-value US, Canada, Germany, Netherlands, UK,
+France, and Australia subdivisions conservatively, with explicit ambiguity protection for codes and
+names such as CA, GA, WA, Victoria, Georgia, and London.
+
+World geometry remains in the initial bundle. Country subdivision geometry is a small, simplified,
+display-only pack under `src/components/dashboard/geo-geometry/regions`, loaded by dynamic import
+only after a country is selected. The pack is keyed to canonical administrative identifiers and is
+not used for inference, coordinates, navigation, or person tracking. Unsupported countries retain
+the accessible regional table and a clear unavailable state. Pro and Growth expose regional
+drilldown with 30/90-day history through central geography capabilities; Free retains the current
+country snapshot and sees a restrained upgrade state. No migration, paid map API, GIS dependency,
+city visualization, or 3D globe is introduced.
 
 No phase should silently expand into a general analytics platform, source crawler, or provider-
 specific domain model. Revisit this architecture when a measured requirement justifies a new

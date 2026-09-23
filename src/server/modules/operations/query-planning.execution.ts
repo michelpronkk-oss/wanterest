@@ -68,6 +68,48 @@ export function toSourceDiscoveryRequest(input: SourceQueryExecutionInput): Sour
         ...(Array.isArray(context.alternatives) ? context.alternatives : []),
       ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
     }
+  } else if (sourcePlan.source_key === "product-hunt") {
+    metadata.includeComments = true;
+    metadata.maxCommentsPerPost = 10;
+  } else if (sourcePlan.source_key === "stack-exchange") {
+    metadata.site = "stackoverflow";
+  } else if (sourcePlan.source_key === "g2" || sourcePlan.source_key === "trustpilot") {
+    metadata.reviewImport = true;
+    if (sourcePlan.source_key === "g2") {
+      const providerContext = query.metadata.provider_context;
+      const context = providerContext && typeof providerContext === "object" && !Array.isArray(providerContext) ? providerContext as Record<string, unknown> : {};
+      const productName = typeof context.product_name === "string" ? context.product_name : undefined;
+      const competitorTargets = Array.isArray(context.competitor_targets) ? context.competitor_targets : [];
+      const alternativeTargets = Array.isArray(context.alternative_targets) ? context.alternative_targets : [];
+      const refs = new Set([...query.competitor_refs, ...query.alternative_refs]);
+      const targets = [
+        ...(productName ? [{ key: "product", kind: "product", name: productName }] : []),
+        ...competitorTargets.filter((value) => {
+          const target = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+          return typeof target.key === "string" && refs.has(target.key);
+        }),
+        ...alternativeTargets.filter((value) => {
+          const target = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+          return typeof target.key === "string" && refs.has(target.key);
+        }),
+      ];
+      metadata.g2Targets = targets.length ? targets : productName ? [{ key: "product", kind: "product", name: productName }] : [];
+    }
+  } else if (sourcePlan.source_key === "youtube") {
+    metadata.maxVideos = Math.min(5, Math.max(1, query.candidate_budget));
+    metadata.maxCommentsPerVideo = Math.min(12, Math.max(3, Math.ceil(query.candidate_budget / Math.max(1, Math.min(5, query.candidate_budget)))));
+    metadata.includeReplies = false;
+    metadata.maxPages = Math.min(2, Math.max(1, input.maxPages));
+    metadata.providerQuery = query.query_text;
+  } else if (sourcePlan.source_key === "gitlab") {
+    metadata.maxProjects = Math.min(3, Math.max(1, Math.ceil(query.candidate_budget / 4)));
+    metadata.maxIssuesPerProject = Math.min(5, Math.max(1, query.candidate_budget));
+    metadata.maxNotesPerIssue = Math.min(8, Math.max(2, Math.ceil(query.candidate_budget / 2)));
+    metadata.includeDiscussions = true;
+    metadata.maxPages = Math.min(2, Math.max(1, input.maxPages));
+    metadata.providerQuery = query.query_text;
+  } else if (sourcePlan.source_key === "public-web") {
+    metadata.discoveryRequirement = "explicit_public_urls";
   } else if (sourcePlan.source_key === "bluesky" && query.language_context) {
     metadata.lang = query.language_context;
   }

@@ -8,6 +8,7 @@ export const githubUserSchema = z.object({
   login: z.string().optional(),
   type: z.string().optional(),
   html_url: z.string().url().optional(),
+  location: z.string().max(500).nullable().optional(),
 }).nullable().optional();
 
 export const githubRepositorySchema = z.object({
@@ -83,6 +84,7 @@ const githubGraphqlAuthorSchema = z.object({
   login: z.string().optional(),
   url: z.string().url().optional(),
   __typename: z.string().optional(),
+  location: z.string().max(500).nullable().optional(),
 }).nullable().optional();
 
 export const githubDiscussionCommentNodeSchema = z.object({

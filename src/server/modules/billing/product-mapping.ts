@@ -20,11 +20,19 @@ export function createDodoProductCatalog(values: {
   growthMonthly: string;
   growthAnnual: string;
 }): DodoProductCatalog {
+  const productIds = [values.proMonthly, values.proAnnual, values.growthMonthly, values.growthAnnual]
+    .map((value) => value.trim());
+  if (productIds.some((value) => value.length === 0)) {
+    throw new Error("Dodo product mapping is not configured.");
+  }
+  if (new Set(productIds).size !== productIds.length) {
+    throw new Error("Dodo product mapping contains duplicate product IDs.");
+  }
   return {
-    proMonthly: { providerProductId: values.proMonthly, internalPlan: "pro", billingInterval: "monthly" },
-    proAnnual: { providerProductId: values.proAnnual, internalPlan: "pro", billingInterval: "annual" },
-    growthMonthly: { providerProductId: values.growthMonthly, internalPlan: "growth", billingInterval: "monthly" },
-    growthAnnual: { providerProductId: values.growthAnnual, internalPlan: "growth", billingInterval: "annual" },
+    proMonthly: { providerProductId: productIds[0], internalPlan: "pro", billingInterval: "monthly" },
+    proAnnual: { providerProductId: productIds[1], internalPlan: "pro", billingInterval: "annual" },
+    growthMonthly: { providerProductId: productIds[2], internalPlan: "growth", billingInterval: "monthly" },
+    growthAnnual: { providerProductId: productIds[3], internalPlan: "growth", billingInterval: "annual" },
   };
 }
 

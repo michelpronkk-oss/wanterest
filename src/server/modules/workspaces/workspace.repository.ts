@@ -21,6 +21,9 @@ function databaseError(error: { code?: string; message: string }, message: strin
   if (error.code === "P0002" || error.message.includes("_not_found")) {
     return new AppError("NOT_FOUND", message);
   }
+  if (error.code === "22003" && error.message.includes("seat_limit_exceeded")) {
+    return new AppError("USAGE_LIMIT_EXCEEDED", "The workspace seat limit was reached.");
+  }
   if (error.code === "22023") {
     return new AppError("VALIDATION_ERROR", "The workspace operation is not valid.");
   }

@@ -76,6 +76,13 @@ const sourceFamilyPolicy: Record<string, { allowed: QueryFamily[]; maxQueries?: 
   github: { allowed: ["feature_requirement", "pain", "switching", "alternative_search", "comparison", "jtbd"], maxQueries: 4 },
   "hacker-news": { allowed: ["pain", "switching", "comparison", "recommendation", "alternative_search", "feature_requirement"], maxQueries: 2 },
   bluesky: { allowed: ["pain", "recommendation", "switching", "comparison", "category_discovery"], maxQueries: 2 },
+  "product-hunt": { allowed: ["recommendation", "alternative_search", "comparison", "feature_requirement", "pain", "category_discovery"], maxQueries: 3 },
+  "stack-exchange": { allowed: ["pain", "feature_requirement", "jtbd", "switching", "alternative_search", "comparison", "objection"], maxQueries: 4 },
+  "public-web": { allowed: ["switching", "alternative_search", "recommendation", "comparison", "pain", "feature_requirement", "objection", "desired_outcome", "category_discovery"], maxQueries: 2 },
+  g2: { allowed: ["alternative_search", "comparison", "recommendation", "feature_requirement", "pain", "objection"], maxQueries: 3 },
+  trustpilot: { allowed: ["recommendation", "alternative_search", "comparison", "pain", "objection", "feature_requirement"], maxQueries: 2 },
+  youtube: { allowed: ["alternative_search", "comparison", "switching", "recommendation", "pain", "feature_requirement", "objection"], maxQueries: 3 },
+  gitlab: { allowed: ["feature_requirement", "pain", "switching", "alternative_search", "comparison", "jtbd", "objection"], maxQueries: 4 },
 };
 
 const clamp = (value: number) => Math.max(0, Math.min(1, value));
@@ -369,7 +376,7 @@ function selectDiverse(candidates: Candidate[], maxQueries: number): { selected:
 }
 
 function queryCountCap(mode: SourceRoutingScanMode): number {
-  return mode === "onboarding" || mode === "baseline" ? 3 : mode === "manual" || mode === "manual_refresh" ? 12 : mode === "scheduled" || mode === "monitoring" || mode === "intelligence_cycle" ? 4 : 8;
+  return mode === "onboarding" || mode === "baseline" ? 3 : mode === "manual" || mode === "manual_refresh" || mode === "manual_deep" ? 12 : mode === "scheduled" || mode === "monitoring" || mode === "intelligence_cycle" ? 4 : 8;
 }
 
 function allocateQueryBudgets(candidates: Candidate[], budget: number): number[] {
@@ -389,7 +396,7 @@ function buildSourcePlan(input: QueryPlanningInput, route: SourceRoutingRoute): 
   if (lowConfidence) candidates = candidates.filter((candidate) => !candidate.competitorSpecific && ["pain", "recommendation", "category_discovery", "jtbd", "desired_outcome"].includes(candidate.query_family));
   const policy = sourceFamilyPolicy[route.source_key] ?? { allowed: familyOrder };
   const excludedQueryFamilies = familyOrder.filter((family) => !policy.allowed.includes(family));
-  const paidSourceQueryCap = route.cost_class === "paid_medium" ? (input.scanMode === "manual" || input.scanMode === "manual_refresh" ? 4 : 1) : Number.MAX_SAFE_INTEGER;
+  const paidSourceQueryCap = route.cost_class === "paid_medium" ? (input.scanMode === "manual" || input.scanMode === "manual_refresh" || input.scanMode === "manual_deep" ? 4 : 1) : Number.MAX_SAFE_INTEGER;
   const onboardingSourceQueryCap = (input.scanMode === "onboarding" || input.scanMode === "baseline") && route.source_key === "hacker-news" ? 1 : Number.MAX_SAFE_INTEGER;
   const maxQueries = Math.min(queryCountCap(input.scanMode), policy.maxQueries ?? Number.MAX_SAFE_INTEGER, Math.max(1, Math.floor(route.max_candidates)), paidSourceQueryCap, onboardingSourceQueryCap, lowConfidence ? 2 : Number.MAX_SAFE_INTEGER);
   const diverse = selectDiverse(candidates, maxQueries);
@@ -423,6 +430,8 @@ function buildSourcePlan(input: QueryPlanningInput, route: SourceRoutingRoute): 
           audience,
           competitors: competitorNames(input.demandProfile),
           alternatives: topItems(input.demandProfile?.alternative_solutions).map((item) => clean(item.label, 70)),
+          competitor_targets: topItems(input.demandProfile?.known_competitors).map((item) => ({ key: item.key, kind: "competitor", name: clean(item.name, 70), domain: item.domain })),
+          alternative_targets: topItems(input.demandProfile?.alternative_solutions).map((item) => ({ key: item.key, kind: "alternative", name: clean(item.label, 70) })),
           pains: topPains(input.demandProfile).map((item) => clean(item.label, 70)),
           switching_triggers: topItems(input.demandProfile?.switching_triggers).map((item) => clean(item.trigger, 70)),
           comparison_terms: topItems(input.demandProfile?.comparison_terms).map((item) => clean(item.term, 70)),
@@ -455,10 +464,23 @@ function buildSourcePlan(input: QueryPlanningInput, route: SourceRoutingRoute): 
   };
 }
 
+function applyGlobalQueryCap(sourcePlans: QueryPlanSource[], maxQueries: number | undefined): QueryPlanSource[] {
+  if (maxQueries === undefined) return sourcePlans;
+  const selected = sourcePlans
+    .flatMap((source) => source.queries.map((query) => ({ sourceKey: source.source_key, query })))
+    .sort((a, b) => b.query.confidence - a.query.confidence || a.sourceKey.localeCompare(b.sourceKey) || a.query.query_id.localeCompare(b.query.query_id))
+    .slice(0, Math.max(0, Math.floor(maxQueries)));
+  const selectedIds = new Set(selected.map((item) => item.query.query_id));
+  return sourcePlans.map((source) => {
+    const queries = source.queries.filter((query) => selectedIds.has(query.query_id));
+    return { ...source, queries, query_budget: queries.length };
+  });
+}
+
 export function buildQueryPlan(input: QueryPlanningInput): QueryPlan {
   const routes = selectExecutableSourceRoutes(input.sourceRoutingPlan);
   const built = routes.map((route) => buildSourcePlan(input, route));
-  const sourcePlans = built.map((result) => result.plan);
+  const sourcePlans = applyGlobalQueryCap(built.map((result) => result.plan), input.maxQueries);
   const queries = sourcePlans.flatMap((source) => source.queries);
   const familyDistribution: Record<string, number> = {};
   const queriesPerSource: Record<string, number> = {};
@@ -470,7 +492,7 @@ export function buildQueryPlan(input: QueryPlanningInput): QueryPlan {
   }
   const lowConfidence = profileConfidence(input) < 0.55;
   const diagnostics: QueryPlanDiagnostics = {
-    source_count: sourcePlans.length,
+    source_count: sourcePlans.filter((source) => source.queries.length > 0).length,
     query_count: queries.length,
     query_family_distribution: familyDistribution,
     queries_per_source: queriesPerSource,

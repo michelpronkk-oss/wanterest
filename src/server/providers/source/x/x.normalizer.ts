@@ -39,6 +39,7 @@ export function normalizeXItem(rawInput: RawSourceItemEnvelope): SourceItemCandi
       authorId: tweet.author_id ?? null,
       authorUsername: author?.username ?? null,
       authorDisplayName: author?.name ?? null,
+      authorLocation: author?.location ?? null,
       replySettings: tweet.reply_settings ?? null,
       publicMetrics: tweet.public_metrics ?? null,
       referencedTweets,
@@ -53,4 +54,3 @@ export function normalizeXItem(rawInput: RawSourceItemEnvelope): SourceItemCandi
     status: "active",
   });
 }
-

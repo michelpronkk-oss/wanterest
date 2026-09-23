@@ -6,7 +6,10 @@ import { getWorkspaceEntitlement } from "@/server/modules/entitlements/entitleme
 import { ensureEngineVersion } from "@/server/modules/observability/engine.repository";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
 import { SupabaseDemandRepository } from "../demand-intelligence/demand.repository";
-import { actionInputFromDrift, actionInputFromGap, actionInputFromSnapshot } from "./action.candidates";
+import { actionInputFromDrift, actionInputFromGap, actionInputFromGeoMarket, actionInputFromSnapshot } from "./action.candidates";
+import { GeographyService } from "../geography/geography.service";
+import { resolveWorkspaceCapabilities } from "../entitlements/plan-capabilities";
+import { SupabaseIntelligenceRepository } from "../intelligence/intelligence.repository";
 import { SupabaseActionRepository } from "./action.repository";
 import { DemandActionService } from "./action.service";
 
@@ -58,6 +61,41 @@ export async function generateActionsForScan(input: { product: ProductRow; trace
     } catch (error) {
       warnings.push(error instanceof Error ? `Snapshot action skipped: ${error.message.slice(0, 180)}` : "Snapshot action skipped.");
     }
+  }
+  // Geo actions are deliberately conservative: one market-aware positioning
+  // hypothesis is emitted only when the market meets the same minimum sample
+  // gate used by the Geography surface.
+  try {
+    const capabilities = await resolveWorkspaceCapabilities(client, input.product.workspace_id);
+    const geographyService = new GeographyService(demand, new SupabaseIntelligenceRepository(client));
+    const geographyAccess = {
+      enabled: capabilities.geography.enabled,
+      historyDays: capabilities.geography.historyDays,
+      trendEnabled: capabilities.geography.trendEnabled && capabilities.geography.historyDays >= 30,
+      maxMarkets: capabilities.geography.maxMarkets,
+      countryDrilldown: capabilities.geography.countryDrilldown,
+      regionDrilldown: capabilities.geography.regionDrilldown,
+      regionalHistoryDays: capabilities.geography.regionalHistoryDays,
+      comparisonEnabled: capabilities.geography.comparisonEnabled,
+      upgradeHint: null,
+    };
+    const geography = await geographyService.getGeography({
+      product: input.product,
+      window: "30d",
+      periodEnd: latestSnapshot.period_end,
+      access: geographyAccess,
+    });
+    let market = geography.topMarkets.find((candidate) => candidate.qualifiedSignalCount >= 5 && candidate.recommendedAction);
+    if (!market && geographyAccess.regionDrilldown) {
+      for (const country of geography.topMarkets.slice(0, 3)) {
+        const regional = await geographyService.getGeography({ product: input.product, window: "30d", periodEnd: latestSnapshot.period_end, access: geographyAccess, selection: { countryCode: country.countryCode } });
+        const regionalMarket = regional.topMarkets.find((candidate) => candidate.level === "region" && candidate.qualifiedSignalCount >= 5 && candidate.recommendedAction);
+        if (regionalMarket) { market = regionalMarket; break; }
+      }
+    }
+    if (market) actionsUpdated += (await service.generateActions(actionInputFromGeoMarket(input.product, latestSnapshot, market, { actionEngineVersionId: engineVersion.id }))).actions.length;
+  } catch (error) {
+    warnings.push(error instanceof Error ? `Geo action skipped: ${error.message.slice(0, 180)}` : "Geo action skipped.");
   }
   return { actionsUpdated, warnings };
 }

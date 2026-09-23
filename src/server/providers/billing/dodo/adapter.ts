@@ -25,6 +25,21 @@ const dodoPayloadSchema = z.object({
 
 type FetchLike = typeof fetch;
 
+// These are the subscription/payment event names currently documented by Dodo's
+// webhook API. Other signed events are retained in the inbox but do not mutate
+// Wanterest billing state.
+const subscriptionEventTypes = new Set([
+  "subscription.active",
+  "subscription.updated",
+  "subscription.on_hold",
+  "subscription.renewed",
+  "subscription.plan_changed",
+  "subscription.cancelled",
+  "subscription.failed",
+  "subscription.expired",
+]);
+const paymentEventTypes = new Set(["payment.succeeded", "payment.failed", "payment.processing", "payment.cancelled"]);
+
 function header(headers: WebhookHeaders, name: string): string | undefined {
   const target = name.toLowerCase();
   const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === target);
@@ -68,14 +83,17 @@ function dateString(value: unknown, fallback: string): string {
 function normalizeStatus(eventType: string, data: Record<string, unknown>): ProviderSubscription["status"] {
   const event = eventType.toLowerCase();
   const raw = (stringAt(data, "status", "subscription_status") ?? "").toLowerCase();
-  if (event.includes("payment.failed") || event.includes("payment_failed") || raw === "past_due" || raw === "unpaid") return "past_due";
+  // A cancellation scheduled for the next billing date keeps the current
+  // paid entitlement. The terminal transition is represented by expiration.
+  if (booleanAt(data, "cancel_at_period_end", "cancel_at_next_billing_date") === true) return "canceling";
+  if (event === "subscription.on_hold" || event === "payment.failed" || event.includes("payment_failed") || raw === "past_due" || raw === "unpaid" || raw === "on_hold") return "past_due";
+  if (event === "subscription.failed" || raw === "failed") return "incomplete";
   if (event.includes("expired") || raw === "expired") return "expired";
-  if (event.includes("canceling") || event.includes("cancellation.scheduled") || event.includes("cancel_scheduled")) return "canceling";
-  if (event.includes("cancel") && !event.includes("cancellation.scheduled") && !event.includes("cancelled_at_period_end")) return "canceled";
+  if (event.includes("canceling") || event.includes("cancellation.scheduled") || event.includes("cancel_scheduled") || raw === "canceling" || raw === "canceled_pending_end") return "canceling";
+  if (event === "subscription.cancelled" || (event.includes("cancel") && !event.includes("cancellation.scheduled") && !event.includes("cancelled_at_period_end"))) return "canceled";
   if (raw === "canceled" || raw === "cancelled") return "canceled";
   if (raw === "trialing" || raw === "trial") return "trialing";
   if (raw === "incomplete" || raw === "pending") return "incomplete";
-  if (booleanAt(data, "cancel_at_period_end", "cancel_at_next_billing_date")) return "canceling";
   return "active";
 }
 
@@ -113,15 +131,16 @@ export class DodoBillingProvider implements BillingProvider {
   }
 
   async createCheckout(input: CheckoutRequest): Promise<CheckoutResult> {
-    const response = await this.request("/checkouts", {
+    const response = await this.request("/checkout-sessions", {
       method: "POST",
       headers: { "Idempotency-Key": input.checkoutReference },
       body: {
-        product_id: input.providerProductId,
-        quantity: 1,
+        product_cart: [{ product_id: input.providerProductId, quantity: 1 }],
+        ...(input.providerCustomerId ? { customer: { customer_id: input.providerCustomerId } } : {}),
         return_url: input.returnUrl,
         metadata: {
           workspace_id: input.workspaceId,
+          workspaceId: input.workspaceId,
           internal_plan: input.internalPlan,
           billing_interval: input.billingInterval,
           checkout_reference: input.checkoutReference,
@@ -130,9 +149,19 @@ export class DodoBillingProvider implements BillingProvider {
     });
     const record = asRecord(response);
     const checkoutUrl = stringAt(record, "checkout_url", "url");
-    const checkoutId = stringAt(record, "checkout_id", "id");
+    const checkoutId = stringAt(record, "session_id", "checkout_id", "id");
     if (!checkoutUrl || !checkoutId) throw new BillingProviderError("PROVIDER_ERROR", "Dodo did not return a checkout URL.");
     return { providerCheckoutId: checkoutId, checkoutUrl };
+  }
+
+  async createPortalSession(providerCustomerId: string, returnUrl?: string) {
+    const query = new URLSearchParams();
+    if (returnUrl) query.set("return_url", returnUrl);
+    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    const response = await this.request(`/customers/${encodeURIComponent(providerCustomerId)}/customer-portal/session${suffix}`, { method: "POST" });
+    const link = stringAt(asRecord(response), "link", "url", "portal_url");
+    if (!link) throw new BillingProviderError("PROVIDER_ERROR", "Dodo did not return a customer portal link.");
+    return { portalUrl: link };
   }
 
   async getSubscription(providerSubscriptionId: string): Promise<ProviderSubscription> {
@@ -198,17 +227,27 @@ export class DodoBillingProvider implements BillingProvider {
 
   normalizeStoredWebhook(payload: JsonObject, context: { providerEventId: string; occurredAt: string; eventType: string }): VerifiedBillingEvent {
     let subscription: ProviderSubscription | undefined;
-    try {
-      subscription = this.normalizeSubscription(payload, undefined, context.occurredAt, context.eventType);
-    } catch (error) {
-      // Payment-only events may be acknowledged and retained without changing
-      // subscription state. Subscription events remain strict.
-      if (!context.eventType.toLowerCase().startsWith("payment.")) throw error;
+    let diagnostic: VerifiedBillingEvent["diagnostic"];
+    if (subscriptionEventTypes.has(context.eventType) || paymentEventTypes.has(context.eventType)) {
+      try {
+        subscription = this.normalizeSubscription(payload, undefined, context.occurredAt, context.eventType);
+      } catch (error) {
+        // An unmapped product is a safe, durable diagnostic. A structurally
+        // malformed subscription event is still rejected before it enters the
+        // inbox; payment-only events may be acknowledged without a subscription.
+        if (error instanceof BillingProviderError && error.message.includes("not mapped")) {
+          diagnostic = { code: "UNKNOWN_PRODUCT", message: "Dodo product is not mapped to an internal Wanterest plan." };
+        } else if (paymentEventTypes.has(context.eventType)) {
+          subscription = undefined;
+        } else {
+          throw error;
+        }
+      }
     }
     const root = asRecord(payload);
     const data = asRecord(root.data);
-    const metadata = asRecord(data.metadata);
-    const workspaceId = stringAt(metadata, "workspace_id");
+    const metadata = { ...asRecord(root.metadata), ...asRecord(data.metadata) };
+    const workspaceId = stringAt(metadata, "workspace_id", "workspaceId");
     return {
       provider: "dodo",
       providerEventId: context.providerEventId,
@@ -217,6 +256,7 @@ export class DodoBillingProvider implements BillingProvider {
       payload,
       ...(workspaceId ? { workspaceId } : {}),
       ...(subscription ? { subscription } : {}),
+      ...(diagnostic ? { diagnostic } : {}),
     };
   }
 
@@ -246,7 +286,7 @@ export class DodoBillingProvider implements BillingProvider {
       billingInterval: mapping.billingInterval,
       status,
       currentPeriodStart: data.current_period_start ? dateString(data.current_period_start, occurredAt) : null,
-      currentPeriodEnd: data.current_period_end ? dateString(data.current_period_end, occurredAt) : null,
+      currentPeriodEnd: data.current_period_end || data.next_billing_date ? dateString(data.current_period_end ?? data.next_billing_date, occurredAt) : null,
       cancelAtPeriodEnd: booleanAt(data, "cancel_at_period_end", "cancel_at_next_billing_date") ?? status === "canceling",
       canceledAt: data.canceled_at ? dateString(data.canceled_at, occurredAt) : null,
       endedAt: data.ended_at ? dateString(data.ended_at, occurredAt) : (status === "canceled" || status === "expired" ? updatedAt : null),

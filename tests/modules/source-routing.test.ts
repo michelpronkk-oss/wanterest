@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { businessClassificationFixtures } from "../../src/server/modules/intelligence/business-classification.fixtures";
 import { classifyProductBusiness } from "../../src/server/modules/intelligence/business-classification.service";
@@ -8,9 +8,11 @@ import {
   buildSourceRoutingPlan,
   formatSourceRoutingDryRun,
   selectExecutableSourceRoutes,
+  rotateSecondarySourceRoutes,
   sourceRoutingCapabilityProfiles,
   type SourceRoutingSourceState,
 } from "../../src/server/modules/operations/source-routing.index";
+import { getSourceRuntimeConfiguration } from "../../src/server/providers/source/runtime";
 
 const allHealthy = (): SourceRoutingSourceState[] => [
   { sourceKey: "hacker-news", configured: true, controlState: "enabled", healthStatus: "healthy" },
@@ -39,7 +41,7 @@ const fixturePairs = [
   ["ambiguous", "ambiguous minimal landing page"],
 ] as const;
 
-async function buildPlan(index: number, sourceStates = allHealthy()) {
+async function buildPlan(index: number, sourceStates = allHealthy(), rotationSeed?: string, scanMode: "onboarding" | "manual" = "onboarding") {
   const [classificationName, profileName] = fixturePairs[index];
   const classificationFixture = businessClassificationFixtures.find((fixture) => fixture.name === classificationName);
   const profileFixture = demandProfileV2Fixtures.find((fixture) => fixture.name === profileName);
@@ -55,15 +57,16 @@ async function buildPlan(index: number, sourceStates = allHealthy()) {
     classification,
     demandProfile: readDemandProfileV2RoutingModel(profile),
     sourceStates,
-    scanMode: "onboarding",
-    totalCandidateBudget: 15,
-    maxSources: 3,
+    scanMode,
+    totalCandidateBudget: scanMode === "manual" ? 30 : 15,
+    maxSources: scanMode === "manual" ? 4 : 3,
+    rotationSeed,
   });
 }
 
 describe("Source Routing v1", () => {
   it("exposes centralized provider-neutral capabilities for every initial source", () => {
-    expect(Object.keys(sourceRoutingCapabilityProfiles).sort()).toEqual(["bluesky", "github", "hacker-news", "reddit", "x", "fixture"].sort());
+    expect(Object.keys(sourceRoutingCapabilityProfiles).sort()).toEqual(["bluesky", "github", "gitlab", "hacker-news", "reddit", "x", "fixture", "product-hunt", "stack-exchange", "public-web", "g2", "trustpilot", "youtube"].sort());
     for (const profile of Object.values(sourceRoutingCapabilityProfiles)) {
       expect(profile.cost_class).toBeTruthy();
       expect(profile.supports_problem_discussion).toBeGreaterThanOrEqual(0);
@@ -163,6 +166,58 @@ describe("Source Routing v1", () => {
     expect(ecommerce.routes.find((route) => route.source_key === "x")?.availability_status).toBe("not_configured");
     expect(ecommerce.routes.find((route) => route.source_key === "x")?.max_candidates).toBe(0);
     expect(ecommerce.diagnostics.selected_sources).not.toContain("x");
+  });
+
+  it("rotates secondary sources deterministically while preferring healthy core sources", async () => {
+    const first = await buildPlan(0, allHealthy(), "monitoring-slot-1", "manual");
+    const retry = await buildPlan(0, allHealthy(), "monitoring-slot-1", "manual");
+    const laterPlans = await Promise.all([2, 3, 4, 5].map((slot) => buildPlan(0, allHealthy(), "monitoring-slot-" + slot, "manual")));
+    expect(retry).toEqual(first);
+    expect(new Set([first, ...laterPlans].map((plan) => plan.diagnostics.selected_sources.join(","))).size).toBeGreaterThanOrEqual(1);
+    expect(rotateSecondarySourceRoutes([{ source_key: "a" }, { source_key: "b" }, { source_key: "c" }], "slot-1").map((route) => route.source_key)).toEqual(["a", "b", "c"]);
+    expect(rotateSecondarySourceRoutes([{ source_key: "a" }, { source_key: "b" }, { source_key: "c" }], "slot-2").map((route) => route.source_key)).toEqual(["b", "c", "a"]);
+    expect(rotateSecondarySourceRoutes([{ source_key: "a" }, { source_key: "b" }, { source_key: "c" }], "slot-2")).toEqual(rotateSecondarySourceRoutes([{ source_key: "a" }, { source_key: "b" }, { source_key: "c" }], "slot-2"));
+
+    const degraded = allHealthy().map((state) => state.sourceKey === "hacker-news" ? { ...state, healthStatus: "degraded" as const } : state);
+    const healthyPreferred = await buildPlan(0, degraded, "monitoring-slot-1", "manual");
+    expect(healthyPreferred.diagnostics.selected_sources.indexOf("hacker-news")).toBeGreaterThanOrEqual(healthyPreferred.diagnostics.selected_sources.length - 1);
+  });
+
+  it("treats missing optional Trustpilot credentials as unavailable without reducing coverage", async () => {
+    const configured = [...allHealthy(), { sourceKey: "trustpilot", configured: true, controlState: "enabled", healthStatus: "healthy" as const }];
+    const missing = [...allHealthy(), { sourceKey: "trustpilot", configured: false, controlState: "enabled", healthStatus: "degraded" as const, reason: "missing_credentials" }];
+    const configuredPlan = await buildPlan(0, configured);
+    const missingPlan = await buildPlan(0, missing);
+    const trustpilot = missingPlan.routes.find((route) => route.source_key === "trustpilot");
+    expect(trustpilot?.availability_status).toBe("unavailable");
+    expect(trustpilot?.health_status).toBe("unknown");
+    expect(missingPlan.diagnostics.selected_sources).not.toContain("trustpilot");
+    expect(missingPlan.overall_coverage_confidence).toBeGreaterThanOrEqual(configuredPlan.overall_coverage_confidence);
+  });
+
+  it("reports Trustpilot credentials as optional missing credentials", () => {
+    vi.stubEnv("TRUSTPILOT_API_KEY", "");
+    vi.stubEnv("TRUSTPILOT_BUSINESS_UNIT_ID", "business-unit");
+    expect(getSourceRuntimeConfiguration("trustpilot")).toEqual({ sourceKey: "trustpilot", configured: false, reason: "missing_credentials" });
+    vi.unstubAllEnvs();
+  });
+
+  it("reports YouTube and GitLab credentials as independently optional", () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "");
+    vi.stubEnv("GITLAB_TOKEN", "");
+    expect(getSourceRuntimeConfiguration("youtube")).toEqual({ sourceKey: "youtube", configured: false, reason: "missing_credentials" });
+    expect(getSourceRuntimeConfiguration("gitlab")).toEqual({ sourceKey: "gitlab", configured: false, reason: "missing_credentials" });
+    vi.unstubAllEnvs();
+  });
+
+  it("does not lower routing coverage when new adapters are unavailable for credentials", async () => {
+    const configured = [...allHealthy(), { sourceKey: "youtube", configured: true, controlState: "enabled", healthStatus: "healthy" as const }, { sourceKey: "gitlab", configured: true, controlState: "enabled", healthStatus: "healthy" as const }];
+    const missing = [...allHealthy(), { sourceKey: "youtube", configured: false, controlState: "enabled", healthStatus: "degraded" as const, reason: "missing_credentials" }, { sourceKey: "gitlab", configured: false, controlState: "enabled", healthStatus: "degraded" as const, reason: "missing_credentials" }];
+    const configuredPlan = await buildPlan(0, configured);
+    const missingPlan = await buildPlan(0, missing);
+    expect(missingPlan.routes.find((route) => route.source_key === "youtube")).toMatchObject({ availability_status: "unavailable", health_status: "unknown" });
+    expect(missingPlan.routes.find((route) => route.source_key === "gitlab")).toMatchObject({ availability_status: "unavailable", health_status: "unknown" });
+    expect(missingPlan.overall_coverage_confidence).toBeGreaterThanOrEqual(configuredPlan.overall_coverage_confidence);
   });
 
   it("falls back to conservative classification-only planning with no profile", async () => {

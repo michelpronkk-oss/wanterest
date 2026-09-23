@@ -11,20 +11,22 @@ function valueOrNull(value: string | number | boolean | null | undefined): strin
   return value ?? null;
 }
 
-function authorFields(user: { id?: number; node_id?: string; login?: string; type?: string; html_url?: string } | null | undefined) {
+function authorFields(user: { id?: number; node_id?: string; login?: string; type?: string; html_url?: string; location?: string | null } | null | undefined) {
   return {
     authorExternalId: user?.id !== undefined ? `github:user:${user.id}` : user?.node_id ? `github:user-node:${user.node_id}` : undefined,
     authorDisplayName: user?.login,
     authorProfileUrl: user?.html_url,
+    authorLocation: user?.location ?? null,
     authorType: user?.type ?? null,
   };
 }
 
-function graphqlAuthorFields(author: { id?: string; login?: string; url?: string; __typename?: string } | null | undefined) {
+function graphqlAuthorFields(author: { id?: string; login?: string; url?: string; __typename?: string; location?: string | null } | null | undefined) {
   return {
     authorExternalId: author?.id ? `github:user-node:${author.id}` : undefined,
     authorDisplayName: author?.login,
     authorProfileUrl: author?.url,
+    authorLocation: author?.location ?? null,
     authorType: author?.__typename ?? null,
   };
 }
@@ -89,6 +91,7 @@ function normalizeIssue(raw: RawSourceItemEnvelope): SourceItemCandidate {
       milestone: issue.milestone ? { number: issue.milestone.number ?? null, title: issue.milestone.title ?? null, state: issue.milestone.state ?? null } : null,
       reactions: issue.reactions ?? null,
       authorType: issue.user?.type ?? null,
+      authorLocation: issue.user?.location ?? null,
       pullRequest: false,
     },
     status: "active",
@@ -124,6 +127,7 @@ function normalizeIssueComment(raw: RawSourceItemEnvelope): SourceItemCandidate 
       authorAssociation: valueOrNull(comment.author_association),
       reactions: comment.reactions ?? null,
       authorType: comment.user?.type ?? null,
+      authorLocation: comment.user?.location ?? null,
     },
     status: "active",
   });
@@ -165,6 +169,7 @@ function normalizeDiscussion(raw: RawSourceItemEnvelope): SourceItemCandidate {
       updatedAt: valueOrNull(discussion.updatedAt),
       comments: discussion.comments?.nodes.length ?? 0,
       authorType: discussion.author?.__typename ?? null,
+      authorLocation: discussion.author?.location ?? null,
     },
     status: "active",
   });
@@ -198,6 +203,7 @@ function normalizeDiscussionComment(raw: RawSourceItemEnvelope): SourceItemCandi
       rootExternalId: rootDiscussionId(raw),
       updatedAt: valueOrNull(comment.updatedAt),
       authorType: comment.author?.__typename ?? null,
+      authorLocation: comment.author?.location ?? null,
     },
     status: "active",
   });

@@ -36,6 +36,7 @@ export type CheckoutRequest = {
   internalPlan: BillingPlan;
   billingInterval: BillingInterval;
   providerProductId: string;
+  providerCustomerId?: string | null;
   returnUrl?: string;
   checkoutReference: string;
 };
@@ -43,6 +44,10 @@ export type CheckoutRequest = {
 export type CheckoutResult = {
   providerCheckoutId: string;
   checkoutUrl: string;
+};
+
+export type PortalSessionResult = {
+  portalUrl: string;
 };
 
 export type VerifiedBillingEvent = {
@@ -53,6 +58,7 @@ export type VerifiedBillingEvent = {
   payload: JsonObject;
   workspaceId?: string;
   subscription?: ProviderSubscription;
+  diagnostic?: { code: string; message: string };
 };
 
 export type WebhookHeaders = Record<string, string | undefined>;
@@ -60,6 +66,7 @@ export type WebhookHeaders = Record<string, string | undefined>;
 export interface BillingProvider {
   readonly name: BillingProviderName;
   createCheckout(input: CheckoutRequest): Promise<CheckoutResult>;
+  createPortalSession?(providerCustomerId: string, returnUrl?: string): Promise<PortalSessionResult>;
   getSubscription(providerSubscriptionId: string): Promise<ProviderSubscription>;
   cancelSubscription(providerSubscriptionId: string): Promise<ProviderSubscription | null>;
   changeSubscription?(input: {

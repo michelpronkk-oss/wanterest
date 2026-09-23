@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "../../db/database.types";
 import type { SourceControlInsert, SourceControlRow } from "../../db/database.helpers";
 import { AppError } from "../../lib/errors";
+import { getSourceRuntimeConfiguration } from "../../providers/source/runtime";
 
 export type SourceControlState = SourceControlRow["state"];
 export type SourceControlStore = {
@@ -38,6 +39,11 @@ export class SourceControlService {
 }
 
 export type SourceAvailability = { sourceKey: string; configured: boolean; state: SourceControlState; reason?: string };
+const expansionAvailability: SourceAvailability[] = ["product-hunt", "stack-exchange", "public-web", "g2", "trustpilot", "youtube", "gitlab"].map((sourceKey) => {
+  const runtime = getSourceRuntimeConfiguration(sourceKey);
+  return { sourceKey, configured: runtime.configured, state: runtime.configured ? "enabled" : "disabled", reason: runtime.reason };
+});
+
 export const initialSourceAvailability: SourceAvailability[] = [
   { sourceKey: "fixture", configured: true, state: "enabled" },
   { sourceKey: "hacker-news", configured: true, state: "enabled" },
@@ -45,4 +51,5 @@ export const initialSourceAvailability: SourceAvailability[] = [
   { sourceKey: "reddit", configured: false, state: "disabled", reason: "approval_pending_or_credentials_missing" },
   { sourceKey: "github", configured: true, state: "enabled", reason: "public_api_available" },
   { sourceKey: "x", configured: Boolean(process.env.X_BEARER_TOKEN?.trim()), state: process.env.X_BEARER_TOKEN?.trim() ? "enabled" : "disabled", reason: process.env.X_BEARER_TOKEN?.trim() ? "app_only_token_configured" : "credentials_missing" },
+  ...expansionAvailability,
 ];

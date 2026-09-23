@@ -107,4 +107,6 @@ export type QueryPlanningInput = {
   demandProfile: DemandProfileV2RoutingModel | null;
   sourceRoutingPlan: SourceRoutingPlan;
   scanMode: SourceRoutingScanMode;
+  /** Central plan cap applied after per-source diversity selection. */
+  maxQueries?: number;
 };

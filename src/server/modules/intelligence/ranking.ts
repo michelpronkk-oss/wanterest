@@ -38,6 +38,13 @@ export const SOURCE_QUALITY: Record<string, number> = {
   reddit: 0.62,
   github: 0.6,
   x: 0.55,
+  "product-hunt": 0.55,
+  "stack-exchange": 0.68,
+  "public-web": 0.45,
+  g2: 0.72,
+  trustpilot: 0.65,
+  youtube: 0.58,
+  gitlab: 0.7,
 };
 
 export function freshnessScore(timestamp: string | null | undefined, now = new Date()): number {

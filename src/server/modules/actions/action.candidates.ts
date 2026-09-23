@@ -1,5 +1,6 @@
 import type { DemandDriftRow, DemandGapRow, DemandSnapshotRow, ProductRow, SignalRow } from "../../db/database.helpers";
 import type { ActionGenerationInput } from "./action.schemas";
+import type { GeographyMarketSummary } from "../geography/geography.schemas";
 
 type CandidateOptions = {
   conceptLabel?: string;
@@ -54,6 +55,31 @@ export function actionInputFromSnapshot(product: ProductRow, snapshot: DemandSna
     opportunityScore: snapshot.confidence, evidenceStrength: snapshot.confidence, confidence: snapshot.confidence,
     freshness: 1, sampleSize: snapshot.sample_size, sampleQuality: snapshot.measurement_quality as ActionGenerationInput["sampleQuality"],
     positioningWeight: 0, highIntentShare: 0.5, specificity: snapshot.confidence,
+    actionEngineVersionId: options.actionEngineVersionId,
+  };
+}
+
+export function actionInputFromGeoMarket(product: ProductRow, snapshot: DemandSnapshotRow, market: GeographyMarketSummary, options: CandidateOptions = {}): ActionGenerationInput {
+  const theme = market.topDemandTheme ?? market.topPain ?? "qualified demand";
+  const place = market.level === "region" ? `${market.marketName}, ${market.countryName}` : market.countryName;
+  const marketShare = market.level === "region" ? market.shareOfParentMarket : market.shareOfGeoQualifiedDemand;
+  return {
+    ...base(product, snapshot, `${place} ${theme}`, { ...options, targetKey: options.targetKey ?? "regional_positioning", conceptLabel: options.conceptLabel ?? `${place}: ${theme}` }),
+    triggerType: "demand_snapshot",
+    marketWeight: marketShare,
+    gapScore: 0,
+    driftStrength: market.trend.hasEnoughHistory && market.trend.percentage !== null ? Math.min(1, Math.abs(market.trend.percentage) / 100) : 0,
+    intentStrength: market.topIntent ? 0.7 : 0.4,
+    opportunityScore: Math.min(1, marketShare + (market.trend.direction === "growing" ? 0.15 : 0)),
+    evidenceStrength: Math.min(1, market.qualifiedSignalCount / 30),
+    confidence: Math.min(1, market.qualifiedSignalCount / 30),
+    freshness: 1,
+    sampleSize: market.qualifiedSignalCount,
+    sampleQuality: market.sampleState === "higher_confidence" ? "high_confidence" : market.sampleState === "directional" ? "normal" : market.sampleState === "emerging" ? "low_confidence" : "insufficient_data",
+    positioningWeight: 0,
+    highIntentShare: market.topIntent ? 0.7 : 0,
+    specificity: Math.min(1, market.qualifiedSignalCount / 20),
+    geoContext: { market: place, topTheme: market.topDemandTheme ?? market.topPain, trendPercentage: market.trend.percentage, sampleSize: market.qualifiedSignalCount },
     actionEngineVersionId: options.actionEngineVersionId,
   };
 }

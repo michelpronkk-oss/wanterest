@@ -55,11 +55,11 @@ query WanterestDiscussionSearch($query: String!, $first: Int!, $after: String, $
     nodes {
       ... on Discussion {
         id number title body url createdAt updatedAt
-        author { login url __typename }
+        author { login url __typename location }
         category { name }
         repository { id name nameWithOwner url owner { login } }
         comments(first: $commentFirst) {
-          nodes { id body url createdAt updatedAt author { login url __typename } }
+          nodes { id body url createdAt updatedAt author { login url __typename location } }
           pageInfo { hasNextPage endCursor }
         }
       }

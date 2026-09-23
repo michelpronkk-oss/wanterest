@@ -93,7 +93,7 @@ export class DemandActionService {
         current_state: result.currentState,
         target_metric: result.targetMetric,
         business_hypothesis: json(result.businessHypothesis),
-        evidence_context: json({ buyerLanguage: parsed.buyerLanguage, supportingEvidenceNodeIds: parsed.supportingEvidence, measurements: { marketWeight: parsed.marketWeight, gapScore: parsed.gapScore, driftStrength: parsed.driftStrength, opportunityScore: parsed.opportunityScore, sampleSize: parsed.sampleSize, sampleQuality: parsed.sampleQuality } }),
+        evidence_context: json({ buyerLanguage: parsed.buyerLanguage, supportingEvidenceNodeIds: parsed.supportingEvidence, geoContext: parsed.geoContext ?? null, measurements: { marketWeight: parsed.marketWeight, gapScore: parsed.gapScore, driftStrength: parsed.driftStrength, opportunityScore: parsed.opportunityScore, sampleSize: parsed.sampleSize, sampleQuality: parsed.sampleQuality } }),
         priority_score: clamp(result.priorityScore),
         confidence: clamp(result.confidence),
         status: "proposed",

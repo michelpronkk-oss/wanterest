@@ -73,7 +73,22 @@ export type SourceDiscoveryPage = {
   nextCursor?: string;
   rateLimit?: RateLimitMetadata;
   estimatedCost?: number;
-  diagnostics: { accepted: number; rejected: number; messages: string[] };
+  providerMetrics?: JsonObject;
+  diagnostics: {
+    accepted: number;
+    rejected: number;
+    messages: string[];
+    resolutions?: Array<{
+      status: "resolved" | "no_match" | "ambiguous_match";
+      targetKey: string;
+      targetFingerprint: string;
+      productId?: string;
+      matchedBy?: "domain" | "name" | "slug" | "vendor_product_metadata";
+      candidateProductIds: string[];
+      resolvedAt: string;
+      resolverVersion: string;
+    }>;
+  };
 };
 
 export type SourceHealthResult = {

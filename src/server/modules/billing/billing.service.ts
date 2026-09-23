@@ -16,6 +16,16 @@ export type BillingAuditLogger = (input: {
 }) => Promise<void>;
 
 const noopAudit: BillingAuditLogger = async () => undefined;
+const authoritativeSubscriptionEvents = new Set([
+  "subscription.active",
+  "subscription.updated",
+  "subscription.on_hold",
+  "subscription.renewed",
+  "subscription.plan_changed",
+  "subscription.cancelled",
+  "subscription.failed",
+  "subscription.expired",
+]);
 
 function checkoutReference(workspaceId: string, plan: BillingPlan, interval: BillingInterval, idempotencyKey?: string): string {
   const seed = idempotencyKey ?? crypto.randomUUID();
@@ -59,6 +69,7 @@ export class BillingService {
       internalPlan: input.plan,
       billingInterval: input.interval,
       providerProductId,
+      providerCustomerId: await this.repository.getProviderCustomerId(input.workspaceId),
       returnUrl: input.returnUrl,
       checkoutReference: reference,
     });
@@ -73,11 +84,11 @@ export class BillingService {
     return { eventId: result.row.id, duplicate: result.duplicate };
   }
 
-  async processWebhook(eventId: string, traceId?: string): Promise<{ status: "processed" | "ignored" | "already_processed"; subscription?: Awaited<ReturnType<BillingRepository["getCurrentSubscription"]>> }> {
+  async processWebhook(eventId: string, traceId?: string): Promise<{ status: "processed" | "ignored" | "already_processed" | "already_processing"; subscription?: Awaited<ReturnType<BillingRepository["getCurrentSubscription"]>> }> {
     const stored = await this.repository.getWebhook(eventId);
     if (!stored) throw new AppError("NOT_FOUND", "Billing webhook was not found.");
     if (stored.processing_status === "processed") return { status: "already_processed" };
-    await this.repository.markWebhook(eventId, { processingStatus: "processing" });
+    if (!(await this.repository.claimWebhook(eventId))) return { status: "already_processing" };
     try {
       const payload = jsonObjectSchema.safeParse(stored.payload);
       if (!payload.success) throw new AppError("VALIDATION_ERROR", "Stored billing webhook payload is malformed.");
@@ -86,17 +97,45 @@ export class BillingService {
         occurredAt: stored.provider_occurred_at ?? stored.received_at,
         eventType: stored.event_type,
       });
-      const workspaceId = verified.workspaceId ?? (verified.subscription ? await this.repository.findWorkspaceByProviderSubscriptionId(verified.subscription.providerSubscriptionId) : null);
-      if (!verified.subscription || !workspaceId) {
+      if (verified.diagnostic) {
+        await this.repository.markWebhook(eventId, { processingStatus: "ignored", processedAt: new Date().toISOString(), errorCode: verified.diagnostic.code, sanitizedError: verified.diagnostic.message });
+        return { status: "ignored" };
+      }
+      if (!verified.subscription) {
         await this.repository.markWebhook(eventId, { processingStatus: "ignored", processedAt: new Date().toISOString() });
         return { status: "ignored" };
       }
-      const applied = await this.applyVerifiedEvent(workspaceId, verified, traceId);
+      const metadataWorkspaceId = verified.workspaceId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(verified.workspaceId)
+        ? verified.workspaceId
+        : null;
+      const customerWorkspaceId = await this.repository.findWorkspaceByProviderCustomerId(verified.subscription.providerCustomerId);
+      const subscriptionWorkspaceId = await this.repository.findWorkspaceByProviderSubscriptionId(verified.subscription.providerSubscriptionId);
+      const mappedWorkspaceIds = [customerWorkspaceId, subscriptionWorkspaceId].filter((value): value is string => Boolean(value));
+      if (metadataWorkspaceId && mappedWorkspaceIds.some((value) => value !== metadataWorkspaceId)) {
+        throw new AppError("FORBIDDEN", "Billing workspace association does not match.");
+      }
+      if (new Set(mappedWorkspaceIds).size > 1) {
+        throw new AppError("FORBIDDEN", "Billing provider identifiers map to different workspaces.");
+      }
+      const workspaceId = metadataWorkspaceId ?? mappedWorkspaceIds[0] ?? null;
+      if (!workspaceId) {
+        await this.repository.markWebhook(eventId, { processingStatus: "failed", errorCode: "WORKSPACE_UNRESOLVED", sanitizedError: "No trusted workspace association was found." });
+        throw new AppError("AUTH_TRANSIENT", "Billing workspace association is not available yet.");
+      }
+      const authoritative = authoritativeSubscriptionEvents.has(stored.event_type)
+        ? await this.provider.getSubscription(verified.subscription.providerSubscriptionId)
+        : verified.subscription;
+      const applied = await this.applyVerifiedEvent(workspaceId, { ...verified, subscription: authoritative }, traceId);
       await this.repository.markWebhook(eventId, { processingStatus: "processed", processedAt: new Date().toISOString() });
       return { status: "processed", subscription: applied };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Billing webhook processing failed.";
-      await this.repository.markWebhook(eventId, { processingStatus: "failed", errorCode: "PROCESSING_FAILED", sanitizedError: message.slice(0, 500) });
+      const errorCode = error instanceof AppError && error.code === "AUTH_TRANSIENT"
+        ? "WORKSPACE_UNRESOLVED"
+        : error instanceof AppError && error.code === "FORBIDDEN"
+          ? "WORKSPACE_MISMATCH"
+          : "PROCESSING_FAILED";
+      await this.repository.markWebhook(eventId, { processingStatus: "failed", errorCode, sanitizedError: message.slice(0, 500) });
       throw error;
     }
   }
@@ -119,6 +158,14 @@ export class BillingService {
     if (!subscription) throw new AppError("NOT_FOUND", "No active subscription was found.");
     await this.provider.cancelSubscription(subscription.provider_subscription_id);
     await this.audit({ workspaceId, action: "billing.cancellation_requested", targetType: "subscriptions", targetId: subscription.id, metadata: { provider_subscription_id: subscription.provider_subscription_id } });
+  }
+
+  async createPortalSession(workspaceId: string, returnUrl?: string) {
+    const providerCustomerId = await this.repository.getProviderCustomerId(workspaceId);
+    if (!providerCustomerId) throw new AppError("NOT_FOUND", "No Dodo billing customer is available for this workspace.");
+    const createPortal = this.provider.createPortalSession;
+    if (!createPortal) throw new AppError("CONFLICT", "This billing provider does not support a customer portal.");
+    return createPortal.call(this.provider, providerCustomerId, returnUrl);
   }
 
   async changePlan(workspaceId: string, plan: BillingPlan, interval: BillingInterval): Promise<void> {

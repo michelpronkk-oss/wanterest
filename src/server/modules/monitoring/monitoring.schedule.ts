@@ -5,6 +5,7 @@ import { jsonValueSchema, type Json, type MonitoringScheduleRow } from "../../db
 import { AppError } from "../../lib/errors";
 import { isActiveProduct } from "../products/product-lifecycle";
 import { resolveMonitoringPolicy, monitoringPolicySnapshot, type MonitoringPolicy } from "../entitlements/monitoring-policy";
+import { resolveWorkspaceCapabilities } from "../entitlements/plan-capabilities";
 
 type Client = SupabaseClient<Database>;
 const MINUTE = 60_000;
@@ -65,11 +66,11 @@ async function upsertSchedule(client: Client, input: {
   if (error) throw new AppError("INTERNAL_ERROR", "Monitoring schedule could not be saved.", 500, { providerMessage: error.message });
 }
 
-export async function ensureMonitoringScheduleForProduct(client: Client, workspaceId: string, productId: string, now = new Date().toISOString()): Promise<void> {
+export async function ensureMonitoringScheduleForProduct(client: Client, workspaceId: string, productId: string, now = new Date().toISOString(), options: { eligibleForPlan?: boolean } = {}): Promise<void> {
   const policy = await resolveMonitoringPolicy(client, workspaceId);
   const existing = await getSchedule(client, workspaceId, productId);
   const snapshot = monitoringPolicySnapshot(policy);
-  const enabled = policy.monitoringEnabled;
+  const enabled = policy.monitoringEnabled && options.eligibleForPlan !== false;
   const policyChanged = existing ? snapshotChanged(existing.policy_snapshot, snapshot) : false;
   const currentStatus = !enabled
     ? "paused"
@@ -95,13 +96,29 @@ export async function ensureMonitoringScheduleForProduct(client: Client, workspa
 export async function ensureMonitoringSchedulesForActiveProducts(client: Client, now: string): Promise<number> {
   let ensured = 0;
   const pageSize = 500;
+  const capabilitiesByWorkspace = new Map<string, Awaited<ReturnType<typeof resolveWorkspaceCapabilities>>>();
+  const monitoredCountByWorkspace = new Map<string, number>();
   for (let offset = 0; ; offset += pageSize) {
-    const { data, error } = await client.from("products").select("workspace_id,id,status").eq("status", "active").range(offset, offset + pageSize - 1);
+    const { data, error } = await client.from("products").select("workspace_id,id,status,created_at").eq("status", "active").order("workspace_id", { ascending: true }).order("created_at", { ascending: true }).range(offset, offset + pageSize - 1);
     if (error) throw new AppError("INTERNAL_ERROR", "Active monitoring products could not be loaded.", 500, { providerMessage: error.message });
+    const productsByWorkspace = new Map<string, Array<{ workspace_id: string; id: string; status: string; created_at: string }>>();
     for (const product of data ?? []) {
       if (!isActiveProduct(product)) continue;
-      await ensureMonitoringScheduleForProduct(client, product.workspace_id, product.id, now);
-      ensured += 1;
+      const products = productsByWorkspace.get(product.workspace_id) ?? [];
+      products.push(product);
+      productsByWorkspace.set(product.workspace_id, products);
+    }
+    for (const [workspaceId, products] of productsByWorkspace) {
+      const capabilities = capabilitiesByWorkspace.get(workspaceId) ?? await resolveWorkspaceCapabilities(client, workspaceId);
+      capabilitiesByWorkspace.set(workspaceId, capabilities);
+      let monitoredCount = monitoredCountByWorkspace.get(workspaceId) ?? 0;
+      for (const product of products) {
+        const eligibleForPlan = monitoredCount < capabilities.products.maxProducts;
+        if (eligibleForPlan) monitoredCount += 1;
+        await ensureMonitoringScheduleForProduct(client, product.workspace_id, product.id, now, { eligibleForPlan });
+        ensured += 1;
+      }
+      monitoredCountByWorkspace.set(workspaceId, monitoredCount);
     }
     if ((data ?? []).length < pageSize) break;
   }

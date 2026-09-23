@@ -68,6 +68,7 @@ export function normalizeBlueskyPost(raw: RawSourceItemEnvelope): SourceItemCand
     metadata: {
       did: post.author.did,
       handle: post.author.handle ?? null,
+      authorLocation: post.author.location ?? null,
       cid: post.cid,
       atUri: post.uri,
       rkey: uriParts.rkey,

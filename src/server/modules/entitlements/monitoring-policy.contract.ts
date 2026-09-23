@@ -1,9 +1,12 @@
 import { jsonValueSchema, type Json } from "../../db/database.helpers";
+import type { InternalPlan } from "./plan-capabilities";
 
 export const MONITORING_POLICY_VERSION = "automatic-monitoring-v1" as const;
 
 export type MonitoringPolicy = {
   version: typeof MONITORING_POLICY_VERSION;
+  /** Resolved Wanterest plan, retained in snapshots for safe diagnostics. */
+  plan?: InternalPlan;
   monitoringEnabled: boolean;
   intelligenceCyclesPerDay: number;
   intelligenceCycleIntervalMinutes: number;

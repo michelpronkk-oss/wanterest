@@ -21,6 +21,7 @@ import {
   type RateLimitMetadata,
 } from "../../providers/source/contracts";
 import { createSourceRegistry } from "../../providers/source/registry";
+import { enrichSourceMetadata } from "../geography/geo-enrichment";
 import { contentHash, deterministicUuid, normalizedUrl, sha256Json } from "./hash";
 import { replayInputSchema, type ReplayInput } from "./ingestion.schemas";
 import type { IngestionRepository } from "./ingestion.repository";
@@ -55,7 +56,9 @@ export type DiscoveryResult = {
   nextCursor?: string;
   rateLimit?: RateLimitMetadata;
   estimatedCost?: number;
+  providerMetrics?: JsonObject;
   diagnostics: string[];
+  resolutions?: NonNullable<Awaited<ReturnType<SourceAdapter["discover"]>>["diagnostics"]["resolutions"]>;
 };
 
 export type NormalizationResult = {
@@ -151,7 +154,9 @@ export class IngestionService {
         nextCursor: page.nextCursor,
         rateLimit: page.rateLimit,
         estimatedCost: page.estimatedCost,
+        ...(page.providerMetrics ? { providerMetrics: page.providerMetrics } : {}),
         diagnostics,
+        ...(page.diagnostics.resolutions ? { resolutions: page.diagnostics.resolutions } : {}),
       };
       await this.repository.upsertSourceHealth(this.successHealth(sourceKey, Date.now() - started, page.rateLimit));
       await this.repository.updateJobRun(job.id, {
@@ -200,27 +205,33 @@ export class IngestionService {
       const candidate = sourceItemCandidateSchema.parse(adapter.normalize(envelope));
       const sourceItemId = deterministicUuid(`source-item:${candidate.sourceKey}:${candidate.externalId}`);
       const evidenceNodeId = deterministicUuid(`evidence:source_item:${sourceItemId}`);
-      const normalizedContentHash = contentHash(candidate);
+      // Geo is optional enrichment on normalized source evidence. It is persisted with
+      // the source item so page reads do not repeatedly resolve the same public field.
+      const enrichedCandidate = {
+        ...candidate,
+        metadata: enrichSourceMetadata(candidate.metadata, { sourceKey: candidate.sourceKey, language: candidate.language ?? null }),
+      };
+      const normalizedContentHash = contentHash(enrichedCandidate);
       const input: SourceItemInsert = {
         id: sourceItemId,
         evidence_node_id: evidenceNodeId,
-        source_key: candidate.sourceKey,
-        external_id: candidate.externalId,
-        external_conversation_id: candidate.externalConversationId ?? null,
-        canonical_url: candidate.canonicalUrl ?? null,
-        author_external_id: candidate.authorExternalId ?? null,
-        author_display_name: candidate.authorDisplayName ?? null,
-        author_profile_url: candidate.authorProfileUrl ?? null,
-        title: candidate.title ?? null,
-        body: candidate.body,
-        published_at: candidate.publishedAt ?? null,
-        captured_at: candidate.capturedAt,
-        language: candidate.language ?? null,
-        metadata: candidate.metadata,
+        source_key: enrichedCandidate.sourceKey,
+        external_id: enrichedCandidate.externalId,
+        external_conversation_id: enrichedCandidate.externalConversationId ?? null,
+        canonical_url: enrichedCandidate.canonicalUrl ?? null,
+        author_external_id: enrichedCandidate.authorExternalId ?? null,
+        author_display_name: enrichedCandidate.authorDisplayName ?? null,
+        author_profile_url: enrichedCandidate.authorProfileUrl ?? null,
+        title: enrichedCandidate.title ?? null,
+        body: enrichedCandidate.body,
+        published_at: enrichedCandidate.publishedAt ?? null,
+        captured_at: enrichedCandidate.capturedAt,
+        language: enrichedCandidate.language ?? null,
+        metadata: enrichedCandidate.metadata,
         content_hash: normalizedContentHash,
         latest_raw_source_item_id: raw.id,
         normalization_version: normalizationVersion,
-        status: candidate.status,
+        status: enrichedCandidate.status,
       };
       const evidence: EvidenceNodeInsert = {
         id: evidenceNodeId,

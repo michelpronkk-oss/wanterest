@@ -3,7 +3,7 @@ import type { DemandProfileV2RoutingModel } from "../intelligence/demand-profile
 
 export const sourceRoutingVersion = "source_routing_v1" as const;
 
-export type SourceRoutingScanMode = "onboarding" | "baseline" | "manual" | "manual_refresh" | "scheduled" | "monitoring" | "intelligence_cycle" | "deep" | "deep_refresh";
+export type SourceRoutingScanMode = "onboarding" | "baseline" | "manual" | "manual_refresh" | "manual_deep" | "scheduled" | "monitoring" | "intelligence_cycle" | "deep" | "deep_refresh";
 export type SourceRoutingPriority = "very_high" | "high" | "medium" | "low" | "off";
 export type SourceRoutingCostClass = "free_low" | "free_rate_limited" | "paid_low" | "paid_medium" | "paid_high";
 export type SourceRoutingHealthStatus = "healthy" | "degraded" | "blocked" | "unknown";
@@ -67,6 +67,8 @@ export type SourceRoutingInput = {
   totalCandidateBudget: number;
   maxSources?: number;
   safetyCaps?: Record<string, SourceRoutingSafetyCap>;
+  /** Stable monitoring slot/idempotency input; never random. */
+  rotationSeed?: string;
 };
 
 export type SourceRoutingRoute = {
