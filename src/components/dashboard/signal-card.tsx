@@ -7,7 +7,8 @@ import { updateSignalLifecycleAction } from "@/app/app/actions";
 import { confidenceLabel, IntentBadge, SourceBadge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Toast } from "@/components/ui/toast";
-import { formatRelativeTime, sourceLabel } from "./dashboard-utils";
+import { formatDate, sourceLabel } from "./dashboard-utils";
+import { formatSignalCard } from "./signal-card.presenter";
 
 type Props = {
   signal: SignalReadModel;
@@ -27,6 +28,7 @@ export function SignalCard({ signal, workspaceId, onOpen, showNote = false }: Pr
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const isSaved = lifecycleStatus === "saved";
   const isDismissed = lifecycleStatus === "dismissed";
+  const presentation = formatSignalCard(signal);
 
   function updateLifecycle(nextStatus: "active" | "saved" | "dismissed") {
     setError(null);
@@ -78,22 +80,23 @@ export function SignalCard({ signal, workspaceId, onOpen, showNote = false }: Pr
       <div className="signal-card-topline">
         <SourceBadge source={signal.source} label={sourceLabel(signal.source)} />
         <span className="signal-source-name">{sourceLabel(signal.source)}</span>
-        <span className="signal-source-time">{formatRelativeTime(signal.publishedAt ?? signal.createdAt)}</span>
+        <span className="signal-source-time">{formatDate(signal.publishedAt ?? signal.createdAt)}</span>
         <div className="signal-topline-end">
           <IntentBadge intentType={signal.intentType} label={signal.intentType.replaceAll("_", " ")} />
-          <span className="signal-score">{signal.matchPercent}% match</span>
+          <span className="signal-score">{signal.matchPercent}% fit</span>
         </div>
       </div>
-      <p className="signal-excerpt">&ldquo;{signal.excerpt || "Untitled signal"}&rdquo;</p>
-      {signal.whyItMatters ? (
+      <p className="signal-summary">{presentation.summary}</p>
+      {presentation.why ? (
         <p className="signal-why">
           <span className="signal-why-label">Why</span>
-          {signal.whyItMatters}
+          {presentation.why}
         </p>
       ) : null}
+      {presentation.evidence ? <p className="signal-evidence">&ldquo;{presentation.evidence}&rdquo;</p> : null}
       <div className="signal-card-footer">
         <div className="signal-matched">
-          {signal.qualification?.matched_profile_concepts.slice(0, 3).map((concept) => <span key={concept}>{concept}</span>)}
+          {presentation.tags.map((tag) => <span key={tag}>{tag.replaceAll("_", " ")}</span>)}
         </div>
         <div className="signal-card-actions" onClick={stopPropagation}>
           <button className={`dashboard-button ${isSaved ? "dashboard-button-primary" : "dashboard-button-secondary"}`} type="button" disabled={isPending} onClick={() => updateLifecycle(isSaved ? "active" : "saved")}>

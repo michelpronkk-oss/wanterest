@@ -1,6 +1,7 @@
 import { sha256Text } from "../ingestion/hash";
 import { conversationAnalysisSchema, demandProfileSchema, productMatchResultSchema, type ConversationAnalysisResult, type DemandProfileResult, type ProductMatchResult } from "./intelligence.schemas";
 import type { ConversationRow, ProductSnapshotRow, DemandProfileRow } from "../../db/database.helpers";
+import { classifyConversationIntent } from "./intent-semantics";
 
 export type DemandProfileInput = { snapshots: ProductSnapshotRow[]; productName: string };
 export type ConversationAnalysisInput = { conversation: ConversationRow; sourceItemId: string };
@@ -51,22 +52,12 @@ export class FixtureDemandProfileEngine implements DemandProfileEngine {
 
 export class FixtureConversationAnalysisEngine implements ConversationAnalysisEngine {
   readonly engineType = "classifier" as const;
-  readonly version = "fixture-classifier-v1";
+  readonly version = "fixture-classifier-v2";
   async analyze(input: ConversationAnalysisInput): Promise<ConversationAnalysisResult> {
     const text = `${input.conversation.title ?? ""} ${input.conversation.body}`;
     const lower = text.toLowerCase();
     const tooShort = input.conversation.body.trim().length < 20;
-    const intentType = tooShort
-      ? "unknown"
-      : /switch|replace|moving away|migrate from|alternative to/.test(lower)
-        ? "switching_intent"
-        : /alternative|instead of|recommend.*tool|looking for.*tool|what should i use/.test(lower)
-          ? "alternative_search"
-          : /need|looking for|buy|pricing|setup|implement|any tool|how can i solve/.test(lower)
-            ? "high_intent"
-            : /pain|problem|frustrat|hard to|struggl|wish there was|slow|manual/.test(lower)
-              ? "problem_signal"
-              : "informational";
+    const intentType = tooShort ? "unknown" : classifyConversationIntent(lower);
     const painThemes = words(text).filter((token) => /slow|manual|hard|pain|problem|cost|workflow|search|deploy|report/.test(token)).slice(0, 8);
     const buyerLanguage = (lower.match(/\b(need|looking for|buy|pricing|recommend|switch|replace|alternative)\b[^.!?]{0,100}/g) ?? []).slice(0, 8);
     const evidenceSpans = [];

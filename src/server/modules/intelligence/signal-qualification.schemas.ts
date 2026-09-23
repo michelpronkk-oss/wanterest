@@ -19,6 +19,9 @@ export const signalQualificationPrimaryIntentSchema = z.enum([
 ]);
 export type SignalQualificationPrimaryIntent = z.infer<typeof signalQualificationPrimaryIntentSchema>;
 
+export const intentTargetSchema = z.enum(["product", "authentication", "implementation", "unknown"]);
+export type IntentTarget = z.infer<typeof intentTargetSchema>;
+
 export const signalQualificationReasonCodeSchema = z.enum([
   "STRONG_SWITCHING_INTENT",
   "STRONG_ALTERNATIVE_INTENT",
@@ -125,6 +128,7 @@ export const signalQualificationSchema = z.object({
   confidence: signalQualificationDimensionSchema,
   dimensions: signalQualificationDimensionsSchema,
   primary_intent: signalQualificationPrimaryIntentSchema,
+  intent_target: intentTargetSchema.default("unknown"),
   matched_profile_concepts: z.array(z.string().trim().min(1).max(300)).max(50),
   evidence_spans: z.array(signalQualificationEvidenceSpanSchema).max(20),
   reason_codes: z.array(signalQualificationReasonCodeSchema).max(30),

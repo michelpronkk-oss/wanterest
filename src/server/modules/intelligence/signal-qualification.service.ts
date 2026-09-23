@@ -20,6 +20,7 @@ import {
   type SignalQualificationStatus,
 } from "./signal-qualification.schemas";
 import type { Json, ConversationRow, ConversationAnalysisRow, ProductMatchResult, SourceItemRow } from "./signal-qualification.types";
+import { detectIntentTarget } from "./intent-semantics";
 
 export type SignalQualificationProfile = {
   relevant_pains: Array<{ key?: string; label?: string; description?: string; confidence?: number; specificity?: number } | string>;
@@ -129,6 +130,8 @@ function hasAny(value: string, patterns: readonly RegExp[]): boolean {
 
 function intentFromText(input: SignalQualificationInput): SignalQualificationPrimaryIntent {
   const value = lower(sourceText(input));
+  const intentTarget = detectIntentTarget(value);
+  if (intentTarget === "authentication" || intentTarget === "implementation") return "problem_solution_search";
   if (hasAny(value, [/\bswitch(?:ing|ed)?\b/, /\breplac(?:e|ing|ed)\b/, /\bleaving\b/, /\bmigrat(?:e|ing|ed)\b/, /\bmove away\b/, /\bstopped using\b/, /\brenew(?:al|ing)\b/])) return "switching_intent";
   if (hasAny(value, [/\balternative(?:s)?\b/, /\binstead of\b/, /\bwhat else\b/, /\bother options?\b/])) return "alternative_search";
   if (hasAny(value, [/\b(?:best|recommend|recommendation)\b/, /\bdoes anyone know\b/, /\bwhat should i use\b/, /\blooking for\b/])) return "recommendation_request";
@@ -364,11 +367,16 @@ function confidenceFor(input: SignalQualificationInput, dimensions: SignalQualif
   return clamp(input.analysis.confidence * 0.35 + input.match.matchConfidence * 0.25 + dimensions.evidence_quality * 0.2 + input.profile.profile_confidence * 0.1 + dimensions.source_quality * 0.1 + (evidence.length ? 0.03 : 0));
 }
 
-function reasonText(status: SignalQualificationStatus, intent: SignalQualificationPrimaryIntent, concepts: string[], evidence: SignalQualificationEvidenceSpan[]): string {
+function reasonText(status: SignalQualificationStatus, intent: SignalQualificationPrimaryIntent, target: ReturnType<typeof detectIntentTarget>, concepts: string[], evidence: SignalQualificationEvidenceSpan[]): string {
+  if (target === "authentication" || target === "implementation") {
+    const technicalObject = target === "authentication" ? "an authentication method" : "an implementation detail";
+    const technicalReason = `Technical request about ${technicalObject}${concepts.length ? ` related to ${concepts.slice(0, 2).join(", ")}` : ""}.`;
+    return `${technicalReason}${evidence[0] ? ` Evidence: “${evidence[0].text.slice(0, 240)}”` : ""}`.slice(0, 2_000);
+  }
   const verb = intent === "switching_intent" ? "actively considering a switch" : intent === "alternative_search" ? "looking for an alternative" : intent === "recommendation_request" ? "requesting a recommendation" : intent === "feature_requirement" ? "describing a required capability" : intent === "comparison_intent" ? "comparing solutions" : intent === "explicit_pain" || intent === "problem_solution_search" ? "describing a concrete problem" : "showing possible solution interest";
   const conceptText = concepts.length ? ` related to ${concepts.slice(0, 3).join(", ")}` : "";
   const evidenceText = evidence[0] ? ` Evidence: “${evidence[0].text.slice(0, 240)}”` : "";
-  const reason = status === "high_confidence_signal" ? `High-confidence demand: the candidate is ${verb}${conceptText}, with specific, traceable evidence and low ambiguity.` : status === "qualified" ? `Qualified because the candidate is ${verb}${conceptText}, clears the explicit demand and evidence gates, and is commercially relevant.` : status === "weak_candidate" ? `Retained as a weak candidate because it is ${verb}${conceptText}, but intent, specificity, relevance, or evidence is not strong enough for a normal Signal.` : `Rejected because the candidate does not provide sufficient product-relevant, specific, evidence-backed demand.`;
+  const reason = status === "high_confidence_signal" ? `High-confidence demand: ${verb}${conceptText}, with specific, traceable evidence.` : status === "qualified" ? `${verb.charAt(0).toUpperCase()}${verb.slice(1)}${conceptText}, supported by specific evidence.` : status === "weak_candidate" ? `${verb.charAt(0).toUpperCase()}${verb.slice(1)}${conceptText}, but the available evidence is limited.` : "No clear product-relevant demand was found in this conversation.";
   return `${reason}${evidenceText}`.slice(0, 2_000);
 }
 
@@ -376,6 +384,7 @@ function buildQualification(input: SignalQualificationInput): SignalQualificatio
   if (input.analysis.status === "failed" || input.analysis.status === "skipped") throw new Error("qualification_analysis_unavailable");
   const primaryIntent = intentFromText(input);
   const value = sourceText(input);
+  const intentTarget = detectIntentTarget(value);
   const concepts = matchedConcepts(input, value);
   const reasonCodes: SignalQualificationReasonCode[] = [];
   const evidence = verifiedEvidence(input, primaryIntent);
@@ -405,10 +414,11 @@ function buildQualification(input: SignalQualificationInput): SignalQualificatio
     confidence,
     dimensions,
     primary_intent: primaryIntent,
+    intent_target: intentTarget,
     matched_profile_concepts: concepts,
     evidence_spans: evidence,
     reason_codes: uniqueReasonCodes,
-    qualification_reason: reasonText(status, primaryIntent, concepts, evidence),
+    qualification_reason: reasonText(status, primaryIntent, intentTarget, concepts, evidence),
     resonance,
     diagnostics: {
       qualification_version: SIGNAL_QUALIFICATION_VERSION,
@@ -438,6 +448,7 @@ export function failClosedQualification(input: Pick<SignalQualificationInput, "c
     confidence: 0,
     dimensions: { product_relevance: 0, demand_intent: 0, specificity: 0, pain_clarity: 0, buyer_plausibility: 0, commercial_relevance: 0, evidence_quality: 0, freshness: 0, source_quality: 0, noise_risk: 1, spam_probability: 1, promotional_probability: 1 },
     primary_intent: "unknown",
+    intent_target: "unknown",
     matched_profile_concepts: [],
     evidence_spans: [],
     reason_codes: ["QUALIFICATION_FAILED", "INSUFFICIENT_EVIDENCE"],
@@ -472,6 +483,7 @@ export function formatSignalQualificationCalibration(input: { source: string; te
     `confidence: ${qualification.confidence.toFixed(3)}`,
     `dimensions: ${JSON.stringify(qualification.dimensions)}`,
     `primary_intent: ${qualification.primary_intent}`,
+    `intent_target: ${qualification.intent_target}`,
     `matched_profile_concepts: ${qualification.matched_profile_concepts.join(", ") || "none"}`,
     `reason_codes: ${qualification.reason_codes.join(", ") || "none"}`,
     `evidence_spans: ${JSON.stringify(qualification.evidence_spans)}`,

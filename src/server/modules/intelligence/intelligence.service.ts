@@ -14,6 +14,7 @@ import type { IntelligenceRepository } from "./intelligence.repository";
 import { canMaterializeQualifiedSignal, failClosedQualification, qualificationFromEvidence, qualifySignal, serializeQualification, type SignalQualificationProfile } from "./signal-qualification.service";
 import { isDuplicateSignalContent, inspectSignalContent } from "./signal-quality";
 import type { SignalQualification } from "./signal-qualification.schemas";
+import { classifyConversationIntent } from "./intent-semantics";
 
 function json(value: unknown): Json { return jsonValueSchema.parse(value); }
 function asStrings(value: Json): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; }
@@ -128,9 +129,13 @@ export class IntelligenceService {
     const existing = await this.repository.getConversationAnalysis(conversation.id, engineVersionId, inputFingerprint);
     if (existing) return existing;
     const skipped = conversation.body.trim().length < 20 || sourceItem.status !== "active";
-    const result = skipped
+    const analyzed = skipped
       ? conversationAnalysisSchema.parse({ intentType: "unknown", painThemes: [], desiredOutcomes: [], alternatives: [], buyerLanguage: [], audienceSignals: [], specificity: 0, urgency: null, confidence: 0, evidenceSpans: [] })
       : conversationAnalysisSchema.parse(await engine.analyze({ conversation, sourceItemId: sourceItem.id }));
+    const result = conversationAnalysisSchema.parse({
+      ...analyzed,
+      intentType: classifyConversationIntent(`${conversation.title ?? ""} ${conversation.body}`, analyzed.intentType),
+    });
     const analysis = await this.repository.createConversationAnalysis({
       conversation_id: conversation.id, evidence_node_id: deterministicUuid(`evidence:conversation-analysis:${conversation.id}:${engineVersionId}:${inputFingerprint}`),
       engine_version_id: engineVersionId, input_fingerprint: inputFingerprint, intent_type: result.intentType, pain_themes: json(result.painThemes),

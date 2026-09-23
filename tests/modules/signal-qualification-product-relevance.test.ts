@@ -269,7 +269,7 @@ function issueTrackerProfileWithCompetitorAsAlternative(): SignalQualificationPr
 describe("Product relevance — competitor modeled as a competitor-type alternative", () => {
   const productionShapeProfile = issueTrackerProfileWithCompetitorAsAlternative();
 
-  it("recognizes a competitor classified under alternatives (alternative_type: competitor_product), matching the exact real production values that previously stuck at 0.59799", () => {
+  it("does not elevate implementation chatter just because a competitor is classified under alternatives", () => {
     const result = qualifySignal(inputFor({
       name: "jira-feature-request-alternative-shaped",
       body: "[Feature] Add atomic Jira issue label operations",
@@ -279,18 +279,15 @@ describe("Product relevance — competitor modeled as a competitor-type alternat
       audienceSignals: ["engineering team"],
       specificity: 0.81,
       confidence: 0.82,
-      // The real match_confidence reverse-engineered from the reported 0.59799 relevance
-      // under the pre-fix categoryAlignment=0.65 branch (0.537*0.47 + 0.77*0.28 + 0.65*0.2).
-      matchConfidence: 0.537,
+    matchConfidence: 0.537,
       matchDecision: "weak",
       profile: productionShapeProfile,
     }));
 
     expect(result.matched_profile_concepts).toContain("jira");
-    // 0.537*0.47 + 0.77*0.28 + 0.95*0.2 = 0.65799 once categoryAlignment correctly reaches
-    // its top tier; the old bug capped this at 0.59799 (categoryAlignment stuck at 0.65).
-    expect(result.dimensions.product_relevance).toBeGreaterThanOrEqual(0.65);
-    expect(result.dimensions.product_relevance).not.toBeCloseTo(0.59799, 3);
+    expect(result.intent_target).toBe("implementation");
+    expect(result.primary_intent).not.toBe("switching_intent");
+    expect(result.dimensions.product_relevance).toBeLessThan(0.65);
   });
 
   it("does NOT take the high competitor-alignment branch for generic Jira implementation chatter with no real commercial intent", () => {

@@ -24,7 +24,7 @@ export function SignalGhostPreview({ count = 3 }: { count?: number }) {
               <span className="signal-score is-ghost-text">— % match</span>
             </div>
           </div>
-          <p className="signal-excerpt is-ghost-text">Conversation excerpt appears here, verbatim from the source.</p>
+          <p className="signal-summary is-ghost-text">A concise signal summary appears here.</p>
           <p className="signal-why is-ghost-text">
             <span className="signal-why-label">Why</span>
             Why this conversation signals real demand.

@@ -25,6 +25,8 @@ export type { DemandProfileV2Engine, DemandProfileV2EngineResult, DemandProfileV
 export type { DemandProfileV2QualificationProjection, DemandProfileV2RoutingModel } from "./demand-profile-v2.service";
 export type { BusinessClassification, BusinessClassificationDraft, BusinessModel, BusinessType, ClassificationEvidence, DeliveryModel, MarketScope, TechnicalOrientation, CommerceType } from "./business-classification.schemas";
 export type { FeedbackType, IntentType } from "./intelligence.schemas";
+export { classifyConversationIntent, detectIntentTarget } from "./intent-semantics";
+export type { IntentTarget } from "./intent-semantics";
 export type { ProductMatchResult } from "./intelligence.schemas";
 export type { SignalFilters, SignalReadModel } from "./intelligence.service";
 export type { MarketResonance, SignalQualification, SignalQualificationDimensions, SignalQualificationEvidenceSpan, SignalQualificationPrimaryIntent, SignalQualificationReasonCode, SignalQualificationStatus } from "./signal-qualification.schemas";
