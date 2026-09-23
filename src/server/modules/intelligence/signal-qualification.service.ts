@@ -22,6 +22,8 @@ import {
 import type { Json, ConversationRow, ConversationAnalysisRow, ProductMatchResult, SourceItemRow } from "./signal-qualification.types";
 import { detectIntentTarget } from "./intent-semantics";
 import { deriveDirectionalDemand, type DirectionalDemand } from "./directional-demand";
+import { buildConversationMarketReasoning, CONVERSATION_MARKET_REASONING_VERSION } from "./conversation-market-reasoning";
+import { fallbackMarketContext, MARKET_CONTEXT_VERSION, type MarketContext } from "./market-context";
 
 export type SignalQualificationProfile = {
   relevant_pains: Array<{ key?: string; label?: string; description?: string; confidence?: number; specificity?: number } | string>;
@@ -43,6 +45,7 @@ export type SignalQualificationProfile = {
   profile_confidence: number;
   primary_category?: string;
   profile_version?: string | null;
+  market_context?: MarketContext;
 };
 
 export type SignalQualificationInput = {
@@ -115,6 +118,20 @@ function profileLabels(values: SignalQualificationProfile["relevant_pains"] | Si
     const record = typeof value === "string" ? value : value as Record<string, unknown>;
     return { key: keyOf(record), label: firstLabel(record), confidence: confidenceOf(record) };
   }).filter((value) => value.label.length > 0);
+}
+
+function marketContextFor(input: SignalQualificationInput): MarketContext {
+  if (input.profile.market_context) return input.profile.market_context;
+  return fallbackMarketContext({
+    productName: input.productName,
+    category: input.profile.primary_category,
+    capabilities: profileLabels(input.profile.relevant_features).map((item) => item.label),
+    jobs: profileLabels(input.profile.relevant_jtbd).map((item) => item.label),
+    pains: profileLabels(input.profile.relevant_pains).map((item) => item.label),
+    buyerRoles: input.profile.buyer_roles,
+    competitors: profileLabels(input.profile.competitors).map((item) => item.label),
+    alternatives: profileLabels(input.profile.alternatives).map((item) => ({ label: item.label, type: typeof input.profile.alternatives.find((entry) => (typeof entry === "string" ? entry : entry.label) === item.label) === "string" ? undefined : (input.profile.alternatives.find((entry) => (typeof entry === "string" ? entry : entry.label) === item.label) as { alternative_type?: string } | undefined)?.alternative_type })),
+  });
 }
 
 function sourceText(input: SignalQualificationInput): string {
@@ -410,7 +427,9 @@ function buildQualification(input: SignalQualificationInput): SignalQualificatio
   const value = sourceText(input);
   const intentTarget = detectIntentTarget(value);
   const concepts = matchedConcepts(input, value);
-  const demand = deriveDirectionalDemand({ productName: input.productName, title: input.conversation.title ?? input.sourceItem.title, body: bodyText(input), sourceKey: input.sourceItem.source_key, sourceMetadata: input.sourceItem.metadata, knownProducts: [...profileLabels(input.profile.competitors), ...profileLabels(input.profile.alternatives.filter((entry) => typeof entry !== "string" && entry.alternative_type === "competitor_product"))].map((item) => item.label), category: input.profile.primary_category });
+  const marketContext = marketContextFor(input);
+  const demand = deriveDirectionalDemand({ productName: input.productName, title: input.conversation.title ?? input.sourceItem.title, body: bodyText(input), sourceKey: input.sourceItem.source_key, sourceMetadata: input.sourceItem.metadata, knownProducts: marketContext.relationships.map((item) => item.entity_name), category: marketContext.categories[0] ?? input.profile.primary_category });
+  const conversationReasoning = buildConversationMarketReasoning({ productName: input.productName, context: marketContext, demand, title: input.conversation.title ?? input.sourceItem.title, body: bodyText(input), analysis: input.analysis });
   const reasonCodes: SignalQualificationReasonCode[] = [];
   const evidence = verifiedEvidence(input, primaryIntent);
   const dimensions = dimensionsFor(input, concepts, evidence, primaryIntent, demand, reasonCodes);
@@ -440,6 +459,8 @@ function buildQualification(input: SignalQualificationInput): SignalQualificatio
     dimensions,
     primary_intent: primaryIntent,
     intent_target: intentTarget,
+    market_context: marketContext,
+    conversation_reasoning: conversationReasoning,
     demand_direction: demand.demand_direction,
     demand_target_type: demand.demand_target_type,
     demand_target_name: demand.demand_target_name,
@@ -453,6 +474,8 @@ function buildQualification(input: SignalQualificationInput): SignalQualificatio
     diagnostics: {
       qualification_version: SIGNAL_QUALIFICATION_VERSION,
       threshold_version: SIGNAL_QUALIFICATION_THRESHOLD_VERSION,
+      market_context_version: MARKET_CONTEXT_VERSION,
+      conversation_reasoning_version: CONVERSATION_MARKET_REASONING_VERSION,
       analysis_version: input.analysis.engine_version_id ?? null,
       demand_profile_version: input.profile.profile_version ?? null,
       profile_confidence: clamp(input.profile.profile_confidence),
@@ -514,6 +537,8 @@ export function formatSignalQualificationCalibration(input: { source: string; te
     `dimensions: ${JSON.stringify(qualification.dimensions)}`,
     `primary_intent: ${qualification.primary_intent}`,
     `intent_target: ${qualification.intent_target}`,
+    `market_context: ${JSON.stringify(qualification.market_context)}`,
+    `conversation_reasoning: ${JSON.stringify(qualification.conversation_reasoning)}`,
     `demand_direction: ${qualification.demand_direction}`,
     `demand_target_type: ${qualification.demand_target_type}`,
     `demand_target_name: ${qualification.demand_target_name ?? "none"}`,

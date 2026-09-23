@@ -15,6 +15,7 @@ import { canMaterializeQualifiedSignal, failClosedQualification, qualificationFr
 import { isDuplicateSignalContent, inspectSignalContent } from "./signal-quality";
 import type { SignalQualification } from "./signal-qualification.schemas";
 import { classifyConversationIntent } from "./intent-semantics";
+import { buildMarketContext } from "./market-context";
 
 function json(value: unknown): Json { return jsonValueSchema.parse(value); }
 function asStrings(value: Json): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; }
@@ -339,7 +340,7 @@ export class IntelligenceService {
     const demandProfileV2 = snapshot ? readDemandProfileV2(snapshot) : null;
     if (demandProfileV2) {
       const projection = projectDemandProfileV2ForQualification(demandProfileV2);
-      return { ...projection, profile_version: demandProfileV2.version };
+      return { ...projection, profile_version: demandProfileV2.version, market_context: buildMarketContext(demandProfileV2) };
     }
     return {
       relevant_pains: asStrings(profile.problems),

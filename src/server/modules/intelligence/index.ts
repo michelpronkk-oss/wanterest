@@ -29,6 +29,9 @@ export { classifyConversationIntent, detectIntentTarget } from "./intent-semanti
 export type { IntentTarget } from "./intent-semantics";
 export { deriveDirectionalDemand } from "./directional-demand";
 export type { DirectionalDemand, DirectionalDemandInput } from "./directional-demand";
+export { MARKET_CONTEXT_VERSION, buildMarketContext, fallbackMarketContext } from "./market-context";
+export type { MarketContext, MarketRelationship, MarketRelationshipSource, MarketRelationshipType } from "./market-context";
+export { CONVERSATION_MARKET_REASONING_VERSION, buildConversationMarketReasoning } from "./conversation-market-reasoning";
 export type { ProductMatchResult } from "./intelligence.schemas";
 export type { SignalFilters, SignalReadModel } from "./intelligence.service";
 export type { DemandDirection, DemandTargetType, MarketResonance, SignalQualification, SignalQualificationDimensions, SignalQualificationEvidenceSpan, SignalQualificationPrimaryIntent, SignalQualificationReasonCode, SignalQualificationStatus, SpeakerRole } from "./signal-qualification.schemas";

@@ -32,6 +32,8 @@ function qualificationFor(status: SignalQualification["status"], candidateId: st
     },
     primary_intent: "explicit_pain",
     intent_target: "product",
+    market_context: { version: "unknown", product_name: "unknown", categories: [], capabilities: [], jobs_to_be_done: [], pains_solved: [], buyer_roles: [], relationships: [] },
+    conversation_reasoning: { version: "unknown", actor_type: "unknown", actor_confidence: 0, buyer_context: false, buyer_context_confidence: 0, current_solution: null, pain_summary: null, requested_outcome: null, demand_target_type: "unknown", demand_target: null, source_products: [], destination_products: [], mentioned_products: [], direction_relative_to_scanned_product: "unknown", category_or_job_demand: false, commercial_intent: false, first_party_experience: false, implementation_only: false, promotional_content: false, confidence: 0, evidence_spans: [], short_user_facing_summary: "Conversation context is unknown.", short_user_facing_why: "No supported market interpretation is available.", relationship_candidates: [] },
     demand_direction: "unknown",
     demand_target_type: "unknown",
     demand_target_name: null,
@@ -56,6 +58,8 @@ function qualificationFor(status: SignalQualification["status"], candidateId: st
     diagnostics: {
       qualification_version: "signal_qualification_v1_4",
       threshold_version: "signal_qualification_thresholds_v1",
+      market_context_version: "unknown",
+      conversation_reasoning_version: "unknown",
       analysis_version: null,
       demand_profile_version: null,
       profile_confidence: 0.9,

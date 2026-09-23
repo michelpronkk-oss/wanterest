@@ -121,6 +121,8 @@ describe("directional demand semantics", () => {
     expect(result.demand_target_type).toBe("scanned_product");
     expect(result.demand_target_name).toBe("Linear");
     expect(result.source_products).toContain("Jira");
+    expect(result.market_context.version).toBe("market_context_v1");
+    expect(result.conversation_reasoning.direction_relative_to_scanned_product).toBe("toward_product");
     expect(["qualified", "high_confidence_signal"]).toContain(result.status);
   });
 
@@ -132,6 +134,15 @@ describe("directional demand semantics", () => {
     expect(result.demand_target_name).toBe("Orbit");
     expect(result.status).not.toBe("qualified");
     expect(result.status).not.toBe("high_confidence_signal");
+  });
+
+  it("records an unpromoted competitor candidate when a named product is evaluated away from Linear", () => {
+    const result = qualifySignal(inputFor("Linear is too expensive; we are evaluating Plane."));
+
+    expect(result.demand_direction).toBe("away_from_product");
+    expect(result.demand_target_name).toBe("Plane");
+    expect(result.conversation_reasoning.relationship_candidates).toEqual([{ entity_name: "Plane", relationship_type: "direct_competitor", confidence: 0.7, evidence_count: 1 }]);
+    expect(result.status).not.toBe("qualified");
   });
 
   it("treats Jira-alternative feature parity in a host repository as third-party demand", () => {

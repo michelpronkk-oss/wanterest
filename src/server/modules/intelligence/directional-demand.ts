@@ -69,6 +69,12 @@ function destinationFor(textValue: string, names: string[]): string | null {
   return null;
 }
 
+function explicitUnnamedDestination(textValue: string): string | null {
+  const match = textValue.match(/\b(?:evaluate|evaluating|consider|considering|assess|assessing)\s+([A-Z][A-Za-z0-9.+-]{1,79})\b/);
+  const name = match?.[1]?.trim();
+  return name && !/^(?:A|An|The|This|That|Another|Other)$/i.test(name) && !/^[A-Z]{2,}$/.test(name) ? name : null;
+}
+
 function sourceNamesFor(textValue: string, names: string[], destination: string | null, excludedNames: string[] = []): string[] {
   const clauses = [
     ...[...textValue.matchAll(/\b(?:leave|leaving|migrat(?:e|ing)\s+from|switch(?:ing)?\s+from|alternative(?:s)?\s+(?:to|for)|replace|replacing|replacement\s+for|parity\s+with|from)\b[^.!?]{0,160}/gi)].map((match) => match[0]),
@@ -104,9 +110,10 @@ export function deriveDirectionalDemand(input: DirectionalDemandInput): Directio
   const textValue = text(`${input.title ?? ""} ${input.body}`);
   const names = knownNames(input);
   const productName = input.productName;
-  const destination = destinationFor(textValue, names);
   const repository = repositoryProduct(input, names);
+  const destination = destinationFor(textValue, names) ?? (repository ? null : explicitUnnamedDestination(textValue));
   const sourceProducts = sourceNamesFor(textValue, names, destination, repository ? [repository] : []);
+  if (destination && destination.toLowerCase() !== productName.toLowerCase() && new RegExp(`(?:^|[^A-Za-z0-9])${escapeRegExp(productName)}\\s+(?:is|was|has become)\\s+(?:too expensive|too complex|unreliable|slow|frustrating)`, "i").test(textValue)) sourceProducts.push(productName);
   const implementation = /\b(?:oauth|authentication|auth|api tokens?|access tokens?|credentials?|login|sign[- ]?in)\b/i.test(textValue)
     && (
       /\b(?:alternative|method)\b[^.!?]{0,80}\b(?:for|to)\b/i.test(textValue)

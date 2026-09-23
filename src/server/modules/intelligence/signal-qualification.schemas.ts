@@ -12,6 +12,62 @@ export type DemandTargetType = z.infer<typeof demandTargetTypeSchema>;
 export const speakerRoleSchema = z.enum(["buyer", "maintainer", "unknown"]);
 export type SpeakerRole = z.infer<typeof speakerRoleSchema>;
 
+export const marketRelationshipTypeSchema = z.enum(["direct_competitor", "indirect_competitor", "substitute", "adjacent_product", "integration_complement", "legacy_manual_substitute"]);
+export const marketRelationshipSourceSchema = z.enum(["onboarding", "website", "structured_profile", "conversation", "external_evidence"]);
+export const marketRelationshipSchema = z.object({
+  entity_name: z.string().trim().min(1).max(160),
+  relationship_type: marketRelationshipTypeSchema,
+  confidence: z.number().min(0).max(1),
+  source: marketRelationshipSourceSchema,
+  evidence: z.array(z.object({ source_reference: z.string().trim().min(1).max(2_000), excerpt: z.string().trim().max(1_000).nullable(), field_path: z.string().trim().min(1).max(180) })).max(4),
+  discovered_at: z.string().datetime().nullable(),
+  last_supported_at: z.string().datetime().nullable(),
+});
+export const marketContextSchema = z.object({
+  version: z.string().trim().min(1).max(120),
+  product_name: z.string().trim().min(1).max(160),
+  categories: z.array(z.string().trim().min(1).max(180)).max(12),
+  capabilities: z.array(z.string().trim().min(1).max(180)).max(20),
+  jobs_to_be_done: z.array(z.string().trim().min(1).max(500)).max(12),
+  pains_solved: z.array(z.string().trim().min(1).max(180)).max(12),
+  buyer_roles: z.array(z.string().trim().min(1).max(180)).max(20),
+  relationships: z.array(marketRelationshipSchema).max(24),
+});
+export type MarketContext = z.infer<typeof marketContextSchema>;
+
+export const conversationProductMentionSchema = z.object({
+  name: z.string().trim().min(1).max(160),
+  role: z.enum(["source", "destination", "host", "competitor_reference", "implementation_context", "mentioned"]),
+  confidence: z.number().min(0).max(1),
+});
+export const conversationMarketReasoningSchema = z.object({
+  version: z.string().trim().min(1).max(120),
+  actor_type: speakerRoleSchema,
+  actor_confidence: z.number().min(0).max(1),
+  buyer_context: z.boolean(),
+  buyer_context_confidence: z.number().min(0).max(1),
+  current_solution: z.string().trim().max(160).nullable(),
+  pain_summary: z.string().trim().max(300).nullable(),
+  requested_outcome: z.string().trim().max(300).nullable(),
+  demand_target_type: demandTargetTypeSchema,
+  demand_target: z.string().trim().max(160).nullable(),
+  source_products: z.array(z.string().trim().min(1).max(160)).max(20),
+  destination_products: z.array(z.string().trim().min(1).max(160)).max(10),
+  mentioned_products: z.array(conversationProductMentionSchema).max(24),
+  direction_relative_to_scanned_product: demandDirectionSchema,
+  category_or_job_demand: z.boolean(),
+  commercial_intent: z.boolean(),
+  first_party_experience: z.boolean(),
+  implementation_only: z.boolean(),
+  promotional_content: z.boolean(),
+  confidence: z.number().min(0).max(1),
+  evidence_spans: z.array(z.object({ text: z.string().trim().min(1).max(500), confidence: z.number().min(0).max(1) })).max(8),
+  short_user_facing_summary: z.string().trim().min(1).max(300),
+  short_user_facing_why: z.string().trim().min(1).max(300),
+  relationship_candidates: z.array(z.object({ entity_name: z.string().trim().min(1).max(160), relationship_type: marketRelationshipTypeSchema, confidence: z.number().min(0).max(1), evidence_count: z.number().int().positive().max(100) })).max(5),
+});
+export type ConversationMarketReasoning = z.infer<typeof conversationMarketReasoningSchema>;
+
 export const signalQualificationPrimaryIntentSchema = z.enum([
   "switching_intent",
   "alternative_search",
@@ -113,6 +169,8 @@ export type MarketResonance = z.infer<typeof marketResonanceSchema>;
 export const signalQualificationDiagnosticsSchema = z.object({
   qualification_version: z.string().trim().min(1).max(120),
   threshold_version: z.string().trim().min(1).max(120),
+  market_context_version: z.string().trim().min(1).max(120).default("unknown"),
+  conversation_reasoning_version: z.string().trim().min(1).max(120).default("unknown"),
   analysis_version: z.string().trim().max(120).nullable(),
   demand_profile_version: z.string().trim().max(120).nullable(),
   profile_confidence: signalQualificationDimensionSchema,
@@ -139,6 +197,8 @@ export const signalQualificationSchema = z.object({
   dimensions: signalQualificationDimensionsSchema,
   primary_intent: signalQualificationPrimaryIntentSchema,
   intent_target: intentTargetSchema.default("unknown"),
+  market_context: marketContextSchema.default({ version: "unknown", product_name: "unknown", categories: [], capabilities: [], jobs_to_be_done: [], pains_solved: [], buyer_roles: [], relationships: [] }),
+  conversation_reasoning: conversationMarketReasoningSchema.default({ version: "unknown", actor_type: "unknown", actor_confidence: 0, buyer_context: false, buyer_context_confidence: 0, current_solution: null, pain_summary: null, requested_outcome: null, demand_target_type: "unknown", demand_target: null, source_products: [], destination_products: [], mentioned_products: [], direction_relative_to_scanned_product: "unknown", category_or_job_demand: false, commercial_intent: false, first_party_experience: false, implementation_only: false, promotional_content: false, confidence: 0, evidence_spans: [], short_user_facing_summary: "Conversation context is unknown.", short_user_facing_why: "No supported market interpretation is available.", relationship_candidates: [] }),
   demand_direction: demandDirectionSchema.default("unknown"),
   demand_target_type: demandTargetTypeSchema.default("unknown"),
   demand_target_name: z.string().trim().max(160).nullable().default(null),
