@@ -49,6 +49,61 @@ const responseSchema = z.object({
 
 type StackExchangeQuestion = z.infer<typeof questionSchema>;
 
+export const stackExchangeFeatureRecencyWindowMonths = 24 as const;
+
+export type StackExchangeFeatureRecencyV1 = {
+  windowMonths: typeof stackExchangeFeatureRecencyWindowMonths;
+  fromDateIso: string;
+  fromDateUnix: number;
+  applied: true;
+};
+
+function isFeatureDemandRequest(request: SourceDiscoveryRequest): boolean {
+  const metadata = request.requestMetadata as Record<string, unknown>;
+  return metadata.queryFamily === "feature_requirement" && metadata.demandSurface === "feature_demand";
+}
+
+function recencyFromMetadata(value: unknown): StackExchangeFeatureRecencyV1 | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const metadata = value as Record<string, unknown>;
+  if (metadata.windowMonths !== stackExchangeFeatureRecencyWindowMonths || metadata.applied !== true) return null;
+  if (typeof metadata.fromDateIso !== "string" || typeof metadata.fromDateUnix !== "number" || !Number.isInteger(metadata.fromDateUnix) || metadata.fromDateUnix < 0) return null;
+  const parsed = new Date(metadata.fromDateIso);
+  if (Number.isNaN(parsed.getTime()) || Math.floor(parsed.getTime() / 1000) !== metadata.fromDateUnix) return null;
+  return { windowMonths: stackExchangeFeatureRecencyWindowMonths, fromDateIso: parsed.toISOString(), fromDateUnix: metadata.fromDateUnix, applied: true };
+}
+
+/** Derives a calendar-month boundary without allowing month-end overflow. */
+export function deriveStackExchangeFeatureRecency(now = new Date()): StackExchangeFeatureRecencyV1 {
+  if (Number.isNaN(now.getTime())) throw new SourceAdapterError("STACK_EXCHANGE_RECENCY_DERIVATION_FAILED", "Stack Exchange feature recency boundary could not be derived.");
+  const monthIndex = now.getUTCMonth() - stackExchangeFeatureRecencyWindowMonths;
+  const targetYear = now.getUTCFullYear() + Math.floor(monthIndex / 12);
+  const targetMonth = ((monthIndex % 12) + 12) % 12;
+  const lastTargetDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  const fromDate = new Date(Date.UTC(
+    targetYear,
+    targetMonth,
+    Math.min(now.getUTCDate(), lastTargetDay),
+    now.getUTCHours(),
+    now.getUTCMinutes(),
+    now.getUTCSeconds(),
+    now.getUTCMilliseconds(),
+  ));
+  if (Number.isNaN(fromDate.getTime())) throw new SourceAdapterError("STACK_EXCHANGE_RECENCY_DERIVATION_FAILED", "Stack Exchange feature recency boundary could not be derived.");
+  return { windowMonths: stackExchangeFeatureRecencyWindowMonths, fromDateIso: fromDate.toISOString(), fromDateUnix: Math.floor(fromDate.getTime() / 1000), applied: true };
+}
+
+/** Applies the execution-time boundary once so pagination reuses one timestamp. */
+export function prepareStackExchangeFeatureRequest(request: SourceDiscoveryRequest, now = new Date()): SourceDiscoveryRequest {
+  const parsed = sourceDiscoveryRequestSchema.parse(request);
+  if (!isFeatureDemandRequest(parsed)) return parsed;
+  const metadata = parsed.requestMetadata as Record<string, unknown>;
+  const existing = recencyFromMetadata(metadata.stackExchangeFeatureRecencyV1);
+  if (existing) return parsed;
+  const recency = deriveStackExchangeFeatureRecency(now);
+  return sourceDiscoveryRequestSchema.parse({ ...parsed, requestMetadata: { ...metadata, stackExchangeFeatureRecencyV1: recency } });
+}
+
 function cleanHtml(value: string): string {
   return value.replace(/<[^>]*>/g, " ").replace(/&(?:amp|lt|gt|quot|#39|nbsp);/gi, " ").replace(/\s+/g, " ").trim();
 }
@@ -80,6 +135,7 @@ export type StackExchangeSourceAdapterOptions = {
   baseUrl?: string;
   fetchImpl?: SourceFetch;
   timeoutMs?: number;
+  clock?: () => Date;
 };
 
 export class StackExchangeSourceAdapter implements SourceAdapter {
@@ -90,16 +146,18 @@ export class StackExchangeSourceAdapter implements SourceAdapter {
   private readonly baseUrl: string;
   private readonly fetchImpl: SourceFetch;
   private readonly timeoutMs: number;
+  private readonly clock: () => Date;
 
   constructor(options: StackExchangeSourceAdapterOptions = {}) {
     this.apiKey = options.apiKey ?? process.env.STACK_EXCHANGE_API_KEY?.trim() ?? "";
     this.baseUrl = (options.baseUrl ?? "https://api.stackexchange.com/2.3").replace(/\/$/, "");
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.timeoutMs = options.timeoutMs ?? 8_000;
+    this.clock = options.clock ?? (() => new Date());
   }
 
   async discover(input: SourceDiscoveryRequest): Promise<SourceDiscoveryPage> {
-    const request = sourceDiscoveryRequestSchema.parse(input);
+    const request = prepareStackExchangeFeatureRequest(input, this.clock());
     const sites = sitesFrom(request);
     const pages = decodeCursor(request.cursor, sites);
     const perSite = Math.max(1, Math.min(100, Math.ceil(request.limit / sites.length)));
@@ -114,6 +172,8 @@ export class StackExchangeSourceAdapter implements SourceAdapter {
       if (request.query) params.set("q", request.query.slice(0, 180));
       if (request.windowStart) params.set("fromdate", String(Math.floor(Date.parse(request.windowStart) / 1000)));
       if (request.windowEnd) params.set("todate", String(Math.floor(Date.parse(request.windowEnd) / 1000)));
+      const featureRecency = recencyFromMetadata((request.requestMetadata as Record<string, unknown>).stackExchangeFeatureRecencyV1);
+      if (featureRecency) params.set("fromdate", String(featureRecency.fromDateUnix));
       if (this.apiKey) params.set("key", this.apiKey);
       const response = await fetchJson(this.fetchImpl, `${this.baseUrl}/search/advanced?${params.toString()}`, { provider: "stack-exchange-api", timeoutMs: this.timeoutMs });
       const parsed = responseSchema.safeParse(response.body);
@@ -130,10 +190,12 @@ export class StackExchangeSourceAdapter implements SourceAdapter {
       }
       if (items.length >= request.limit) break;
     }
+    const featureRecency = recencyFromMetadata((request.requestMetadata as Record<string, unknown>).stackExchangeFeatureRecencyV1);
     return {
       items: items.slice(0, request.limit),
       nextCursor: hasMore ? encodeCursor(nextPages) : undefined,
       rateLimit: lastRateLimit,
+      ...(featureRecency ? { providerMetrics: { stackExchangeFeatureRecencyV1: featureRecency } } : {}),
       diagnostics: { accepted, rejected, messages: [`Searched ${sites.join(", ")} with Stack Exchange advanced search; results are question-level discussions with provider tags and answer signals preserved.`] },
     };
   }

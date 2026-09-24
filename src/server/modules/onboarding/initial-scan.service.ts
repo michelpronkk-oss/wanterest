@@ -38,6 +38,7 @@ import type { QueryYieldExecutionStatus, QueryYieldStopReason, QueryYieldTelemet
 import { aggregateQueryYield, boundedCursorContinuationCount, finalizeQueryYieldTelemetry, reconcileQueryYieldTelemetry, sourceHealthStatus } from "@/server/modules/operations/query-yield-telemetry";
 import { QueryYieldRepository } from "@/server/modules/operations/query-yield.repository";
 import { sourceDiscoveryRequestSchema, type SourceDiscoveryRequest } from "@/server/providers/source/contracts";
+import { prepareStackExchangeFeatureRequest } from "@/server/providers/source/stack-exchange";
 import { g2MappingsFromSourceFilters, g2SourceFiltersWithMappings, type G2ProductMapping, type G2ProductResolutionTarget } from "@/server/providers/source/g2/product-resolution";
 import { getSourceRuntimeConfiguration } from "@/server/providers/source/runtime";
 import { rebuildDemandIntelligenceForScan, type DemandRebuildResult } from "@/server/modules/demand-intelligence/demand.orchestration";
@@ -828,8 +829,9 @@ export async function executeSourceDiscovery(input: SourceExecutionInput): Promi
   let firstQueryErrorCode: string | null = null;
   if (input.sourceKey === "x") logXDiscoveryOverride(input.workspaceId, input.requests);
   for (const rawRequest of input.requests) {
-    const request = sourceDiscoveryRequestSchema.parse(rawRequest);
-    const metadata = request.requestMetadata as Record<string, unknown>;
+    const parsedRequest = sourceDiscoveryRequestSchema.parse(rawRequest);
+    let request = parsedRequest;
+    let metadata = request.requestMetadata as Record<string, unknown>;
     const maxPages = Math.min(3, Math.max(1, typeof metadata.maxPages === "number" ? Math.floor(metadata.maxPages) : 1));
     let cursor = request.cursor;
     let rawItems = 0;
@@ -840,6 +842,8 @@ export async function executeSourceDiscovery(input: SourceExecutionInput): Promi
     let queryCost: number | null = null;
     let queryError: unknown;
     try {
+      request = input.sourceKey === "stack-exchange" ? prepareStackExchangeFeatureRequest(parsedRequest) : parsedRequest;
+      metadata = request.requestMetadata as Record<string, unknown>;
       for (let page = 1; page <= maxPages; page += 1) {
         const discovery = await ingestion.discoverSource(input.sourceKey, requestScopedToScan({ ...request, ...(cursor ? { cursor } : {}) }, input.jobRunId, input.sourceKey, input.workspaceId), input.traceId);
         rawSourceItemIds.push(...discovery.rawSourceItemIds);
@@ -1419,8 +1423,10 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
         if (!plannedRequests.length && queryPlan) diagnostics.push({ sourceKey, state: "fallback", message: "Query Planning produced no executable query; using the existing conservative request." });
         if (sourceKey === "x") logXDiscoveryOverride(product.workspace_id, requests);
         for (const discoveryRequest of requests) {
+          let effectiveDiscoveryRequest = discoveryRequest;
           try {
-          const discovery = await ingestion.discoverSource(sourceKey, requestScopedToScan(discoveryRequest, job.id, sourceKey, product.workspace_id));
+          effectiveDiscoveryRequest = sourceKey === "stack-exchange" ? prepareStackExchangeFeatureRequest(discoveryRequest) : discoveryRequest;
+          const discovery = await ingestion.discoverSource(sourceKey, requestScopedToScan(effectiveDiscoveryRequest, job.id, sourceKey, product.workspace_id));
           sourceItemsReturned += discovery.rawSourceItemIds.length;
           sourceRawItems += discovery.rawInserted;
           sourceWarnings = [...sourceWarnings, ...discovery.diagnostics];
@@ -1436,8 +1442,8 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
           sourceNormalizedItems += replay.normalizedSourceItemIds.length;
           normalizedSourceItemIds.push(...replay.normalizedSourceItemIds);
           conversationIds.push(...replay.canonicalizedConversationIds);
-          scanProvenance.push(...provenanceForReplay(discoveryRequest, sourceKey, replay.replayMappings));
-          const requestMetadata = discoveryRequest.requestMetadata;
+          scanProvenance.push(...provenanceForReplay(effectiveDiscoveryRequest, sourceKey, replay.replayMappings));
+          const requestMetadata = effectiveDiscoveryRequest.requestMetadata;
           const telemetryMetadata = objectValue(requestMetadata);
           const intent = objectValue(telemetryMetadata.discoveryIntent);
           const queryPlanId = typeof telemetryMetadata.queryPlanId === "string" ? telemetryMetadata.queryPlanId : `fallback:${sourceKey}:${discoveryRequest.query ?? "default"}`;
@@ -1456,11 +1462,11 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
             sourceErrorCode ??= errorCodeOf(error);
             const metadata = objectValue(discoveryRequest.requestMetadata);
             const pagesRequested = Math.min(3, Math.max(1, typeof metadata.maxPages === "number" ? Math.floor(metadata.maxPages) : 1));
-            const failureMessage = queryFailureDiagnostic(error, discoveryRequest, sourceKey);
+            const failureMessage = queryFailureDiagnostic(error, effectiveDiscoveryRequest, sourceKey);
             sourceWarnings = [...sourceWarnings, failureMessage];
             diagnostics.push({ sourceKey, state: "failed", message: failureMessage });
             queryYieldTelemetry.push(queryTelemetryForRequest({
-              request: discoveryRequest,
+              request: effectiveDiscoveryRequest,
               source: sourceKey,
               pagesRequested,
               pagesCompleted: 0,

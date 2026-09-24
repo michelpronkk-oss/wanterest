@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ProductHuntSourceAdapter } from "../../src/server/providers/source/product-hunt";
-import { StackExchangeSourceAdapter } from "../../src/server/providers/source/stack-exchange";
+import { deriveStackExchangeFeatureRecency, StackExchangeSourceAdapter } from "../../src/server/providers/source/stack-exchange";
 import { PublicWebSourceAdapter } from "../../src/server/providers/source/public-web";
 import { G2SourceAdapter } from "../../src/server/providers/source/g2";
 import { g2TargetFingerprint } from "../../src/server/providers/source/g2/product-resolution";
@@ -54,6 +54,75 @@ describe("Source Expansion v1 adapters", () => {
     expect(candidate.externalId).toBe("stackoverflow:99");
     expect(candidate.body).toContain("simpler issue tracker");
     expect(candidate.metadata).toMatchObject({ sourceCategory: "developer_discussion", site: "stackoverflow", acceptedAnswerId: 100 });
+  });
+
+  it("adds one execution-time 24-month boundary only to feature-demand searches", async () => {
+    const now = new Date("2026-09-24T12:34:56.789Z");
+    const expected = deriveStackExchangeFeatureRecency(now);
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response({ items: [], has_more: false, quota_remaining: 299 }));
+    const adapter = new StackExchangeSourceAdapter({ fetchImpl, baseUrl: "https://se.test/2.3", clock: () => now });
+    const page = await adapter.discover({ query: "need project management software with Project management features", limit: 8, expandThreads: false, requestMetadata: { queryFamily: "feature_requirement", demandSurface: "feature_demand" } });
+    const url = new URL(String(fetchImpl.mock.calls[0]?.[0]));
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(url.searchParams.get("q")).toBe("need project management software with Project management features");
+    expect(url.searchParams.get("site")).toBe("stackoverflow");
+    expect(url.searchParams.get("pagesize")).toBe("8");
+    expect(url.searchParams.get("page")).toBe("1");
+    expect(url.searchParams.get("order")).toBe("desc");
+    expect(url.searchParams.get("sort")).toBe("relevance");
+    expect(url.searchParams.get("filter")).toBe("withbody");
+    expect(url.searchParams.get("fromdate")).toBe(String(expected.fromDateUnix));
+    expect(url.searchParams.has("todate")).toBe(false);
+    expect(page.providerMetrics).toEqual({ stackExchangeFeatureRecencyV1: expected });
+  });
+
+  it("keeps recent and boundary questions while excluding older feature questions", async () => {
+    const now = new Date("2026-09-24T12:34:56.000Z");
+    const boundary = deriveStackExchangeFeatureRecency(now);
+    const question = (questionId: number, creationDate: number) => ({ question_id: questionId, title: "Looking for project management software with dependencies", body: "Need software with project management features.", link: `https://stackoverflow.com/questions/${questionId}/feature`, creation_date: creationDate });
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const fromDate = Number(new URL(String(input)).searchParams.get("fromdate"));
+      return response({ items: [question(1, boundary.fromDateUnix - 1), question(2, boundary.fromDateUnix), question(3, boundary.fromDateUnix + 1)].filter((item) => item.creation_date >= fromDate), has_more: false });
+    });
+    const adapter = new StackExchangeSourceAdapter({ fetchImpl, baseUrl: "https://se.test/2.3", clock: () => now });
+    const page = await adapter.discover({ query: "feature", limit: 8, expandThreads: false, requestMetadata: { queryFamily: "feature_requirement", demandSurface: "feature_demand" } });
+    expect(page.items.map((item) => item.externalId)).toEqual(["stackoverflow:2", "stackoverflow:3"]);
+  });
+
+  it("preserves pagination and applies no extra request for the recency boundary", async () => {
+    const now = new Date("2026-09-24T12:34:56.000Z");
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (input) => response({ items: [], has_more: new URL(String(input)).searchParams.get("page") === "1" }));
+    const adapter = new StackExchangeSourceAdapter({ fetchImpl, baseUrl: "https://se.test/2.3", clock: () => now });
+    const request = { query: "feature", limit: 8, expandThreads: false, requestMetadata: { queryFamily: "feature_requirement", demandSurface: "feature_demand" } } as const;
+    const first = await adapter.discover(request);
+    await adapter.discover({ ...request, cursor: first.nextCursor });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const firstUrl = new URL(String(fetchImpl.mock.calls[0]?.[0]));
+    const secondUrl = new URL(String(fetchImpl.mock.calls[1]?.[0]));
+    expect(firstUrl.searchParams.get("page")).toBe("1");
+    expect(secondUrl.searchParams.get("page")).toBe("2");
+    expect(secondUrl.searchParams.get("fromdate")).toBe(firstUrl.searchParams.get("fromdate"));
+    expect(secondUrl.searchParams.get("pagesize")).toBe("8");
+  });
+
+  it.each([
+    ["pain_first", "pain"],
+    ["job_demand", "jtbd"],
+  ])("does not add feature recency to Stack Exchange %s", async (surface, family) => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response({ items: [], has_more: false }));
+    const adapter = new StackExchangeSourceAdapter({ fetchImpl, baseUrl: "https://se.test/2.3", clock: () => new Date("2026-09-24T12:34:56.000Z") });
+    const page = await adapter.discover({ query: "project management", limit: 8, expandThreads: false, requestMetadata: { queryFamily: family, demandSurface: surface } });
+    const url = new URL(String(fetchImpl.mock.calls[0]?.[0]));
+    expect(url.searchParams.has("fromdate")).toBe(false);
+    expect(page.providerMetrics).toBeUndefined();
+  });
+
+  it("fails only the feature query when recency derivation fails", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response({ items: [], has_more: false }));
+    const adapter = new StackExchangeSourceAdapter({ fetchImpl, baseUrl: "https://se.test/2.3", clock: () => new Date("invalid") });
+    await expect(adapter.discover({ query: "feature", limit: 8, expandThreads: false, requestMetadata: { queryFamily: "feature_requirement", demandSurface: "feature_demand" } })).rejects.toMatchObject({ code: "STACK_EXCHANGE_RECENCY_DERIVATION_FAILED" });
+    await expect(adapter.discover({ query: "pain", limit: 8, expandThreads: false, requestMetadata: { queryFamily: "pain", demandSurface: "pain_first" } })).resolves.toMatchObject({ items: [] });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("fetches only explicit Public Web URLs through the safe website boundary", async () => {
