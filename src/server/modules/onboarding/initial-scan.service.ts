@@ -31,7 +31,7 @@ import { FixtureConversationAnalysisEngine, FixtureProductMatchingEngine } from 
 import { ensureEngineVersion } from "@/server/modules/observability/engine.repository";
 import { getTraceId } from "@/server/lib/request-context";
 import { buildSourceRoutingPlan, selectExecutableSourceRoutes, type SourceRoutingPlan, type SourceRoutingHealthStatus } from "@/server/modules/operations/source-routing.index";
-import { buildQueryPlan, toSourceDiscoveryRequest, type QueryPlan } from "@/server/modules/operations/query-planning.index";
+import { buildQueryPlan, githubPainRetrievalDiagnostics, toSourceDiscoveryRequest, type GithubPainQueryCompilation, type QueryPlan } from "@/server/modules/operations/query-planning.index";
 import { getDiscoveryCoverageConfig } from "@/server/modules/operations/discovery-coverage.config";
 import { classifyGithubRetrievalQuality, type GithubRetrievalPrecisionDiagnostics } from "@/server/modules/operations/github-retrieval-quality";
 import type { QueryYieldTelemetry } from "@/server/modules/operations/query-yield-telemetry";
@@ -88,6 +88,13 @@ const scanResultSchema = z.object({
       reason: z.enum(["job_posting", "seo_or_search_dump", "external_content_promotion", "informational_report", "obvious_unrelated_content"]),
     })).max(100),
   }).optional(),
+  githubPainRetrievalV1: z.array(z.object({
+    semanticQuery: z.string(),
+    providerQuery: z.string(),
+    templateVersion: z.literal("github_pain_retrieval_v1"),
+    demandAnchors: z.array(z.string()).max(12),
+    categoryAnchors: z.array(z.string()).max(8),
+  })).max(20).optional(),
   candidateReviews: z.array(scanCandidateReviewSchema).max(100).optional(),
 });
 
@@ -1123,6 +1130,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
   const conversationIds: string[] = [];
   const scanProvenance: ScanDiscoveryProvenance[] = [];
   const queryYieldTelemetry: QueryYieldTelemetry[] = [];
+  const githubPainRetrievalV1: GithubPainQueryCompilation[] = [];
   const queryPlanBySource = new Map((queryPlan?.source_plans ?? []).map((source) => [source.source_key, source]));
   const g2ProductMappings = sourceKeys.includes("g2") ? await loadG2ProductMappings(client, product) : {};
 
@@ -1157,6 +1165,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
           : { limit: fallbackLimit, ...(query ? { query } : {}) };
         const requests = boundMonitoringRequests((plannedRequests.length ? plannedRequests : [fallbackRequest]).map((request) => sourceDiscoveryRequestSchema.parse(request)), sourceKey, scanMode, monitoringPolicy, capabilities)
           .map((request) => sourceKey === "g2" ? g2RequestForProduct(request, product, g2ProductMappings) : request);
+        githubPainRetrievalV1.push(...githubPainRetrievalDiagnostics(requests));
         sourceInputs.push({ input: { sourceKey, requests, traceId, jobRunId: job.id, workspaceId: product.workspace_id, productId: product.id }, fallback: !plannedRequests.length && Boolean(queryPlan), candidateBudget: requests.reduce((sum, request) => sum + request.limit, 0) });
         sources.push(sourceKey);
       }
@@ -1231,6 +1240,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
           : { limit: fallbackLimit, ...(query ? { query } : {}) };
         requests = boundMonitoringRequests((plannedRequests.length ? plannedRequests : [fallbackRequest]).map((request) => sourceDiscoveryRequestSchema.parse(request)), sourceKey, scanMode, monitoringPolicy, capabilities)
           .map((request) => sourceKey === "g2" ? g2RequestForProduct(request, product, g2ProductMappings) : request);
+        githubPainRetrievalV1.push(...githubPainRetrievalDiagnostics(requests));
         let sourceItemsReturned = 0;
         let sourceRawItems = 0;
         let sourceNormalizedItems = 0;
@@ -1458,6 +1468,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       actionsUpdated: actions.actionsUpdated,
       candidateReviews: candidateResult.candidateReviews,
       ...(candidateResult.githubRetrievalPrecision ? { githubRetrievalPrecision: candidateResult.githubRetrievalPrecision } : {}),
+      ...(githubPainRetrievalV1.length ? { githubPainRetrievalV1: [...new Map(githubPainRetrievalV1.map((entry) => [entry.semanticQuery, entry])).values()] } : {}),
       ...(finalizedQueryYield.length ? { queryYield: queryYieldDiagnostics } : {}),
       ...(candidateResult.candidateSelection ? { candidateSelection: candidateResult.candidateSelection } : {}),
       ...(candidateResult.qualification ? { qualification: candidateResult.qualification } : {}),

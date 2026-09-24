@@ -2,6 +2,7 @@ import { sourceDiscoveryRequestSchema, type SourceDiscoveryRequest } from "../..
 import { X_PROVIDER_MIN_RESULTS } from "../../providers/source/x/x.cost";
 import { compileXQuery } from "../../providers/source/x/x.query";
 import { queryPlanningVersion, type QueryPlanQuery, type QueryPlanSource } from "./query-planning.schemas";
+import { compileGithubPainQuery } from "./github-query-compilation";
 
 export type SourceQueryExecutionInput = {
   sourcePlan: QueryPlanSource;
@@ -58,6 +59,15 @@ export function toSourceDiscoveryRequest(input: SourceQueryExecutionInput): Sour
     // The combined endpoint has no shared issue/discussion cursor. Keep it at
     // one page until the two lanes can be persisted as separate queries.
     metadata.maxPages = 1;
+    if (query.demand_surface === "pain_first") {
+      const compiled = compileGithubPainQuery({ semanticQuery: query.query_text, metadata: query.metadata });
+      metadata.githubPainRetrievalV1 = compiled;
+      return sourceDiscoveryRequestSchema.parse({
+        limit: Math.max(1, Math.min(100, query.candidate_budget)),
+        query: compiled.providerQuery,
+        requestMetadata: metadata,
+      });
+    }
   } else if (sourcePlan.source_key === "hacker-news") {
     // HN has no search endpoint. The adapter applies a bounded lexical filter
     // to the recent feed using these anchors, while retaining the semantic

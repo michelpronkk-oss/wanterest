@@ -68,6 +68,13 @@ function localDiscussionMatch(discussion: z.infer<typeof githubDiscussionNodeSch
   if (metadata.discussionCategory && discussion.category?.name.toLowerCase() !== metadata.discussionCategory.toLowerCase()) return false;
   if (!request.query) return true;
   const haystack = `${discussion.title}\n${discussion.body ?? ""}`.toLowerCase();
+  const compiled = metadata.githubPainRetrievalV1;
+  if (compiled && typeof compiled === "object" && !Array.isArray(compiled)) {
+    const value = compiled as { demandAnchors?: unknown; categoryAnchors?: unknown };
+    const demands = Array.isArray(value.demandAnchors) ? value.demandAnchors.filter((item): item is string => typeof item === "string") : [];
+    const categories = Array.isArray(value.categoryAnchors) ? value.categoryAnchors.filter((item): item is string => typeof item === "string") : [];
+    return demands.some((anchor) => haystack.includes(anchor.toLowerCase())) && categories.some((anchor) => haystack.includes(anchor.toLowerCase()));
+  }
   return request.query.toLowerCase().split(/\s+/).filter(Boolean).every((term) => haystack.includes(term));
 }
 

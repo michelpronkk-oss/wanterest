@@ -7,6 +7,7 @@ import { buildDemandProfileV2, readDemandProfileV2RoutingModel } from "../../src
 import {
   buildQueryPlan,
   buildSourceRoutingPlan,
+  compileGithubPainQuery,
   formatQueryPlanDryRun,
   toSourceDiscoveryRequest,
   competitorReferencesForText,
@@ -263,6 +264,60 @@ describe("Query Planning v1", () => {
       expect(request.requestMetadata.semanticQuery).toBe(hn.queries[0].query_text);
       expect(request.requestMetadata.executionMode).toBe("filtered_newstories_feed");
     }
+  });
+
+  it("compiles only GitHub pain_first queries into bounded intent and category anchors", () => {
+    const query: QueryPlanQuery = {
+      query_id: "qp-github-pain",
+      query_family: "pain",
+      demand_surface: "pain_first",
+      competitor_specific: false,
+      intent_type: "problem_solution_search",
+      query_text: "project management software inefficient software development workflows",
+      normalized_query: "project management software inefficient software development workflows",
+      source_key: "github",
+      priority: "high",
+      confidence: 0.9,
+      candidate_budget: 6,
+      reason_codes: ["HIGH_CONFIDENCE_PAIN"],
+      reason_summary: "Generated from pain evidence.",
+      concept_keys: ["category", "inefficient_workflows"],
+      competitor_refs: [],
+      alternative_refs: [],
+      geo_context: null,
+      language_context: null,
+      cost_hint: "free_low",
+      metadata: {
+        provider_context: {
+          category: "project management software",
+          product_name: "Linear",
+          competitors: ["Jira"],
+        },
+      },
+    };
+    const sourcePlan = { source_key: "github" } as QueryPlanSource;
+    const request = toSourceDiscoveryRequest({ sourcePlan, query, maxPages: 1 });
+    const compiled = compileGithubPainQuery({ semanticQuery: query.query_text, metadata: query.metadata });
+
+    expect(request.query).toBe(compiled.providerQuery);
+    expect(request.query).toBe('(\"struggling with\" OR \"problem with\" OR \"looking for\" OR \"need a better\" OR \"replace\" OR \"too complex\" OR \"missing\") (\"project management software\" OR \"issue tracking\" OR \"software development\")');
+    expect(request.requestMetadata).toMatchObject({
+      semanticQuery: query.query_text,
+      contentType: "all",
+      maxPages: 1,
+      githubPainRetrievalV1: compiled,
+    });
+    expect(compiled.providerQuery).not.toContain("Linear");
+    expect(compiled.providerQuery).not.toContain("Jira");
+    expect(compiled.demandAnchors.length).toBeLessThanOrEqual(10);
+    expect(compiled.categoryAnchors).toEqual(["project management software", "issue tracking", "software development"]);
+
+    const feature = { ...query, query_family: "feature_requirement", demand_surface: "feature_demand", query_text: "need project management software with project management features" } satisfies QueryPlanQuery;
+    const job = { ...query, query_family: "jtbd", demand_surface: "job_demand", query_text: "need project management software to plan and ship software efficiently" } satisfies QueryPlanQuery;
+    expect(toSourceDiscoveryRequest({ sourcePlan, query: feature, maxPages: 1 }).query).toBe(feature.query_text);
+    expect(toSourceDiscoveryRequest({ sourcePlan, query: job, maxPages: 1 }).query).toBe(job.query_text);
+    expect(toSourceDiscoveryRequest({ sourcePlan, query: feature, maxPages: 1 }).requestMetadata.githubPainRetrievalV1).toBeUndefined();
+    expect(toSourceDiscoveryRequest({ sourcePlan, query: job, maxPages: 1 }).requestMetadata.githubPainRetrievalV1).toBeUndefined();
   });
 
   it("adds bounded provider-native budgets for YouTube and GitLab", () => {
