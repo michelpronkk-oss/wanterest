@@ -33,6 +33,7 @@ import { getTraceId } from "@/server/lib/request-context";
 import { buildSourceRoutingPlan, selectExecutableSourceRoutes, type SourceRoutingPlan, type SourceRoutingHealthStatus } from "@/server/modules/operations/source-routing.index";
 import { buildQueryPlan, toSourceDiscoveryRequest, type QueryPlan } from "@/server/modules/operations/query-planning.index";
 import { getDiscoveryCoverageConfig } from "@/server/modules/operations/discovery-coverage.config";
+import { classifyGithubRetrievalQuality, type GithubRetrievalPrecisionDiagnostics } from "@/server/modules/operations/github-retrieval-quality";
 import type { QueryYieldTelemetry } from "@/server/modules/operations/query-yield-telemetry";
 import { aggregateQueryYield, boundedCursorContinuationCount, finalizeQueryYieldTelemetry, reconcileQueryYieldTelemetry, sourceHealthStatus } from "@/server/modules/operations/query-yield-telemetry";
 import { QueryYieldRepository } from "@/server/modules/operations/query-yield.repository";
@@ -75,6 +76,18 @@ const scanResultSchema = z.object({
   qualification: z.object({ version: z.string(), thresholdVersion: z.string(), candidateCount: z.number().int().nonnegative(), qualifiedCount: z.number().int().nonnegative(), highConfidenceCount: z.number().int().nonnegative(), weakCount: z.number().int().nonnegative(), rejectedCount: z.number().int().nonnegative(), rejectionReasonDistribution: z.record(z.string(), z.number().int().nonnegative()), intentDistribution: z.record(z.string(), z.number().int().nonnegative()), averageDemandQuality: z.number().min(0).max(1), averageConfidence: z.number().min(0).max(1) }).optional(),
   semanticReasoningShadow: z.object({ routerVersion: z.string(), promptSchemaVersion: z.string(), enabled: z.boolean(), maxNewProviderCallsPerScan: z.number().int().nonnegative(), deterministicOnlyCount: z.number().int().nonnegative(), rejectWithoutLlmCount: z.number().int().nonnegative(), llmRequestedCount: z.number().int().nonnegative(), cacheHitCount: z.number().int().nonnegative(), scheduledForLlmCount: z.number().int().nonnegative(), budgetSkippedCount: z.number().int().nonnegative(), llmExecutedCount: z.number().int().nonnegative(), providerSuccessCount: z.number().int().nonnegative(), providerFailureCount: z.number().int().nonnegative(), schemaFailureCount: z.number().int().nonnegative(), evidenceFailureCount: z.number().int().nonnegative(), conflictBlockCount: z.number().int().nonnegative(), inputTokens: z.number().int().nonnegative(), outputTokens: z.number().int().nonnegative(), reasoningLatencyMs: z.number().int().nonnegative(), reasoningCostUsd: z.number().nonnegative().nullable(), shadowComparisonCount: z.number().int().nonnegative(), noChangeCount: z.number().int().nonnegative(), wouldStrengthenCount: z.number().int().nonnegative(), wouldWeakenCount: z.number().int().nonnegative(), wouldBecomeQualifiedCount: z.number().int().nonnegative(), wouldBecomeUnqualifiedCount: z.number().int().nonnegative(), directionChangeCount: z.number().int().nonnegative(), targetChangeCount: z.number().int().nonnegative(), actualQualifiedCountAmongCompared: z.number().int().nonnegative(), shadowQualifiedCountAmongCompared: z.number().int().nonnegative() }).optional(),
   queryYield: z.unknown().optional(),
+  githubRetrievalPrecision: z.object({
+    inspectedCount: z.number().int().nonnegative(),
+    eligibleCount: z.number().int().nonnegative(),
+    suppressedCount: z.number().int().nonnegative(),
+    suppressedByReason: z.record(z.string(), z.number().int().nonnegative()),
+    suppressedCandidates: z.array(z.object({
+      conversationId: z.string().uuid(),
+      providerItemId: z.string().trim().min(1).max(500),
+      queryPlanIds: z.array(z.string().trim().min(1).max(180)).max(20),
+      reason: z.enum(["job_posting", "seo_or_search_dump", "external_content_promotion", "informational_report", "obvious_unrelated_content"]),
+    })).max(100),
+  }).optional(),
   candidateReviews: z.array(scanCandidateReviewSchema).max(100).optional(),
 });
 
@@ -263,6 +276,7 @@ export type CandidateProcessingResult = {
   candidateReviews: ScanCandidateReview[];
   outcomes: CandidateProcessingOutcome[];
   candidateSelection?: InitialScanResult["candidateSelection"];
+  githubRetrievalPrecision?: GithubRetrievalPrecisionDiagnostics;
   qualification?: InitialScanResult["qualification"];
   semanticReasoningShadow?: Omit<NonNullable<InitialScanResult["semanticReasoningShadow"]>, "routerVersion" | "promptSchemaVersion" | "enabled" | "maxNewProviderCallsPerScan"> & { routerVersion: string; promptSchemaVersion: string; enabled: boolean; maxNewProviderCallsPerScan: number };
   diagnostics: InitialScanResult["diagnostics"];
@@ -336,10 +350,23 @@ function semanticShadowSummary(config: ReturnType<typeof getSemanticReasoningSha
 export function selectScanCandidates(input: { conversations: ConversationRow[]; sourceById: Map<string, SourceItemRow>; max: number; provenance?: ScanDiscoveryProvenance[] }) {
   const provenance = new Map<string, ScanDiscoveryProvenance[]>();
   for (const entry of uniqueProvenance(input.provenance ?? [])) provenance.set(entry.conversationId, [...(provenance.get(entry.conversationId) ?? []), entry]);
+  const githubRetrievalPrecision: GithubRetrievalPrecisionDiagnostics = { inspectedCount: 0, eligibleCount: 0, suppressedCount: 0, suppressedByReason: {}, suppressedCandidates: [] };
   const deduped = new Map<string, { conversation: ConversationRow; source: SourceItemRow; discoverySource: string; surface: string; surfaces: string[]; queryPlanIds: string[]; score: number }>();
   for (const conversation of input.conversations) {
     const source = input.sourceById.get(conversation.primary_source_item_id);
     if (!source) continue;
+    if (source.source_key === "github") {
+      githubRetrievalPrecision.inspectedCount += 1;
+      const quality = classifyGithubRetrievalQuality({ title: source.title ?? conversation.title, body: source.body ?? conversation.body ?? "", metadata: objectValue(source.metadata) });
+      if (!quality.eligible) {
+        githubRetrievalPrecision.suppressedCount += 1;
+        githubRetrievalPrecision.suppressedByReason[quality.reason] = (githubRetrievalPrecision.suppressedByReason[quality.reason] ?? 0) + 1;
+        const provenanceEntries = provenance.get(conversation.id) ?? [];
+        githubRetrievalPrecision.suppressedCandidates.push({ conversationId: conversation.id, providerItemId: source.external_id, queryPlanIds: [...new Set(provenanceEntries.map((entry) => entry.queryPlanId))].sort(), reason: quality.reason });
+        continue;
+      }
+      githubRetrievalPrecision.eligibleCount += 1;
+    }
     const text = `${source.title ?? ""} ${source.body ?? conversation.body ?? ""}`.replace(/\s+/g, " ").trim();
     const fingerprint = text.toLowerCase().slice(0, 400);
     const metadata = objectValue(source.metadata);
@@ -392,6 +419,7 @@ export function selectScanCandidates(input: { conversations: ConversationRow[]; 
       },
       selected: selected.map((item) => ({ conversationId: item.conversation.id, source: item.discoverySource, surface: item.surface, surfaces: item.surfaces, score: item.score, reason: "deterministic_quality_and_diversity" })),
     },
+    githubRetrievalPrecision,
   };
 }
 
@@ -916,6 +944,7 @@ export async function processScanCandidates(input: { product: ProductRow; profil
     candidateReviews: candidateReviewsFromRows(evaluations, rows.conversations, sourceById),
     outcomes: candidateOutcomes(selection.conversations, evaluations),
     candidateSelection: selection.diagnostics,
+    githubRetrievalPrecision: selection.githubRetrievalPrecision,
     diagnostics,
     ...(semanticReasoningShadow ? { semanticReasoningShadow } : {}),
     ...(qualificationRows.length ? {
@@ -1428,6 +1457,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       driftUpdated: demand.driftUpdated,
       actionsUpdated: actions.actionsUpdated,
       candidateReviews: candidateResult.candidateReviews,
+      ...(candidateResult.githubRetrievalPrecision ? { githubRetrievalPrecision: candidateResult.githubRetrievalPrecision } : {}),
       ...(finalizedQueryYield.length ? { queryYield: queryYieldDiagnostics } : {}),
       ...(candidateResult.candidateSelection ? { candidateSelection: candidateResult.candidateSelection } : {}),
       ...(candidateResult.qualification ? { qualification: candidateResult.qualification } : {}),
