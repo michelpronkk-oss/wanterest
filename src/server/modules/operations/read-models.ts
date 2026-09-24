@@ -1,6 +1,7 @@
 import type { JobRunRow, SourceHealthRow } from "@/server/db/database.helpers";
 import { getJobHealth } from "./job-health.service";
 import { initialSourceAvailability } from "./source-control.service";
+export { getScanSourceHealthReadModel, legacyCoverageLabel, sourceHealthCoverageCopy, sourceHealthCoverageLabel } from "./source-health-read-model";
 
 export function getSystemHealth(input: { database: "ok" | "error"; now?: string }) { return { status: input.database === "ok" ? "ok" : "degraded", liveness: "ok", readiness: input.database === "ok" ? "ok" : "error", checkedAt: input.now ?? new Date().toISOString(), optionalProviders: initialSourceAvailability.map((source) => ({ sourceKey: source.sourceKey, configured: source.configured, state: source.state })) }; }
 export function getSourceHealthReadModel(rows: SourceHealthRow[]) { return rows.map((row) => ({ sourceKey: row.source_key, environment: row.environment, degradationState: row.degradation_state, lastSuccessAt: row.last_success_at, lastFailureAt: row.last_failure_at, latestErrorCode: row.latest_error_code, latestErrorSummary: row.latest_error_summary })); }

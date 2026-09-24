@@ -106,7 +106,7 @@ export function OnboardingScanStatus({ workspaceId, productId, hasScan, initialS
     return (
       <div className="onboarding-highlight tone-neutral">
         <div>
-          <div className="onboarding-highlight-title">Scan completed with limited source coverage</div>
+          <div className="onboarding-highlight-title">{status.coverageCopy ?? "Scan completed with limited source coverage"}</div>
           <div className="onboarding-highlight-note">Some sources were unavailable, but Wanterest continued with the remaining sources.</div>
         </div>
       </div>

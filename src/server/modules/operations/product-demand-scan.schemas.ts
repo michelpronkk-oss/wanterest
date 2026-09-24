@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { sourceHealthV1ReadModelSchema } from "@/shared/source-health-v1";
+
 export const scanModeSchema = z.enum(["onboarding", "baseline", "manual", "manual_refresh", "manual_deep", "scheduled", "monitoring", "intelligence_cycle", "deep", "deep_refresh"]);
 export type ScanMode = z.infer<typeof scanModeSchema>;
 
@@ -120,6 +122,7 @@ export const scanResultSummarySchema = z.object({
   gapUpdated: z.number().int().nonnegative().default(0),
   driftUpdated: z.number().int().nonnegative().default(0),
   actionsUpdated: z.number().int().nonnegative().default(0),
+  sourceHealthV1: sourceHealthV1ReadModelSchema.optional(),
   candidateReviews: z.array(scanCandidateReviewSchema).max(100).optional(),
   qualification: z.object({
     candidateCount: z.number().int().nonnegative(),

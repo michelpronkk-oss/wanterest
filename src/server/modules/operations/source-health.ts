@@ -1,20 +1,8 @@
 import type { SourceAdapterError } from "../../providers/source/contracts";
+import { sourceHealthStates, type SourceHealthState } from "@/shared/source-health-v1";
 
-export const sourceHealthStates = [
-  "healthy_with_results",
-  "healthy_zero_results",
-  "auth_error",
-  "rate_limited",
-  "quota_exhausted",
-  "temporary_provider_error",
-  "permanent_provider_error",
-  "misconfigured",
-  "budget_limited",
-  "disabled",
-  "unknown_failure",
-] as const;
-
-export type SourceHealthState = typeof sourceHealthStates[number];
+export { sourceHealthStates };
+export type { SourceHealthState } from "@/shared/source-health-v1";
 
 export type SourceHealthResultV1 = {
   state: SourceHealthState;

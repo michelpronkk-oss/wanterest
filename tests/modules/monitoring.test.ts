@@ -59,6 +59,9 @@ describe("Automatic Monitoring v1 policy contracts", () => {
     expect(deriveMonitoringStatus({ enabled: true, policyEnabled: true, currentStatus: "failed" })).toBe("failed");
     expect(deriveMonitoringStatus({ enabled: true, policyEnabled: true, resultState: "complete_with_warnings" })).toBe("limited");
     expect(deriveMonitoringStatus({ enabled: true, policyEnabled: true, currentStatus: "completed" })).toBe("healthy");
+    expect(deriveMonitoringStatus({ enabled: true, policyEnabled: true, sourceHealthLabel: "limited_coverage" })).toBe("limited");
+    expect(deriveMonitoringStatus({ enabled: true, policyEnabled: true, sourceHealthLabel: "severely_degraded" })).toBe("failed");
+    expect(deriveMonitoringStatus({ enabled: true, policyEnabled: true, resultState: "complete_with_warnings", sourceHealthLabel: "full_coverage" })).toBe("healthy");
   });
 
   it("recomputes future cadence from the current policy and disables recurring work for Free", () => {

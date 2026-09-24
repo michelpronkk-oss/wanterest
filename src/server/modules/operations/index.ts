@@ -11,3 +11,5 @@ export * from "./query-planning.index";
 export * from "./product-demand-scan.schemas";
 export * from "./source-health";
 export * from "./source-health-aggregation";
+export * from "./source-health-read-model";
+export * from "./source-health-alerts";

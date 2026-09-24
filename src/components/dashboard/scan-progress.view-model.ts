@@ -1,4 +1,5 @@
 import type { ScanProgress, ScanResultSummary } from "@/server/modules/operations/product-demand-scan.schemas";
+import { sourceHealthCoverageCopy } from "@/shared/source-health-v1";
 
 export type ScanStep = { key: string; label: string; done: boolean; failed: boolean };
 
@@ -80,6 +81,10 @@ export function scanResultDestination(result: ScanResultSummary | null): "/app/s
 }
 
 export function scanCoverageCopy(result: ScanResultSummary | null, partial: boolean): string {
+  const canonicalCopy = result?.sourceHealthV1?.coverage;
+  if (canonicalCopy) {
+    return sourceHealthCoverageCopy[canonicalCopy.label];
+  }
   const sourceCount = result?.sources.length ?? 0;
   return `${sourceCount} source${sourceCount === 1 ? "" : "s"} scanned · ${partial ? "Limited coverage" : "Coverage recorded"}`;
 }

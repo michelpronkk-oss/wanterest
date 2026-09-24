@@ -1,5 +1,3 @@
-import { z } from "zod";
-
 import {
   classifySourceHealth,
   type SourceHealthClassifierInput,
@@ -9,62 +7,23 @@ import {
   type SourceHealthState,
 } from "./source-health";
 import type { SourceRoutingPriority } from "./source-routing.schemas";
+import {
+  SOURCE_HEALTH_VERSION,
+  sourceHealthConfigStateSchema,
+  sourceHealthV1Schema,
+  sourceHealthV1SourceSchema,
+  type SourceHealthConfigState,
+  type SourceHealthV1,
+  type SourceHealthV1Source,
+} from "@/shared/source-health-v1";
 
-export const SOURCE_HEALTH_VERSION = "source_health_v1" as const;
-
-const sourceHealthStateSchema = z.enum([
-  "healthy_with_results",
-  "healthy_zero_results",
-  "auth_error",
-  "rate_limited",
-  "quota_exhausted",
-  "temporary_provider_error",
-  "permanent_provider_error",
-  "misconfigured",
-  "budget_limited",
-  "disabled",
-  "unknown_failure",
-]);
-
-const sourceHealthConfigStateSchema = z.enum(["configured", "missing", "disabled", "unknown"]);
-
-export const sourceHealthV1SourceSchema = z.object({
-  state: sourceHealthStateSchema,
-  available: z.boolean(),
-  retryable: z.boolean(),
-  plannedQueries: z.number().int().nonnegative(),
-  executedQueries: z.number().int().nonnegative(),
-  successfulQueries: z.number().int().nonnegative(),
-  failedQueries: z.number().int().nonnegative(),
-  zeroResultQueries: z.number().int().nonnegative(),
-  normalizedItems: z.number().int().nonnegative(),
-  providerStatus: z.number().int().nullable(),
-  providerCode: z.string().nullable(),
-  retryAfterSeconds: z.number().int().nonnegative().nullable(),
-  configState: sourceHealthConfigStateSchema,
-  lastSuccessfulAt: z.string().nullable(),
-  degradedReason: z.string().max(500).nullable(),
-  partial: z.boolean(),
-  coverageFraction: z.number().min(0).max(1),
-  coverageWeight: z.number().nonnegative(),
-});
-
-export const sourceHealthV1Schema = z.object({
-  version: z.literal(SOURCE_HEALTH_VERSION),
-  sources: z.record(z.string(), sourceHealthV1SourceSchema),
-  coverage: z.object({
-    score: z.number().min(0).max(1),
-    label: z.enum(["full_coverage", "limited_coverage", "severely_degraded"]),
-    plannedSourceCount: z.number().int().nonnegative(),
-    healthySourceCount: z.number().int().nonnegative(),
-    degradedSourceCount: z.number().int().nonnegative(),
-    unavailableSourceCount: z.number().int().nonnegative(),
-  }),
-});
-
-export type SourceHealthConfigState = z.infer<typeof sourceHealthConfigStateSchema>;
-export type SourceHealthV1Source = z.infer<typeof sourceHealthV1SourceSchema>;
-export type SourceHealthV1 = z.infer<typeof sourceHealthV1Schema>;
+export {
+  SOURCE_HEALTH_VERSION,
+  sourceHealthConfigStateSchema,
+  sourceHealthV1Schema,
+  sourceHealthV1SourceSchema,
+};
+export type { SourceHealthConfigState, SourceHealthV1, SourceHealthV1Source } from "@/shared/source-health-v1";
 
 export type SourceHealthPlannedQuery = {
   queryPlanId: string;

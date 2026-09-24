@@ -82,6 +82,38 @@ describe("dashboard scan status view model", () => {
     expect(scanCoverageCopy(noSignals, true)).toBe("3 sources scanned · Limited coverage");
   });
 
+  it("uses canonical Source Health V1 copy for new scan coverage", () => {
+    const result = {
+      rawItems: 8,
+      normalizedItems: 8,
+      conversations: 8,
+      analyses: 8,
+      evaluations: 8,
+      rankings: 0,
+      signals: 0,
+      sources: ["github", "hacker-news", "x"],
+      mapUpdated: 0,
+      gapUpdated: 0,
+      driftUpdated: 0,
+      actionsUpdated: 0,
+      sourceHealthV1: {
+        version: "source_health_v1" as const,
+        sources: {},
+        coverage: { score: 0.4, label: "severely_degraded" as const, plannedSourceCount: 2, healthySourceCount: 0, degradedSourceCount: 0, unavailableSourceCount: 2, copy: "Major source coverage was unavailable for this scan." },
+      },
+    };
+    expect(scanCoverageCopy(result, true)).toBe("Major source coverage was unavailable for this scan.");
+  });
+
+  it("uses canonical coverage state to surface degraded scans while keeping full coverage complete", () => {
+    const base = { rawItems: 0, normalizedItems: 0, conversations: 0, analyses: 0, evaluations: 0, rankings: 0, signals: 0, sources: ["github"], mapUpdated: 0, gapUpdated: 0, driftUpdated: 0, actionsUpdated: 0 };
+    const sourceHealth = (label: "full_coverage" | "limited_coverage") => ({ version: "source_health_v1" as const, sources: {}, coverage: { score: label === "full_coverage" ? 1 : 0.5, label, plannedSourceCount: 1, healthySourceCount: label === "full_coverage" ? 1 : 0, degradedSourceCount: label === "full_coverage" ? 0 : 1, unavailableSourceCount: 0, copy: label === "full_coverage" ? "All planned sources completed successfully." : "Some planned sources were unavailable or only partially completed." } });
+    const degraded = dashboardScanStateFromProgress({ jobRunId: "00000000-0000-4000-8000-000000000001", idempotencyKey: "manual-scan:workspace:product:1", status: "succeeded", progress: { stage: "completed", percent: 100, completedSources: 1, totalSources: 1, currentLabel: "Complete", warnings: [] }, errorMessage: null, result: { ...base, sourceHealthV1: sourceHealth("limited_coverage") } });
+    const complete = dashboardScanStateFromProgress({ jobRunId: "00000000-0000-4000-8000-000000000002", idempotencyKey: "manual-scan:workspace:product:2", status: "succeeded", progress: { stage: "completed", percent: 100, completedSources: 1, totalSources: 1, currentLabel: "Complete", warnings: [] }, errorMessage: null, result: { ...base, sourceHealthV1: sourceHealth("full_coverage") } });
+    expect(degraded.kind).toBe("partial_failure");
+    expect(complete.kind).toBe("completed_no_signals");
+  });
+
   it("only classifies the deterministic onboarding job key as the first scan", () => {
     expect(isOnboardingScanKey("initial-scan:workspace:product")).toBe(true);
     expect(isOnboardingScanKey("manual-scan:workspace:product:123")).toBe(false);

@@ -39,7 +39,8 @@ export async function getProductScanState(workspaceId: string, productId: string
   }
   const warnings = scan.progress?.warnings ?? [];
   const manual = isManualScanKey(scan.idempotencyKey);
-  if (scan.status === "partial_failure" || scan.status === "completed_with_warnings" || scan.progress?.stage === "partial_failure" || warnings.length > 0) {
+  const sourceHealthDegraded = resultSummary?.sourceHealthV1?.coverage.label !== undefined && resultSummary.sourceHealthV1.coverage.label !== "full_coverage";
+  if (scan.status === "partial_failure" || scan.status === "completed_with_warnings" || scan.progress?.stage === "partial_failure" || warnings.length > 0 || sourceHealthDegraded) {
     return { kind: "partial_failure", warnings, manual, summary: resultSummary };
   }
   const producedSignals = resultSummary ? resultSummary.signals > 0 : hasQualifiedSignals;

@@ -128,8 +128,8 @@ export default async function HomePage() {
             {monitoring.nextCheckAt && monitoring.enabled ? <span>Next check {new Date(monitoring.nextCheckAt).toLocaleString()}</span> : null}
             {monitoring.sources.length ? <span>{monitoring.sources.join(" · ")}</span> : null}
           </div>
-          {monitoring.lastStatus === "limited" ? <p className="monitoring-summary-note">The last cycle completed with limited source coverage.</p> : null}
-          {monitoring.lastStatus === "failed" ? <p className="monitoring-summary-note">The last cycle could not finish. Refresh intelligence to try again.</p> : null}
+          {monitoring.coverageCopy ? <p className="monitoring-summary-note">{monitoring.coverageCopy}</p> : monitoring.lastStatus === "limited" ? <p className="monitoring-summary-note">The last cycle completed with limited source coverage.</p> : null}
+          {!monitoring.coverageCopy && monitoring.lastStatus === "failed" ? <p className="monitoring-summary-note">The last cycle could not finish. Refresh intelligence to try again.</p> : null}
         </div>
       ) : null}
 

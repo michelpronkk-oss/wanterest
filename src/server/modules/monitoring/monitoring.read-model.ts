@@ -2,6 +2,7 @@ import "server-only";
 
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
 import { resolveMonitoringPolicy } from "@/server/modules/entitlements/monitoring-policy";
+import { getScanSourceHealthReadModel, type SourceHealthCoverageLabel, type SourceHealthReadModel } from "@/server/modules/operations/source-health-read-model";
 import { deriveMonitoringStatus, type MonitoringDisplayStatus } from "./monitoring.view-model";
 
 export type MonitoringOverview = {
@@ -14,6 +15,9 @@ export type MonitoringOverview = {
   nextCheckAt: string | null;
   sources: string[];
   lastStatus: MonitoringDisplayStatus;
+  sourceHealthV1: SourceHealthReadModel | null;
+  coverageLabel: SourceHealthCoverageLabel | null;
+  coverageCopy: string | null;
 };
 
 function jsonObject(value: unknown): Record<string, unknown> {
@@ -34,12 +38,14 @@ export async function getMonitoringOverview(workspaceId: string, productId: stri
   const reference = jsonObject(latest.data?.input_reference);
   const result = jsonObject(reference.result);
   const sources = Array.isArray(result.sources) ? result.sources.filter((value): value is string => typeof value === "string").slice(0, 8) : [];
+  const sourceHealthV1 = getScanSourceHealthReadModel(result.sourceHealthV1);
   const lastStatus = deriveMonitoringStatus({
     enabled: schedule.enabled,
     policyEnabled: policy.monitoringEnabled,
     currentStatus: schedule.current_status,
     jobStatus: latest.data?.status,
     resultState: typeof result.state === "string" ? result.state : null,
+    sourceHealthLabel: sourceHealthV1?.coverage.label ?? null,
   });
   return {
     plan: policy.plan ?? "free",
@@ -51,5 +57,8 @@ export async function getMonitoringOverview(workspaceId: string, productId: stri
     nextCheckAt: [schedule.next_cycle_at, schedule.next_deep_refresh_at].filter((value): value is string => Boolean(value)).sort()[0] ?? null,
     sources,
     lastStatus,
+    sourceHealthV1,
+    coverageLabel: sourceHealthV1?.coverage.label ?? null,
+    coverageCopy: sourceHealthV1 && sourceHealthV1.coverage.label !== "full_coverage" ? sourceHealthV1.coverage.copy : null,
   };
 }

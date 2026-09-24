@@ -27,6 +27,7 @@ import { ACTIVE_PRODUCT_COOKIE } from "@/server/modules/dashboard/dashboard.cont
 import { getProductScanState, type ProductScanState } from "@/components/dashboard/scan-state";
 import { onboardingSuccessState } from "@/lib/onboarding-transition";
 import { findExistingOnboardingProduct, needsOnboardingUnderstanding } from "@/server/modules/onboarding/onboarding-product-flow";
+import { sourceHealthCoverageCopy } from "@/shared/source-health-v1";
 
 export type OnboardingFieldErrors = Partial<Record<"name" | "websiteUrl" | "description", string>>;
 export type OnboardingFormValues = Partial<Record<"name" | "websiteUrl" | "description", string>>;
@@ -315,6 +316,7 @@ export type OnboardingStatus = {
   errorMessage: string | null;
   highIntentCount: number;
   qualifiedCount: number;
+  coverageCopy?: string | null;
 };
 
 const ONBOARDING_HIGH_INTENT_TYPES = new Set(["high_intent", "switching_intent"]);
@@ -331,5 +333,8 @@ export async function getOnboardingStatusAction(input: unknown): Promise<Onboard
     errorMessage: scanState.kind === "failed" ? scanState.message : null,
     highIntentCount: signals.filter((signal) => ONBOARDING_HIGH_INTENT_TYPES.has(signal.intentType)).length,
     qualifiedCount: signals.length,
+    coverageCopy: scanState.kind === "partial_failure" && scanState.summary?.sourceHealthV1
+      ? sourceHealthCoverageCopy[scanState.summary.sourceHealthV1.coverage.label]
+      : null,
   };
 }

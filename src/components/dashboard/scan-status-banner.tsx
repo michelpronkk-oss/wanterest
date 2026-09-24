@@ -9,6 +9,7 @@ import { StatusBanner } from "@/components/ui/status-banner";
 
 import type { ProductScanState } from "./scan-state";
 import { dashboardScanStateFromProgress } from "./scan-status.view-model";
+import { scanCoverageCopy } from "./scan-progress.view-model";
 
 const DASHBOARD_SCAN_POLL_MS = 2500;
 const COMPLETION_NOTICE_MS = 2800;
@@ -169,7 +170,7 @@ export function ScanStatusBanner({ state, workspaceId, productId, retryHref = "/
     return (
       <StatusBanner tone="warning">
         <div className="dashboard-scan-status-content">
-          <span>The latest scan finished with limited source coverage.</span>
+          <span>{currentState.summary ? scanCoverageCopy(currentState.summary, true) : "The latest scan finished with limited source coverage."}</span>
           <button className="dashboard-scan-retry" type="button" onClick={() => void handleDashboardRetry()} disabled={retrying}>
             Run another scan
           </button>

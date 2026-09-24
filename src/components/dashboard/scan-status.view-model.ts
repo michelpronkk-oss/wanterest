@@ -127,7 +127,8 @@ export function dashboardScanStateFromProgress(input: {
     return { kind: "failed", message: input.errorMessage, manual, firstScan: isOnboardingScanKey(input.idempotencyKey) };
   }
 
-  if (input.status === "completed_with_warnings" || input.status === "partial_failure" || stage === "partial_failure" || warnings.length > 0) {
+  const sourceHealthDegraded = input.result?.sourceHealthV1?.coverage.label !== undefined && input.result.sourceHealthV1.coverage.label !== "full_coverage";
+  if (input.status === "completed_with_warnings" || input.status === "partial_failure" || stage === "partial_failure" || warnings.length > 0 || sourceHealthDegraded) {
     return { kind: "partial_failure", warnings, manual, summary: input.result ?? null };
   }
 
