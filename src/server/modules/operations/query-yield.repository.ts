@@ -10,7 +10,7 @@ export type QueryYieldArtifact = {
 };
 
 type Row = Record<string, unknown>;
-type ErrorResult = { code?: string } | null;
+type ErrorResult = { code?: string; message?: string } | null;
 type Query = { select(columns: string): Query; eq(field: string, value: unknown): Query; order(field: string, options: { ascending: boolean }): Promise<{ data: Row[] | null; error: ErrorResult }>; maybeSingle(): Promise<{ data: Row | null; error: ErrorResult }>; insert(row: Row): { select(columns: string): { maybeSingle(): Promise<{ data: Row | null; error: ErrorResult }> } } };
 type Client = { from(table: "query_yield_artifacts"): Query };
 
@@ -18,6 +18,11 @@ type Client = { from(table: "query_yield_artifacts"): Query };
 export class QueryYieldRepository {
   constructor(private readonly client: unknown) {}
   private table() { return (this.client as Client).from("query_yield_artifacts"); }
+  private persistenceError(error: ErrorResult, context = "insert") {
+    const code = error?.code ? ` (${error.code})` : "";
+    const message = error?.message ? `: ${error.message.slice(0, 180)}` : "";
+    return new Error(`Query yield artifact persistence failed during ${context}${code}${message}`);
+  }
   async insertImmutable(input: QueryYieldArtifact): Promise<Row> {
     const row: Row = {
       workspace_id: input.workspaceId, product_id: input.productId, job_run_id: input.jobRunId, query_plan_id: input.queryPlanId,
@@ -33,7 +38,7 @@ export class QueryYieldRepository {
       const { data: existing, error: lookupError } = await this.table().select("*").eq("workspace_id", input.workspaceId).eq("product_id", input.productId).eq("job_run_id", input.jobRunId).eq("query_plan_id", input.queryPlanId).maybeSingle();
       if (!lookupError && existing) return existing;
     }
-    throw new Error("Query yield artifact persistence failed.");
+    throw this.persistenceError(error, error?.code === "23505" ? "duplicate lookup" : "insert");
   }
   async loadForScan(input: Pick<QueryYieldArtifact, "workspaceId" | "productId" | "jobRunId">) {
     const { data, error } = await this.table().select("*").eq("workspace_id", input.workspaceId).eq("product_id", input.productId).eq("job_run_id", input.jobRunId).order("created_at", { ascending: true });

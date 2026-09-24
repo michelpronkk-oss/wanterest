@@ -639,7 +639,7 @@ export async function executeSourceDiscovery(input: SourceExecutionInput): Promi
     let cursor = request.cursor;
     let rawItems = 0;
     let normalizedItems = 0;
-    let uniqueConversations = 0;
+    const queryConversationIds: string[] = [];
     let pagesCompleted = 0;
     let continuations = 0;
     let queryCost: number | null = null;
@@ -653,9 +653,9 @@ export async function executeSourceDiscovery(input: SourceExecutionInput): Promi
       const replay = await ingestion.replayDetailed({ rawSourceItemIds: discovery.rawSourceItemIds, normalizationVersion: `${input.sourceKey}-v1`, canonicalizationVersion: "canonical-v1", limit: 100 });
       normalizedSourceItemIds.push(...replay.normalizedSourceItemIds);
       normalizedItems += replay.normalizedSourceItemIds.length;
-      uniqueConversations += replay.canonicalizedConversationIds.length;
       pagesCompleted += 1;
       conversationIds.push(...replay.canonicalizedConversationIds);
+      queryConversationIds.push(...replay.canonicalizedConversationIds);
       provenance.push(...provenanceForReplay(request, input.sourceKey, replay.replayMappings));
       if (typeof metadata.estimatedCost === "number") estimatedCost = (estimatedCost ?? 0) + metadata.estimatedCost;
       if (typeof metadata.rateLimitRemaining === "number") rateLimitRemaining = metadata.rateLimitRemaining;
@@ -674,7 +674,7 @@ export async function executeSourceDiscovery(input: SourceExecutionInput): Promi
       queryPlanId, source: input.sourceKey, family: typeof metadata.queryFamily === "string" ? metadata.queryFamily : "fallback", surface: typeof metadata.demandSurface === "string" ? metadata.demandSurface : "unknown",
       concepts: Array.isArray(objectValue(metadata.discoveryIntent).concept_keys) ? (objectValue(metadata.discoveryIntent).concept_keys as unknown[]).filter((value): value is string => typeof value === "string") : [], competitorSpecific: metadata.competitorSpecific === true,
       pagesRequested: maxPages, pagesCompleted, cursorContinuationCount: continuations, continuationStoppedReason: cursor ? "page_cap_reached" : rawItems ? "no_cursor" : "zero_results",
-      executionStatus: rawItems ? "completed_with_results" : "completed_zero_results", rawItems, normalizedItems, uniqueConversations: new Set(conversationIds).size, duplicateCount: Math.max(0, normalizedItems - uniqueConversations), estimatedCostUsd: queryCost,
+      executionStatus: rawItems ? "completed_with_results" : "completed_zero_results", rawItems, normalizedItems, uniqueConversations: new Set(queryConversationIds).size, duplicateCount: Math.max(0, normalizedItems - new Set(queryConversationIds).size), estimatedCostUsd: queryCost,
     });
   }
   if (input.sourceKey === "g2") {
