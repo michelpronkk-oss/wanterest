@@ -408,14 +408,14 @@ function g2RequestForProduct(request: SourceDiscoveryRequest, product: ProductRo
   return sourceDiscoveryRequestSchema.parse({ ...request, requestMetadata: { g2Targets: [g2ProductTarget(product)], g2ProductMappings: mappings, g2ScanContext: { workspaceId: product.workspace_id, productId: product.id } } });
 }
 
-async function persistG2Resolutions(client: Client, context: { workspaceId: string; productId: string }, resolutions: SourceExecutionResult["resolutions"]): Promise<void> {
+export async function persistG2Resolutions(client: Client, context: { workspaceId: string; productId: string }, resolutions: SourceExecutionResult["resolutions"]): Promise<void> {
   if (!resolutions?.length) return;
   const existing = await client.from("discovery_strategies").select("filters").eq("workspace_id", context.workspaceId).eq("product_id", context.productId).eq("source_key", "g2").eq("strategy_version", 1).maybeSingle();
   if (existing.error) throw new AppError("INTERNAL_ERROR", "G2 source metadata could not be loaded.", 500, { providerMessage: existing.error.message });
   const mappings = g2MappingsFromSourceFilters(existing.data?.filters);
   for (const resolution of resolutions) mappings[resolution.targetKey] = resolution as G2ProductMapping;
   const filters = g2SourceFiltersWithMappings(existing.data?.filters, mappings);
-  const saved = await client.from("discovery_strategies").upsert({ workspace_id: context.workspaceId, product_id: context.productId, source_key: "g2", strategy_version: 1, filters, is_active: true }).select("id").single();
+  const saved = await client.from("discovery_strategies").upsert({ workspace_id: context.workspaceId, product_id: context.productId, source_key: "g2", strategy_version: 1, filters, is_active: true }, { onConflict: "workspace_id,product_id,source_key,strategy_version" }).select("id").single();
   if (saved.error) throw new AppError("INTERNAL_ERROR", "G2 source metadata could not be stored.", 500, { providerMessage: saved.error.message });
 }
 
