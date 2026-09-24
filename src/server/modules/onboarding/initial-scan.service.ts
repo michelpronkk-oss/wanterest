@@ -32,6 +32,10 @@ import { ensureEngineVersion } from "@/server/modules/observability/engine.repos
 import { getTraceId } from "@/server/lib/request-context";
 import { buildSourceRoutingPlan, selectExecutableSourceRoutes, type SourceRoutingPlan, type SourceRoutingHealthStatus } from "@/server/modules/operations/source-routing.index";
 import { buildQueryPlan, toSourceDiscoveryRequest, type QueryPlan } from "@/server/modules/operations/query-planning.index";
+import { getDiscoveryCoverageConfig } from "@/server/modules/operations/discovery-coverage.config";
+import type { QueryYieldTelemetry } from "@/server/modules/operations/query-yield-telemetry";
+import { aggregateQueryYield, finalizeQueryYieldTelemetry, sourceHealthStatus } from "@/server/modules/operations/query-yield-telemetry";
+import { QueryYieldRepository } from "@/server/modules/operations/query-yield.repository";
 import { sourceDiscoveryRequestSchema, type SourceDiscoveryRequest } from "@/server/providers/source/contracts";
 import { g2MappingsFromSourceFilters, g2SourceFiltersWithMappings, type G2ProductMapping, type G2ProductResolutionTarget } from "@/server/providers/source/g2/product-resolution";
 import { getSourceRuntimeConfiguration } from "@/server/providers/source/runtime";
@@ -70,6 +74,7 @@ const scanResultSchema = z.object({
   candidateSelection: z.object({ version: z.string(), availableCount: z.number().int().nonnegative(), postDedupCandidateCount: z.number().int().nonnegative(), selectedCount: z.number().int().nonnegative(), maxEvaluations: z.number().int().nonnegative(), availableBySource: z.record(z.string(), z.number().int().nonnegative()), selectedBySource: z.record(z.string(), z.number().int().nonnegative()), availableBySurface: z.record(z.string(), z.number().int().nonnegative()), selectedBySurface: z.record(z.string(), z.number().int().nonnegative()), suppressedDuplicateCount: z.number().int().nonnegative(), suppressedLowQualityCount: z.number().int().nonnegative(), suppressedByReason: z.record(z.string(), z.number().int().nonnegative()), selected: z.array(z.object({ conversationId: z.string(), source: z.string(), surface: z.string(), surfaces: z.array(z.string()), score: z.number(), reason: z.string() })) }).optional(),
   qualification: z.object({ version: z.string(), thresholdVersion: z.string(), candidateCount: z.number().int().nonnegative(), qualifiedCount: z.number().int().nonnegative(), highConfidenceCount: z.number().int().nonnegative(), weakCount: z.number().int().nonnegative(), rejectedCount: z.number().int().nonnegative(), rejectionReasonDistribution: z.record(z.string(), z.number().int().nonnegative()), intentDistribution: z.record(z.string(), z.number().int().nonnegative()), averageDemandQuality: z.number().min(0).max(1), averageConfidence: z.number().min(0).max(1) }).optional(),
   semanticReasoningShadow: z.object({ routerVersion: z.string(), promptSchemaVersion: z.string(), enabled: z.boolean(), maxNewProviderCallsPerScan: z.number().int().nonnegative(), deterministicOnlyCount: z.number().int().nonnegative(), rejectWithoutLlmCount: z.number().int().nonnegative(), llmRequestedCount: z.number().int().nonnegative(), cacheHitCount: z.number().int().nonnegative(), scheduledForLlmCount: z.number().int().nonnegative(), budgetSkippedCount: z.number().int().nonnegative(), llmExecutedCount: z.number().int().nonnegative(), providerSuccessCount: z.number().int().nonnegative(), providerFailureCount: z.number().int().nonnegative(), schemaFailureCount: z.number().int().nonnegative(), evidenceFailureCount: z.number().int().nonnegative(), conflictBlockCount: z.number().int().nonnegative(), inputTokens: z.number().int().nonnegative(), outputTokens: z.number().int().nonnegative(), reasoningLatencyMs: z.number().int().nonnegative(), reasoningCostUsd: z.number().nonnegative().nullable(), shadowComparisonCount: z.number().int().nonnegative(), noChangeCount: z.number().int().nonnegative(), wouldStrengthenCount: z.number().int().nonnegative(), wouldWeakenCount: z.number().int().nonnegative(), wouldBecomeQualifiedCount: z.number().int().nonnegative(), wouldBecomeUnqualifiedCount: z.number().int().nonnegative(), directionChangeCount: z.number().int().nonnegative(), targetChangeCount: z.number().int().nonnegative(), actualQualifiedCountAmongCompared: z.number().int().nonnegative(), shadowQualifiedCountAmongCompared: z.number().int().nonnegative() }).optional(),
+  queryYield: z.unknown().optional(),
   candidateReviews: z.array(scanCandidateReviewSchema).max(100).optional(),
 });
 
@@ -88,6 +93,7 @@ export type InitialScanJobState = {
 
 export type SourceExecutionInput = {
   sourceKey: string;
+  productId: string;
   requests: SourceDiscoveryRequest[];
   traceId: string;
   workspaceId: string;
@@ -110,6 +116,7 @@ export type SourceExecutionResult = {
   diagnostics: string[];
   rateLimitRemaining: number | null;
   estimatedCost: number | null;
+  queryTelemetry: QueryYieldTelemetry[];
   providerMetrics?: Record<string, unknown>;
   resolutions?: Array<{
     status: "resolved" | "no_match" | "ambiguous_match";
@@ -254,11 +261,47 @@ export type CandidateProcessingResult = {
   /** Positional with evaluationIds; null means the evaluation was not materialized as a signal. */
   signalIds: Array<string | null>;
   candidateReviews: ScanCandidateReview[];
+  outcomes: CandidateProcessingOutcome[];
   candidateSelection?: InitialScanResult["candidateSelection"];
   qualification?: InitialScanResult["qualification"];
   semanticReasoningShadow?: Omit<NonNullable<InitialScanResult["semanticReasoningShadow"]>, "routerVersion" | "promptSchemaVersion" | "enabled" | "maxNewProviderCallsPerScan"> & { routerVersion: string; promptSchemaVersion: string; enabled: boolean; maxNewProviderCallsPerScan: number };
   diagnostics: InitialScanResult["diagnostics"];
 };
+
+export type CandidateProcessingOutcome = {
+  conversationId: string;
+  selected: boolean;
+  evaluated: boolean;
+  qualificationStatus: "qualified" | "weak_candidate" | "rejected" | null;
+  qualificationReasonCodes?: string[];
+  evaluationId?: string | null;
+};
+
+function outcomeStatus(status: string | undefined): CandidateProcessingOutcome["qualificationStatus"] {
+  return status === "qualified" || status === "high_confidence_signal" ? "qualified" : status === "weak_candidate" || status === "rejected" ? status : null;
+}
+
+export function normalizeCandidateProcessingOutcomes(outcomes: CandidateProcessingOutcome[]): Map<string, CandidateProcessingOutcome> {
+  const normalized = new Map<string, CandidateProcessingOutcome>();
+  for (const outcome of outcomes) {
+    const existing = normalized.get(outcome.conversationId);
+    if (!existing || (outcome.evaluated && !existing.evaluated) || (outcome.selected && !existing.selected)) normalized.set(outcome.conversationId, { ...outcome, qualificationReasonCodes: outcome.qualificationReasonCodes ? [...outcome.qualificationReasonCodes] : undefined });
+  }
+  return normalized;
+}
+
+function candidateOutcomes(selected: ConversationRow[], evaluations: Awaited<ReturnType<IntelligenceService["matchProduct"]>>[]): CandidateProcessingOutcome[] {
+  const evaluationByConversation = new Map(evaluations.map((evaluation) => [evaluation.conversation_id, evaluation]));
+  return selected.map((conversation) => {
+    const evaluation = evaluationByConversation.get(conversation.id);
+    const qualification = evaluation ? qualificationFromEvidence(evaluation.evidence) : null;
+    return {
+      conversationId: conversation.id, selected: true, evaluated: Boolean(evaluation), evaluationId: evaluation?.id ?? null,
+      qualificationStatus: outcomeStatus(qualification?.status),
+      ...(qualification ? { qualificationReasonCodes: [...qualification.reason_codes] } : {}),
+    };
+  });
+}
 
 function semanticShadowSummary(config: ReturnType<typeof getSemanticReasoningShadowConfig>, diagnostics: ShadowPlanDiagnostics): NonNullable<CandidateProcessingResult["semanticReasoningShadow"]> {
   return {
@@ -587,31 +630,52 @@ export async function executeSourceDiscovery(input: SourceExecutionInput): Promi
   let rateLimitRemaining: number | null = null;
   let estimatedCost: number | null = null;
   const providerMetrics: Record<string, unknown> = {};
+  const queryTelemetry: QueryYieldTelemetry[] = [];
   if (input.sourceKey === "x") logXDiscoveryOverride(input.workspaceId, input.requests);
   for (const rawRequest of input.requests) {
     const request = sourceDiscoveryRequestSchema.parse(rawRequest);
-    const discovery = await ingestion.discoverSource(input.sourceKey, requestScopedToScan(request, input.jobRunId, input.sourceKey, input.workspaceId), input.traceId);
-    rawSourceItemIds.push(...discovery.rawSourceItemIds);
-    rawInserted += discovery.rawInserted;
-    diagnostics.push(...discovery.diagnostics);
-    if (discovery.resolutions) resolutions.push(...discovery.resolutions);
-    const replay = await ingestion.replayDetailed({ rawSourceItemIds: discovery.rawSourceItemIds, normalizationVersion: `${input.sourceKey}-v1`, canonicalizationVersion: "canonical-v1", limit: 100 });
-    normalizedSourceItemIds.push(...replay.normalizedSourceItemIds);
-    conversationIds.push(...replay.canonicalizedConversationIds);
-    provenance.push(...provenanceForReplay(request, input.sourceKey, replay.replayMappings));
-    const metadata = request.requestMetadata;
-    if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+    const metadata = request.requestMetadata as Record<string, unknown>;
+    const maxPages = Math.min(3, Math.max(1, typeof metadata.maxPages === "number" ? Math.floor(metadata.maxPages) : 1));
+    let cursor = request.cursor;
+    let rawItems = 0;
+    let normalizedItems = 0;
+    let uniqueConversations = 0;
+    let pagesCompleted = 0;
+    let continuations = 0;
+    let queryCost: number | null = null;
+    for (let page = 1; page <= maxPages; page += 1) {
+      const discovery = await ingestion.discoverSource(input.sourceKey, requestScopedToScan({ ...request, ...(cursor ? { cursor } : {}) }, input.jobRunId, input.sourceKey, input.workspaceId), input.traceId);
+      rawSourceItemIds.push(...discovery.rawSourceItemIds);
+      rawItems += discovery.rawSourceItemIds.length;
+      rawInserted += discovery.rawInserted;
+      diagnostics.push(...discovery.diagnostics);
+      if (discovery.resolutions) resolutions.push(...discovery.resolutions);
+      const replay = await ingestion.replayDetailed({ rawSourceItemIds: discovery.rawSourceItemIds, normalizationVersion: `${input.sourceKey}-v1`, canonicalizationVersion: "canonical-v1", limit: 100 });
+      normalizedSourceItemIds.push(...replay.normalizedSourceItemIds);
+      normalizedItems += replay.normalizedSourceItemIds.length;
+      uniqueConversations += replay.canonicalizedConversationIds.length;
+      pagesCompleted += 1;
+      conversationIds.push(...replay.canonicalizedConversationIds);
+      provenance.push(...provenanceForReplay(request, input.sourceKey, replay.replayMappings));
       if (typeof metadata.estimatedCost === "number") estimatedCost = (estimatedCost ?? 0) + metadata.estimatedCost;
       if (typeof metadata.rateLimitRemaining === "number") rateLimitRemaining = metadata.rateLimitRemaining;
-    }
-    if (typeof discovery.estimatedCost === "number") estimatedCost = (estimatedCost ?? 0) + discovery.estimatedCost;
-    if (typeof discovery.rateLimit?.remaining === "number") rateLimitRemaining = discovery.rateLimit.remaining;
-    if (discovery.providerMetrics) {
-      for (const [key, value] of Object.entries(discovery.providerMetrics)) {
+      if (typeof discovery.estimatedCost === "number") { estimatedCost = (estimatedCost ?? 0) + discovery.estimatedCost; queryCost = (queryCost ?? 0) + discovery.estimatedCost; }
+      if (typeof discovery.rateLimit?.remaining === "number") rateLimitRemaining = discovery.rateLimit.remaining;
+      if (discovery.providerMetrics) for (const [key, value] of Object.entries(discovery.providerMetrics)) {
         if (typeof value === "number" && typeof providerMetrics[key] === "number") providerMetrics[key] = (providerMetrics[key] as number) + value;
         else providerMetrics[key] = value;
       }
+      cursor = discovery.nextCursor;
+      if (!cursor) break;
+      continuations += 1;
     }
+    const queryPlanId = typeof metadata.queryPlanId === "string" ? metadata.queryPlanId : `fallback:${input.sourceKey}:${request.query ?? "default"}`;
+    queryTelemetry.push({
+      queryPlanId, source: input.sourceKey, family: typeof metadata.queryFamily === "string" ? metadata.queryFamily : "fallback", surface: typeof metadata.demandSurface === "string" ? metadata.demandSurface : "unknown",
+      concepts: Array.isArray(objectValue(metadata.discoveryIntent).concept_keys) ? (objectValue(metadata.discoveryIntent).concept_keys as unknown[]).filter((value): value is string => typeof value === "string") : [], competitorSpecific: metadata.competitorSpecific === true,
+      pagesRequested: maxPages, pagesCompleted, cursorContinuationCount: continuations, continuationStoppedReason: cursor ? "page_cap_reached" : rawItems ? "no_cursor" : "zero_results",
+      executionStatus: rawItems ? "completed_with_results" : "completed_zero_results", rawItems, normalizedItems, uniqueConversations: new Set(conversationIds).size, duplicateCount: Math.max(0, normalizedItems - uniqueConversations), estimatedCostUsd: queryCost,
+    });
   }
   if (input.sourceKey === "g2") {
     const context = g2ContextFromRequests(input.requests);
@@ -629,6 +693,7 @@ export async function executeSourceDiscovery(input: SourceExecutionInput): Promi
     diagnostics,
     rateLimitRemaining,
     estimatedCost,
+    queryTelemetry,
     ...(Object.keys(providerMetrics).length ? { providerMetrics } : {}),
     ...(resolutions.length ? { resolutions } : {}),
   };
@@ -836,6 +901,7 @@ export async function processScanCandidates(input: { product: ProductRow; profil
     evaluationIds: evaluations.map((evaluation) => evaluation.id),
     signalIds: signalIdsByEvaluation,
     candidateReviews: candidateReviewsFromRows(evaluations, rows.conversations, sourceById),
+    outcomes: candidateOutcomes(selection.conversations, evaluations),
     candidateSelection: selection.diagnostics,
     diagnostics,
     ...(semanticReasoningShadow ? { semanticReasoningShadow } : {}),
@@ -908,6 +974,10 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
   const scanProfile = scanProfileForMode(scanMode);
   const scanBudget = getScanBudget(capabilities, scanProfile);
   if (!scanBudget.enabled) throw new AppError("CAPABILITY_DISABLED", "This scan profile is not enabled for the workspace plan.");
+  const coverage = getDiscoveryCoverageConfig(product.workspace_id);
+  const discoveryBudget = coverage.enabled
+    ? { ...scanBudget, maxSourcesPerScan: coverage.maxSources!, maxQueriesPerScan: coverage.maxQueries!, maxCandidatesPerScan: coverage.maxCandidates! }
+    : scanBudget;
   const { job, alreadyComplete } = await createOrResumeScanJob(client, product.workspace_id, product.id, traceId, {
     idempotencyKey: options.idempotencyKey,
     jobRunId: options.jobRunId,
@@ -968,8 +1038,8 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
         demandProfile: readDemandProfileV2RoutingModel(demandProfileV2),
         sourceStates,
         scanMode,
-        totalCandidateBudget: scanBudget.maxCandidatesPerScan,
-        maxSources: scanBudget.maxSourcesPerScan,
+        totalCandidateBudget: discoveryBudget.maxCandidatesPerScan,
+        maxSources: discoveryBudget.maxSourcesPerScan,
         rotationSeed: options.idempotencyKey ?? job.id,
         safetyCaps: {
           ...providerSafetyCaps,
@@ -986,7 +1056,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
   diagnostics.push({
     sourceKey: "plan-budget",
     state: "resolved",
-    message: capabilities.plan + "/" + scanProfile + ": " + scanBudget.maxSourcesPerScan + " sources, " + scanBudget.maxQueriesPerScan + " queries, " + scanBudget.maxCandidatesPerScan + " candidates, " + scanBudget.maxLlmEvaluationsPerScan + " LLM evaluations.",
+    message: capabilities.plan + "/" + scanProfile + ": " + discoveryBudget.maxSourcesPerScan + " sources, " + discoveryBudget.maxQueriesPerScan + " queries, " + discoveryBudget.maxCandidatesPerScan + " candidates, " + scanBudget.maxLlmEvaluationsPerScan + " LLM evaluations." + (coverage.enabled ? " Internal Discovery Coverage V1 override active." : ""),
   });
   let queryPlan: QueryPlan | null = null;
   if (routingPlan) {
@@ -997,7 +1067,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
         demandProfile: demandProfileV2 ? readDemandProfileV2RoutingModel(demandProfileV2) : null,
         sourceRoutingPlan: routingPlan,
         scanMode,
-        maxQueries: scanBudget.maxQueriesPerScan,
+        maxQueries: discoveryBudget.maxQueriesPerScan,
       });
       diagnostics.push({ sourceKey: "query-planning", state: "planned", message: `${queryPlan.diagnostics.query_count} semantic quer${queryPlan.diagnostics.query_count === 1 ? "y" : "ies"} across ${queryPlan.diagnostics.source_count} source${queryPlan.diagnostics.source_count === 1 ? "" : "s"}.` });
     } catch (error) {
@@ -1010,6 +1080,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
   const normalizedSourceItemIds: string[] = [];
   const conversationIds: string[] = [];
   const scanProvenance: ScanDiscoveryProvenance[] = [];
+  const queryYieldTelemetry: QueryYieldTelemetry[] = [];
   const queryPlanBySource = new Map((queryPlan?.source_plans ?? []).map((source) => [source.source_key, source]));
   const g2ProductMappings = sourceKeys.includes("g2") ? await loadG2ProductMappings(client, product) : {};
 
@@ -1044,7 +1115,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
           : { limit: fallbackLimit, ...(query ? { query } : {}) };
         const requests = boundMonitoringRequests((plannedRequests.length ? plannedRequests : [fallbackRequest]).map((request) => sourceDiscoveryRequestSchema.parse(request)), sourceKey, scanMode, monitoringPolicy, capabilities)
           .map((request) => sourceKey === "g2" ? g2RequestForProduct(request, product, g2ProductMappings) : request);
-        sourceInputs.push({ input: { sourceKey, requests, traceId, jobRunId: job.id, workspaceId: product.workspace_id }, fallback: !plannedRequests.length && Boolean(queryPlan), candidateBudget: requests.reduce((sum, request) => sum + request.limit, 0) });
+        sourceInputs.push({ input: { sourceKey, requests, traceId, jobRunId: job.id, workspaceId: product.workspace_id, productId: product.id }, fallback: !plannedRequests.length && Boolean(queryPlan), candidateBudget: requests.reduce((sum, request) => sum + request.limit, 0) });
         sources.push(sourceKey);
       }
       // The biggest single opaque operation in the pipeline: in production this dispatches
@@ -1074,6 +1145,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
         normalizedSourceItemIds.push(...result.execution.normalizedSourceItemIds);
         conversationIds.push(...result.execution.conversationIds);
         scanProvenance.push(...(result.execution.provenance ?? []));
+        queryYieldTelemetry.push(...result.execution.queryTelemetry);
         if (result.fallback) diagnostics.push({ sourceKey: result.sourceKey, state: "fallback", message: "Query Planning produced no executable query; using the existing conservative request." });
         diagnostics.push({ sourceKey: result.sourceKey, state: "complete", message: `${result.execution.rawInserted} new raw item${result.execution.rawInserted === 1 ? "" : "s"}.` });
       }
@@ -1144,6 +1216,16 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
           conversationIds.push(...replay.canonicalizedConversationIds);
           scanProvenance.push(...provenanceForReplay(discoveryRequest, sourceKey, replay.replayMappings));
           const requestMetadata = discoveryRequest.requestMetadata;
+          const telemetryMetadata = objectValue(requestMetadata);
+          const intent = objectValue(telemetryMetadata.discoveryIntent);
+          const queryPlanId = typeof telemetryMetadata.queryPlanId === "string" ? telemetryMetadata.queryPlanId : `fallback:${sourceKey}:${discoveryRequest.query ?? "default"}`;
+          queryYieldTelemetry.push({
+            queryPlanId, source: sourceKey, family: typeof telemetryMetadata.queryFamily === "string" ? telemetryMetadata.queryFamily : "fallback", surface: typeof telemetryMetadata.demandSurface === "string" ? telemetryMetadata.demandSurface : "unknown",
+            concepts: Array.isArray(intent.concept_keys) ? (intent.concept_keys as unknown[]).filter((value): value is string => typeof value === "string") : [], competitorSpecific: telemetryMetadata.competitorSpecific === true,
+            pagesRequested: Math.min(3, Math.max(1, typeof telemetryMetadata.maxPages === "number" ? Math.floor(telemetryMetadata.maxPages) : 1)), pagesCompleted: 1, cursorContinuationCount: 0,
+            continuationStoppedReason: discovery.nextCursor ? "page_cap_reached" : discovery.rawSourceItemIds.length ? "no_cursor" : "zero_results", executionStatus: discovery.rawSourceItemIds.length ? "completed_with_results" : "completed_zero_results",
+            rawItems: discovery.rawSourceItemIds.length, normalizedItems: replay.normalizedSourceItemIds.length, uniqueConversations: replay.canonicalizedConversationIds.length, duplicateCount: Math.max(0, replay.normalizedSourceItemIds.length - replay.canonicalizedConversationIds.length), estimatedCostUsd: typeof discovery.estimatedCost === "number" ? discovery.estimatedCost : null,
+          });
           const semanticQuery = requestMetadata && typeof requestMetadata === "object" && !Array.isArray(requestMetadata) && "semanticQuery" in requestMetadata && typeof requestMetadata.semanticQuery === "string" ? requestMetadata.semanticQuery : null;
           const queryLabel = semanticQuery ? ` for “${semanticQuery}”` : "";
           diagnostics.push({ sourceKey, state: "complete", message: `${discovery.rawInserted} new raw item${discovery.rawInserted === 1 ? "" : "s"}${queryLabel}.` });
@@ -1238,6 +1320,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       evaluationIds: evaluations.map((evaluation) => evaluation.id),
       signalIds: signalIdsByEvaluation,
       candidateReviews: candidateReviewsFromRows(evaluations, rows.conversations, sourceById),
+      outcomes: candidateOutcomes(selection.conversations, evaluations),
       candidateSelection: selection.diagnostics,
       diagnostics: [],
       ...(qualificationRows.length ? { qualification: {
@@ -1254,6 +1337,21 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
         averageConfidence: qualificationRows.reduce((sum, item) => sum + item.confidence, 0) / qualificationRows.length,
       } } : {}),
     };
+    }
+    const candidateOutcomesByConversation = normalizeCandidateProcessingOutcomes(candidateResult.outcomes);
+    diagnostics.push({ sourceKey: "candidate-outcomes", state: "resolved", message: `${candidateOutcomesByConversation.size} current-scan candidate outcome${candidateOutcomesByConversation.size === 1 ? "" : "s"} normalized for provenance attribution.` });
+    const mergedQueryYieldTelemetry = [...new Map([...queryYieldTelemetry].sort((left, right) => left.queryPlanId.localeCompare(right.queryPlanId)).map((telemetry) => [telemetry.queryPlanId, telemetry])).values()];
+    const finalizedQueryYield = finalizeQueryYieldTelemetry(mergedQueryYieldTelemetry, uniqueProvenance(scanProvenance).map((entry) => ({ conversationId: entry.conversationId, queryPlanId: entry.queryPlanId })), candidateOutcomesByConversation);
+    const queryYieldDiagnostics = {
+      version: "query_yield_v1",
+      ...aggregateQueryYield(finalizedQueryYield),
+      sourceHealth: Object.fromEntries(sourceResults.map((source) => [source.sourceKey, { status: sourceHealthStatus({ planned: source.planned, executed: source.executed, normalizedItems: source.normalizedItems, errorCode: source.errorCode, budgetLimited: source.queryCount === 0 && source.planned && !source.executed }), planned: source.planned, executed: source.executed, queryCount: source.queryCount, normalizedItems: source.normalizedItems, warningCount: source.warnings.length, errorCode: source.errorCode, budgetLimited: source.queryCount === 0 && source.planned && !source.executed }])),
+    };
+    const queryYieldRepository = new QueryYieldRepository(client);
+    for (const telemetry of finalizedQueryYield) {
+      try {
+        await queryYieldRepository.insertImmutable({ workspaceId: product.workspace_id, productId: product.id, jobRunId: job.id, queryPlanId: telemetry.queryPlanId, sourceKey: telemetry.source, queryFamily: telemetry.family, demandSurface: telemetry.surface, conceptKeys: telemetry.concepts, competitorSpecific: telemetry.competitorSpecific, retrievalWindow: {}, pagesRequested: telemetry.pagesRequested, pagesCompleted: telemetry.pagesCompleted, cursorContinuationCount: telemetry.cursorContinuationCount, continuationStoppedReason: telemetry.continuationStoppedReason, executionStatus: telemetry.executionStatus, rawItems: telemetry.rawItems, normalizedItems: telemetry.normalizedItems, uniqueConversations: telemetry.uniqueConversations, duplicateCount: telemetry.duplicateCount, sourceBudgetSuppressedCount: 0, candidateBudgetSuppressedCount: 0, evaluationCapSuppressedCount: 0, selectedCount: telemetry.selectedCount, evaluatedCount: telemetry.evaluatedCount, qualifiedInfluencedCount: telemetry.qualifiedInfluencedCount, weakInfluencedCount: telemetry.weakInfluencedCount, rejectedInfluencedCount: telemetry.rejectedInfluencedCount, estimatedCostUsd: telemetry.estimatedCostUsd });
+      } catch (error) { diagnostics.push({ sourceKey: "query-yield", state: "warning", message: `Query telemetry persistence skipped: ${safeSummary(error)}` }); }
     }
     const newSignalCount = candidateResult.newSignals ?? (isMonitoringScanMode(scanMode) ? newSignalEvaluationIds.length : candidateResult.signals);
     const shouldRefreshDerived = shouldRefreshDerivedIntelligence(scanMode, newSignalCount);
@@ -1309,6 +1407,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       driftUpdated: demand.driftUpdated,
       actionsUpdated: actions.actionsUpdated,
       candidateReviews: candidateResult.candidateReviews,
+      ...(finalizedQueryYield.length ? { queryYield: queryYieldDiagnostics } : {}),
       ...(candidateResult.candidateSelection ? { candidateSelection: candidateResult.candidateSelection } : {}),
       ...(candidateResult.qualification ? { qualification: candidateResult.qualification } : {}),
       ...(candidateResult.semanticReasoningShadow ? { semanticReasoningShadow: candidateResult.semanticReasoningShadow } : {}),

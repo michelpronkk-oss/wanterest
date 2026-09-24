@@ -118,7 +118,7 @@ describe("Query Planning v1", () => {
     const first = await buildFixturePlan(index);
     const second = await buildFixturePlan(index);
     expect(second).toEqual(first);
-    expect(first.version).toBe("query_planning_v6");
+    expect(first.version).toBe("query_planning_v7");
     expect(first.source_routing_version).toBe("source_routing_v1");
     expect(first.source_plans.every((source) => source.query_budget <= 3)).toBe(true);
     expect(allQueries(first).every((query) => query.candidate_budget > 0)).toBe(true);
@@ -297,7 +297,7 @@ describe("Query Planning v1", () => {
   it("provides a network-free dry-run", async () => {
     const plan = await buildFixturePlan(0);
     const output = formatQueryPlanDryRun(plan);
-    expect(output).toContain("query_planning_v6");
+    expect(output).toContain("query_planning_v7");
     expect(output).toContain("candidateBudget=");
     expect(output).toContain("reasons=");
     expect(allQueries(plan).every((query) => query.reason_summary.startsWith("Generated from "))).toBe(true);

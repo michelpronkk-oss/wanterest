@@ -55,12 +55,16 @@ export function toSourceDiscoveryRequest(input: SourceQueryExecutionInput): Sour
   } else if (sourcePlan.source_key === "github") {
     metadata.contentType = "all";
     metadata.includeComments = false;
+    // The combined endpoint has no shared issue/discussion cursor. Keep it at
+    // one page until the two lanes can be persisted as separate queries.
+    metadata.maxPages = 1;
   } else if (sourcePlan.source_key === "hacker-news") {
     // HN has no search endpoint. The adapter applies a bounded lexical filter
     // to the recent feed using these anchors, while retaining the semantic
     // query for diagnostics.
     metadata.executionMode = "filtered_newstories_feed";
     metadata.searchUnsupported = true;
+    metadata.maxPages = Math.min(3, Math.max(1, input.maxPages));
     const providerContext = query.metadata.provider_context;
     if (providerContext && typeof providerContext === "object" && !Array.isArray(providerContext)) {
       const context = providerContext as Record<string, unknown>;
@@ -76,6 +80,7 @@ export function toSourceDiscoveryRequest(input: SourceQueryExecutionInput): Sour
     metadata.maxCommentsPerPost = 10;
   } else if (sourcePlan.source_key === "stack-exchange") {
     metadata.site = "stackoverflow";
+    metadata.maxPages = Math.min(2, Math.max(1, input.maxPages));
   } else if (sourcePlan.source_key === "g2" || sourcePlan.source_key === "trustpilot") {
     metadata.reviewImport = true;
     if (sourcePlan.source_key === "g2") {
