@@ -17,6 +17,7 @@ import {
 } from "@/server/modules/onboarding/initial-scan.service";
 import { rebuildDemandIntelligenceForScan } from "@/server/modules/demand-intelligence/demand.orchestration";
 import { generateActionsForScan } from "@/server/modules/actions/action.orchestration";
+import { X_COMPETITOR_PAIN_RETRIEVAL_TEMPLATE_VERSION } from "@/server/providers/source/x/x.query";
 
 const sourceTaskInputSchema = z.object({
   workspaceId: z.string().uuid(),
@@ -42,6 +43,11 @@ const candidateTaskInputSchema = z.object({
       templateVersion: z.literal("github_pain_retrieval_v1_1"),
       demandAnchors: z.array(z.string().max(80)).max(12),
       categoryAnchors: z.array(z.string().max(80)).max(8),
+    }).optional(),
+    xCompetitorPainRetrievalV1: z.object({
+      templateVersion: z.literal(X_COMPETITOR_PAIN_RETRIEVAL_TEMPLATE_VERSION),
+      competitor: z.string().trim().min(1).max(120),
+      displacementAnchors: z.array(z.string().trim().min(1).max(80)).max(12),
     }).optional(),
   })).max(4000).optional(),
   maxLlmEvaluations: z.number().int().nonnegative().max(500),

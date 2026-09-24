@@ -34,6 +34,7 @@ import { buildSourceRoutingPlan, selectExecutableSourceRoutes, type SourceRoutin
 import { buildQueryPlan, githubPainCompilationFromMetadata, githubPainRetrievalDiagnostics, toSourceDiscoveryRequest, type GithubPainQueryCompilation, type QueryPlan } from "@/server/modules/operations/query-planning.index";
 import { getDiscoveryCoverageConfig } from "@/server/modules/operations/discovery-coverage.config";
 import { alignGithubFeatureEvidence, alignGithubPainEvidence, classifyGithubRetrievalQuality, type GithubFeatureEvidenceAlignmentDiagnostics, type GithubPainEvidenceAlignmentDiagnostics, type GithubPainEvidenceAlignmentQuery, type GithubRetrievalPrecisionDiagnostics } from "@/server/modules/operations/github-retrieval-quality";
+import { alignXCompetitorPainEvidence, emptyXCompetitorEvidenceAlignmentDiagnostics, xCompetitorMissingCompilerProvenanceReason, xCompetitorPainCompilationFromMetadata, type XCompetitorEvidenceAlignmentDiagnostics, type XCompetitorPainRetrievalProvenance } from "@/server/modules/operations/x-retrieval-quality";
 import type { QueryYieldExecutionStatus, QueryYieldStopReason, QueryYieldTelemetry } from "@/server/modules/operations/query-yield-telemetry";
 import { aggregateQueryYield, boundedCursorContinuationCount, finalizeQueryYieldTelemetry, reconcileQueryYieldTelemetry, sourceHealthStatus } from "@/server/modules/operations/query-yield-telemetry";
 import { QueryYieldRepository } from "@/server/modules/operations/query-yield.repository";
@@ -99,6 +100,21 @@ const scanResultSchema = z.object({
       demandAnchorMatches: z.array(z.string().trim().min(1).max(80)).max(12),
       categoryAnchorMatches: z.array(z.string().trim().min(1).max(80)).max(8),
       reason: z.literal("query_evidence_mismatch"),
+    })).max(100),
+  }).optional(),
+  xCompetitorEvidenceAlignment: z.object({
+    inspectedCount: z.number().int().nonnegative(),
+    alignedCount: z.number().int().nonnegative(),
+    mismatchCount: z.number().int().nonnegative(),
+    provenanceMissingCount: z.number().int().nonnegative(),
+    provenanceMissingReason: z.literal("missing_compiler_provenance").optional(),
+    mismatches: z.array(z.object({
+      conversationId: z.string().uuid(),
+      queryPlanId: z.string().trim().min(1).max(180),
+      competitor: z.string().trim().min(1).max(120),
+      displacementMatches: z.array(z.string().trim().min(1).max(80)).max(12),
+      competitorMatched: z.boolean(),
+      reason: z.literal("x_competitor_evidence_mismatch"),
     })).max(100),
   }).optional(),
   githubFeatureEvidenceAlignment: z.object({
@@ -189,6 +205,7 @@ export type ScanDiscoveryProvenance = {
   concepts: string[];
   competitorSpecific: boolean;
   githubPainRetrievalV1?: GithubPainEvidenceAlignmentQuery;
+  xCompetitorPainRetrievalV1?: XCompetitorPainRetrievalProvenance;
 };
 
 export function provenanceForReplay(request: SourceDiscoveryRequest, source: string, mappings: Array<{ conversationId: string }>): ScanDiscoveryProvenance[] {
@@ -197,6 +214,7 @@ export function provenanceForReplay(request: SourceDiscoveryRequest, source: str
   const intent = objectValue(metadata.discoveryIntent);
   const concepts = Array.isArray(intent.concept_keys) ? intent.concept_keys.filter((value): value is string => typeof value === "string").slice(0, 20) : [];
   const githubPainRetrievalV1 = source === "github" && metadata.demandSurface === "pain_first" ? githubPainCompilationFromMetadata(metadata) : null;
+  const xCompetitorPainRetrievalV1 = source === "x" && metadata.demandSurface === "competitor_pain" ? xCompetitorPainCompilationFromMetadata(metadata) : null;
   const semanticQuery = typeof metadata.semanticQuery === "string"
     ? metadata.semanticQuery
     : source === "github" && metadata.demandSurface === "feature_demand" && typeof request.query === "string"
@@ -209,6 +227,7 @@ export function provenanceForReplay(request: SourceDiscoveryRequest, source: str
     ...(semanticQuery ? { semanticQuery } : {}),
     concepts, competitorSpecific: metadata.competitorSpecific === true,
     ...(githubPainRetrievalV1 ? { githubPainRetrievalV1: { templateVersion: githubPainRetrievalV1.templateVersion, demandAnchors: githubPainRetrievalV1.demandAnchors, categoryAnchors: githubPainRetrievalV1.categoryAnchors } } : {}),
+    ...(xCompetitorPainRetrievalV1 ? { xCompetitorPainRetrievalV1 } : {}),
   }));
 }
 
@@ -383,6 +402,7 @@ export type CandidateProcessingResult = {
   githubRetrievalPrecision?: GithubRetrievalPrecisionDiagnostics;
   githubPainEvidenceAlignment?: GithubPainEvidenceAlignmentDiagnostics;
   githubFeatureEvidenceAlignment?: GithubFeatureEvidenceAlignmentDiagnostics;
+  xCompetitorEvidenceAlignment?: XCompetitorEvidenceAlignmentDiagnostics;
   qualification?: InitialScanResult["qualification"];
   semanticReasoningShadow?: Omit<NonNullable<InitialScanResult["semanticReasoningShadow"]>, "routerVersion" | "promptSchemaVersion" | "enabled" | "maxNewProviderCallsPerScan"> & { routerVersion: string; promptSchemaVersion: string; enabled: boolean; maxNewProviderCallsPerScan: number };
   diagnostics: InitialScanResult["diagnostics"];
@@ -459,12 +479,36 @@ export function selectScanCandidates(input: { conversations: ConversationRow[]; 
   const githubRetrievalPrecision: GithubRetrievalPrecisionDiagnostics = { inspectedCount: 0, eligibleCount: 0, suppressedCount: 0, suppressedByReason: {}, suppressedCandidates: [] };
   const githubPainEvidenceAlignment: GithubPainEvidenceAlignmentDiagnostics = { inspectedCount: 0, alignedCount: 0, mismatchCount: 0, mismatches: [] };
   const githubFeatureEvidenceAlignment: GithubFeatureEvidenceAlignmentDiagnostics = { inspectedCount: 0, alignedCount: 0, mismatchCount: 0, mismatches: [] };
+  const xCompetitorEvidenceAlignment = emptyXCompetitorEvidenceAlignmentDiagnostics();
   let featureEvidenceSuppressedCount = 0;
+  let xCompetitorEvidenceSuppressedCount = 0;
   const deduped = new Map<string, { conversation: ConversationRow; source: SourceItemRow; discoverySource: string; surface: string; surfaces: string[]; queryPlanIds: string[]; score: number }>();
   for (const conversation of input.conversations) {
     const source = input.sourceById.get(conversation.primary_source_item_id);
     if (!source) continue;
     const provenanceEntries = provenance.get(conversation.id) ?? [];
+    const xCompetitorProvenance = source.source_key === "x" ? provenanceEntries
+      .filter((entry) => entry.source === "x" && entry.demandSurface === "competitor_pain")
+      .map((entry) => ({ queryPlanId: entry.queryPlanId, xCompetitorPainRetrievalV1: entry.xCompetitorPainRetrievalV1 })) : [];
+    const xAlignment = alignXCompetitorPainEvidence({
+      conversationId: conversation.id,
+      text: source.body ?? conversation.body ?? "",
+      queries: xCompetitorProvenance,
+    });
+    if (xAlignment) {
+      xCompetitorEvidenceAlignment.inspectedCount += 1;
+      if (xAlignment.aligned) {
+        xCompetitorEvidenceAlignment.alignedCount += 1;
+      } else if (xAlignment.provenanceMissing) {
+        xCompetitorEvidenceAlignment.provenanceMissingCount += 1;
+        xCompetitorEvidenceAlignment.provenanceMissingReason = xCompetitorMissingCompilerProvenanceReason;
+      } else {
+        xCompetitorEvidenceAlignment.mismatchCount += 1;
+        xCompetitorEvidenceAlignment.mismatches.push(...xAlignment.mismatches.slice(0, 100 - xCompetitorEvidenceAlignment.mismatches.length));
+        xCompetitorEvidenceSuppressedCount += 1;
+        continue;
+      }
+    }
     if (source.source_key === "github") {
       const featureProvenance = provenanceEntries
         .filter((entry) => entry.source === "github" && entry.demandSurface === "feature_demand")
@@ -542,7 +586,7 @@ export function selectScanCandidates(input: { conversations: ConversationRow[]; 
   const evaluationCapSuppressed = selected.length >= Math.max(0, input.max) ? remaining : [];
   const suppressedSurfaces = evaluationCapSuppressed.flatMap((item) => item.surfaces.length ? item.surfaces : [item.surface]);
   const alignmentSuppressedCount = githubPainEvidenceAlignment.mismatchCount;
-  const eligibleInputCount = Math.max(0, input.conversations.length - alignmentSuppressedCount - featureEvidenceSuppressedCount);
+  const eligibleInputCount = Math.max(0, input.conversations.length - alignmentSuppressedCount - featureEvidenceSuppressedCount - xCompetitorEvidenceSuppressedCount);
   const duplicateSuppressedCount = Math.max(0, eligibleInputCount - ranked.length);
   return {
     conversations: selected.map((item) => item.conversation),
@@ -558,7 +602,7 @@ export function selectScanCandidates(input: { conversations: ConversationRow[]; 
       selectedBySurface: count(selected.map((item) => item.surface)),
       suppressedDuplicateCount: duplicateSuppressedCount,
       suppressedLowQualityCount: 0,
-      suppressedByReason: { duplicate_content: duplicateSuppressedCount, query_evidence_mismatch: alignmentSuppressedCount, feature_evidence_mismatch: featureEvidenceSuppressedCount, evaluation_cap: Math.max(0, ranked.length - selected.length) },
+      suppressedByReason: { duplicate_content: duplicateSuppressedCount, query_evidence_mismatch: alignmentSuppressedCount, feature_evidence_mismatch: featureEvidenceSuppressedCount, x_competitor_evidence_mismatch: xCompetitorEvidenceSuppressedCount, evaluation_cap: Math.max(0, ranked.length - selected.length) },
       evaluationCapDiagnostics: {
         availableCount: eligibleInputCount,
         evaluatedCount: selected.length,
@@ -573,6 +617,7 @@ export function selectScanCandidates(input: { conversations: ConversationRow[]; 
     githubRetrievalPrecision,
     githubPainEvidenceAlignment,
     githubFeatureEvidenceAlignment,
+    xCompetitorEvidenceAlignment,
   };
 }
 
@@ -1121,6 +1166,7 @@ export async function processScanCandidates(input: { product: ProductRow; profil
     githubRetrievalPrecision: selection.githubRetrievalPrecision,
     githubPainEvidenceAlignment: selection.githubPainEvidenceAlignment,
     githubFeatureEvidenceAlignment: selection.githubFeatureEvidenceAlignment,
+    xCompetitorEvidenceAlignment: selection.xCompetitorEvidenceAlignment,
     diagnostics,
     ...(semanticReasoningShadow ? { semanticReasoningShadow } : {}),
     ...(qualificationRows.length ? {
@@ -1575,6 +1621,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       githubRetrievalPrecision: selection.githubRetrievalPrecision,
       githubPainEvidenceAlignment: selection.githubPainEvidenceAlignment,
       githubFeatureEvidenceAlignment: selection.githubFeatureEvidenceAlignment,
+      xCompetitorEvidenceAlignment: selection.xCompetitorEvidenceAlignment,
       diagnostics: [],
       ...(qualificationRows.length ? { qualification: {
         version: qualificationRows[0].version,
@@ -1671,6 +1718,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       ...(candidateResult.githubRetrievalPrecision ? { githubRetrievalPrecision: candidateResult.githubRetrievalPrecision } : {}),
       ...(candidateResult.githubPainEvidenceAlignment ? { githubPainEvidenceAlignment: candidateResult.githubPainEvidenceAlignment } : {}),
       ...(candidateResult.githubFeatureEvidenceAlignment ? { githubFeatureEvidenceAlignment: candidateResult.githubFeatureEvidenceAlignment } : {}),
+      ...(candidateResult.xCompetitorEvidenceAlignment ? { xCompetitorEvidenceAlignment: candidateResult.xCompetitorEvidenceAlignment } : {}),
       ...(githubPainRetrievalV1.length ? { githubPainRetrievalV1: [...new Map(githubPainRetrievalV1.map((entry) => [entry.semanticQuery, entry])).values()] } : {}),
       ...(finalizedQueryYield.length ? { queryYield: queryYieldDiagnostics } : {}),
       ...(candidateResult.candidateSelection ? { candidateSelection: candidateResult.candidateSelection } : {}),
