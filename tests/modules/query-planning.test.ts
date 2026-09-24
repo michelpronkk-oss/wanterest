@@ -103,7 +103,7 @@ describe("Query Planning v1", () => {
     const first = await buildFixturePlan(index);
     const second = await buildFixturePlan(index);
     expect(second).toEqual(first);
-    expect(first.version).toBe("query_planning_v3");
+    expect(first.version).toBe("query_planning_v4");
     expect(first.source_routing_version).toBe("source_routing_v1");
     expect(first.source_plans.every((source) => source.query_budget <= 3)).toBe(true);
     expect(allQueries(first).every((query) => query.candidate_budget > 0)).toBe(true);
@@ -136,6 +136,17 @@ describe("Query Planning v1", () => {
     expect(nonCompetitorAvailable).toBe(true);
     expect(competitorSpecific.length).toBeLessThanOrEqual(2);
     expect(Object.keys(plan.diagnostics.demand_surface_coverage).sort()).toEqual([...new Set(queries.map((query) => query.demand_surface))].sort());
+  });
+
+  it("anchors job and pain demand in category context and marks known competitors", async () => {
+    const plan = await buildFixturePlan(0, healthySources(), 4);
+    const queries = allQueries(plan);
+    for (const query of queries.filter((item) => item.query_family === "pain" || item.query_family === "jtbd")) {
+      expect(query.concept_keys).toContain("category");
+      expect(query.query_text).not.toMatch(/^need a way to /);
+    }
+    for (const query of queries.filter((item) => item.competitor_refs.length > 0)) expect(query.competitor_specific).toBe(true);
+    expect(new Set(queries.map((query) => query.source_key)).size).toBeGreaterThan(1);
   });
 
   it("gives manual scans deeper, diverse source plans without changing onboarding caps", async () => {
@@ -271,7 +282,7 @@ describe("Query Planning v1", () => {
   it("provides a network-free dry-run", async () => {
     const plan = await buildFixturePlan(0);
     const output = formatQueryPlanDryRun(plan);
-    expect(output).toContain("query_planning_v3");
+    expect(output).toContain("query_planning_v4");
     expect(output).toContain("candidateBudget=");
     expect(output).toContain("reasons=");
     expect(allQueries(plan).every((query) => query.reason_summary.startsWith("Generated from "))).toBe(true);

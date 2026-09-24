@@ -57,6 +57,7 @@ const scanResultSchema = z.object({
   actionsUpdated: z.number().int().nonnegative().optional(),
   routing: z.object({ version: z.string(), coverageStatus: z.string(), coverageConfidence: z.number(), selectedSources: z.array(z.string()), excludedSources: z.array(z.string()) }).optional(),
   queryPlanning: z.object({ version: z.string(), sourceCount: z.number().int().nonnegative(), queryCount: z.number().int().nonnegative(), queryFamilyDistribution: z.record(z.string(), z.number().int().nonnegative()), demandSurfaceCoverage: z.record(z.string(), z.enum(["covered", "uncovered"])), queriesPerSource: z.record(z.string(), z.number().int().nonnegative()), candidateBudgetPerSource: z.record(z.string(), z.number().int().nonnegative()), suppressedDuplicateCount: z.number().int().nonnegative(), lowConfidence: z.boolean(), finalQueries: z.array(z.object({ id: z.string(), source: z.string(), family: z.string(), surface: z.string(), concepts: z.array(z.string()), competitorSpecific: z.boolean() })), runtimeOverrideQueriesPerSource: z.record(z.string(), z.number().int().nonnegative()) }).optional(),
+  candidateSelection: z.object({ version: z.string(), availableCount: z.number().int().nonnegative(), selectedCount: z.number().int().nonnegative(), maxEvaluations: z.number().int().nonnegative(), availableBySource: z.record(z.string(), z.number().int().nonnegative()), selectedBySource: z.record(z.string(), z.number().int().nonnegative()), availableBySurface: z.record(z.string(), z.number().int().nonnegative()), selectedBySurface: z.record(z.string(), z.number().int().nonnegative()), suppressedDuplicateCount: z.number().int().nonnegative(), suppressedLowQualityCount: z.number().int().nonnegative(), suppressedByReason: z.record(z.string(), z.number().int().nonnegative()), selected: z.array(z.object({ conversationId: z.string(), source: z.string(), surface: z.string(), score: z.number(), reason: z.string() })) }).optional(),
   qualification: z.object({ version: z.string(), thresholdVersion: z.string(), candidateCount: z.number().int().nonnegative(), qualifiedCount: z.number().int().nonnegative(), highConfidenceCount: z.number().int().nonnegative(), weakCount: z.number().int().nonnegative(), rejectedCount: z.number().int().nonnegative(), rejectionReasonDistribution: z.record(z.string(), z.number().int().nonnegative()), intentDistribution: z.record(z.string(), z.number().int().nonnegative()), averageDemandQuality: z.number().min(0).max(1), averageConfidence: z.number().min(0).max(1) }).optional(),
   candidateReviews: z.array(scanCandidateReviewSchema).max(100).optional(),
 });
@@ -212,9 +213,60 @@ export type CandidateProcessingResult = {
   /** Positional with evaluationIds; null means the evaluation was not materialized as a signal. */
   signalIds: Array<string | null>;
   candidateReviews: ScanCandidateReview[];
+  candidateSelection?: InitialScanResult["candidateSelection"];
   qualification?: InitialScanResult["qualification"];
   diagnostics: InitialScanResult["diagnostics"];
 };
+
+export function selectScanCandidates(input: { conversations: ConversationRow[]; sourceById: Map<string, SourceItemRow>; max: number; queryPlan?: QueryPlan | null }) {
+  const provenance = new Map<string, Set<string>>();
+  for (const plan of input.queryPlan?.source_plans ?? []) for (const query of plan.queries) {
+    const key = `${query.source_key}:${query.query_text.toLowerCase()}`;
+    provenance.set(key, new Set([...(provenance.get(key) ?? []), query.demand_surface]));
+  }
+  const deduped = new Map<string, { conversation: ConversationRow; source: SourceItemRow; surface: string; score: number }>();
+  for (const conversation of input.conversations) {
+    const source = input.sourceById.get(conversation.primary_source_item_id);
+    if (!source) continue;
+    const text = `${source.title ?? ""} ${source.body ?? conversation.body ?? ""}`.replace(/\s+/g, " ").trim();
+    const fingerprint = text.toLowerCase().slice(0, 400);
+    const metadata = objectValue(source.metadata);
+    const query = typeof metadata.query === "string" ? metadata.query.toLowerCase() : "";
+    const surfaces = provenance.get(`${source.source_key}:${query}`);
+    const surface = surfaces?.size === 1 ? [...surfaces][0] : "unknown";
+    const score = Math.round(Math.min(1, text.length / 280) * 45 + (source.title ? 15 : 0) + (query ? 20 : 0) + (conversation.published_at ? 10 : 0) + 10) / 100;
+    const existing = deduped.get(fingerprint);
+    if (!existing || score > existing.score || (score === existing.score && conversation.id.localeCompare(existing.conversation.id) < 0)) deduped.set(fingerprint, { conversation, source, surface, score });
+  }
+  const ranked = [...deduped.values()].sort((a, b) => b.score - a.score || a.source.source_key.localeCompare(b.source.source_key) || a.conversation.id.localeCompare(b.conversation.id));
+  const selected: typeof ranked = [];
+  const remaining = [...ranked];
+  while (selected.length < Math.max(0, input.max) && remaining.length) {
+    const best = remaining[0];
+    const diverse = remaining.filter((item) => item.score >= best.score * 0.8 && (!selected.some((chosen) => chosen.source.source_key === item.source.source_key) || !selected.some((chosen) => chosen.surface === item.surface)));
+    const next = (diverse.length ? diverse : remaining)[0];
+    selected.push(next);
+    remaining.splice(remaining.indexOf(next), 1);
+  }
+  const count = <T extends string>(values: T[]) => Object.fromEntries([...new Set(values)].sort().map((value) => [value, values.filter((item) => item === value).length]));
+  return {
+    conversations: selected.map((item) => item.conversation),
+    diagnostics: {
+      version: "candidate_selection_v2",
+      availableCount: input.conversations.length,
+      selectedCount: selected.length,
+      maxEvaluations: Math.max(0, input.max),
+      availableBySource: count(ranked.map((item) => item.source.source_key)),
+      selectedBySource: count(selected.map((item) => item.source.source_key)),
+      availableBySurface: count(ranked.map((item) => item.surface)),
+      selectedBySurface: count(selected.map((item) => item.surface)),
+      suppressedDuplicateCount: input.conversations.length - ranked.length,
+      suppressedLowQualityCount: 0,
+      suppressedByReason: { duplicate_content: input.conversations.length - ranked.length, evaluation_cap: Math.max(0, ranked.length - selected.length) },
+      selected: selected.map((item) => ({ conversationId: item.conversation.id, source: item.source.source_key, surface: item.surface, score: item.score, reason: "deterministic_quality_and_diversity" })),
+    },
+  };
+}
 
 export type InitialScanExecutionOptions = {
   traceId?: string;
@@ -512,6 +564,7 @@ export async function processScanCandidates(input: { product: ProductRow; profil
   const client = createSupabaseServiceClient();
   const rows = await loadRows(client, [...new Set(input.normalizedSourceItemIds)], [...new Set(input.conversationIds)]);
   const sourceById = new Map(rows.sourceItems.map((item) => [item.id, item]));
+  const selection = selectScanCandidates({ conversations: rows.conversations, sourceById, max: input.maxLlmEvaluations ?? rows.conversations.length });
   const repository = new SupabaseIntelligenceRepository(client);
   const intelligence = new IntelligenceService(repository);
   const classifier = new FixtureConversationAnalysisEngine();
@@ -521,7 +574,7 @@ export async function processScanCandidates(input: { product: ProductRow; profil
   const rankerVersion = await ensureEngineVersion(client, { engine_type: "ranker", version: "ranking-v1", model: "deterministic", prompt_version: "ranking-v1", config_hash: null, metadata: { workflow: "product-demand-scan", traceId: input.traceId } });
   const diagnostics: InitialScanResult["diagnostics"] = [];
   const analyses: Awaited<ReturnType<IntelligenceService["analyzeConversation"]>>[] = [];
-  for (const conversation of rows.conversations.slice(0, Math.max(0, input.maxLlmEvaluations ?? rows.conversations.length))) {
+  for (const conversation of selection.conversations) {
     const sourceItem = sourceById.get(conversation.primary_source_item_id);
     if (!sourceItem) continue;
     try {
@@ -574,6 +627,7 @@ export async function processScanCandidates(input: { product: ProductRow; profil
     evaluationIds: evaluations.map((evaluation) => evaluation.id),
     signalIds: signalIdsByEvaluation,
     candidateReviews: candidateReviewsFromRows(evaluations, rows.conversations, sourceById),
+    candidateSelection: selection.diagnostics,
     diagnostics,
     ...(qualificationRows.length ? {
       qualification: {
@@ -901,6 +955,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
     } else {
     const rows = await loadRows(client, [...new Set(normalizedSourceItemIds)], [...new Set(conversationIds)]);
     const sourceById = new Map(rows.sourceItems.map((item) => [item.id, item]));
+    const selection = selectScanCandidates({ conversations: rows.conversations, sourceById, max: scanBudget.maxLlmEvaluationsPerScan, queryPlan });
     const intelligence = new IntelligenceService(intelligenceRepository);
     const classifier = new FixtureConversationAnalysisEngine();
     const matcher = new FixtureProductMatchingEngine();
@@ -908,7 +963,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
     const matcherVersion = await ensureEngineVersion(client, { engine_type: "matcher", version: matcher.version, model: "deterministic", prompt_version: matcher.version, config_hash: null, metadata: { workflow: "initial-scan" } });
     const rankerVersion = await ensureEngineVersion(client, { engine_type: "ranker", version: "ranking-v1", model: "deterministic", prompt_version: "ranking-v1", config_hash: null, metadata: { workflow: "initial-scan" } });
     const analyses = [];
-    for (const conversation of rows.conversations.slice(0, scanBudget.maxLlmEvaluationsPerScan)) {
+    for (const conversation of selection.conversations) {
       const sourceItem = sourceById.get(conversation.primary_source_item_id);
       if (!sourceItem) continue;
       try {
@@ -970,6 +1025,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       evaluationIds: evaluations.map((evaluation) => evaluation.id),
       signalIds: signalIdsByEvaluation,
       candidateReviews: candidateReviewsFromRows(evaluations, rows.conversations, sourceById),
+      candidateSelection: selection.diagnostics,
       diagnostics: [],
       ...(qualificationRows.length ? { qualification: {
         version: qualificationRows[0].version,
@@ -1040,6 +1096,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       driftUpdated: demand.driftUpdated,
       actionsUpdated: actions.actionsUpdated,
       candidateReviews: candidateResult.candidateReviews,
+      ...(candidateResult.candidateSelection ? { candidateSelection: candidateResult.candidateSelection } : {}),
       ...(candidateResult.qualification ? { qualification: candidateResult.qualification } : {}),
       ...(routingPlan ? {
         routing: {

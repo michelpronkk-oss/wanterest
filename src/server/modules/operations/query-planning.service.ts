@@ -267,6 +267,16 @@ function competitorNames(profile: DemandProfileV2RoutingModel | null): string[] 
   return [...new Set([...known, ...alternativeProducts].filter(Boolean))];
 }
 
+function competitorReferencesForText(profile: DemandProfileV2RoutingModel | null, text: string): string[] {
+  const normalized = normalizeQuery(text);
+  return topItems(profile?.known_competitors)
+    .filter((competitor) => {
+      const name = normalizeQuery(competitor.name);
+      return name.length > 1 && normalized.includes(name);
+    })
+    .map((competitor) => competitor.key);
+}
+
 function preferredFamilies(profile: DemandProfileV2RoutingModel | null): Set<QueryFamily> {
   const result = new Set<QueryFamily>();
   for (const intent of profile?.buying_intents ?? []) {
@@ -307,12 +317,14 @@ function buildCandidates(context: CandidateContext): Candidate[] {
   }
   for (const term of topItems(profile?.comparison_terms)) {
     if (!allowed("comparison")) continue;
-    add(makeCandidate({ family: "comparison", text: clean(term.term, 90), context, conceptKeys: [term.key], confidence: term.confidence, reasonCodes: ["COMPARISON_INTENT"] }));
+    const text = clean(term.term, 90);
+    const competitorRefs = competitorReferencesForText(profile, text);
+    add(makeCandidate({ family: "comparison", text, context, conceptKeys: [term.key, ...competitorRefs], competitorRefs, confidence: term.confidence, reasonCodes: ["COMPARISON_INTENT"], competitorSpecific: competitorRefs.length > 0 }));
   }
   for (const pain of topPains(profile)) {
     const phrase = clean(pain.label, 80);
-    if (allowed("pain")) add(makeCandidate({ family: "pain", text: phrase, context, conceptKeys: [pain.key], confidence: pain.confidence * pain.specificity, reasonCodes: ["HIGH_CONFIDENCE_PAIN"] }));
-    if (allowed("pain")) add(makeCandidate({ family: "pain", text: `struggling with ${phrase}`, context, conceptKeys: [pain.key], confidence: pain.confidence * 0.95, reasonCodes: ["HIGH_CONFIDENCE_PAIN"] }));
+    if (allowed("pain")) add(makeCandidate({ family: "pain", text: `${category} ${phrase}`, context, conceptKeys: ["category", pain.key], confidence: pain.confidence * pain.specificity, reasonCodes: ["HIGH_CONFIDENCE_PAIN"] }));
+    if (allowed("pain")) add(makeCandidate({ family: "pain", text: `struggling with ${category} ${phrase}`, context, conceptKeys: ["category", pain.key], confidence: pain.confidence * 0.95, reasonCodes: ["HIGH_CONFIDENCE_PAIN"] }));
     if (allowed("pain")) add(makeCandidate({ family: "pain", text: `problem with ${category} ${phrase}`, context, conceptKeys: [pain.key], confidence: pain.confidence * 0.9, reasonCodes: ["HIGH_CONFIDENCE_PAIN"] }));
   }
   for (const trigger of topItems(profile?.switching_triggers)) {
@@ -328,8 +340,8 @@ function buildCandidates(context: CandidateContext): Candidate[] {
   }
   for (const job of topItems(profile?.jobs_to_be_done)) {
     if (!allowed("jtbd")) continue;
-    add(makeCandidate({ family: "jtbd", text: `need a way to ${clean(job.desired_result, 80)}`, context, conceptKeys: [job.key], confidence: job.confidence, reasonCodes: ["JTBD_MATCH"] }));
-    add(makeCandidate({ family: "jtbd", text: `tool to ${clean(job.job, 90)}`, context, conceptKeys: [job.key], confidence: job.confidence * 0.95, reasonCodes: ["JTBD_MATCH"] }));
+    add(makeCandidate({ family: "jtbd", text: `need ${category} to ${clean(job.desired_result, 80)}`, context, conceptKeys: ["category", job.key], confidence: job.confidence, reasonCodes: ["JTBD_MATCH"] }));
+    add(makeCandidate({ family: "jtbd", text: `${category} tool to ${clean(job.job, 90)}`, context, conceptKeys: ["category", job.key], confidence: job.confidence * 0.95, reasonCodes: ["JTBD_MATCH"] }));
   }
   for (const objection of topItems(profile?.objections)) {
     if (!allowed("objection")) continue;
@@ -353,7 +365,8 @@ function buildCandidates(context: CandidateContext): Candidate[] {
             ? `${label} versus ${category}`
             : `${label} alternative`;
     const demandSurface = alternative.alternative_type === "competitor_product" ? "alternative_search" : "substitute_displacement";
-    add(makeCandidate({ family: "alternative_search", text, context, conceptKeys: [alternative.key], alternativeRefs: [alternative.key], confidence: alternative.confidence, reasonCodes: ["ALTERNATIVE_SOLUTION_MATCH"], demandSurface }));
+    const competitorRefs = alternative.alternative_type === "competitor_product" ? competitorReferencesForText(profile, label) : [];
+    add(makeCandidate({ family: "alternative_search", text, context, conceptKeys: [alternative.key, ...competitorRefs], competitorRefs, alternativeRefs: [alternative.key], confidence: alternative.confidence, reasonCodes: ["ALTERNATIVE_SOLUTION_MATCH"], demandSurface, competitorSpecific: alternative.alternative_type === "competitor_product" || competitorRefs.length > 0 }));
   }
   if (allowed("recommendation")) {
     add(makeCandidate({ family: "recommendation", text: `best ${category} for ${audience}`, context, conceptKeys: ["category", "audience"], confidence: familyIntent("recommendation"), reasonCodes: ["RECOMMENDATION_INTENT"] }));
@@ -507,7 +520,8 @@ function applyGlobalQueryCap(sourcePlans: QueryPlanSource[], maxQueries: number 
     const fallback = ranked.filter((item) => !(competitorSurfaceCount >= 2 && hasNonCompetitorCandidate && !isNonCompetitorSurface(item.query)));
     const pool = eligible.length ? eligible : fallback;
     if (!pool.length) break;
-    const next = pool[0];
+    const sourceDiverse = pool.filter((item) => !selected.some((chosen) => chosen.sourceKey === item.sourceKey) && item.query.priority !== "low" && item.query.priority !== "off");
+    const next = (sourceDiverse.length ? sourceDiverse : pool)[0];
     selected.push(next);
     ranked.splice(ranked.indexOf(next), 1);
   }
