@@ -9,3 +9,5 @@ export * from "./read-models";
 export * from "./source-routing.index";
 export * from "./query-planning.index";
 export * from "./product-demand-scan.schemas";
+export * from "./source-health";
+export * from "./source-health-aggregation";

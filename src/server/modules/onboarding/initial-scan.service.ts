@@ -39,6 +39,7 @@ import { alignXCompetitorPainEvidence, emptyXCompetitorEvidenceAlignmentDiagnost
 import type { QueryYieldExecutionStatus, QueryYieldStopReason, QueryYieldTelemetry } from "@/server/modules/operations/query-yield-telemetry";
 import { aggregateQueryYield, boundedCursorContinuationCount, finalizeQueryYieldTelemetry, reconcileQueryYieldTelemetry, sourceHealthStatus } from "@/server/modules/operations/query-yield-telemetry";
 import { QueryYieldRepository } from "@/server/modules/operations/query-yield.repository";
+import { aggregateSourceHealthV1, sourceHealthV1Schema, type SourceHealthPlannedQuery, type SourceHealthPlannedSource, type SourceHealthQueryArtifact } from "@/server/modules/operations/source-health-aggregation";
 import { sourceDiscoveryRequestSchema, type SourceDiscoveryRequest } from "@/server/providers/source/contracts";
 import { prepareStackExchangeFeatureRequest } from "@/server/providers/source/stack-exchange";
 import { g2MappingsFromSourceFilters, g2SourceFiltersWithMappings, type G2ProductMapping, type G2ProductResolutionTarget } from "@/server/providers/source/g2/product-resolution";
@@ -79,6 +80,7 @@ const scanResultSchema = z.object({
   qualification: z.object({ version: z.string(), thresholdVersion: z.string(), candidateCount: z.number().int().nonnegative(), qualifiedCount: z.number().int().nonnegative(), highConfidenceCount: z.number().int().nonnegative(), weakCount: z.number().int().nonnegative(), rejectedCount: z.number().int().nonnegative(), rejectionReasonDistribution: z.record(z.string(), z.number().int().nonnegative()), intentDistribution: z.record(z.string(), z.number().int().nonnegative()), averageDemandQuality: z.number().min(0).max(1), averageConfidence: z.number().min(0).max(1) }).optional(),
   semanticReasoningShadow: z.object({ routerVersion: z.string(), promptSchemaVersion: z.string(), enabled: z.boolean(), maxNewProviderCallsPerScan: z.number().int().nonnegative(), deterministicOnlyCount: z.number().int().nonnegative(), rejectWithoutLlmCount: z.number().int().nonnegative(), llmRequestedCount: z.number().int().nonnegative(), cacheHitCount: z.number().int().nonnegative(), scheduledForLlmCount: z.number().int().nonnegative(), budgetSkippedCount: z.number().int().nonnegative(), llmExecutedCount: z.number().int().nonnegative(), providerSuccessCount: z.number().int().nonnegative(), providerFailureCount: z.number().int().nonnegative(), schemaFailureCount: z.number().int().nonnegative(), evidenceFailureCount: z.number().int().nonnegative(), conflictBlockCount: z.number().int().nonnegative(), inputTokens: z.number().int().nonnegative(), outputTokens: z.number().int().nonnegative(), reasoningLatencyMs: z.number().int().nonnegative(), reasoningCostUsd: z.number().nonnegative().nullable(), shadowComparisonCount: z.number().int().nonnegative(), noChangeCount: z.number().int().nonnegative(), wouldStrengthenCount: z.number().int().nonnegative(), wouldWeakenCount: z.number().int().nonnegative(), wouldBecomeQualifiedCount: z.number().int().nonnegative(), wouldBecomeUnqualifiedCount: z.number().int().nonnegative(), directionChangeCount: z.number().int().nonnegative(), targetChangeCount: z.number().int().nonnegative(), actualQualifiedCountAmongCompared: z.number().int().nonnegative(), shadowQualifiedCountAmongCompared: z.number().int().nonnegative() }).optional(),
   queryYield: z.unknown().optional(),
+  sourceHealthV1: sourceHealthV1Schema.optional(),
   githubRetrievalPrecision: z.object({
     inspectedCount: z.number().int().nonnegative(),
     eligibleCount: z.number().int().nonnegative(),
@@ -1749,6 +1751,45 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       sourceResults.map((source) => ({ source: source.sourceKey, status: source.status, queryCount: source.queryCount, errorCode: source.errorCode })),
     );
     const finalizedQueryYield = finalizeQueryYieldTelemetry(queryYieldReconciliation.rows, uniqueProvenance(scanProvenance).map((entry) => ({ conversationId: entry.conversationId, queryPlanId: entry.queryPlanId })), candidateOutcomesByConversation);
+    const plannedQueryPriority = new Map((queryPlan?.source_plans ?? []).flatMap((source) => source.queries.map((query) => [query.query_id, query.priority] as const)));
+    const plannedHealthQueries: SourceHealthPlannedQuery[] = queryYieldReconciliation.rows.map((row) => ({
+      queryPlanId: row.queryPlanId,
+      sourceKey: row.source,
+      priority: plannedQueryPriority.get(row.queryPlanId) ?? routeBySource.get(row.source)?.priority ?? "medium",
+    }));
+    const plannedHealthSources = new Map<string, SourceHealthPlannedSource>();
+    for (const source of sourceResults.filter((item) => item.planned)) {
+      const sourceState = sourceStates.find((item) => item.sourceKey === source.sourceKey);
+      const route = routeBySource.get(source.sourceKey);
+      const plannedQueries = plannedHealthQueries.filter((query) => query.sourceKey === source.sourceKey).length;
+      const configurationMissing = sourceState?.configured === false || source.errorCode === "CONFIGURATION_MISSING";
+      const explicitlyDisabled = sourceState?.controlState === "disabled" || sourceState?.controlState === "paused";
+      const fallbackExecutionStatus: SourceHealthPlannedSource["executionStatus"] = source.status === "failed"
+        ? "failed"
+        : source.status === "skipped"
+          ? configurationMissing ? "unavailable" : explicitlyDisabled ? "disabled" : "execution_suppressed"
+          : source.queryCount < plannedQueries ? "budget_limited" : "execution_suppressed";
+      plannedHealthSources.set(source.sourceKey, {
+        sourceKey: source.sourceKey,
+        priority: route?.priority ?? plannedQueryPriority.get(plannedHealthQueries.find((query) => query.sourceKey === source.sourceKey)?.queryPlanId ?? "") ?? "medium",
+        plannedQueries,
+        executionStatus: fallbackExecutionStatus,
+        normalizedItems: source.normalizedItems,
+        providerCode: source.errorCode,
+        configState: configurationMissing ? "missing" : explicitlyDisabled ? "disabled" : "configured",
+        controlState: configurationMissing ? "misconfigured" : explicitlyDisabled ? "disabled" : "enabled",
+        configurationState: configurationMissing ? "missing" : "configured",
+        degradedReason: source.errorCode ? `provider_code:${source.errorCode}` : source.status === "completed" ? null : source.status,
+      });
+    }
+    for (const query of plannedHealthQueries) {
+      if (!plannedHealthSources.has(query.sourceKey)) plannedHealthSources.set(query.sourceKey, { sourceKey: query.sourceKey, priority: query.priority, plannedQueries: plannedHealthQueries.filter((item) => item.sourceKey === query.sourceKey).length });
+    }
+    const sourceHealthV1 = aggregateSourceHealthV1({
+      plannedSources: [...plannedHealthSources.values()],
+      plannedQueries: plannedHealthQueries,
+      executions: queryYieldReconciliation.rows.map((row): SourceHealthQueryArtifact => ({ queryPlanId: row.queryPlanId, sourceKey: row.source, executionStatus: row.executionStatus, normalizedItems: row.normalizedItems })),
+    });
     const queryYieldDiagnostics = {
       version: "query_yield_v1",
       plannedQueryCount: queryYieldReconciliation.plannedQueryCount,
@@ -1825,6 +1866,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       ...(candidateResult.xCompetitorEvidenceAlignment ? { xCompetitorEvidenceAlignment: candidateResult.xCompetitorEvidenceAlignment } : {}),
       ...(githubPainRetrievalV1.length ? { githubPainRetrievalV1: [...new Map(githubPainRetrievalV1.map((entry) => [entry.semanticQuery, entry])).values()] } : {}),
       ...(finalizedQueryYield.length ? { queryYield: queryYieldDiagnostics } : {}),
+      sourceHealthV1,
       ...(candidateResult.candidateSelection ? { candidateSelection: candidateResult.candidateSelection } : {}),
       ...(candidateResult.qualification ? { qualification: candidateResult.qualification } : {}),
       ...(candidateResult.semanticReasoningShadow ? { semanticReasoningShadow: candidateResult.semanticReasoningShadow } : {}),
