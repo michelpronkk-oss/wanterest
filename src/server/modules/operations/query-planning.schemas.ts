@@ -6,7 +6,7 @@ import type { BusinessClassification } from "../intelligence/business-classifica
 import type { JsonObject } from "../../db/database.helpers";
 import type { SourceRoutingCostClass, SourceRoutingPlan, SourceRoutingPriority, SourceRoutingScanMode } from "./source-routing.schemas";
 
-export const queryPlanningVersion = "query_planning_v2" as const;
+export const queryPlanningVersion = "query_planning_v3" as const;
 
 export const demandSurfaceSchema = z.enum(["direct_product", "competitor_pain", "alternative_search", "category_demand", "job_demand", "pain_first", "feature_demand", "switching", "substitute_displacement", "commercial_pain"]);
 export type DemandSurface = z.infer<typeof demandSurfaceSchema>;
@@ -55,6 +55,7 @@ export type QueryPlanQuery = {
   query_id: string;
   query_family: QueryFamily;
   demand_surface: DemandSurface;
+  competitor_specific: boolean;
   intent_type: BuyingIntentType;
   query_text: string;
   normalized_query: string;

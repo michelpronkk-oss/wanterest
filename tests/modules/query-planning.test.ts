@@ -42,7 +42,7 @@ const cases = [
   ["developer tool", "developer tool"],
 ] as const;
 
-async function buildFixturePlan(index: number, sourceStates = healthySources()): Promise<QueryPlan> {
+async function buildFixturePlan(index: number, sourceStates = healthySources(), maxQueries?: number): Promise<QueryPlan> {
   const [classificationName, profileName] = cases[index];
   const classificationFixture = businessClassificationFixtures.find((fixture) => fixture.name === classificationName);
   const profileFixture = demandProfileV2Fixtures.find((fixture) => fixture.name === profileName);
@@ -62,7 +62,7 @@ async function buildFixturePlan(index: number, sourceStates = healthySources()):
     totalCandidateBudget: 15,
     maxSources: 3,
   });
-  return buildQueryPlan({ classification, demandProfile: readDemandProfileV2RoutingModel(profile), sourceRoutingPlan: routing, scanMode: "onboarding" });
+  return buildQueryPlan({ classification, demandProfile: readDemandProfileV2RoutingModel(profile), sourceRoutingPlan: routing, scanMode: "onboarding", maxQueries });
 }
 
 async function buildManualFixturePlan(index: number, sourceStates = healthySources()): Promise<QueryPlan> {
@@ -103,7 +103,7 @@ describe("Query Planning v1", () => {
     const first = await buildFixturePlan(index);
     const second = await buildFixturePlan(index);
     expect(second).toEqual(first);
-    expect(first.version).toBe("query_planning_v2");
+    expect(first.version).toBe("query_planning_v3");
     expect(first.source_routing_version).toBe("source_routing_v1");
     expect(first.source_plans.every((source) => source.query_budget <= 3)).toBe(true);
     expect(allQueries(first).every((query) => query.candidate_budget > 0)).toBe(true);
@@ -121,6 +121,21 @@ describe("Query Planning v1", () => {
       expect(x.query_budget).toBeLessThanOrEqual(3);
       expect(x.queries.reduce((sum, query) => sum + query.candidate_budget, 0)).toBeLessThanOrEqual(10);
     }
+  });
+
+  it("preserves demand-surface diversity through the four-query global cap", async () => {
+    const plan = await buildFixturePlan(0, healthySources(), 4);
+    const queries = allQueries(plan);
+    const competitorSurfaces = new Set(["switching", "alternative_search", "competitor_pain"]);
+    const competitorSpecific = queries.filter((query) => competitorSurfaces.has(query.demand_surface));
+    const nonCompetitorAvailable = queries.some((query) => !competitorSurfaces.has(query.demand_surface));
+
+    expect(queries.length).toBeGreaterThanOrEqual(3);
+    expect(queries.length).toBeLessThanOrEqual(4);
+    expect(new Set(queries.map((query) => query.demand_surface)).size).toBeGreaterThan(1);
+    expect(nonCompetitorAvailable).toBe(true);
+    expect(competitorSpecific.length).toBeLessThanOrEqual(2);
+    expect(Object.keys(plan.diagnostics.demand_surface_coverage).sort()).toEqual([...new Set(queries.map((query) => query.demand_surface))].sort());
   });
 
   it("gives manual scans deeper, diverse source plans without changing onboarding caps", async () => {
@@ -209,6 +224,11 @@ describe("Query Planning v1", () => {
       expect(request.requestMetadata.excludeRetweets).toBe(true);
       expect(request.requestMetadata.maxResults).toBe(xQuery.candidate_budget);
       expect(request.requestMetadata.maxBillablePostsPerDiscovery).toBeGreaterThanOrEqual(10);
+      expect(request.requestMetadata).toMatchObject({
+        demandSurface: xQuery.demand_surface,
+        competitorSpecific: xQuery.competitor_specific,
+        discoveryIntent: xQuery.metadata.discovery_intent,
+      });
     }
     const hn = plan.source_plans.find((source) => source.source_key === "hacker-news");
     if (hn?.queries[0]) {
@@ -224,6 +244,7 @@ describe("Query Planning v1", () => {
       query_id: "qp-test",
       query_family: "comparison",
       demand_surface: "competitor_pain",
+      competitor_specific: false,
       intent_type: "comparison_intent",
       query_text: "Jira alternative",
       normalized_query: "jira alternative",
@@ -250,7 +271,7 @@ describe("Query Planning v1", () => {
   it("provides a network-free dry-run", async () => {
     const plan = await buildFixturePlan(0);
     const output = formatQueryPlanDryRun(plan);
-    expect(output).toContain("query_planning_v2");
+    expect(output).toContain("query_planning_v3");
     expect(output).toContain("candidateBudget=");
     expect(output).toContain("reasons=");
     expect(allQueries(plan).every((query) => query.reason_summary.startsWith("Generated from "))).toBe(true);

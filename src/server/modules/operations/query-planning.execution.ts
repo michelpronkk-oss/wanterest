@@ -21,6 +21,9 @@ export function toSourceDiscoveryRequest(input: SourceQueryExecutionInput): Sour
     queryPlanId: query.query_id,
     semanticQuery: query.query_text,
     queryFamily: query.query_family,
+    demandSurface: query.demand_surface,
+    competitorSpecific: query.competitor_specific,
+    discoveryIntent: query.metadata.discovery_intent ?? null,
     queryIntent: query.intent_type,
   };
 

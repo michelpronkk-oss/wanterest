@@ -14,7 +14,7 @@ import {
   type QueryPlanningInput,
 } from "./query-planning.schemas";
 
-type Candidate = Omit<QueryPlanQuery, "query_id" | "normalized_query" | "candidate_budget" | "priority" | "metadata" | "reason_summary"> & {
+type Candidate = Omit<QueryPlanQuery, "query_id" | "normalized_query" | "candidate_budget" | "priority" | "metadata" | "reason_summary" | "competitor_specific"> & {
   score: number;
   conceptConfidence: number;
   competitorSpecific: boolean;
@@ -32,6 +32,11 @@ type CandidateContext = {
 };
 
 const familyOrder: QueryFamily[] = ["switching", "alternative_search", "comparison", "recommendation", "feature_requirement", "pain", "jtbd", "objection", "desired_outcome", "category_discovery"];
+const competitorOrientedSurfaces = new Set<QueryPlanQuery["demand_surface"]>(["switching", "alternative_search", "competitor_pain"]);
+
+function isNonCompetitorSurface(candidate: Pick<QueryPlanQuery, "demand_surface">): boolean {
+  return !competitorOrientedSurfaces.has(candidate.demand_surface);
+}
 const surfaceForFamily: Record<QueryFamily, QueryPlanQuery["demand_surface"]> = {
   switching: "switching",
   alternative_search: "alternative_search",
@@ -214,6 +219,7 @@ function makeCandidate(input: {
   confidence: number;
   reasonCodes: QueryPlanReasonCode[];
   competitorSpecific?: boolean;
+  demandSurface?: QueryPlanQuery["demand_surface"];
 }): Candidate {
   const text = addGeo(clean(input.text), input.context);
   const profile = input.context.profile;
@@ -226,7 +232,7 @@ function makeCandidate(input: {
   if (input.context.lowConfidence) codes.push("LOW_PROFILE_CONFIDENCE");
   return {
     query_family: input.family,
-    demand_surface: surfaceForFamily[input.family],
+    demand_surface: input.demandSurface ?? surfaceForFamily[input.family],
     intent_type: intentForFamily[input.family],
     query_text: text,
     source_key: input.context.route.source_key,
@@ -346,7 +352,8 @@ function buildCandidates(context: CandidateContext): Candidate[] {
           : alternative.alternative_type === "generic_tool"
             ? `${label} versus ${category}`
             : `${label} alternative`;
-    add(makeCandidate({ family: "alternative_search", text, context, conceptKeys: [alternative.key], alternativeRefs: [alternative.key], confidence: alternative.confidence, reasonCodes: ["ALTERNATIVE_SOLUTION_MATCH"] }));
+    const demandSurface = alternative.alternative_type === "competitor_product" ? "alternative_search" : "substitute_displacement";
+    add(makeCandidate({ family: "alternative_search", text, context, conceptKeys: [alternative.key], alternativeRefs: [alternative.key], confidence: alternative.confidence, reasonCodes: ["ALTERNATIVE_SOLUTION_MATCH"], demandSurface }));
   }
   if (allowed("recommendation")) {
     add(makeCandidate({ family: "recommendation", text: `best ${category} for ${audience}`, context, conceptKeys: ["category", "audience"], confidence: familyIntent("recommendation"), reasonCodes: ["RECOMMENDATION_INTENT"] }));
@@ -380,13 +387,13 @@ function selectDiverse(candidates: Candidate[], maxQueries: number): { selected:
   }
   const selected: Candidate[] = [];
   const remaining = [...unique];
+  const hasNonCompetitorCandidate = remaining.some(isNonCompetitorSurface);
   while (selected.length < maxQueries && remaining.length) {
-    const competitorSpecificCount = selected.filter((item) => item.competitorSpecific).length;
-    const nonCompetitorAvailable = remaining.some((item) => !item.competitorSpecific);
-    const eligible = remaining.filter((item) => !(competitorSpecificCount >= 2 && nonCompetitorAvailable && item.competitorSpecific));
-    const pool = eligible.length ? eligible : remaining;
-    const family = familyOrder.find((value) => pool.some((candidate) => candidate.query_family === value && !selected.some((item) => item.query_family === value)));
-    const next = family ? pool.find((candidate) => candidate.query_family === family)! : pool[0];
+    const competitorSurfaceCount = selected.filter((item) => !isNonCompetitorSurface(item)).length;
+    const eligible = remaining.filter((item) => !(competitorSurfaceCount >= 2 && hasNonCompetitorCandidate && !isNonCompetitorSurface(item)));
+    if (!eligible.length) break;
+    const unseenSurface = eligible.filter((item) => !selected.some((chosen) => chosen.demand_surface === item.demand_surface));
+    const next = (unseenSurface.length ? unseenSurface : eligible)[0];
     const index = remaining.indexOf(next);
     selected.push(remaining.splice(Math.max(0, index), 1)[0]);
   }
@@ -425,6 +432,7 @@ function buildSourcePlan(input: QueryPlanningInput, route: SourceRoutingRoute): 
       query_id: `qp-${route.source_key}-${slug(candidate.query_family)}-${slug(normalized)}`,
       query_family: candidate.query_family,
       demand_surface: candidate.demand_surface,
+      competitor_specific: candidate.competitorSpecific,
       intent_type: candidate.intent_type,
       query_text: candidate.query_text,
       normalized_query: normalized,
@@ -486,10 +494,23 @@ function buildSourcePlan(input: QueryPlanningInput, route: SourceRoutingRoute): 
 
 function applyGlobalQueryCap(sourcePlans: QueryPlanSource[], maxQueries: number | undefined): QueryPlanSource[] {
   if (maxQueries === undefined) return sourcePlans;
-  const selected = sourcePlans
+  const ranked = sourcePlans
     .flatMap((source) => source.queries.map((query) => ({ sourceKey: source.source_key, query })))
-    .sort((a, b) => b.query.confidence - a.query.confidence || a.sourceKey.localeCompare(b.sourceKey) || a.query.query_id.localeCompare(b.query.query_id))
-    .slice(0, Math.max(0, Math.floor(maxQueries)));
+    .sort((a, b) => b.query.confidence - a.query.confidence || a.sourceKey.localeCompare(b.sourceKey) || a.query.query_id.localeCompare(b.query.query_id));
+  const selected: typeof ranked = [];
+  const cap = Math.max(0, Math.floor(maxQueries));
+  const hasNonCompetitorCandidate = ranked.some((item) => isNonCompetitorSurface(item.query));
+  while (selected.length < cap && ranked.length) {
+    const competitorSurfaceCount = selected.filter((item) => !isNonCompetitorSurface(item.query)).length;
+    const unusedSurface = ranked.filter((item) => !selected.some((chosen) => chosen.query.demand_surface === item.query.demand_surface));
+    const eligible = unusedSurface.filter((item) => !(competitorSurfaceCount >= 2 && hasNonCompetitorCandidate && !isNonCompetitorSurface(item.query)));
+    const fallback = ranked.filter((item) => !(competitorSurfaceCount >= 2 && hasNonCompetitorCandidate && !isNonCompetitorSurface(item.query)));
+    const pool = eligible.length ? eligible : fallback;
+    if (!pool.length) break;
+    const next = pool[0];
+    selected.push(next);
+    ranked.splice(ranked.indexOf(next), 1);
+  }
   const selectedIds = new Set(selected.map((item) => item.query.query_id));
   return sourcePlans.map((source) => {
     const queries = source.queries.filter((query) => selectedIds.has(query.query_id));

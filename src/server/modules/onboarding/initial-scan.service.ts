@@ -56,7 +56,7 @@ const scanResultSchema = z.object({
   driftUpdated: z.number().int().nonnegative().optional(),
   actionsUpdated: z.number().int().nonnegative().optional(),
   routing: z.object({ version: z.string(), coverageStatus: z.string(), coverageConfidence: z.number(), selectedSources: z.array(z.string()), excludedSources: z.array(z.string()) }).optional(),
-  queryPlanning: z.object({ version: z.string(), sourceCount: z.number().int().nonnegative(), queryCount: z.number().int().nonnegative(), queryFamilyDistribution: z.record(z.string(), z.number().int().nonnegative()), queriesPerSource: z.record(z.string(), z.number().int().nonnegative()), candidateBudgetPerSource: z.record(z.string(), z.number().int().nonnegative()), suppressedDuplicateCount: z.number().int().nonnegative(), lowConfidence: z.boolean() }).optional(),
+  queryPlanning: z.object({ version: z.string(), sourceCount: z.number().int().nonnegative(), queryCount: z.number().int().nonnegative(), queryFamilyDistribution: z.record(z.string(), z.number().int().nonnegative()), demandSurfaceCoverage: z.record(z.string(), z.enum(["covered", "uncovered"])), queriesPerSource: z.record(z.string(), z.number().int().nonnegative()), candidateBudgetPerSource: z.record(z.string(), z.number().int().nonnegative()), suppressedDuplicateCount: z.number().int().nonnegative(), lowConfidence: z.boolean(), finalQueries: z.array(z.object({ id: z.string(), source: z.string(), family: z.string(), surface: z.string(), concepts: z.array(z.string()), competitorSpecific: z.boolean() })), runtimeOverrideQueriesPerSource: z.record(z.string(), z.number().int().nonnegative()) }).optional(),
   qualification: z.object({ version: z.string(), thresholdVersion: z.string(), candidateCount: z.number().int().nonnegative(), qualifiedCount: z.number().int().nonnegative(), highConfidenceCount: z.number().int().nonnegative(), weakCount: z.number().int().nonnegative(), rejectedCount: z.number().int().nonnegative(), rejectionReasonDistribution: z.record(z.string(), z.number().int().nonnegative()), intentDistribution: z.record(z.string(), z.number().int().nonnegative()), averageDemandQuality: z.number().min(0).max(1), averageConfidence: z.number().min(0).max(1) }).optional(),
   candidateReviews: z.array(scanCandidateReviewSchema).max(100).optional(),
 });
@@ -1056,10 +1056,13 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
           sourceCount: queryPlan.diagnostics.source_count,
           queryCount: queryPlan.diagnostics.query_count,
           queryFamilyDistribution: queryPlan.diagnostics.query_family_distribution,
+          demandSurfaceCoverage: queryPlan.diagnostics.demand_surface_coverage,
           queriesPerSource: queryPlan.diagnostics.queries_per_source,
           candidateBudgetPerSource: queryPlan.diagnostics.candidate_budget_per_source,
           suppressedDuplicateCount: queryPlan.diagnostics.suppressed_duplicate_count,
           lowConfidence: queryPlan.diagnostics.low_confidence,
+          finalQueries: queryPlan.source_plans.flatMap((source) => source.queries.map((query) => ({ id: query.query_id, source: query.source_key, family: query.query_family, surface: query.demand_surface, concepts: query.concept_keys, competitorSpecific: query.competitor_specific }))),
+          runtimeOverrideQueriesPerSource: Object.fromEntries(sourceResults.filter((source) => (queryPlan.diagnostics.queries_per_source[source.sourceKey] ?? 0) === 0 && source.queryCount > 0).map((source) => [source.sourceKey, source.queryCount])),
         },
       } : {}),
     };
