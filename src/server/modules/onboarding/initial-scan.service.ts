@@ -109,6 +109,12 @@ const scanResultSchema = z.object({
     mismatchCount: z.number().int().nonnegative(),
     provenanceMissingCount: z.number().int().nonnegative(),
     provenanceMissingReason: z.literal("missing_compiler_provenance").optional(),
+    bindingMatched: z.boolean().default(false),
+    boundMatches: z.array(z.object({
+      anchor: z.string().trim().min(1).max(80),
+      competitor: z.string().trim().min(1).max(120),
+      matchedText: z.string().trim().min(1).max(180),
+    })).max(100).default([]),
     mismatches: z.array(z.object({
       conversationId: z.string().uuid(),
       queryPlanId: z.string().trim().min(1).max(180),
@@ -116,6 +122,7 @@ const scanResultSchema = z.object({
       displacementMatches: z.array(z.string().trim().min(1).max(80)).max(12),
       competitorMatched: z.boolean(),
       reason: z.literal("x_competitor_evidence_mismatch"),
+      subreason: z.literal("competitor_displacement_not_bound").default("competitor_displacement_not_bound"),
     })).max(100),
   }).optional(),
   githubFeatureEvidenceAlignment: z.object({
@@ -537,6 +544,8 @@ export function selectScanCandidates(input: { conversations: ConversationRow[]; 
       xCompetitorEvidenceAlignment.inspectedCount += 1;
       if (xAlignment.aligned) {
         xCompetitorEvidenceAlignment.alignedCount += 1;
+        xCompetitorEvidenceAlignment.bindingMatched = xCompetitorEvidenceAlignment.bindingMatched || xAlignment.bindingMatched;
+        xCompetitorEvidenceAlignment.boundMatches.push(...xAlignment.boundMatches.slice(0, 100 - xCompetitorEvidenceAlignment.boundMatches.length));
       } else if (xAlignment.provenanceMissing) {
         xCompetitorEvidenceAlignment.provenanceMissingCount += 1;
         xCompetitorEvidenceAlignment.provenanceMissingReason = xCompetitorMissingCompilerProvenanceReason;

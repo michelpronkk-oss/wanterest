@@ -53,12 +53,14 @@ describe("X competitor_pain retained-evidence alignment", () => {
     "We need to replace Jira",
     "We're replacing Jira because workflow setup is too complex",
     "Leaving Jira for something simpler",
+    "Need to replace the Jira workflow",
   ])("keeps a candidate with displacement and competitor evidence: %s", (body) => {
     const id = `aligned-${body.slice(0, 12).replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
     const item = candidate(id, body, xCompetitorProvenance(id));
     const result = select([item]);
     expect(result.conversations.map((row) => row.id)).toEqual([id]);
-    expect(result.xCompetitorEvidenceAlignment).toMatchObject({ inspectedCount: 1, alignedCount: 1, mismatchCount: 0, provenanceMissingCount: 0 });
+    expect(result.xCompetitorEvidenceAlignment).toMatchObject({ inspectedCount: 1, alignedCount: 1, mismatchCount: 0, provenanceMissingCount: 0, bindingMatched: true });
+    expect(result.xCompetitorEvidenceAlignment.boundMatches[0]).toMatchObject({ competitor: "jira" });
   });
 
   it.each([
@@ -70,8 +72,8 @@ describe("X competitor_pain retained-evidence alignment", () => {
     const item = candidate(id, body, xCompetitorProvenance(id));
     const result = select([item]);
     expect(result.conversations).toHaveLength(0);
-    expect(result.xCompetitorEvidenceAlignment).toMatchObject({ inspectedCount: 1, alignedCount: 0, mismatchCount: 1, provenanceMissingCount: 0 });
-    expect(result.xCompetitorEvidenceAlignment.mismatches[0]).toMatchObject({ reason: "x_competitor_evidence_mismatch", competitor: "Jira" });
+    expect(result.xCompetitorEvidenceAlignment).toMatchObject({ inspectedCount: 1, alignedCount: 0, mismatchCount: 1, provenanceMissingCount: 0, bindingMatched: false, boundMatches: [] });
+    expect(result.xCompetitorEvidenceAlignment.mismatches[0]).toMatchObject({ reason: "x_competitor_evidence_mismatch", subreason: "competitor_displacement_not_bound", competitor: "Jira" });
     expect(result.diagnostics.suppressedByReason.x_competitor_evidence_mismatch).toBe(1);
   });
 
@@ -80,6 +82,33 @@ describe("X competitor_pain retained-evidence alignment", () => {
     const result = select([item]);
     expect(result.conversations).toHaveLength(1);
     expect(result.xCompetitorEvidenceAlignment).toMatchObject({ inspectedCount: 1, alignedCount: 1, mismatchCount: 0 });
+  });
+
+  it("tolerates punctuation around a bound displacement phrase", () => {
+    const item = candidate("punctuation", "We're switching-from: JIRA", xCompetitorProvenance("punctuation"));
+    expect(select([item]).conversations).toHaveLength(1);
+  });
+
+  it.each([
+    "I don't think AI is going to replace software engineers. We move information between Jira, Slack and GitHub.",
+    "We need to replace our internal process. Jira is one of several tools we use.",
+    "Jira is widely used. We're switching from another product.",
+    "replace software engineers — Jira is mentioned later",
+    "Leaving this here: Jira vs Linear",
+    "We're replacing software engineers. Jira is mentioned in another sentence.",
+  ])("rejects unrelated competitor co-presence: %s", (body) => {
+    const id = `unbound-${body.slice(0, 12).replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
+    const result = select([candidate(id, body, xCompetitorProvenance(id))]);
+    expect(result.conversations).toHaveLength(0);
+    expect(result.xCompetitorEvidenceAlignment).toMatchObject({ bindingMatched: false, boundMatches: [], mismatchCount: 1 });
+    expect(result.xCompetitorEvidenceAlignment.mismatches[0].subreason).toBe("competitor_displacement_not_bound");
+  });
+
+  it("does not hardcode Jira or require Linear", () => {
+    const id = "arbitrary-competitor";
+    const result = select([candidate(id, "We're switching from Asana", xCompetitorProvenance(id, { xCompetitorPainRetrievalV1: { ...compilerProvenance, competitor: "Asana" } }))]);
+    expect(result.conversations).toHaveLength(1);
+    expect(result.xCompetitorEvidenceAlignment.boundMatches[0]).toMatchObject({ competitor: "asana" });
   });
 
   it("does not require a Linear literal", () => {
@@ -107,7 +136,7 @@ describe("X competitor_pain retained-evidence alignment", () => {
     const nonX = candidate("non-x", "A generic project update", xCompetitorProvenance("non-x", { source: "stack-exchange" }), "stack-exchange");
     const result = select([pain, feature, nonX]);
     expect(result.conversations.map((row) => row.id).sort()).toEqual(["feature", "non-x", "pain"]);
-    expect(result.xCompetitorEvidenceAlignment).toEqual({ inspectedCount: 0, alignedCount: 0, mismatchCount: 0, provenanceMissingCount: 0, mismatches: [] });
+    expect(result.xCompetitorEvidenceAlignment).toEqual({ inspectedCount: 0, alignedCount: 0, mismatchCount: 0, provenanceMissingCount: 0, bindingMatched: false, boundMatches: [], mismatches: [] });
   });
 
   it("suppresses the mismatch before candidate selection and frees evaluation capacity", () => {
@@ -127,7 +156,7 @@ describe("X competitor_pain retained-evidence alignment", () => {
     const result = select([aligned, mismatch, missing]);
     const diagnostics = result.xCompetitorEvidenceAlignment;
     expect(diagnostics.inspectedCount).toBe(diagnostics.alignedCount + diagnostics.mismatchCount + diagnostics.provenanceMissingCount);
-    expect(diagnostics).toMatchObject({ inspectedCount: 3, alignedCount: 1, mismatchCount: 1, provenanceMissingCount: 1, provenanceMissingReason: "missing_compiler_provenance" });
+    expect(diagnostics).toMatchObject({ inspectedCount: 3, alignedCount: 1, mismatchCount: 1, provenanceMissingCount: 1, provenanceMissingReason: "missing_compiler_provenance", bindingMatched: true });
     expect(result.conversations.map((row) => row.id)).toEqual(["diag-aligned", "diag-missing"]);
   });
 
@@ -135,7 +164,7 @@ describe("X competitor_pain retained-evidence alignment", () => {
     const item = candidate("missing-provenance", "Grok is unrelated", xCompetitorProvenance("missing-provenance", { xCompetitorPainRetrievalV1: undefined }));
     const result = select([item]);
     expect(result.conversations).toHaveLength(1);
-    expect(result.xCompetitorEvidenceAlignment).toMatchObject({ inspectedCount: 1, alignedCount: 0, mismatchCount: 0, provenanceMissingCount: 1, provenanceMissingReason: "missing_compiler_provenance", mismatches: [] });
+    expect(result.xCompetitorEvidenceAlignment).toMatchObject({ inspectedCount: 1, alignedCount: 0, mismatchCount: 0, provenanceMissingCount: 1, provenanceMissingReason: "missing_compiler_provenance", bindingMatched: false, boundMatches: [], mismatches: [] });
   });
 
   it("preserves compiler provenance at the replay seam", () => {
