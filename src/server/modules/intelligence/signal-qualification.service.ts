@@ -18,6 +18,7 @@ import {
   type SignalQualificationPrimaryIntent,
   type SignalQualificationReasonCode,
   type SignalQualificationStatus,
+  type ConversationMarketReasoning,
 } from "./signal-qualification.schemas";
 import type { Json, ConversationRow, ConversationAnalysisRow, ProductMatchResult, SourceItemRow } from "./signal-qualification.types";
 import { detectIntentTarget } from "./intent-semantics";
@@ -421,15 +422,29 @@ function reasonText(status: SignalQualificationStatus, intent: SignalQualificati
   return `${reason}${evidenceText}`.slice(0, 2_000);
 }
 
-function buildQualification(input: SignalQualificationInput): SignalQualification {
+function directionalDemandFromReasoning(reasoning: ConversationMarketReasoning): DirectionalDemand {
+  const target = reasoning.demand_target ?? reasoning.destination_products[0] ?? null;
+  return {
+    demand_direction: reasoning.direction_relative_to_scanned_product,
+    demand_target_type: reasoning.demand_target_type,
+    demand_target_name: target,
+    source_products: reasoning.source_products,
+    speaker_role: reasoning.actor_type,
+    positive_for_product: reasoning.direction_relative_to_scanned_product === "toward_product" ? true : reasoning.direction_relative_to_scanned_product === "away_from_product" ? false : null,
+    host_product_context: reasoning.mentioned_products.some((product) => product.role === "host"),
+  };
+}
+
+function buildQualification(input: SignalQualificationInput, reasoningOverride?: ConversationMarketReasoning): SignalQualification {
   if (input.analysis.status === "failed" || input.analysis.status === "skipped") throw new Error("qualification_analysis_unavailable");
   const primaryIntent = intentFromText(input);
   const value = sourceText(input);
   const intentTarget = detectIntentTarget(value);
   const concepts = matchedConcepts(input, value);
   const marketContext = marketContextFor(input);
-  const demand = deriveDirectionalDemand({ productName: input.productName, title: input.conversation.title ?? input.sourceItem.title, body: bodyText(input), sourceKey: input.sourceItem.source_key, sourceMetadata: input.sourceItem.metadata, knownProducts: marketContext.relationships.map((item) => item.entity_name), category: marketContext.categories[0] ?? input.profile.primary_category });
-  const conversationReasoning = buildConversationMarketReasoning({ productName: input.productName, context: marketContext, demand, title: input.conversation.title ?? input.sourceItem.title, body: bodyText(input), analysis: input.analysis });
+  const derivedDemand = deriveDirectionalDemand({ productName: input.productName, title: input.conversation.title ?? input.sourceItem.title, body: bodyText(input), sourceKey: input.sourceItem.source_key, sourceMetadata: input.sourceItem.metadata, knownProducts: marketContext.relationships.map((item) => item.entity_name), category: marketContext.categories[0] ?? input.profile.primary_category });
+  const conversationReasoning = reasoningOverride ?? buildConversationMarketReasoning({ productName: input.productName, context: marketContext, demand: derivedDemand, title: input.conversation.title ?? input.sourceItem.title, body: bodyText(input), analysis: input.analysis });
+  const demand = reasoningOverride ? directionalDemandFromReasoning(reasoningOverride) : derivedDemand;
   const reasonCodes: SignalQualificationReasonCode[] = [];
   const evidence = verifiedEvidence(input, primaryIntent);
   const dimensions = dimensionsFor(input, concepts, evidence, primaryIntent, demand, reasonCodes);
@@ -475,7 +490,7 @@ function buildQualification(input: SignalQualificationInput): SignalQualificatio
       qualification_version: SIGNAL_QUALIFICATION_VERSION,
       threshold_version: SIGNAL_QUALIFICATION_THRESHOLD_VERSION,
       market_context_version: MARKET_CONTEXT_VERSION,
-      conversation_reasoning_version: CONVERSATION_MARKET_REASONING_VERSION,
+      conversation_reasoning_version: conversationReasoning.version || CONVERSATION_MARKET_REASONING_VERSION,
       analysis_version: input.analysis.engine_version_id ?? null,
       demand_profile_version: input.profile.profile_version ?? null,
       profile_confidence: clamp(input.profile.profile_confidence),
@@ -489,6 +504,11 @@ function buildQualification(input: SignalQualificationInput): SignalQualificatio
 
 export function qualifySignal(input: SignalQualificationInput): SignalQualification {
   return buildQualification(input);
+}
+
+/** Runs the same qualification engine against a separately validated semantic interpretation. */
+export function qualifySignalWithReasoning(input: SignalQualificationInput, reasoning: ConversationMarketReasoning): SignalQualification {
+  return buildQualification(input, reasoning);
 }
 
 export function failClosedQualification(input: Pick<SignalQualificationInput, "candidateId" | "productId" | "profile" | "analysis">, failureCode = "QUALIFICATION_FAILED"): SignalQualification {

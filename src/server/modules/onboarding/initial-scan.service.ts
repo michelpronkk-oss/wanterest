@@ -17,6 +17,16 @@ import { getInternalXDiscoveryOverride, logInternalXDiscoveryOverride } from "@/
 import { SupabaseIntelligenceRepository } from "@/server/modules/intelligence/intelligence.repository";
 import { IntelligenceService } from "@/server/modules/intelligence/intelligence.service";
 import { qualificationFromEvidence, readBusinessClassification, readDemandProfileV2, readDemandProfileV2RoutingModel } from "@/server/modules/intelligence";
+import { qualifySignalWithReasoning } from "@/server/modules/intelligence/signal-qualification.service";
+import { canCompareSemanticShadowArtifact, compareSemanticShadowQualification, summarizeSemanticShadowComparisons } from "@/server/modules/intelligence/semantic-shadow-comparison";
+import { SemanticShadowReasoningRepository } from "@/server/modules/intelligence/semantic-shadow-reasoning.repository";
+import { getSemanticReasoningShadowConfig } from "@/server/modules/intelligence/semantic-reasoning-shadow.config";
+import { executeScheduledSemanticShadowReasoning, type SemanticShadowExecutionCandidate } from "@/server/modules/intelligence/semantic-shadow-execution";
+import { planSemanticShadowReasoning, type ShadowPlanDiagnostics } from "@/server/modules/intelligence/semantic-shadow-planning";
+import { SEMANTIC_REASONING_PROMPT_VERSION, SEMANTIC_REASONING_ROUTER_VERSION } from "@/server/modules/intelligence/semantic-reasoning-router";
+import { getStructuredLlmProvider } from "@/server/providers/llm";
+import { conversationMarketReasoningSchema } from "@/server/modules/intelligence/signal-qualification.schemas";
+import { productMatchResultSchema } from "@/server/modules/intelligence/intelligence.schemas";
 import { FixtureConversationAnalysisEngine, FixtureProductMatchingEngine } from "@/server/modules/intelligence/engines";
 import { ensureEngineVersion } from "@/server/modules/observability/engine.repository";
 import { getTraceId } from "@/server/lib/request-context";
@@ -59,6 +69,7 @@ const scanResultSchema = z.object({
   queryPlanning: z.object({ version: z.string(), sourceCount: z.number().int().nonnegative(), queryCount: z.number().int().nonnegative(), queryFamilyDistribution: z.record(z.string(), z.number().int().nonnegative()), demandSurfaceCoverage: z.record(z.string(), z.enum(["covered", "uncovered"])), queriesPerSource: z.record(z.string(), z.number().int().nonnegative()), candidateBudgetPerSource: z.record(z.string(), z.number().int().nonnegative()), suppressedDuplicateCount: z.number().int().nonnegative(), lowConfidence: z.boolean(), finalQueries: z.array(z.object({ id: z.string(), source: z.string(), family: z.string(), surface: z.string(), concepts: z.array(z.string()), competitorSpecific: z.boolean() })), runtimeOverrideQueriesPerSource: z.record(z.string(), z.number().int().nonnegative()) }).optional(),
   candidateSelection: z.object({ version: z.string(), availableCount: z.number().int().nonnegative(), postDedupCandidateCount: z.number().int().nonnegative(), selectedCount: z.number().int().nonnegative(), maxEvaluations: z.number().int().nonnegative(), availableBySource: z.record(z.string(), z.number().int().nonnegative()), selectedBySource: z.record(z.string(), z.number().int().nonnegative()), availableBySurface: z.record(z.string(), z.number().int().nonnegative()), selectedBySurface: z.record(z.string(), z.number().int().nonnegative()), suppressedDuplicateCount: z.number().int().nonnegative(), suppressedLowQualityCount: z.number().int().nonnegative(), suppressedByReason: z.record(z.string(), z.number().int().nonnegative()), selected: z.array(z.object({ conversationId: z.string(), source: z.string(), surface: z.string(), surfaces: z.array(z.string()), score: z.number(), reason: z.string() })) }).optional(),
   qualification: z.object({ version: z.string(), thresholdVersion: z.string(), candidateCount: z.number().int().nonnegative(), qualifiedCount: z.number().int().nonnegative(), highConfidenceCount: z.number().int().nonnegative(), weakCount: z.number().int().nonnegative(), rejectedCount: z.number().int().nonnegative(), rejectionReasonDistribution: z.record(z.string(), z.number().int().nonnegative()), intentDistribution: z.record(z.string(), z.number().int().nonnegative()), averageDemandQuality: z.number().min(0).max(1), averageConfidence: z.number().min(0).max(1) }).optional(),
+  semanticReasoningShadow: z.object({ routerVersion: z.string(), promptSchemaVersion: z.string(), enabled: z.boolean(), maxNewProviderCallsPerScan: z.number().int().nonnegative(), deterministicOnlyCount: z.number().int().nonnegative(), rejectWithoutLlmCount: z.number().int().nonnegative(), llmRequestedCount: z.number().int().nonnegative(), cacheHitCount: z.number().int().nonnegative(), scheduledForLlmCount: z.number().int().nonnegative(), budgetSkippedCount: z.number().int().nonnegative(), llmExecutedCount: z.number().int().nonnegative(), providerSuccessCount: z.number().int().nonnegative(), providerFailureCount: z.number().int().nonnegative(), schemaFailureCount: z.number().int().nonnegative(), evidenceFailureCount: z.number().int().nonnegative(), conflictBlockCount: z.number().int().nonnegative(), inputTokens: z.number().int().nonnegative(), outputTokens: z.number().int().nonnegative(), reasoningLatencyMs: z.number().int().nonnegative(), reasoningCostUsd: z.number().nonnegative().nullable(), shadowComparisonCount: z.number().int().nonnegative(), noChangeCount: z.number().int().nonnegative(), wouldStrengthenCount: z.number().int().nonnegative(), wouldWeakenCount: z.number().int().nonnegative(), wouldBecomeQualifiedCount: z.number().int().nonnegative(), wouldBecomeUnqualifiedCount: z.number().int().nonnegative(), directionChangeCount: z.number().int().nonnegative(), targetChangeCount: z.number().int().nonnegative(), actualQualifiedCountAmongCompared: z.number().int().nonnegative(), shadowQualifiedCountAmongCompared: z.number().int().nonnegative() }).optional(),
   candidateReviews: z.array(scanCandidateReviewSchema).max(100).optional(),
 });
 
@@ -245,8 +256,39 @@ export type CandidateProcessingResult = {
   candidateReviews: ScanCandidateReview[];
   candidateSelection?: InitialScanResult["candidateSelection"];
   qualification?: InitialScanResult["qualification"];
+  semanticReasoningShadow?: Omit<NonNullable<InitialScanResult["semanticReasoningShadow"]>, "routerVersion" | "promptSchemaVersion" | "enabled" | "maxNewProviderCallsPerScan"> & { routerVersion: string; promptSchemaVersion: string; enabled: boolean; maxNewProviderCallsPerScan: number };
   diagnostics: InitialScanResult["diagnostics"];
 };
+
+function semanticShadowSummary(config: ReturnType<typeof getSemanticReasoningShadowConfig>, diagnostics: ShadowPlanDiagnostics): NonNullable<CandidateProcessingResult["semanticReasoningShadow"]> {
+  return {
+    routerVersion: SEMANTIC_REASONING_ROUTER_VERSION,
+    promptSchemaVersion: SEMANTIC_REASONING_PROMPT_VERSION,
+    enabled: config.enabled,
+    maxNewProviderCallsPerScan: config.maxNewProviderCallsPerScan,
+    ...diagnostics,
+    llmExecutedCount: 0,
+    providerSuccessCount: 0,
+    providerFailureCount: 0,
+    schemaFailureCount: 0,
+    evidenceFailureCount: 0,
+    conflictBlockCount: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    reasoningLatencyMs: 0,
+    reasoningCostUsd: null,
+    shadowComparisonCount: 0,
+    noChangeCount: 0,
+    wouldStrengthenCount: 0,
+    wouldWeakenCount: 0,
+    wouldBecomeQualifiedCount: 0,
+    wouldBecomeUnqualifiedCount: 0,
+    directionChangeCount: 0,
+    targetChangeCount: 0,
+    actualQualifiedCountAmongCompared: 0,
+    shadowQualifiedCountAmongCompared: 0,
+  };
+}
 
 export function selectScanCandidates(input: { conversations: ConversationRow[]; sourceById: Map<string, SourceItemRow>; max: number; provenance?: ScanDiscoveryProvenance[] }) {
   const provenance = new Map<string, ScanDiscoveryProvenance[]>();
@@ -623,6 +665,141 @@ export async function processScanCandidates(input: { product: ProductRow; profil
       diagnostics.push({ sourceKey: "matching", state: "failed", message: safeSummary(error) });
     }
   }
+  let semanticReasoningShadow: CandidateProcessingResult["semanticReasoningShadow"];
+  try {
+    const shadowConfig = getSemanticReasoningShadowConfig(process.env, input.product.workspace_id);
+    const conversationById = new Map(rows.conversations.map((conversation) => [conversation.id, conversation]));
+    const provenanceByConversation = new Map<string, ScanDiscoveryProvenance[]>();
+    for (const entry of uniqueProvenance(input.provenance ?? [])) provenanceByConversation.set(entry.conversationId, [...(provenanceByConversation.get(entry.conversationId) ?? []), entry]);
+    const shadowCandidates: SemanticShadowExecutionCandidate[] = evaluations.flatMap((evaluation) => {
+      const qualification = qualificationFromEvidence(evaluation.evidence);
+      const conversation = conversationById.get(evaluation.conversation_id);
+      const source = conversation ? sourceById.get(conversation.primary_source_item_id) : undefined;
+      if (!qualification || !conversation || !source) return [];
+      const sourceText = `${source.title ?? conversation.title ?? ""} ${source.body ?? conversation.body ?? ""}`.replace(/\s+/g, " ").trim();
+      const provenance = provenanceByConversation.get(conversation.id) ?? [];
+      const sourceMetadata = objectValue(source.metadata);
+      const hostContext = typeof sourceMetadata.projectName === "string" ? sourceMetadata.projectName : typeof sourceMetadata.repositoryName === "string" ? sourceMetadata.repositoryName : null;
+      const conversationType = typeof sourceMetadata.providerType === "string" ? sourceMetadata.providerType : null;
+      return [{
+        conversationId: conversation.id,
+        text: sourceText,
+        deterministic: qualification.conversation_reasoning,
+        relevance: qualification.dimensions.product_relevance,
+        noise: qualification.dimensions.noise_risk,
+        reasoningVersion: qualification.conversation_reasoning.version,
+        fingerprintInput: {
+          conversation: { id: conversation.id, content: sourceText },
+          product: { id: input.product.id, name: input.product.name, profileId: input.profileId },
+          marketContext: qualification.market_context,
+          sourceHostContext: { sourceKey: source.source_key, canonicalUrl: source.canonical_url },
+          discoveryProvenance: provenance,
+          routerVersion: SEMANTIC_REASONING_ROUTER_VERSION,
+          reasoningVersion: qualification.conversation_reasoning.version,
+          promptSchemaVersion: SEMANTIC_REASONING_PROMPT_VERSION,
+        },
+        promptContext: {
+          product: { canonicalName: input.product.name, description: null, categories: qualification.market_context.categories, jobs: qualification.market_context.jobs_to_be_done, capabilities: qualification.market_context.capabilities, pains: qualification.market_context.pains_solved },
+          marketContext: qualification.market_context,
+          source: { provider: source.source_key, hostContext, conversationType, discoverySurfaces: [...new Set(provenance.map((entry) => entry.demandSurface))].sort(), queryFamilies: [...new Set(provenance.map((entry) => entry.queryFamily))].sort(), concepts: [...new Set(provenance.flatMap((entry) => entry.concepts))].sort().slice(0, 20) },
+          conversation: { title: source.title ?? conversation.title, body: source.body ?? conversation.body ?? "", normalizedText: sourceText },
+        },
+      }];
+    });
+    const shadowRepository = new SemanticShadowReasoningRepository(client);
+    const shadowPlan = await planSemanticShadowReasoning({
+      enabled: shadowConfig.enabled,
+      maxCalls: shadowConfig.maxNewProviderCallsPerScan,
+      candidates: shadowCandidates,
+      cacheHit: async ({ fingerprint, candidate }) => Boolean(await shadowRepository.findByFingerprint({
+        workspaceId: input.product.workspace_id,
+        productId: input.product.id,
+        conversationId: candidate.conversationId,
+        fingerprint,
+        routerVersion: SEMANTIC_REASONING_ROUTER_VERSION,
+        reasoningVersion: candidate.reasoningVersion,
+        promptSchemaVersion: SEMANTIC_REASONING_PROMPT_VERSION,
+      })),
+    });
+    semanticReasoningShadow = semanticShadowSummary(shadowConfig, shadowPlan.diagnostics);
+    if (shadowPlan.diagnostics.scheduledForLlmCount) {
+      const llm = getStructuredLlmProvider();
+      const execution = await executeScheduledSemanticShadowReasoning({
+        provider: llm.provider,
+        providerIdentity: { provider: llm.config.provider, model: llm.config.model },
+        persistence: shadowRepository,
+        workspaceId: input.product.workspace_id,
+        productId: input.product.id,
+        plans: shadowPlan.items,
+        candidates: shadowCandidates,
+      });
+      semanticReasoningShadow = { ...semanticReasoningShadow, ...execution };
+    }
+    const profile = await repository.getDemandProfileById(input.profileId);
+    if (profile) {
+      const qualificationProfile = await intelligence.qualificationProfile(input.product, profile);
+      const evaluationByConversation = new Map(evaluations.map((evaluation) => [evaluation.conversation_id, evaluation]));
+      const analysisByConversation = new Map(analyses.map((analysis) => [analysis.conversation_id, analysis]));
+      const candidateByConversation = new Map(shadowCandidates.map((candidate) => [candidate.conversationId, candidate]));
+      const comparisons = [];
+      for (const plan of shadowPlan.items.filter((item) => (item.execution === "cache_hit" || item.execution === "scheduled_for_llm") && item.fingerprint)) {
+        const candidate = candidateByConversation.get(plan.conversationId);
+        const evaluation = evaluationByConversation.get(plan.conversationId);
+        const analysis = analysisByConversation.get(plan.conversationId);
+        const conversation = conversationById.get(plan.conversationId);
+        const source = conversation ? sourceById.get(conversation.primary_source_item_id) : undefined;
+        const actual = evaluation ? qualificationFromEvidence(evaluation.evidence) : null;
+        if (!candidate || !evaluation || !analysis || !conversation || !source || !actual || !plan.fingerprint) continue;
+        const artifact = await shadowRepository.findByFingerprint({
+          workspaceId: input.product.workspace_id,
+          productId: input.product.id,
+          conversationId: candidate.conversationId,
+          fingerprint: plan.fingerprint,
+          routerVersion: SEMANTIC_REASONING_ROUTER_VERSION,
+          reasoningVersion: candidate.reasoningVersion,
+          promptSchemaVersion: SEMANTIC_REASONING_PROMPT_VERSION,
+        });
+        const artifactRecord = objectValue(artifact);
+        if (!canCompareSemanticShadowArtifact(artifactRecord)) continue;
+        const merged = conversationMarketReasoningSchema.safeParse(artifactRecord.merged_shadow_reasoning);
+        if (!merged.success) continue;
+        const storedEvidence = objectValue(evaluation.evidence);
+        const stringValues = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+        const match = productMatchResultSchema.parse({
+          decision: evaluation.decision === "qualified" ? "qualified" : evaluation.decision === "weak" ? "weak" : "rejected",
+          matchConfidence: evaluation.match_confidence,
+          rationale: evaluation.rationale || "Stored deterministic match evaluation.",
+          evidence: {
+            painAlignment: stringValues(storedEvidence.painAlignment),
+            buyerAlignment: stringValues(storedEvidence.buyerAlignment),
+            capabilityAlignment: stringValues(storedEvidence.capabilityAlignment),
+            intentRelevance: stringValues(storedEvidence.intentRelevance),
+          },
+        });
+        const shadow = qualifySignalWithReasoning({ candidateId: conversation.id, productId: input.product.id, productName: input.product.name, conversation, sourceItem: source, analysis, match, profile: qualificationProfile }, merged.data);
+        const comparison = compareSemanticShadowQualification(actual, shadow);
+        comparisons.push(comparison);
+        await shadowRepository.persistComparison({
+          workspaceId: input.product.workspace_id,
+          productId: input.product.id,
+          conversationId: candidate.conversationId,
+          fingerprint: plan.fingerprint,
+          routerVersion: SEMANTIC_REASONING_ROUTER_VERSION,
+          reasoningVersion: candidate.reasoningVersion,
+          promptSchemaVersion: SEMANTIC_REASONING_PROMPT_VERSION,
+          actualStatus: actual.status,
+          actualReasonCodes: actual.reason_codes,
+          shadowStatus: shadow.status,
+          shadowReasonCodes: shadow.reason_codes,
+          impact: comparison.impact,
+        });
+      }
+      semanticReasoningShadow = { ...semanticReasoningShadow, ...summarizeSemanticShadowComparisons(comparisons) };
+    }
+  } catch (error) {
+    // Shadow planning is observational. A cache failure must never affect deterministic matching, ranking, or materialization.
+    diagnostics.push({ sourceKey: "semantic_reasoning_shadow", state: "warning", message: `Shadow planning skipped: ${safeSummary(error)}` });
+  }
   const rankings: NonNullable<Awaited<ReturnType<IntelligenceService["rankEvaluation"]>>>[] = [];
   const signals: Awaited<ReturnType<IntelligenceService["materializeSignal"]>>[] = [];
   const signalIdsByEvaluation: Array<string | null> = [];
@@ -661,6 +838,7 @@ export async function processScanCandidates(input: { product: ProductRow; profil
     candidateReviews: candidateReviewsFromRows(evaluations, rows.conversations, sourceById),
     candidateSelection: selection.diagnostics,
     diagnostics,
+    ...(semanticReasoningShadow ? { semanticReasoningShadow } : {}),
     ...(qualificationRows.length ? {
       qualification: {
         version: qualificationRows[0].version,
@@ -1133,6 +1311,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       candidateReviews: candidateResult.candidateReviews,
       ...(candidateResult.candidateSelection ? { candidateSelection: candidateResult.candidateSelection } : {}),
       ...(candidateResult.qualification ? { qualification: candidateResult.qualification } : {}),
+      ...(candidateResult.semanticReasoningShadow ? { semanticReasoningShadow: candidateResult.semanticReasoningShadow } : {}),
       ...(routingPlan ? {
         routing: {
           version: routingPlan.version,
