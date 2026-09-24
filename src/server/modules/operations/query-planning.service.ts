@@ -269,10 +269,10 @@ function competitorNames(profile: DemandProfileV2RoutingModel | null): string[] 
 
 function competitorReferencesForText(profile: DemandProfileV2RoutingModel | null, text: string): string[] {
   const normalized = normalizeQuery(text);
-  return topItems(profile?.known_competitors)
+  return [...(profile?.known_competitors ?? [])]
     .filter((competitor) => {
       const name = normalizeQuery(competitor.name);
-      return name.length > 1 && normalized.includes(name);
+      return name.length > 1 && (` ${normalized} `).includes(` ${name} `);
     })
     .map((competitor) => competitor.key);
 }
@@ -393,6 +393,12 @@ function selectDiverse(candidates: Candidate[], maxQueries: number): { selected:
   for (const candidate of sorted) {
     const duplicate = unique.some((existing) => existing.query_family === candidate.query_family && (existing.semanticKey === candidate.semanticKey || tokenSimilarity(existing.query_text, candidate.query_text) >= 0.8));
     if (duplicate) {
+      const existing = unique.find((item) => item.query_family === candidate.query_family && (item.semanticKey === candidate.semanticKey || tokenSimilarity(item.query_text, candidate.query_text) >= 0.8));
+      if (existing && candidate.competitorSpecific && !existing.competitorSpecific && normalizeQuery(existing.query_text) === normalizeQuery(candidate.query_text)) {
+        existing.competitorSpecific = true;
+        existing.competitor_refs = [...new Set([...existing.competitor_refs, ...candidate.competitor_refs])].sort();
+        existing.concept_keys = [...new Set([...existing.concept_keys, ...candidate.concept_keys])].sort();
+      }
       suppressed += 1;
       continue;
     }
