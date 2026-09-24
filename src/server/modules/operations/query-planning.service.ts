@@ -267,14 +267,19 @@ function competitorNames(profile: DemandProfileV2RoutingModel | null): string[] 
   return [...new Set([...known, ...alternativeProducts].filter(Boolean))];
 }
 
-function competitorReferencesForText(profile: DemandProfileV2RoutingModel | null, text: string): string[] {
+export function competitorReferencesForText(profile: DemandProfileV2RoutingModel | null, text: string): string[] {
   const normalized = normalizeQuery(text);
-  return [...(profile?.known_competitors ?? [])]
+  const competitors = [
+    ...(profile?.known_competitors ?? []).map((competitor) => ({ key: competitor.key, name: competitor.name })),
+    ...(profile?.alternative_solutions ?? []).filter((alternative) => alternative.alternative_type === "competitor_product").map((alternative) => ({ key: alternative.key, name: alternative.label })),
+  ];
+  return competitors
     .filter((competitor) => {
       const name = normalizeQuery(competitor.name);
       return name.length > 1 && (` ${normalized} `).includes(` ${name} `);
     })
-    .map((competitor) => competitor.key);
+    .map((competitor) => competitor.key)
+    .filter((key, index, values) => values.indexOf(key) === index);
 }
 
 function preferredFamilies(profile: DemandProfileV2RoutingModel | null): Set<QueryFamily> {

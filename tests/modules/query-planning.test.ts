@@ -9,6 +9,7 @@ import {
   buildSourceRoutingPlan,
   formatQueryPlanDryRun,
   toSourceDiscoveryRequest,
+  competitorReferencesForText,
   type QueryPlan,
   type QueryPlanQuery,
   type QueryPlanSource,
@@ -99,11 +100,25 @@ function allQueries(plan: QueryPlan) {
 }
 
 describe("Query Planning v1", () => {
+  it("resolves known competitor-product alternatives in comparison text only", () => {
+    const profile = {
+      known_competitors: [],
+      alternative_solutions: [
+        { key: "jira", label: "Jira", alternative_type: "competitor_product" },
+        { key: "spreadsheets", label: "spreadsheets", alternative_type: "manual_process" },
+      ],
+    } as never;
+    expect(competitorReferencesForText(profile, "Jira vs Linear")).toEqual(["jira"]);
+    expect(competitorReferencesForText(profile, "Jira alternative")).toEqual(["jira"]);
+    expect(competitorReferencesForText(profile, "best project management tools")).toEqual([]);
+    expect(competitorReferencesForText(profile, "spreadsheets vs issue tracker")).toEqual([]);
+  });
+
   it.each(cases.map((_, index) => index))("builds a bounded deterministic plan for fixture %i", async (index) => {
     const first = await buildFixturePlan(index);
     const second = await buildFixturePlan(index);
     expect(second).toEqual(first);
-    expect(first.version).toBe("query_planning_v5");
+    expect(first.version).toBe("query_planning_v6");
     expect(first.source_routing_version).toBe("source_routing_v1");
     expect(first.source_plans.every((source) => source.query_budget <= 3)).toBe(true);
     expect(allQueries(first).every((query) => query.candidate_budget > 0)).toBe(true);
@@ -282,7 +297,7 @@ describe("Query Planning v1", () => {
   it("provides a network-free dry-run", async () => {
     const plan = await buildFixturePlan(0);
     const output = formatQueryPlanDryRun(plan);
-    expect(output).toContain("query_planning_v5");
+    expect(output).toContain("query_planning_v6");
     expect(output).toContain("candidateBudget=");
     expect(output).toContain("reasons=");
     expect(allQueries(plan).every((query) => query.reason_summary.startsWith("Generated from "))).toBe(true);
