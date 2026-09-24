@@ -37,6 +37,18 @@ export type QueryYieldReconciliation = {
   missingQueryPlanIds: string[];
 };
 
+/**
+ * A continuation is the cursor used to move from one completed page to the
+ * next. A request capped at N pages can therefore have at most N - 1
+ * continuations. Keep the persisted telemetry inside the schema's bound even
+ * when a provider returns a cursor on the final page.
+ */
+export function boundedCursorContinuationCount(continuations: number, pagesRequested: number): number {
+  const normalizedContinuations = Number.isFinite(continuations) ? Math.max(0, Math.floor(continuations)) : 0;
+  const normalizedPages = Number.isFinite(pagesRequested) ? Math.max(0, Math.floor(pagesRequested)) : 0;
+  return Math.min(normalizedContinuations, Math.max(0, normalizedPages - 1));
+}
+
 function terminalStatus(source: QueryYieldSourceState | undefined, plannedCount: number): { status: QueryYieldExecutionStatus; stop: QueryYieldStopReason } {
   if (source?.status === "failed") return source.errorCode === "RATE_LIMITED" ? { status: "rate_limited", stop: "error" } : { status: "provider_error", stop: "error" };
   if (source?.status === "skipped") return { status: source.errorCode === "CONFIGURATION_MISSING" ? "unavailable" : "disabled", stop: "error" };

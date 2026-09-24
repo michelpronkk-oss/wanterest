@@ -34,7 +34,7 @@ import { buildSourceRoutingPlan, selectExecutableSourceRoutes, type SourceRoutin
 import { buildQueryPlan, toSourceDiscoveryRequest, type QueryPlan } from "@/server/modules/operations/query-planning.index";
 import { getDiscoveryCoverageConfig } from "@/server/modules/operations/discovery-coverage.config";
 import type { QueryYieldTelemetry } from "@/server/modules/operations/query-yield-telemetry";
-import { aggregateQueryYield, finalizeQueryYieldTelemetry, reconcileQueryYieldTelemetry, sourceHealthStatus } from "@/server/modules/operations/query-yield-telemetry";
+import { aggregateQueryYield, boundedCursorContinuationCount, finalizeQueryYieldTelemetry, reconcileQueryYieldTelemetry, sourceHealthStatus } from "@/server/modules/operations/query-yield-telemetry";
 import { QueryYieldRepository } from "@/server/modules/operations/query-yield.repository";
 import { sourceDiscoveryRequestSchema, type SourceDiscoveryRequest } from "@/server/providers/source/contracts";
 import { g2MappingsFromSourceFilters, g2SourceFiltersWithMappings, type G2ProductMapping, type G2ProductResolutionTarget } from "@/server/providers/source/g2/product-resolution";
@@ -686,7 +686,7 @@ export async function executeSourceDiscovery(input: SourceExecutionInput): Promi
     queryTelemetry.push({
       queryPlanId, source: input.sourceKey, family: typeof metadata.queryFamily === "string" ? metadata.queryFamily : "fallback", surface: typeof metadata.demandSurface === "string" ? metadata.demandSurface : "unknown",
       concepts: Array.isArray(objectValue(metadata.discoveryIntent).concept_keys) ? (objectValue(metadata.discoveryIntent).concept_keys as unknown[]).filter((value): value is string => typeof value === "string") : [], competitorSpecific: metadata.competitorSpecific === true,
-      pagesRequested: maxPages, pagesCompleted, cursorContinuationCount: continuations, continuationStoppedReason: cursor ? "page_cap_reached" : rawItems ? "no_cursor" : "zero_results",
+      pagesRequested: maxPages, pagesCompleted, cursorContinuationCount: boundedCursorContinuationCount(continuations, maxPages), continuationStoppedReason: cursor ? "page_cap_reached" : rawItems ? "no_cursor" : "zero_results",
       executionStatus: rawItems ? "completed_with_results" : "completed_zero_results", rawItems, normalizedItems, uniqueConversations: new Set(queryConversationIds).size, duplicateCount: Math.max(0, normalizedItems - new Set(queryConversationIds).size), estimatedCostUsd: queryCost,
     });
   }

@@ -4,7 +4,7 @@ vi.mock("server-only", () => ({}));
 
 import { getDiscoveryCoverageConfig } from "../../src/server/modules/operations/discovery-coverage.config";
 import { QueryYieldRepository, type QueryYieldArtifact } from "../../src/server/modules/operations/query-yield.repository";
-import { aggregateQueryYield, finalizeQueryYieldTelemetry, reconcileQueryYieldTelemetry, sourceHealthStatus, type QueryYieldTelemetry } from "../../src/server/modules/operations/query-yield-telemetry";
+import { aggregateQueryYield, boundedCursorContinuationCount, finalizeQueryYieldTelemetry, reconcileQueryYieldTelemetry, sourceHealthStatus, type QueryYieldTelemetry } from "../../src/server/modules/operations/query-yield-telemetry";
 
 const workspaceId = "8b7a4189-54b7-4cc0-a4a3-1502dc2be82a";
 
@@ -100,6 +100,83 @@ describe("Discovery Coverage V1 and query-yield persistence", () => {
     );
     for (const row of finalized) await repository.insertImmutable({ ...artifact, queryPlanId: row.queryPlanId, selectedCount: row.selectedCount, evaluatedCount: row.evaluatedCount, qualifiedInfluencedCount: row.qualifiedInfluencedCount, weakInfluencedCount: row.weakInfluencedCount, rejectedInfluencedCount: row.rejectedInfluencedCount });
     expect(db.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists exactly one immutable artifact per planned query after finalization", async () => {
+    const db = repositoryClient({ data: { id: "artifact-hn" }, error: null });
+    const repository = new QueryYieldRepository(db);
+    const hnTelemetry: QueryYieldTelemetry = {
+      ...telemetry("hn-1", 0, 0),
+      source: "hacker-news",
+      family: "pain",
+      surface: "pain_first",
+      concepts: [],
+      competitorSpecific: false,
+      pagesRequested: 3,
+      pagesCompleted: 3,
+      cursorContinuationCount: boundedCursorContinuationCount(3, 3),
+      continuationStoppedReason: "page_cap_reached",
+      executionStatus: "completed_zero_results",
+      rawItems: 0,
+      normalizedItems: 0,
+      uniqueConversations: 0,
+      duplicateCount: 0,
+    };
+    const reconciled = reconcileQueryYieldTelemetry(
+      [
+        { queryPlanId: "hn-1", source: "hacker-news", family: "pain", surface: "pain_first", concepts: [], competitorSpecific: false },
+        { queryPlanId: "g2-1", source: "g2", family: "pain", surface: "pain_first", concepts: [], competitorSpecific: false },
+        { queryPlanId: "x-1", source: "x", family: "pain", surface: "pain_first", concepts: [], competitorSpecific: false },
+      ],
+      [hnTelemetry],
+      [
+        { source: "hacker-news", status: "completed", queryCount: 1 },
+        { source: "g2", status: "failed", queryCount: 1 },
+        { source: "x", status: "completed", queryCount: 0 },
+      ],
+    );
+    const finalized = finalizeQueryYieldTelemetry(reconciled.rows, [], new Map());
+
+    for (const row of finalized) {
+      await repository.insertImmutable({
+        ...artifact,
+        queryPlanId: row.queryPlanId,
+        sourceKey: row.source,
+        queryFamily: row.family,
+        demandSurface: row.surface,
+        conceptKeys: row.concepts,
+        competitorSpecific: row.competitorSpecific,
+        pagesRequested: row.pagesRequested,
+        pagesCompleted: row.pagesCompleted,
+        cursorContinuationCount: row.cursorContinuationCount,
+        continuationStoppedReason: row.continuationStoppedReason,
+        executionStatus: row.executionStatus,
+        rawItems: row.rawItems,
+        normalizedItems: row.normalizedItems,
+        uniqueConversations: row.uniqueConversations,
+        duplicateCount: row.duplicateCount,
+        selectedCount: row.selectedCount,
+        evaluatedCount: row.evaluatedCount,
+        qualifiedInfluencedCount: row.qualifiedInfluencedCount,
+        weakInfluencedCount: row.weakInfluencedCount,
+        rejectedInfluencedCount: row.rejectedInfluencedCount,
+      });
+    }
+
+    expect(reconciled.missingQueryPlanIds).toEqual([]);
+    expect(reconciled.terminalQueryArtifactCount).toBe(3);
+    expect(db.insert).toHaveBeenCalledTimes(3);
+    const inserted = db.insert.mock.calls as unknown as Array<[Record<string, unknown>]>;
+    expect(new Set(inserted.map((call) => call[0]?.query_plan_id))).toEqual(new Set(["hn-1", "g2-1", "x-1"]));
+    expect(inserted.map((call) => call[0]?.execution_status)).toEqual(["completed_zero_results", "provider_error", "budget_limited"]);
+    expect(inserted[0]?.[0]).toMatchObject({
+      query_plan_id: "hn-1",
+      source_key: "hacker-news",
+      execution_status: "completed_zero_results",
+      normalized_items: 0,
+      unique_conversations: 0,
+      cursor_continuation_count: 2,
+    });
   });
 
   it("returns the inserted immutable artifact", async () => {
