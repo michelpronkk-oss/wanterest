@@ -290,7 +290,11 @@ describe("Query Planning v1", () => {
     expect(invalidPainRequest.requestMetadata.xQueryCompilationError).toContain("category/pain context is unavailable");
 
     const competitorRequest = toSourceDiscoveryRequest({ sourcePlan: sourcePlan!, query: competitor!, maxPages: 1 });
-    expect(competitorRequest.query).not.toContain('"I need"');
+    expect(competitorRequest.query).toContain('"switching from"');
+    expect(competitorRequest.query).toContain("Jira");
+    expect(competitorRequest.query).not.toContain("Linear");
+    expect(competitorRequest.query).not.toContain(" vs ");
+    expect(competitorRequest.requestMetadata.xCompetitorPainCompetitor).toBe("Jira");
     expect(competitorRequest.requestMetadata.xQueryCompilationError).toBeUndefined();
   });
 

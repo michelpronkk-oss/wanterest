@@ -52,6 +52,8 @@ export function toSourceDiscoveryRequest(input: SourceQueryExecutionInput): Sour
     if (compiled) {
       metadata.providerQuery = compiled.query;
       if (compiled.usedFallback) metadata.queryCompilationFallback = compiled.diagnostic ?? true;
+      if (compiled.competitor) metadata.xCompetitorPainCompetitor = compiled.competitor;
+      if (compiled.displacementAnchors) metadata.xCompetitorPainDisplacementAnchors = compiled.displacementAnchors;
     }
     if (compilationError) metadata.xQueryCompilationError = compilationError;
     if (query.language_context) metadata.lang = query.language_context;

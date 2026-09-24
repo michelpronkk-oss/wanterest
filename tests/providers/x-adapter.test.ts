@@ -23,7 +23,7 @@ import {
 import { estimateXReadCost } from "../../src/server/providers/source/x/x.cost";
 import { getInternalXDiscoveryOverride } from "../../src/server/providers/source/x/x.internal";
 import { XSourceAdapter } from "../../src/server/providers/source/x";
-import { compileXQuery, X_PAIN_REQUEST_ANCHORS, X_PAIN_RETRIEVAL_TEMPLATE_VERSION } from "../../src/server/providers/source/x/x.query";
+import { compileXQuery, X_COMPETITOR_PAIN_DISPLACEMENT_ANCHORS, X_COMPETITOR_PAIN_RETRIEVAL_TEMPLATE_VERSION, X_PAIN_REQUEST_ANCHORS, X_PAIN_RETRIEVAL_TEMPLATE_VERSION } from "../../src/server/providers/source/x/x.query";
 import { SIGNAL_QUALIFICATION_THRESHOLD_VERSION, SIGNAL_QUALIFICATION_VERSION } from "../../src/server/modules/intelligence/signal-qualification.config";
 import { SEMANTIC_REASONING_ROUTER_VERSION } from "../../src/server/modules/intelligence/semantic-reasoning-router";
 
@@ -178,11 +178,71 @@ describe("X source adapter", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("keeps competitor_pain compilation unchanged", () => {
+  it("compiles competitor_pain to bounded displacement intent without requiring Linear", () => {
     const compiled = compileXQuery({ semanticQuery: "Jira vs Linear", family: "comparison", demandSurface: "competitor_pain", context: { product_name: "Linear", competitors: ["Jira"], category: "project management software" } });
-    expect(compiled.query).toBe("Linear vs Jira");
-    expect(compiled.query).not.toContain('"I need"');
-    expect(compiled.templateVersion).toBeUndefined();
+    expect(compiled.query).toBe('("switching from" OR "moving away from" OR "replace" OR "replacing" OR "alternative to" OR "leaving") Jira');
+    expect(compiled).toMatchObject({ templateVersion: X_COMPETITOR_PAIN_RETRIEVAL_TEMPLATE_VERSION, competitor: "Jira", displacementAnchors: [...X_COMPETITOR_PAIN_DISPLACEMENT_ANCHORS] });
+    expect(compiled.query).not.toContain("Linear");
+    expect(compiled.query).not.toContain(" vs ");
+  });
+
+  it("keeps displacement holdouts representable without requiring a scanned product literal", () => {
+    const holdouts = [
+      "We're switching from Jira",
+      "Looking for an alternative to Jira",
+      "Our team is moving away from Jira",
+      "We need to replace Jira",
+      "Replacing Jira because the workflow is too complex",
+      "Any good alternative to Jira for engineering teams?",
+    ];
+    for (const holdout of holdouts) {
+      const compiled = compileXQuery({ semanticQuery: holdout, family: "comparison", demandSurface: "competitor_pain", context: { competitors: ["Jira"] } });
+      expect(compiled.query).toContain('("switching from" OR "moving away from" OR "replace" OR "replacing" OR "alternative to" OR "leaving")');
+      expect(compiled.query).toContain("Jira");
+      expect(compiled.query).not.toContain("Linear");
+      expect(compiled.query).not.toContain(" vs ");
+    }
+  });
+
+  it("does not accept a bare comparison as competitor_pain intent", () => {
+    const compiled = compileXQuery({ semanticQuery: "Jira vs Linear", family: "comparison", demandSurface: "competitor_pain", context: { competitors: ["Jira"] } });
+    expect(compiled.query).not.toContain(" vs ");
+    expect(compiled.query).toContain('"alternative to"');
+  });
+
+  it("sends one displacement-constrained competitor_pain request with unchanged caps and diagnostics", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response({ data: [], meta: { result_count: 0 } }));
+    const compiled = compileXQuery({ semanticQuery: "Jira vs Linear", family: "comparison", demandSurface: "competitor_pain", context: { product_name: "Linear", competitors: ["Jira"] } });
+    const page = await new XSourceAdapter({ fetchImpl, token: "test-token" }).discover({
+      query: compiled.query,
+      limit: 5,
+      requestMetadata: { queryFamily: "comparison", demandSurface: "competitor_pain", xCompetitorPainCompetitor: compiled.competitor!, xCompetitorPainDisplacementAnchors: compiled.displacementAnchors!, providerQuery: compiled.query, maxResults: 5, maxPages: 1, maxBillablePostsPerDiscovery: 10, excludeRetweets: true },
+      expandThreads: false,
+    });
+
+    const requested = new URL(String(fetchImpl.mock.calls[0]?.[0]));
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(requested.searchParams.get("query")).toBe(`${compiled.query} -is:retweet`);
+    expect(requested.searchParams.get("max_results")).toBe("10");
+    expect(page.estimatedCost).toBe(0.05);
+    expect(page.providerMetrics).toEqual({
+      xCompetitorPainRetrievalV1: {
+        templateVersion: X_COMPETITOR_PAIN_RETRIEVAL_TEMPLATE_VERSION,
+        providerQuery: `${compiled.query} -is:retweet`,
+        competitor: "Jira",
+        displacementAnchors: [...X_COMPETITOR_PAIN_DISPLACEMENT_ANCHORS],
+        requestCount: 1,
+        maxBillablePosts: 10,
+        estimatedCostUsd: 0.05,
+      },
+    });
+  });
+
+  it("fails competitor_pain compilation without a competitor before provider execution", async () => {
+    expect(() => compileXQuery({ semanticQuery: "Jira vs Linear", family: "comparison", demandSurface: "competitor_pain", context: {} })).toThrow("competitor context is unavailable");
+    const fetchImpl = vi.fn<typeof fetch>();
+    await expect(new XSourceAdapter({ fetchImpl, token: "test-token" }).discover({ limit: 5, requestMetadata: { xQueryCompilationError: "competitor context is unavailable" }, expandThreads: false })).rejects.toMatchObject({ code: "INVALID_QUERY" });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("keeps qualification and semantic reasoning versions outside X retrieval compilation", () => {

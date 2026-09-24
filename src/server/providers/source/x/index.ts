@@ -30,7 +30,7 @@ import {
 } from "./x.schemas";
 import { normalizeXItem } from "./x.normalizer";
 import { getInternalXDiscoveryOverride } from "./x.internal";
-import { X_PAIN_REQUEST_ANCHORS, X_PAIN_RETRIEVAL_TEMPLATE_VERSION } from "./x.query";
+import { X_COMPETITOR_PAIN_DISPLACEMENT_ANCHORS, X_COMPETITOR_PAIN_RETRIEVAL_TEMPLATE_VERSION, X_PAIN_REQUEST_ANCHORS, X_PAIN_RETRIEVAL_TEMPLATE_VERSION } from "./x.query";
 
 type XAdapterOptions = XClientOptions & {
   clock?: () => Date;
@@ -180,6 +180,21 @@ export class XSourceAdapter implements SourceAdapter {
           estimatedCostUsd: estimatedReadCost,
         }
       : undefined;
+    const competitor = typeof request.requestMetadata.xCompetitorPainCompetitor === "string" ? request.requestMetadata.xCompetitorPainCompetitor : undefined;
+    const displacementAnchors = Array.isArray(request.requestMetadata.xCompetitorPainDisplacementAnchors)
+      ? request.requestMetadata.xCompetitorPainDisplacementAnchors.filter((value): value is string => typeof value === "string")
+      : [...X_COMPETITOR_PAIN_DISPLACEMENT_ANCHORS];
+    const xCompetitorPainRetrievalV1 = request.requestMetadata.demandSurface === "competitor_pain" && request.requestMetadata.queryFamily === "comparison" && competitor
+      ? {
+          templateVersion: X_COMPETITOR_PAIN_RETRIEVAL_TEMPLATE_VERSION,
+          providerQuery: query,
+          competitor,
+          displacementAnchors,
+          requestCount: 1,
+          maxBillablePosts: budget,
+          estimatedCostUsd: estimatedReadCost,
+        }
+      : undefined;
     const state = request.cursor ? decodeXCursor(request.cursor) : { nextToken: undefined, pagesFetched: 0, billablePosts: 0 };
     if (state.pagesFetched >= metadata.maxPages) {
       messages.push(`${diagnostic}; additional-page discovery is unavailable because the page budget is exhausted.`);
@@ -235,7 +250,7 @@ export class XSourceAdapter implements SourceAdapter {
       nextCursor: canContinue && nextToken ? encodeXCursor({ nextToken, pagesFetched: pageNumber, billablePosts }) : undefined,
       rateLimit,
       estimatedCost: estimatedReadCost,
-      ...(xPainRetrievalV1 ? { providerMetrics: { xPainRetrievalV1 } } : {}),
+      ...(xPainRetrievalV1 || xCompetitorPainRetrievalV1 ? { providerMetrics: { ...(xPainRetrievalV1 ? { xPainRetrievalV1 } : {}), ...(xCompetitorPainRetrievalV1 ? { xCompetitorPainRetrievalV1 } : {}) } } : {}),
       diagnostics: { accepted: items.length, rejected, messages },
     };
   }
