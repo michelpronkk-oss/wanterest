@@ -91,6 +91,66 @@ export type GithubFeatureEvidenceAlignmentResult = {
   mismatches: GithubFeatureEvidenceAlignmentMismatch[];
 };
 
+export const githubJobEvidenceOpeningBodyLength = githubFeatureEvidenceOpeningBodyLength;
+export const githubJobEvidenceMismatchReason = "github_job_evidence_mismatch" as const;
+
+export const githubJobEvidenceMismatchSubreasons = [
+  "employment_mismatch",
+  "maintainer_mismatch",
+  "sparse_or_generic_mismatch",
+  "buyer_context_missing",
+  "category_context_missing",
+] as const;
+
+export type GithubJobEvidenceMismatchSubreason = typeof githubJobEvidenceMismatchSubreasons[number];
+
+export type GithubJobEvidenceAlignmentQuery = {
+  queryPlanId: string;
+  semanticQuery?: string;
+  concepts?: string[];
+};
+
+export type GithubJobEvidenceAlignmentMismatch = {
+  conversationId: string;
+  queryPlanId: string;
+  buyerContextMatched: boolean;
+  categoryContextMatched: boolean;
+  subreason: GithubJobEvidenceMismatchSubreason;
+};
+
+export type GithubJobEvidenceAlignmentDiagnostics = {
+  inspectedCount: number;
+  alignedCount: number;
+  mismatchCount: number;
+  missingAlignmentProvenanceCount: number;
+  missingAlignmentProvenanceReason?: "missing_alignment_provenance";
+  subreasonCounts: Record<GithubJobEvidenceMismatchSubreason, number>;
+  mismatches: GithubJobEvidenceAlignmentMismatch[];
+};
+
+export type GithubJobEvidenceAlignmentResult = {
+  aligned: boolean;
+  missingAlignmentProvenance: boolean;
+  mismatches: GithubJobEvidenceAlignmentMismatch[];
+};
+
+export function emptyGithubJobEvidenceAlignmentDiagnostics(): GithubJobEvidenceAlignmentDiagnostics {
+  return {
+    inspectedCount: 0,
+    alignedCount: 0,
+    mismatchCount: 0,
+    missingAlignmentProvenanceCount: 0,
+    subreasonCounts: {
+      employment_mismatch: 0,
+      maintainer_mismatch: 0,
+      sparse_or_generic_mismatch: 0,
+      buyer_context_missing: 0,
+      category_context_missing: 0,
+    },
+    mismatches: [],
+  };
+}
+
 function normalizeEvidenceText(value: string | null | undefined): string {
   return (value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
 }
@@ -127,6 +187,113 @@ function featureEvidenceWindow(title: string | null | undefined, body: string | 
   const normalizedTitle = normalizeEvidenceText(title);
   const normalizedBody = normalizeEvidenceText(body).slice(0, githubFeatureEvidenceOpeningBodyLength);
   return `${normalizedTitle} ${normalizedBody}`.trim();
+}
+
+function jobEvidenceWindow(title: string | null | undefined, body: string | null | undefined): string {
+  const normalizedTitle = normalizeEvidenceText(title);
+  const normalizedBody = normalizeEvidenceText(body).slice(0, githubJobEvidenceOpeningBodyLength);
+  return `${normalizedTitle} ${normalizedBody}`.trim();
+}
+
+const githubJobBuyerContextPatterns = [
+  /\b(?:we|i|our\s+team|my\s+team|our\s+company|our\s+workflow)\b[\s\S]{0,100}\b(?:need(?:s)?|want(?:s)?|looking\s+for|require(?:s)?|struggl\w*|trying\s+to|missing)\b/i,
+  /\b(?:we'?re|we\s+are)\s+looking\s+for\b/i,
+  /\bneed\s+(?:a|an|the|some)?\s*(?:better\s+)?(?:tool|software|platform|system)\b/i,
+  /\b(?:our\s+workflow|our\s+team)\b[\s\S]{0,100}\b(?:manage|plan|ship|track|coordinate)\b/i,
+];
+
+const githubJobCategoryContextTerms = [
+  "software",
+  "tool",
+  "platform",
+  "system",
+  "workflow",
+  "project management",
+  "issue tracking",
+  "task management",
+] as const;
+
+function jobCategoryContextTerms(query: GithubJobEvidenceAlignmentQuery): string[] | null {
+  const concepts = Array.isArray(query.concepts)
+    ? query.concepts
+      .filter((value): value is string => typeof value === "string")
+      .map((value) => normalizeEvidenceText(value.replace(/[_-]+/g, " ")))
+      .filter((value) => value && value !== "category")
+    : [];
+  const semanticQuery = typeof query.semanticQuery === "string" ? normalizeEvidenceText(query.semanticQuery) : "";
+  if (!query.queryPlanId.trim() || (!concepts.length && !semanticQuery)) return null;
+  const semanticTerms = semanticQuery.match(/\b(?:software|tool|platform|system|workflow|project\s+management|issue\s+tracking|task\s+management)\b/g) ?? [];
+  return [...new Set([...githubJobCategoryContextTerms, ...concepts, ...semanticTerms])].sort();
+}
+
+function jobBuyerContextMatched(text: string): boolean {
+  return githubJobBuyerContextPatterns.some((pattern) => pattern.test(text));
+}
+
+function jobCategoryContextMatched(text: string, terms: string[]): boolean {
+  return terms.some((term) => phraseMatches(text, term));
+}
+
+function employmentJobSense(text: string, title: string | null | undefined): boolean {
+  const employmentSignals = [
+    /\b(?:hiring|job\s+(?:opening|description|posting)|careers?|apply|salary|resume|recruiter|vacancy|employment|full[- ]time|part[- ]time)\b/i,
+    /\b(?:responsibilities|qualifications|requirements|experience\s+required)\b/i,
+  ].filter((pattern) => pattern.test(text)).length;
+  const roleTitle = /\b(?:engineer|developer|designer|manager|analyst|administrator|specialist|intern|director|officer)\b/i.test(title ?? "");
+  const roleContext = /\b(?:role|position|job|career|opening|apply|resume|salary|recruiter|vacancy)\b/i.test(text);
+  return employmentSignals > 0 && (roleTitle || roleContext);
+}
+
+function maintainerJobSense(text: string): boolean {
+  const communitySignal = /\b(?:community|contributor|maintainer|governance)\b/i.test(text);
+  const planningSignal = /\b(?:roadmap|vision|strategy\s+plan|community\s+plan|release\s+planning|project\s+governance)\b/i.test(text);
+  return communitySignal && planningSignal;
+}
+
+function sparseOrGenericJobSense(text: string, buyerContextMatched: boolean, categoryContextMatched: boolean): boolean {
+  return !buyerContextMatched && !categoryContextMatched && text.split(/\s+/).filter(Boolean).length <= 18;
+}
+
+function classifyGithubJobEvidence(input: {
+  conversationId: string;
+  title?: string | null;
+  body?: string | null;
+  query: GithubJobEvidenceAlignmentQuery;
+}): GithubJobEvidenceAlignmentMismatch | null {
+  const evidence = jobEvidenceWindow(input.title, input.body);
+  const categoryTerms = jobCategoryContextTerms(input.query);
+  if (!categoryTerms) return null;
+  const buyerContextMatched = jobBuyerContextMatched(evidence);
+  const categoryContextMatched = jobCategoryContextMatched(evidence, categoryTerms);
+  let subreason: GithubJobEvidenceMismatchSubreason | null = null;
+  if (employmentJobSense(evidence, input.title)) subreason = "employment_mismatch";
+  else if (maintainerJobSense(evidence)) subreason = "maintainer_mismatch";
+  else if (buyerContextMatched && categoryContextMatched) return null;
+  else if (sparseOrGenericJobSense(evidence, buyerContextMatched, categoryContextMatched)) subreason = "sparse_or_generic_mismatch";
+  else if (!buyerContextMatched) subreason = "buyer_context_missing";
+  else subreason = "category_context_missing";
+  return { conversationId: input.conversationId, queryPlanId: input.query.queryPlanId, buyerContextMatched, categoryContextMatched, subreason };
+}
+
+/**
+ * Reconciles GitHub job-demand retrieval with retained first-party/team and
+ * software/workflow evidence. Only the normalized title and bounded opening
+ * body are inspected; missing provenance fails open.
+ */
+export function alignGithubJobEvidence(input: {
+  conversationId: string;
+  title?: string | null;
+  body?: string | null;
+  queries: GithubJobEvidenceAlignmentQuery[];
+}): GithubJobEvidenceAlignmentResult | null {
+  if (!input.queries.length) return null;
+  if (input.queries.some((query) => !jobCategoryContextTerms(query))) return { aligned: true, missingAlignmentProvenance: true, mismatches: [] };
+  const mismatches = input.queries
+    .map((query) => classifyGithubJobEvidence({ ...input, query }))
+    .filter((value): value is GithubJobEvidenceAlignmentMismatch => Boolean(value));
+  return mismatches.length === input.queries.length
+    ? { aligned: false, missingAlignmentProvenance: false, mismatches }
+    : { aligned: true, missingAlignmentProvenance: false, mismatches: [] };
 }
 
 function matchGithubFeatureMarkers(text: string): string[] {

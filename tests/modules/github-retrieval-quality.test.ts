@@ -41,11 +41,25 @@ describe("GitHub retrieval precision gate", () => {
     ...overrides,
   });
 
+  const jobProvenance = (conversationId: string, queryPlanId = `job-${conversationId}`, overrides: Partial<ScanDiscoveryProvenance> = {}): ScanDiscoveryProvenance => ({
+    conversationId,
+    queryPlanId,
+    source: "github",
+    queryFamily: "jtbd",
+    demandSurface: "job_demand",
+    semanticQuery: "need project management software to plan and ship software efficiently",
+    concepts: ["category", "manage_software_projects"],
+    competitorSpecific: false,
+    ...overrides,
+  });
+
   const candidate = (id: string, title: string, body: string, provenance: ScanDiscoveryProvenance = painProvenance(id)) => ({
     conversation: { id, primary_source_item_id: `${id}-source`, published_at: "2026-01-01" } as ConversationRow,
     source: { id: `${id}-source`, external_id: `github:issue:${id}`, source_key: "github", title, body, metadata: { itemType: "issue" } } as unknown as SourceItemRow,
     provenance,
   });
+
+  const jobCandidate = (id: string, title: string, body: string, overrides: Partial<ScanDiscoveryProvenance> = {}) => candidate(id, title, body, jobProvenance(id, `job-${id}`, overrides));
 
   it("carries the compiled pain anchors into current-scan GitHub provenance", () => {
     const request = { limit: 5, expandThreads: false, requestMetadata: {
@@ -111,13 +125,105 @@ describe("GitHub retrieval precision gate", () => {
     expect(result.githubFeatureEvidenceAlignment).toEqual({ inspectedCount: 1, alignedCount: 1, mismatchCount: 0, mismatches: [] });
   });
 
-  it("does not apply either GitHub evidence gate to job_demand", () => {
+  it("applies only the GitHub job-demand evidence gate to job_demand", () => {
     const id = "job";
-    const item = candidate(id, "Repository request", "This text has no pain query anchor.", { ...painProvenance(id), demandSurface: "job_demand", githubPainRetrievalV1: undefined });
+    const item = candidate(id, "Team tooling request", "Our team needs a better project management tool.", jobProvenance(id));
     const result = selectScanCandidates({ conversations: [item.conversation], sourceById: new Map([[item.source.id, item.source]]), max: 15, provenance: [item.provenance] });
     expect(result.conversations).toHaveLength(1);
     expect(result.githubPainEvidenceAlignment).toEqual({ inspectedCount: 0, alignedCount: 0, mismatchCount: 0, mismatches: [] });
     expect(result.githubFeatureEvidenceAlignment).toEqual({ inspectedCount: 0, alignedCount: 0, mismatchCount: 0, mismatches: [] });
+    expect(result.githubJobEvidenceAlignment).toMatchObject({ inspectedCount: 1, alignedCount: 1, mismatchCount: 0 });
+  });
+
+  it.each([
+    "Our team needs a better project management tool for engineering.",
+    "We need software to manage issues across multiple repositories.",
+    "Looking for a tool that helps our team plan and ship software.",
+    "Our workflow is getting hard to manage and we need a better system.",
+    "We're looking for issue tracking software for a small engineering team.",
+  ])("keeps positive GitHub job demand: %s", (body) => {
+    const item = jobCandidate(`job-positive-${body.slice(0, 10).replace(/[^a-z]+/gi, "-").toLowerCase()}`, "Team workflow request", body);
+    const result = selectScanCandidates({ conversations: [item.conversation], sourceById: new Map([[item.source.id, item.source]]), max: 15, provenance: [item.provenance] });
+    expect(result.conversations).toHaveLength(1);
+    expect(result.githubJobEvidenceAlignment).toMatchObject({ inspectedCount: 1, alignedCount: 1, mismatchCount: 0 });
+  });
+
+  it.each([
+    ["employment", "IBM - Site Reliability Engineering Manager", "Careers job description. Apply for this engineering manager role. Project management is a job skill.", "employment_mismatch"],
+    ["maintainer roadmap", "JupyterLab vision for the next few years", "The JupyterLab community should create a vision and roadmap plan for contributors and project governance.", "maintainer_mismatch"],
+    ["sparse generic", "MonopolyStrategy", "initiation plan", "sparse_or_generic_mismatch"],
+    ["implementation task", "Add project management support", "Implement issue tracking support for the repository.", "buyer_context_missing"],
+  ] as const)("suppresses %s job sense", (_label, title, body, subreason) => {
+    const item = jobCandidate(`job-negative-${_label.replace(/\s+/g, "-")}`, title, body);
+    const result = selectScanCandidates({ conversations: [item.conversation], sourceById: new Map([[item.source.id, item.source]]), max: 15, provenance: [item.provenance] });
+    expect(result.conversations).toHaveLength(0);
+    expect(result.diagnostics.suppressedByReason.github_job_evidence_mismatch).toBe(1);
+    expect(result.githubJobEvidenceAlignment).toMatchObject({ inspectedCount: 1, alignedCount: 0, mismatchCount: 1, subreasonCounts: { [subreason]: 1 } });
+    expect(result.githubJobEvidenceAlignment?.mismatches[0]).toMatchObject({ conversationId: item.conversation.id, subreason, buyerContextMatched: false });
+  });
+
+  it("classifies missing buyer and category context independently", () => {
+    const buyerOnly = jobCandidate("job-buyer-only", "User discussion", "We need a simpler way to coordinate our team.");
+    const categoryOnly = jobCandidate("job-category-only", "Repository implementation", "This project management system supports issue tracking.");
+    const result = selectScanCandidates({
+      conversations: [buyerOnly.conversation, categoryOnly.conversation],
+      sourceById: new Map([[buyerOnly.source.id, buyerOnly.source], [categoryOnly.source.id, categoryOnly.source]]),
+      max: 15,
+      provenance: [buyerOnly.provenance, categoryOnly.provenance],
+    });
+    expect(result.conversations).toHaveLength(0);
+    expect(result.githubJobEvidenceAlignment).toMatchObject({
+      inspectedCount: 2,
+      alignedCount: 0,
+      mismatchCount: 2,
+      subreasonCounts: { buyer_context_missing: 1, category_context_missing: 1 },
+    });
+  });
+
+  it("does not require Linear or Jira literals", () => {
+    const item = jobCandidate("job-no-product-literals", "Team software request", "Looking for a tool that helps our team plan and ship software.");
+    const result = selectScanCandidates({ conversations: [item.conversation], sourceById: new Map([[item.source.id, item.source]]), max: 15, provenance: [item.provenance] });
+    expect(result.conversations).toHaveLength(1);
+  });
+
+  it("does not suppress a job mismatch when the same conversation has another valid discovery path", () => {
+    const item = jobCandidate("job-alternate-path", "Engineering Manager role", "We need project management experience for this engineering manager job. Careers and apply details are included.");
+    const pain = painProvenance(item.conversation.id, "pain-alternate-path");
+    const result = selectScanCandidates({
+      conversations: [item.conversation],
+      sourceById: new Map([[item.source.id, item.source]]),
+      max: 15,
+      provenance: [item.provenance, pain],
+    });
+    expect(result.conversations).toHaveLength(1);
+    expect(result.githubJobEvidenceAlignment).toMatchObject({ inspectedCount: 1, alignedCount: 0, mismatchCount: 1 });
+    expect(result.diagnostics.suppressedByReason.github_job_evidence_mismatch).toBe(0);
+  });
+
+  it("fails open when job alignment provenance is missing", () => {
+    const item = jobCandidate("job-missing-provenance", "Unclear request", "A short repository note.", { semanticQuery: undefined, concepts: ["category"] });
+    const result = selectScanCandidates({ conversations: [item.conversation], sourceById: new Map([[item.source.id, item.source]]), max: 15, provenance: [item.provenance] });
+    expect(result.conversations).toHaveLength(1);
+    expect(result.githubJobEvidenceAlignment).toMatchObject({ inspectedCount: 1, alignedCount: 1, mismatchCount: 0, missingAlignmentProvenanceCount: 1, missingAlignmentProvenanceReason: "missing_alignment_provenance" });
+  });
+
+  it("suppresses job mismatches before evaluation capacity is consumed and reconciles diagnostics", () => {
+    const mismatch = jobCandidate("job-cap-mismatch", "Project implementation", "Add project management support to this repository.");
+    const aligned = jobCandidate("job-cap-aligned", "Team request", "Our team needs a better project management tool.");
+    const result = selectScanCandidates({
+      conversations: [mismatch.conversation, aligned.conversation],
+      sourceById: new Map([[mismatch.source.id, mismatch.source], [aligned.source.id, aligned.source]]),
+      max: 1,
+      provenance: [mismatch.provenance, aligned.provenance],
+    });
+    expect(result.conversations.map((row) => row.id)).toEqual([aligned.conversation.id]);
+    expect(result.diagnostics.availableCount).toBe(1);
+    expect(result.diagnostics.selectedCount).toBe(1);
+    const diagnostics = result.githubJobEvidenceAlignment;
+    expect(diagnostics).toBeDefined();
+    if (!diagnostics) throw new Error("GitHub job evidence diagnostics were not returned.");
+    expect(diagnostics.inspectedCount).toBe(diagnostics.alignedCount + diagnostics.mismatchCount);
+    expect(diagnostics.subreasonCounts.buyer_context_missing).toBe(1);
   });
 
   it("does not apply the gate to non-GitHub sources", () => {
