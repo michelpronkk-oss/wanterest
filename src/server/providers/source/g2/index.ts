@@ -137,7 +137,7 @@ export class G2SourceAdapter implements SourceAdapter {
   constructor(options: G2SourceAdapterOptions = {}) {
     this.apiKey = options.apiKey ?? process.env.G2_API_KEY?.trim() ?? "";
     this.baseUrl = (options.baseUrl ?? "https://data.g2.com/api/v2").replace(/\/$/, "");
-    this.productsBaseUrl = (options.productsBaseUrl ?? this.baseUrl.replace(/\/v2$/, "/v1")).replace(/\/$/, "");
+    this.productsBaseUrl = (options.productsBaseUrl ?? this.baseUrl).replace(/\/$/, "");
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.timeoutMs = options.timeoutMs ?? 8_000;
     this.resolver = new G2ProductResolver({ apiKey: this.apiKey, productsBaseUrl: this.productsBaseUrl, fetchImpl: this.fetchImpl, timeoutMs: this.timeoutMs, maxCatalogRequests: options.maxCatalogRequests });

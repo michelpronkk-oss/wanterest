@@ -142,31 +142,68 @@ describe("Source Expansion v1 adapters", () => {
   it("resolves a G2 product by exact domain before importing reviews", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (input) => {
       const url = String(input);
-      if (url.includes("/api/v1/products?")) return response({ data: [{ id: "product-domain", attributes: { name: "Workflow Radar", domain: "radar.example.com", slug: "workflow-radar" } }] });
+      if (url.includes("/api/v2/products?")) return response({ data: [{ id: "product-domain", type: "products", attributes: { name: "Workflow Radar", domain: "radar.example.com", slug: "workflow-radar" } }] });
       return response({ data: [{ id: "g2-review-1", attributes: { comment: "The workflow is easier to operate now.", star_rating: 4, created_at: "2026-09-20T10:00:00.000Z", reviewer_name: "Sam", verified: true } }] });
     });
-    const adapter = new G2SourceAdapter({ apiKey: "approved-token", baseUrl: "https://g2.test/api/v2", productsBaseUrl: "https://g2.test/api/v1", fetchImpl });
+    const adapter = new G2SourceAdapter({ apiKey: "approved-token", baseUrl: "https://g2.test/api/v2", fetchImpl });
     const page = await adapter.discover({ limit: 1, expandThreads: false, requestMetadata: { g2Targets: [{ key: "product", name: "Workflow Radar", domain: "https://www.radar.example.com/pricing" }] } });
     const candidate = adapter.normalize(page.items[0]!);
     expect(page.diagnostics.resolutions?.[0]).toMatchObject({ status: "resolved", productId: "product-domain", matchedBy: "domain" });
     expect(candidate.metadata).toMatchObject({ sourceCategory: "software_review", rating: 4, verified: true });
     expect(fetchImpl).toHaveBeenCalledWith(expect.stringContaining("/api/v2/products/product-domain/reviews"), expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer approved-token" }) }));
+    const productCall = fetchImpl.mock.calls.find(([input]) => String(input).includes("/products?"));
+    expect(productCall?.[0]).toContain("/api/v2/products?");
+    expect(productCall?.[0]).toContain("filter%5Bdomain%5D=radar.example.com");
+    expect(productCall?.[0]).toContain("page%5Bsize%5D=25");
+    expect(productCall?.[0]).not.toContain("page%5Bnumber%5D");
+    expect(productCall?.[0]).not.toContain("/api/v1/products?");
+    expect(productCall?.[1]).toEqual(expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer approved-token" }) }));
   });
 
   it("resolves a G2 product by normalized name", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (input) => String(input).includes("/api/v1/products?")
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (input) => String(input).includes("/api/v2/products?")
       ? response({ data: [{ id: "product-name", attributes: { name: "Acme   Flow", slug: "acme-flow" } }] })
       : response({ data: [] }));
-    const adapter = new G2SourceAdapter({ apiKey: "approved-token", baseUrl: "https://g2.test/api/v2", productsBaseUrl: "https://g2.test/api/v1", fetchImpl });
+    const adapter = new G2SourceAdapter({ apiKey: "approved-token", baseUrl: "https://g2.test/api/v2", fetchImpl });
     const page = await adapter.discover({ limit: 1, expandThreads: false, requestMetadata: { g2Targets: [{ key: "product", name: " acme flow " }] } });
     expect(page.diagnostics.resolutions?.[0]).toMatchObject({ status: "resolved", productId: "product-name", matchedBy: "name" });
+  });
+
+  it("resolves a G2 product by slug", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (input) => String(input).includes("/api/v2/products?")
+      ? response({ data: [{ id: "product-slug", type: "products", attributes: { name: "Workflow Radar", slug: "workflow-radar" } }] })
+      : response({ data: [] }));
+    const adapter = new G2SourceAdapter({ apiKey: "approved-token", baseUrl: "https://g2.test/api/v2", fetchImpl });
+    const page = await adapter.discover({ limit: 1, expandThreads: false, requestMetadata: { g2Targets: [{ key: "product", slug: "workflow-radar" }] } });
+    expect(page.diagnostics.resolutions?.[0]).toMatchObject({ status: "resolved", productId: "product-slug", matchedBy: "slug" });
+  });
+
+  it("keeps v2 product lookups bounded and does not follow an unverified next link", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/v2/products?")) return response({ data: [], links: { next: "https://g2.test/api/v2/products?page[after]=next" } });
+      return response({ data: [] });
+    });
+    const adapter = new G2SourceAdapter({ apiKey: "approved-token", baseUrl: "https://g2.test/api/v2", fetchImpl, maxCatalogRequests: 1 });
+    const page = await adapter.discover({ limit: 1, expandThreads: false, requestMetadata: { g2Targets: [{ key: "product", name: "Not Listed" }] } });
+    expect(page.diagnostics.resolutions?.[0]).toMatchObject({ status: "no_match" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(String(fetchImpl.mock.calls[0]?.[0])).toContain("page%5Bsize%5D=25");
+    expect(String(fetchImpl.mock.calls[0]?.[0])).not.toContain("page%5Bnumber%5D");
+  });
+
+  it("keeps G2 product-resolution HTTP 401 non-retryable", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response({ errors: [{ code: "unauthorized" }] }, 401));
+    const adapter = new G2SourceAdapter({ apiKey: "approved-token", baseUrl: "https://g2.test/api/v2", fetchImpl });
+    await expect(adapter.discover({ limit: 1, expandThreads: false, requestMetadata: { g2Targets: [{ key: "product", name: "Workflow Radar" }] } })).rejects.toMatchObject({ code: "HTTP_401", retryable: false });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("reuses a cached mapping without calling the G2 Products API", async () => {
     const target = { key: "product", kind: "product" as const, name: "Cached Flow", domain: "cached.example.com" };
     const mapping = { status: "resolved" as const, targetKey: "product", targetFingerprint: g2TargetFingerprint(target), productId: "cached-product", matchedBy: "domain" as const, candidateProductIds: ["cached-product"], resolvedAt: "2026-09-23T10:00:00.000Z", resolverVersion: "g2-product-resolution-v1" as const };
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response({ data: [{ id: "g2-review-cached", attributes: { comment: "Cached mapping works." } }] }));
-    const adapter = new G2SourceAdapter({ apiKey: "approved-token", baseUrl: "https://g2.test/api/v2", productsBaseUrl: "https://g2.test/api/v1", fetchImpl });
+    const adapter = new G2SourceAdapter({ apiKey: "approved-token", baseUrl: "https://g2.test/api/v2", fetchImpl });
     const page = await adapter.discover({ limit: 1, expandThreads: false, requestMetadata: { g2Targets: [target], g2ProductMappings: { product: mapping } } });
     expect(page.diagnostics.resolutions?.[0]).toMatchObject({ status: "resolved", productId: "cached-product" });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -175,7 +212,7 @@ describe("Source Expansion v1 adapters", () => {
 
   it("records a structured no-match state and skips review fetching", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async () => response({ data: [] }));
-    const adapter = new G2SourceAdapter({ apiKey: "approved-token", baseUrl: "https://g2.test/api/v2", productsBaseUrl: "https://g2.test/api/v1", fetchImpl });
+    const adapter = new G2SourceAdapter({ apiKey: "approved-token", baseUrl: "https://g2.test/api/v2", fetchImpl });
     const page = await adapter.discover({ limit: 1, expandThreads: false, requestMetadata: { g2Targets: [{ key: "product", name: "Not Listed", domain: "missing.example.com" }] } });
     expect(page.items).toHaveLength(0);
     expect(page.diagnostics.resolutions?.[0]).toMatchObject({ status: "no_match", targetKey: "product" });
@@ -188,7 +225,7 @@ describe("Source Expansion v1 adapters", () => {
       { id: "product-a", attributes: { name: "Flow A", domain: "same.example.com" } },
       { id: "product-b", attributes: { name: "Flow B", domain: "same.example.com" } },
     ] }));
-    const adapter = new G2SourceAdapter({ apiKey: "approved-token", baseUrl: "https://g2.test/api/v2", productsBaseUrl: "https://g2.test/api/v1", fetchImpl });
+    const adapter = new G2SourceAdapter({ apiKey: "approved-token", baseUrl: "https://g2.test/api/v2", fetchImpl });
     const page = await adapter.discover({ limit: 1, expandThreads: false, requestMetadata: { g2Targets: [{ key: "product", domain: "same.example.com" }] } });
     expect(page.items).toHaveLength(0);
     expect(page.diagnostics.resolutions?.[0]).toMatchObject({ status: "ambiguous_match", candidateProductIds: ["product-a", "product-b"] });
@@ -196,10 +233,10 @@ describe("Source Expansion v1 adapters", () => {
   });
 
   it("uses the resolved G2 product ID for review fetching", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (input) => String(input).includes("/api/v1/products?")
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (input) => String(input).includes("/api/v2/products?")
       ? response({ data: [{ id: "resolved-review-product", attributes: { name: "Review Product" } }] })
       : response({ data: [{ id: "review-1", attributes: { comment: "A real review." } }] }));
-    const adapter = new G2SourceAdapter({ apiKey: "approved-token", baseUrl: "https://g2.test/api/v2", productsBaseUrl: "https://g2.test/api/v1", fetchImpl });
+    const adapter = new G2SourceAdapter({ apiKey: "approved-token", baseUrl: "https://g2.test/api/v2", fetchImpl });
     await adapter.discover({ limit: 1, expandThreads: false, requestMetadata: { g2Targets: [{ key: "product", name: "Review Product" }] } });
     const reviewCall = fetchImpl.mock.calls.find(([input]) => String(input).includes("/reviews"));
     expect(reviewCall?.[0]).toContain("/products/resolved-review-product/reviews");
