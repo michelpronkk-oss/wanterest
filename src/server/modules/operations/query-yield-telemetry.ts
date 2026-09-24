@@ -1,4 +1,5 @@
-export type QueryYieldExecutionStatus = "completed_with_results" | "completed_zero_results" | "rate_limited" | "provider_error" | "budget_limited" | "degraded";
+
+export type QueryYieldExecutionStatus = "completed_with_results" | "completed_zero_results" | "rate_limited" | "provider_error" | "budget_limited" | "execution_suppressed" | "disabled" | "unavailable" | "degraded";
 export type SourceHealthStatus = QueryYieldExecutionStatus | "not_planned" | "disabled" | "unavailable";
 export type QueryYieldStopReason = "no_cursor" | "page_cap_reached" | "provider_limit" | "zero_results" | "error";
 
@@ -12,6 +13,69 @@ export type QueryYieldTelemetry = {
 export type QueryYieldOutcome = { conversationId: string; selected: boolean; evaluated: boolean; qualificationStatus: "qualified" | "weak_candidate" | "rejected" | null };
 export type QueryYieldProvenance = { conversationId: string; queryPlanId: string };
 export type FinalizedQueryYieldTelemetry = QueryYieldTelemetry & { selectedCount: number; evaluatedCount: number; qualifiedInfluencedCount: number; weakInfluencedCount: number; rejectedInfluencedCount: number };
+
+export type PlannedQueryYield = {
+  queryPlanId: string;
+  source: string;
+  family: string;
+  surface: string;
+  concepts: string[];
+  competitorSpecific: boolean;
+};
+
+export type QueryYieldSourceState = {
+  source: string;
+  status: "completed" | "failed" | "skipped";
+  queryCount: number;
+  errorCode?: string | null;
+};
+
+export type QueryYieldReconciliation = {
+  rows: QueryYieldTelemetry[];
+  plannedQueryCount: number;
+  terminalQueryArtifactCount: number;
+  missingQueryPlanIds: string[];
+};
+
+function terminalStatus(source: QueryYieldSourceState | undefined, plannedCount: number): { status: QueryYieldExecutionStatus; stop: QueryYieldStopReason } {
+  if (source?.status === "failed") return source.errorCode === "RATE_LIMITED" ? { status: "rate_limited", stop: "error" } : { status: "provider_error", stop: "error" };
+  if (source?.status === "skipped") return { status: source.errorCode === "CONFIGURATION_MISSING" ? "unavailable" : "disabled", stop: "error" };
+  if (source && source.queryCount < plannedCount) return { status: "budget_limited", stop: "provider_limit" };
+  return { status: "execution_suppressed", stop: "error" };
+}
+
+/** Ensures every planner query has exactly one immutable terminal telemetry row. */
+export function reconcileQueryYieldTelemetry(planned: PlannedQueryYield[], executed: QueryYieldTelemetry[], sourceStates: QueryYieldSourceState[]): QueryYieldReconciliation {
+  const executedById = new Map(executed.map((row) => [row.queryPlanId, row]));
+  const sourceCounts = new Map<string, number>();
+  for (const query of planned) sourceCounts.set(query.source, (sourceCounts.get(query.source) ?? 0) + 1);
+  const rows = planned.map((query) => {
+    const existing = executedById.get(query.queryPlanId);
+    if (existing) return existing;
+    const source = sourceStates.find((item) => item.source === query.source);
+    const terminal = terminalStatus(source, sourceCounts.get(query.source) ?? 1);
+    return {
+      queryPlanId: query.queryPlanId,
+      source: query.source,
+      family: query.family,
+      surface: query.surface,
+      concepts: query.concepts,
+      competitorSpecific: query.competitorSpecific,
+      pagesRequested: 1,
+      pagesCompleted: 0,
+      cursorContinuationCount: 0,
+      continuationStoppedReason: terminal.stop,
+      executionStatus: terminal.status,
+      rawItems: 0,
+      normalizedItems: 0,
+      uniqueConversations: 0,
+      duplicateCount: 0,
+      estimatedCostUsd: null,
+    } satisfies QueryYieldTelemetry;
+  });
+  const rowIds = new Set(rows.map((row) => row.queryPlanId));
+  return { rows, plannedQueryCount: planned.length, terminalQueryArtifactCount: rowIds.size, missingQueryPlanIds: planned.map((query) => query.queryPlanId).filter((id) => !rowIds.has(id)) };
+}
 
 export function finalizeQueryYieldTelemetry(rows: QueryYieldTelemetry[], provenance: QueryYieldProvenance[], outcomes: Map<string, QueryYieldOutcome>): FinalizedQueryYieldTelemetry[] {
   const counts = new Map(rows.map((row) => [row.queryPlanId, { selectedCount: 0, evaluatedCount: 0, qualifiedInfluencedCount: 0, weakInfluencedCount: 0, rejectedInfluencedCount: 0 }]));
@@ -36,10 +100,11 @@ export function aggregateQueryYield(rows: Array<QueryYieldTelemetry & Partial<Fi
   return { bySource: aggregate((row) => row.source), bySurface: aggregate((row) => row.surface), bySourceSurface: aggregate((row) => `${row.source}:${row.surface}`) };
 }
 
-export function sourceHealthStatus(input: { planned: boolean; executed: boolean; normalizedItems: number; errorCode?: string | null; budgetLimited?: boolean; disabled?: boolean; unavailable?: boolean; degraded?: boolean }): SourceHealthStatus {
+export function sourceHealthStatus(input: { planned: boolean; executed: boolean; normalizedItems: number; executionStatus?: "completed" | "failed" | "skipped"; errorCode?: string | null; budgetLimited?: boolean; disabled?: boolean; unavailable?: boolean; degraded?: boolean }): SourceHealthStatus {
   if (!input.planned) return "not_planned";
   if (input.disabled) return "disabled";
   if (input.unavailable) return "unavailable";
+  if (input.executionStatus === "failed") return input.errorCode === "RATE_LIMITED" ? "rate_limited" : "provider_error";
   if (input.budgetLimited) return "budget_limited";
   if (input.errorCode === "RATE_LIMITED") return "rate_limited";
   if (input.errorCode) return "provider_error";

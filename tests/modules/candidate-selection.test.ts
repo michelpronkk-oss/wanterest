@@ -29,6 +29,17 @@ describe("candidate selection v2", () => {
     expect(first.diagnostics).toEqual(shuffled.diagnostics);
     expect(first.diagnostics.selectedCount).toBe(15);
     expect(first.diagnostics.selectedBySource).toMatchObject({ github: expect.any(Number), "hacker-news": expect.any(Number), x: expect.any(Number) });
+    expect(first.diagnostics.evaluationCapDiagnostics).toMatchObject({ availableCount: 25, evaluatedCount: 15, suppressedCount: 10, suppressedScoreRange: { min: expect.any(Number), max: expect.any(Number) } });
+    expect(first.diagnostics.evaluationCapDiagnostics.suppressedCandidates).toHaveLength(10);
+  });
+
+  it("reports cap-suppressed candidates with bounded provenance metadata without evaluating them", () => {
+    const conversations = ["a", "b", "c"].map((id) => ({ id, primary_source_item_id: id, published_at: "2026-01-01" } as ConversationRow));
+    const sourceById = new Map(conversations.map(({ id }) => [id, { id, source_key: "github", title: id, body: `Detailed demand evidence for ${id} ${"context ".repeat(20)}`, metadata: {} } as unknown as SourceItemRow]));
+    const result = selectScanCandidates({ conversations, sourceById, max: 2, provenance: conversations.map(({ id }) => ({ conversationId: id, queryPlanId: `query-${id}`, source: "github", queryFamily: "pain", demandSurface: "pain_first", concepts: [], competitorSpecific: false })) });
+    expect(result.conversations).toHaveLength(2);
+    expect(result.diagnostics.evaluationCapDiagnostics.suppressedCount).toBe(1);
+    expect(result.diagnostics.evaluationCapDiagnostics.suppressedCandidates[0]).toMatchObject({ conversationId: "c", source: "github", surfaces: ["pain_first"], queryPlanIds: ["query-c"], reason: "evaluation_cap" });
   });
 
   it("uses current scan provenance for cached and multiply discovered conversations", () => {

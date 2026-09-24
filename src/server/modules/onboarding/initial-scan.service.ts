@@ -34,7 +34,7 @@ import { buildSourceRoutingPlan, selectExecutableSourceRoutes, type SourceRoutin
 import { buildQueryPlan, toSourceDiscoveryRequest, type QueryPlan } from "@/server/modules/operations/query-planning.index";
 import { getDiscoveryCoverageConfig } from "@/server/modules/operations/discovery-coverage.config";
 import type { QueryYieldTelemetry } from "@/server/modules/operations/query-yield-telemetry";
-import { aggregateQueryYield, finalizeQueryYieldTelemetry, sourceHealthStatus } from "@/server/modules/operations/query-yield-telemetry";
+import { aggregateQueryYield, finalizeQueryYieldTelemetry, reconcileQueryYieldTelemetry, sourceHealthStatus } from "@/server/modules/operations/query-yield-telemetry";
 import { QueryYieldRepository } from "@/server/modules/operations/query-yield.repository";
 import { sourceDiscoveryRequestSchema, type SourceDiscoveryRequest } from "@/server/providers/source/contracts";
 import { g2MappingsFromSourceFilters, g2SourceFiltersWithMappings, type G2ProductMapping, type G2ProductResolutionTarget } from "@/server/providers/source/g2/product-resolution";
@@ -71,7 +71,7 @@ const scanResultSchema = z.object({
   actionsUpdated: z.number().int().nonnegative().optional(),
   routing: z.object({ version: z.string(), coverageStatus: z.string(), coverageConfidence: z.number(), selectedSources: z.array(z.string()), excludedSources: z.array(z.string()) }).optional(),
   queryPlanning: z.object({ version: z.string(), sourceCount: z.number().int().nonnegative(), queryCount: z.number().int().nonnegative(), queryFamilyDistribution: z.record(z.string(), z.number().int().nonnegative()), demandSurfaceCoverage: z.record(z.string(), z.enum(["covered", "uncovered"])), queriesPerSource: z.record(z.string(), z.number().int().nonnegative()), candidateBudgetPerSource: z.record(z.string(), z.number().int().nonnegative()), suppressedDuplicateCount: z.number().int().nonnegative(), lowConfidence: z.boolean(), finalQueries: z.array(z.object({ id: z.string(), source: z.string(), family: z.string(), surface: z.string(), concepts: z.array(z.string()), competitorSpecific: z.boolean() })), runtimeOverrideQueriesPerSource: z.record(z.string(), z.number().int().nonnegative()) }).optional(),
-  candidateSelection: z.object({ version: z.string(), availableCount: z.number().int().nonnegative(), postDedupCandidateCount: z.number().int().nonnegative(), selectedCount: z.number().int().nonnegative(), maxEvaluations: z.number().int().nonnegative(), availableBySource: z.record(z.string(), z.number().int().nonnegative()), selectedBySource: z.record(z.string(), z.number().int().nonnegative()), availableBySurface: z.record(z.string(), z.number().int().nonnegative()), selectedBySurface: z.record(z.string(), z.number().int().nonnegative()), suppressedDuplicateCount: z.number().int().nonnegative(), suppressedLowQualityCount: z.number().int().nonnegative(), suppressedByReason: z.record(z.string(), z.number().int().nonnegative()), selected: z.array(z.object({ conversationId: z.string(), source: z.string(), surface: z.string(), surfaces: z.array(z.string()), score: z.number(), reason: z.string() })) }).optional(),
+  candidateSelection: z.object({ version: z.string(), availableCount: z.number().int().nonnegative(), postDedupCandidateCount: z.number().int().nonnegative(), selectedCount: z.number().int().nonnegative(), maxEvaluations: z.number().int().nonnegative(), availableBySource: z.record(z.string(), z.number().int().nonnegative()), selectedBySource: z.record(z.string(), z.number().int().nonnegative()), availableBySurface: z.record(z.string(), z.number().int().nonnegative()), selectedBySurface: z.record(z.string(), z.number().int().nonnegative()), suppressedDuplicateCount: z.number().int().nonnegative(), suppressedLowQualityCount: z.number().int().nonnegative(), suppressedByReason: z.record(z.string(), z.number().int().nonnegative()), evaluationCapDiagnostics: z.object({ availableCount: z.number().int().nonnegative(), evaluatedCount: z.number().int().nonnegative(), suppressedCount: z.number().int().nonnegative(), suppressedBySource: z.record(z.string(), z.number().int().nonnegative()), suppressedBySurface: z.record(z.string(), z.number().int().nonnegative()), suppressedScoreRange: z.object({ min: z.number(), max: z.number() }).nullable(), suppressedCandidates: z.array(z.object({ conversationId: z.string(), source: z.string(), surfaces: z.array(z.string()), score: z.number(), reason: z.string(), queryPlanIds: z.array(z.string()) })).max(100) }), selected: z.array(z.object({ conversationId: z.string(), source: z.string(), surface: z.string(), surfaces: z.array(z.string()), score: z.number(), reason: z.string() })) }).optional(),
   qualification: z.object({ version: z.string(), thresholdVersion: z.string(), candidateCount: z.number().int().nonnegative(), qualifiedCount: z.number().int().nonnegative(), highConfidenceCount: z.number().int().nonnegative(), weakCount: z.number().int().nonnegative(), rejectedCount: z.number().int().nonnegative(), rejectionReasonDistribution: z.record(z.string(), z.number().int().nonnegative()), intentDistribution: z.record(z.string(), z.number().int().nonnegative()), averageDemandQuality: z.number().min(0).max(1), averageConfidence: z.number().min(0).max(1) }).optional(),
   semanticReasoningShadow: z.object({ routerVersion: z.string(), promptSchemaVersion: z.string(), enabled: z.boolean(), maxNewProviderCallsPerScan: z.number().int().nonnegative(), deterministicOnlyCount: z.number().int().nonnegative(), rejectWithoutLlmCount: z.number().int().nonnegative(), llmRequestedCount: z.number().int().nonnegative(), cacheHitCount: z.number().int().nonnegative(), scheduledForLlmCount: z.number().int().nonnegative(), budgetSkippedCount: z.number().int().nonnegative(), llmExecutedCount: z.number().int().nonnegative(), providerSuccessCount: z.number().int().nonnegative(), providerFailureCount: z.number().int().nonnegative(), schemaFailureCount: z.number().int().nonnegative(), evidenceFailureCount: z.number().int().nonnegative(), conflictBlockCount: z.number().int().nonnegative(), inputTokens: z.number().int().nonnegative(), outputTokens: z.number().int().nonnegative(), reasoningLatencyMs: z.number().int().nonnegative(), reasoningCostUsd: z.number().nonnegative().nullable(), shadowComparisonCount: z.number().int().nonnegative(), noChangeCount: z.number().int().nonnegative(), wouldStrengthenCount: z.number().int().nonnegative(), wouldWeakenCount: z.number().int().nonnegative(), wouldBecomeQualifiedCount: z.number().int().nonnegative(), wouldBecomeUnqualifiedCount: z.number().int().nonnegative(), directionChangeCount: z.number().int().nonnegative(), targetChangeCount: z.number().int().nonnegative(), actualQualifiedCountAmongCompared: z.number().int().nonnegative(), shadowQualifiedCountAmongCompared: z.number().int().nonnegative() }).optional(),
   queryYield: z.unknown().optional(),
@@ -336,7 +336,7 @@ function semanticShadowSummary(config: ReturnType<typeof getSemanticReasoningSha
 export function selectScanCandidates(input: { conversations: ConversationRow[]; sourceById: Map<string, SourceItemRow>; max: number; provenance?: ScanDiscoveryProvenance[] }) {
   const provenance = new Map<string, ScanDiscoveryProvenance[]>();
   for (const entry of uniqueProvenance(input.provenance ?? [])) provenance.set(entry.conversationId, [...(provenance.get(entry.conversationId) ?? []), entry]);
-  const deduped = new Map<string, { conversation: ConversationRow; source: SourceItemRow; discoverySource: string; surface: string; surfaces: string[]; score: number }>();
+  const deduped = new Map<string, { conversation: ConversationRow; source: SourceItemRow; discoverySource: string; surface: string; surfaces: string[]; queryPlanIds: string[]; score: number }>();
   for (const conversation of input.conversations) {
     const source = input.sourceById.get(conversation.primary_source_item_id);
     if (!source) continue;
@@ -344,12 +344,14 @@ export function selectScanCandidates(input: { conversations: ConversationRow[]; 
     const fingerprint = text.toLowerCase().slice(0, 400);
     const metadata = objectValue(source.metadata);
     const query = typeof metadata.query === "string" ? metadata.query.toLowerCase() : "";
-    const surfaces = [...new Set((provenance.get(conversation.id) ?? []).map((entry) => entry.demandSurface))].sort();
-    const discoverySource = (provenance.get(conversation.id) ?? [])[0]?.source ?? source.source_key;
+    const provenanceEntries = provenance.get(conversation.id) ?? [];
+    const surfaces = [...new Set(provenanceEntries.map((entry) => entry.demandSurface))].sort();
+    const queryPlanIds = [...new Set(provenanceEntries.map((entry) => entry.queryPlanId))].sort();
+    const discoverySource = provenanceEntries[0]?.source ?? source.source_key;
     const surface = surfaces[0] ?? "unknown";
     const score = Math.round(Math.min(1, text.length / 280) * 45 + (source.title ? 15 : 0) + (query ? 20 : 0) + (conversation.published_at ? 10 : 0) + 10) / 100;
     const existing = deduped.get(fingerprint);
-    if (!existing || score > existing.score || (score === existing.score && conversation.id.localeCompare(existing.conversation.id) < 0)) deduped.set(fingerprint, { conversation, source, discoverySource, surface, surfaces, score });
+    if (!existing || score > existing.score || (score === existing.score && conversation.id.localeCompare(existing.conversation.id) < 0)) deduped.set(fingerprint, { conversation, source, discoverySource, surface, surfaces, queryPlanIds, score });
   }
   const ranked = [...deduped.values()].sort((a, b) => b.score - a.score || a.discoverySource.localeCompare(b.discoverySource) || a.conversation.id.localeCompare(b.conversation.id));
   const selected: typeof ranked = [];
@@ -362,6 +364,8 @@ export function selectScanCandidates(input: { conversations: ConversationRow[]; 
     remaining.splice(remaining.indexOf(next), 1);
   }
   const count = <T extends string>(values: T[]) => Object.fromEntries([...new Set(values)].sort().map((value) => [value, values.filter((item) => item === value).length]));
+  const evaluationCapSuppressed = selected.length >= Math.max(0, input.max) ? remaining : [];
+  const suppressedSurfaces = evaluationCapSuppressed.flatMap((item) => item.surfaces.length ? item.surfaces : [item.surface]);
   return {
     conversations: selected.map((item) => item.conversation),
     diagnostics: {
@@ -377,6 +381,15 @@ export function selectScanCandidates(input: { conversations: ConversationRow[]; 
       suppressedDuplicateCount: input.conversations.length - ranked.length,
       suppressedLowQualityCount: 0,
       suppressedByReason: { duplicate_content: input.conversations.length - ranked.length, evaluation_cap: Math.max(0, ranked.length - selected.length) },
+      evaluationCapDiagnostics: {
+        availableCount: input.conversations.length,
+        evaluatedCount: selected.length,
+        suppressedCount: evaluationCapSuppressed.length,
+        suppressedBySource: count(evaluationCapSuppressed.map((item) => item.discoverySource)),
+        suppressedBySurface: count(suppressedSurfaces),
+        suppressedScoreRange: evaluationCapSuppressed.length ? { min: Math.min(...evaluationCapSuppressed.map((item) => item.score)), max: Math.max(...evaluationCapSuppressed.map((item) => item.score)) } : null,
+        suppressedCandidates: evaluationCapSuppressed.slice(0, 100).map((item) => ({ conversationId: item.conversation.id, source: item.discoverySource, surfaces: item.surfaces, score: item.score, reason: "evaluation_cap", queryPlanIds: item.queryPlanIds })),
+      },
       selected: selected.map((item) => ({ conversationId: item.conversation.id, source: item.discoverySource, surface: item.surface, surfaces: item.surfaces, score: item.score, reason: "deterministic_quality_and_diversity" })),
     },
   };
@@ -1340,12 +1353,20 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
     }
     const candidateOutcomesByConversation = normalizeCandidateProcessingOutcomes(candidateResult.outcomes);
     diagnostics.push({ sourceKey: "candidate-outcomes", state: "resolved", message: `${candidateOutcomesByConversation.size} current-scan candidate outcome${candidateOutcomesByConversation.size === 1 ? "" : "s"} normalized for provenance attribution.` });
-    const mergedQueryYieldTelemetry = [...new Map([...queryYieldTelemetry].sort((left, right) => left.queryPlanId.localeCompare(right.queryPlanId)).map((telemetry) => [telemetry.queryPlanId, telemetry])).values()];
-    const finalizedQueryYield = finalizeQueryYieldTelemetry(mergedQueryYieldTelemetry, uniqueProvenance(scanProvenance).map((entry) => ({ conversationId: entry.conversationId, queryPlanId: entry.queryPlanId })), candidateOutcomesByConversation);
+    const plannedQueryYield = queryPlan?.source_plans.flatMap((source) => source.queries.map((query) => ({ queryPlanId: query.query_id, source: query.source_key, family: query.query_family, surface: query.demand_surface, concepts: query.concept_keys, competitorSpecific: query.competitor_specific }))) ?? queryYieldTelemetry.map((row) => ({ queryPlanId: row.queryPlanId, source: row.source, family: row.family, surface: row.surface, concepts: row.concepts, competitorSpecific: row.competitorSpecific }));
+    const queryYieldReconciliation = reconcileQueryYieldTelemetry(
+      plannedQueryYield,
+      [...new Map([...queryYieldTelemetry].sort((left, right) => left.queryPlanId.localeCompare(right.queryPlanId)).map((telemetry) => [telemetry.queryPlanId, telemetry])).values()],
+      sourceResults.map((source) => ({ source: source.sourceKey, status: source.status, queryCount: source.queryCount, errorCode: source.errorCode })),
+    );
+    const finalizedQueryYield = finalizeQueryYieldTelemetry(queryYieldReconciliation.rows, uniqueProvenance(scanProvenance).map((entry) => ({ conversationId: entry.conversationId, queryPlanId: entry.queryPlanId })), candidateOutcomesByConversation);
     const queryYieldDiagnostics = {
       version: "query_yield_v1",
+      plannedQueryCount: queryYieldReconciliation.plannedQueryCount,
+      terminalQueryArtifactCount: queryYieldReconciliation.terminalQueryArtifactCount,
+      missingQueryPlanIds: queryYieldReconciliation.missingQueryPlanIds,
       ...aggregateQueryYield(finalizedQueryYield),
-      sourceHealth: Object.fromEntries(sourceResults.map((source) => [source.sourceKey, { status: sourceHealthStatus({ planned: source.planned, executed: source.executed, normalizedItems: source.normalizedItems, errorCode: source.errorCode, budgetLimited: source.queryCount === 0 && source.planned && !source.executed }), planned: source.planned, executed: source.executed, queryCount: source.queryCount, normalizedItems: source.normalizedItems, warningCount: source.warnings.length, errorCode: source.errorCode, budgetLimited: source.queryCount === 0 && source.planned && !source.executed }])),
+      sourceHealth: Object.fromEntries(sourceResults.map((source) => [source.sourceKey, { status: sourceHealthStatus({ planned: source.planned, executed: source.executed, executionStatus: source.status, normalizedItems: source.normalizedItems, errorCode: source.errorCode, budgetLimited: source.queryCount === 0 && source.planned && !source.executed }), planned: source.planned, executed: source.executed, queryCount: source.queryCount, normalizedItems: source.normalizedItems, warningCount: source.warnings.length, errorCode: source.errorCode, budgetLimited: source.queryCount === 0 && source.planned && !source.executed }])),
     };
     const queryYieldRepository = new QueryYieldRepository(client);
     for (const telemetry of finalizedQueryYield) {

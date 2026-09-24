@@ -40,6 +40,7 @@ describe("Source Expansion v2 adapters", () => {
     const page = await adapter.discover({ query: "Jira alternative", limit: 10, expandThreads: false, requestMetadata: { maxVideos: 2, maxCommentsPerVideo: 5, includeReplies: true } });
     expect(page.items.map((item) => item.externalId)).toEqual(["youtube:comment:comment-1", "youtube:comment:comment-generic", "youtube:comment:comment-2"]);
     expect(page.providerMetrics).toMatchObject({ requestCount: 3, searchRequests: 1, commentThreadRequests: 2, videosDiscovered: 2, quotaUnits: 102 });
+    expect(page.estimatedCost).toBeUndefined();
     const candidate = adapter.normalize(page.items[0]!);
     expect(candidate.externalId).toBe("youtube:comment:comment-1");
     expect(candidate.externalConversationId).toBe("youtube:video:video-1");

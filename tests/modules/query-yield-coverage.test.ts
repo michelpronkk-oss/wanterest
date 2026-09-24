@@ -4,7 +4,7 @@ vi.mock("server-only", () => ({}));
 
 import { getDiscoveryCoverageConfig } from "../../src/server/modules/operations/discovery-coverage.config";
 import { QueryYieldRepository, type QueryYieldArtifact } from "../../src/server/modules/operations/query-yield.repository";
-import { aggregateQueryYield, finalizeQueryYieldTelemetry, type QueryYieldTelemetry } from "../../src/server/modules/operations/query-yield-telemetry";
+import { aggregateQueryYield, finalizeQueryYieldTelemetry, reconcileQueryYieldTelemetry, sourceHealthStatus, type QueryYieldTelemetry } from "../../src/server/modules/operations/query-yield-telemetry";
 
 const workspaceId = "8b7a4189-54b7-4cc0-a4a3-1502dc2be82a";
 
@@ -135,5 +135,32 @@ describe("Discovery Coverage V1 and query-yield persistence", () => {
     expect(new Set(["conversation-a"]).size).toBe(1);
     expect(aggregate.qualifiedInfluenced).toBe(2);
     expect(aggregate.unique).toBeLessThanOrEqual(aggregate.normalized);
+  });
+
+  it("reconciles every planned query, including an X query suppressed by a source cap", () => {
+    const result = reconcileQueryYieldTelemetry(
+      ["x-1", "x-2", "x-3"].map((queryPlanId) => ({ queryPlanId, source: "x", family: "pain", surface: "pain_first", concepts: [], competitorSpecific: false })),
+      [telemetry("x-1", 1, 1), telemetry("x-2", 0, 0)],
+      [{ source: "x", status: "completed", queryCount: 2, errorCode: null }],
+    );
+    expect(result.plannedQueryCount).toBe(3);
+    expect(result.terminalQueryArtifactCount).toBe(3);
+    expect(result.missingQueryPlanIds).toEqual([]);
+    expect(result.rows.map((row) => row.executionStatus)).toEqual(["completed_with_results", "completed_with_results", "budget_limited"]);
+  });
+
+  it("creates terminal provider-error artifacts for every query of a failed source", () => {
+    const result = reconcileQueryYieldTelemetry(
+      ["g2-1", "g2-2"].map((queryPlanId) => ({ queryPlanId, source: "g2", family: "pain", surface: "pain_first", concepts: [], competitorSpecific: false })),
+      [],
+      [{ source: "g2", status: "failed", queryCount: 2, errorCode: null }],
+    );
+    expect(result.rows).toHaveLength(2);
+    expect(result.rows.every((row) => row.executionStatus === "provider_error" && row.normalizedItems === 0)).toBe(true);
+  });
+
+  it("gives explicit failed source status precedence over zero-result classification", () => {
+    expect(sourceHealthStatus({ planned: true, executed: true, executionStatus: "failed", normalizedItems: 0, errorCode: null })).toBe("provider_error");
+    expect(sourceHealthStatus({ planned: true, executed: true, executionStatus: "completed", normalizedItems: 0, errorCode: null })).toBe("completed_zero_results");
   });
 });

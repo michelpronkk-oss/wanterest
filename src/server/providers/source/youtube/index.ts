@@ -245,7 +245,6 @@ export class YouTubeSourceAdapter implements SourceAdapter {
       items,
       nextCursor: nextPageToken && maxPages > 1 ? encodeCursor(nextPageToken) : undefined,
       rateLimit,
-      estimatedCost: metrics.quotaUnits,
       providerMetrics: { ...metrics },
       diagnostics,
     };
