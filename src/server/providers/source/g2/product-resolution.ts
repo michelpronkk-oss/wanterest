@@ -274,7 +274,8 @@ export class G2ProductResolver {
   private async fetchCatalog(filter: "domain" | "name" | "slug", value: string): Promise<CatalogProduct[]> {
     // Developer Portal v2 product lookups stay targeted and bounded. Do not
     // carry the legacy v1 page-number assumption into the v2 request.
-    const params = new URLSearchParams({ [`filter[${filter}]`]: value, "page[size]": String(G2_PRODUCTS_PAGE_SIZE) });
+    const filterKey = filter === "slug" ? "filter[slug][]" : `filter[${filter}]`;
+    const params = new URLSearchParams({ [filterKey]: value, "page[size]": String(G2_PRODUCTS_PAGE_SIZE) });
     const response = await fetchJson(this.options.fetchImpl, `${this.options.productsBaseUrl}/products?${params.toString()}`, {
       provider: "g2-products-api",
       mode: "authenticated",

@@ -176,6 +176,40 @@ describe("Source Expansion v1 adapters", () => {
     const adapter = new G2SourceAdapter({ apiKey: "approved-token", baseUrl: "https://g2.test/api/v2", fetchImpl });
     const page = await adapter.discover({ limit: 1, expandThreads: false, requestMetadata: { g2Targets: [{ key: "product", slug: "workflow-radar" }] } });
     expect(page.diagnostics.resolutions?.[0]).toMatchObject({ status: "resolved", productId: "product-slug", matchedBy: "slug" });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const productCall = fetchImpl.mock.calls.find(([input]) => String(input).includes("/api/v2/products?"));
+    const productUrl = new URL(String(productCall?.[0]));
+    expect(productUrl.pathname).toBe("/api/v2/products");
+    expect(productUrl.searchParams.getAll("filter[slug][]")).toEqual(["workflow-radar"]);
+    expect(productUrl.searchParams.has("filter[slug]")).toBe(false);
+    expect(productUrl.searchParams.get("page[size]")).toBe("25");
+    expect(productCall?.[1]).toEqual(expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer approved-token" }) }));
+    const reviewCall = fetchImpl.mock.calls.find(([input]) => String(input).includes("/reviews"));
+    expect(reviewCall?.[0]).toContain("/api/v2/products/product-slug/reviews");
+    expect(reviewCall?.[1]).toEqual(expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer approved-token" }) }));
+  });
+
+  it("preserves G2 resolution order and leaves domain/name filters scalar", async () => {
+    const productUrls: string[] = [];
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/v2/products?")) {
+        productUrls.push(url);
+        const parsed = new URL(url);
+        if (parsed.searchParams.has("filter[domain]")) return response({ data: [] });
+        if (parsed.searchParams.has("filter[name]")) return response({ data: [] });
+        return response({ data: [{ id: "product-ordered", attributes: { name: "Workflow Radar", domain: "radar.example.com", slug: "workflow-radar" } }] });
+      }
+      return response({ data: [] });
+    });
+    const adapter = new G2SourceAdapter({ apiKey: "approved-token", baseUrl: "https://g2.test/api/v2", fetchImpl });
+    await expect(adapter.discover({ limit: 1, expandThreads: false, requestMetadata: { g2Targets: [{ key: "product", name: "Workflow Radar", domain: "radar.example.com", slug: "workflow-radar" }] } })).resolves.toMatchObject({ diagnostics: { resolutions: [{ status: "resolved", matchedBy: "slug" }] } });
+    expect(productUrls).toHaveLength(3);
+    expect(productUrls[0]).toContain("filter%5Bdomain%5D=radar.example.com");
+    expect(productUrls[1]).toContain("filter%5Bname%5D=Workflow+Radar");
+    expect(productUrls[2]).toContain("filter%5Bslug%5D%5B%5D=workflow-radar");
+    expect(productUrls.every((url) => url.includes("/api/v2/products?") && url.includes("page%5Bsize%5D=25"))).toBe(true);
+    expect(productUrls.some((url) => url.includes("filter%5Bslug%5D=workflow-radar"))).toBe(false);
   });
 
   it("keeps v2 product lookups bounded and does not follow an unverified next link", async () => {
