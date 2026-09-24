@@ -36,7 +36,7 @@ const candidateTaskInputSchema = z.object({
   provenance: z.array(z.object({
     conversationId: z.string().uuid(), queryPlanId: z.string().max(180),
     source: z.string().max(40), queryFamily: z.string().max(50),
-    demandSurface: z.string().max(50), concepts: z.array(z.string().max(100)).max(20),
+    demandSurface: z.string().max(50), semanticQuery: z.string().max(200).optional(), concepts: z.array(z.string().max(100)).max(20),
     competitorSpecific: z.boolean(),
     githubPainRetrievalV1: z.object({
       templateVersion: z.literal("github_pain_retrieval_v1_1"),

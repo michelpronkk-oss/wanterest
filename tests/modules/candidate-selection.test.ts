@@ -50,8 +50,8 @@ describe("candidate selection v2", () => {
 
   it("uses current scan provenance for cached and multiply discovered conversations", () => {
     const conversations = ["a", "b", "c"].map((id) => ({ id, primary_source_item_id: id, published_at: "2026-01-01" } as ConversationRow));
-    const sourceById = new Map(conversations.map(({ id }) => [id, { id, source_key: "github", title: id, body: `Need a project management tool. Distinct conversation ${id} with detailed demand evidence over many words.`, metadata: {} } as unknown as SourceItemRow]));
-    const entry = (conversationId: string, demandSurface: string, queryPlanId: string) => ({ conversationId, demandSurface, queryPlanId, source: "github", queryFamily: "pain", concepts: ["category"], competitorSpecific: false, ...(demandSurface === "pain_first" ? { githubPainRetrievalV1: painCompilation } : {}) });
+    const sourceById = new Map(conversations.map(({ id }) => [id, { id, source_key: "github", title: id, body: `Need a project management tool with distinct conversation ${id} and detailed demand evidence over many words.`, metadata: {} } as unknown as SourceItemRow]));
+    const entry = (conversationId: string, demandSurface: string, queryPlanId: string) => ({ conversationId, demandSurface, queryPlanId, source: "github", queryFamily: "pain", concepts: demandSurface === "feature_demand" ? ["project_management_features"] : ["category"], competitorSpecific: false, ...(demandSurface === "feature_demand" ? { semanticQuery: "need project management software with Project management features" } : {}), ...(demandSurface === "pain_first" ? { githubPainRetrievalV1: painCompilation } : {}) });
     const provenance = [entry("a", "pain_first", "q1"), entry("a", "feature_demand", "q2"), entry("b", "pain_first", "q1")];
     const first = selectScanCandidates({ conversations, sourceById, max: 2, provenance });
     const shuffled = selectScanCandidates({ conversations: [...conversations].reverse(), sourceById, max: 2, provenance: [...provenance].reverse() });

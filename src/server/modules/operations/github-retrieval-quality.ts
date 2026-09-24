@@ -60,6 +60,37 @@ export type GithubPainEvidenceAlignmentResult = {
   mismatches: GithubPainEvidenceAlignmentMismatch[];
 };
 
+export const githubFeatureEvidenceOpeningBodyLength = 400 as const;
+export const githubFeatureEvidenceMismatchReason = "feature_evidence_mismatch" as const;
+
+export type GithubFeatureEvidenceAlignmentQuery = {
+  queryPlanId: string;
+  semanticQuery?: string;
+  concepts?: string[];
+};
+
+export type GithubFeatureEvidenceAlignmentMismatch = {
+  conversationId: string;
+  queryPlanId: string;
+  featureMarkers: string[];
+  categoryMatches: string[];
+  reason: typeof githubFeatureEvidenceMismatchReason;
+};
+
+export type GithubFeatureEvidenceAlignmentDiagnostics = {
+  inspectedCount: number;
+  alignedCount: number;
+  mismatchCount: number;
+  mismatches: GithubFeatureEvidenceAlignmentMismatch[];
+};
+
+export type GithubFeatureEvidenceAlignmentResult = {
+  aligned: boolean;
+  featureMarkers: string[];
+  categoryMatches: string[];
+  mismatches: GithubFeatureEvidenceAlignmentMismatch[];
+};
+
 function normalizeEvidenceText(value: string | null | undefined): string {
   return (value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
 }
@@ -78,6 +109,72 @@ function phraseMatches(text: string, phrase: string): boolean {
 export function matchGithubPainAnchors(text: string, anchors: string[]): string[] {
   const normalizedText = normalizeEvidenceText(text);
   return [...new Set(anchors.filter((anchor) => phraseMatches(normalizedText, anchor)))].sort();
+}
+
+const githubFeatureMarkerPatterns: Array<[string, RegExp]> = [
+  ["looking_for_with", /\blooking\s+for\b[\s\S]{0,120}\bwith\b/i],
+  ["looking_for_tool_that", /\blooking\s+for\s+(?:a|an|the)\s+tool\s+that\b/i],
+  ["need_software_with", /\bneed(?:s)?\s+(?!(?:to|for)\b)(?:a|an|the|some)?\s*(?:[a-z0-9-]+\s+){0,5}(?:software|tool|platform|system|solution)\b[\s\S]{0,80}\bwith\b/i],
+  ["need_software_that", /\bneed(?:s)?\s+(?!(?:to|for)\b)(?:a|an|the|some)?\s*(?:[a-z0-9-]+\s+){0,5}(?:software|tool|platform|system|solution)\b[\s\S]{0,80}\bthat\s+(?:can|support(?:s)?)\b/i],
+  ["need_support_for", /\bneed(?:s)?\s+support\s+for\b/i],
+  ["need_a_feature", /\bneed(?:s)?\s+(?!(?:to|for)\b)(?:a|an|the|some)?\s*(?:[a-z0-9-]+\s+){0,5}features?\b/i],
+  ["feature_request", /\bfeature\s+request\b/i],
+  ["would_like_support", /\bwould\s+like\b[\s\S]{0,100}\bsupport\b/i],
+  ["software_that_can", /\b(?:software|tool|platform|system|solution)\s+that\s+(?:can|support(?:s)?|handles?)\b/i],
+];
+
+function featureEvidenceWindow(title: string | null | undefined, body: string | null | undefined): string {
+  const normalizedTitle = normalizeEvidenceText(title);
+  const normalizedBody = normalizeEvidenceText(body).slice(0, githubFeatureEvidenceOpeningBodyLength);
+  return `${normalizedTitle} ${normalizedBody}`.trim();
+}
+
+function matchGithubFeatureMarkers(text: string): string[] {
+  return githubFeatureMarkerPatterns.filter(([, pattern]) => pattern.test(text)).map(([marker]) => marker);
+}
+
+function featureCategoryAnchors(query: GithubFeatureEvidenceAlignmentQuery): string[] {
+  const concepts = (query.concepts ?? [])
+    .map((value) => normalizeEvidenceText(value.replace(/[_-]+/g, " ")).replace(/\bfeatures?\b$/i, "").trim())
+    .filter((value) => value && value !== "category");
+  const productTerms = normalizeEvidenceText(query.semanticQuery)
+    .match(/\b(?:software|tool|platform|system|product|app)\b/g) ?? [];
+  return [...new Set([...concepts, ...productTerms])].sort();
+}
+
+/**
+ * Reconciles a GitHub feature-demand provider match with the retained root
+ * evidence. Only the normalized title and the first bounded body window are
+ * eligible; comments and deep copied/search-result text are intentionally not
+ * inspected.
+ */
+export function alignGithubFeatureEvidence(input: {
+  conversationId: string;
+  title?: string | null;
+  body?: string | null;
+  queries: GithubFeatureEvidenceAlignmentQuery[];
+}): GithubFeatureEvidenceAlignmentResult | null {
+  if (!input.queries.length) return null;
+  const evidence = featureEvidenceWindow(input.title, input.body);
+  const aligned: Array<{ featureMarkers: string[]; categoryMatches: string[] }> = [];
+  const mismatches: GithubFeatureEvidenceAlignmentMismatch[] = [];
+
+  for (const query of input.queries) {
+    const featureMarkers = matchGithubFeatureMarkers(evidence);
+    const categoryMatches = featureCategoryAnchors(query).filter((anchor) => phraseMatches(evidence, anchor));
+    if (featureMarkers.length && categoryMatches.length) {
+      aligned.push({ featureMarkers, categoryMatches });
+    } else {
+      mismatches.push({ conversationId: input.conversationId, queryPlanId: query.queryPlanId, featureMarkers, categoryMatches, reason: githubFeatureEvidenceMismatchReason });
+    }
+  }
+
+  return {
+    aligned: aligned.length > 0,
+    featureMarkers: [...new Set(aligned.flatMap((value) => value.featureMarkers))].sort(),
+    categoryMatches: [...new Set(aligned.flatMap((value) => value.categoryMatches))].sort(),
+    mismatches: aligned.length ? [] : mismatches,
+  };
 }
 
 /**

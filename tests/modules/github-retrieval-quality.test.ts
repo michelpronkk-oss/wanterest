@@ -29,6 +29,18 @@ describe("GitHub retrieval precision gate", () => {
     githubPainRetrievalV1: painCompilation,
   });
 
+  const featureProvenance = (conversationId: string, queryPlanId = `feature-${conversationId}`, overrides: Partial<ScanDiscoveryProvenance> = {}): ScanDiscoveryProvenance => ({
+    conversationId,
+    queryPlanId,
+    source: "github",
+    queryFamily: "feature_requirement",
+    demandSurface: "feature_demand",
+    semanticQuery: "need project management software with Project management features",
+    concepts: ["project_management_features"],
+    competitorSpecific: false,
+    ...overrides,
+  });
+
   const candidate = (id: string, title: string, body: string, provenance: ScanDiscoveryProvenance = painProvenance(id)) => ({
     conversation: { id, primary_source_item_id: `${id}-source`, published_at: "2026-01-01" } as ConversationRow,
     source: { id: `${id}-source`, external_id: `github:issue:${id}`, source_key: "github", title, body, metadata: { itemType: "issue" } } as unknown as SourceItemRow,
@@ -91,14 +103,21 @@ describe("GitHub retrieval precision gate", () => {
     expect(result.githubPainEvidenceAlignment).toMatchObject({ inspectedCount: 3, alignedCount: 3, mismatchCount: 0 });
   });
 
-  it.each([
-    ["feature_demand", "feature"],
-    ["job_demand", "job"],
-  ])("does not apply the gate to GitHub %s", (surface, id) => {
-    const item = candidate(id, "Repository request", "This text has no pain query anchor.", { ...painProvenance(id), demandSurface: surface, githubPainRetrievalV1: undefined });
+  it("applies the feature evidence gate only to GitHub feature_demand", () => {
+    const item = candidate("feature", "Feature request", "Looking for project management software with dependency support.", featureProvenance("feature"));
     const result = selectScanCandidates({ conversations: [item.conversation], sourceById: new Map([[item.source.id, item.source]]), max: 15, provenance: [item.provenance] });
     expect(result.conversations).toHaveLength(1);
     expect(result.githubPainEvidenceAlignment).toEqual({ inspectedCount: 0, alignedCount: 0, mismatchCount: 0, mismatches: [] });
+    expect(result.githubFeatureEvidenceAlignment).toEqual({ inspectedCount: 1, alignedCount: 1, mismatchCount: 0, mismatches: [] });
+  });
+
+  it("does not apply either GitHub evidence gate to job_demand", () => {
+    const id = "job";
+    const item = candidate(id, "Repository request", "This text has no pain query anchor.", { ...painProvenance(id), demandSurface: "job_demand", githubPainRetrievalV1: undefined });
+    const result = selectScanCandidates({ conversations: [item.conversation], sourceById: new Map([[item.source.id, item.source]]), max: 15, provenance: [item.provenance] });
+    expect(result.conversations).toHaveLength(1);
+    expect(result.githubPainEvidenceAlignment).toEqual({ inspectedCount: 0, alignedCount: 0, mismatchCount: 0, mismatches: [] });
+    expect(result.githubFeatureEvidenceAlignment).toEqual({ inspectedCount: 0, alignedCount: 0, mismatchCount: 0, mismatches: [] });
   });
 
   it("does not apply the gate to non-GitHub sources", () => {
@@ -186,6 +205,89 @@ describe("GitHub retrieval precision gate", () => {
     const result = selectScanCandidates({ conversations: [conversation], sourceById: new Map([[source.id, source]]), max: 15 });
     expect(result.conversations).toHaveLength(1);
     expect(result.githubRetrievalPrecision).toEqual({ inspectedCount: 0, eligibleCount: 0, suppressedCount: 0, suppressedByReason: {}, suppressedCandidates: [] });
+    expect(result.githubFeatureEvidenceAlignment).toEqual({ inspectedCount: 0, alignedCount: 0, mismatchCount: 0, mismatches: [] });
+  });
+
+  it("rejects copied SEO/search-result content even when generic query tokens coexist", () => {
+    const item = candidate("feature-dump", "Project", "AI Mode All Images Videos Shopping Short videos Forums News Maps Web Books Search tools Feedback. What Is Project Management? What is project management software? Why do we need it? Features and tools.", featureProvenance("feature-dump"));
+    const result = selectScanCandidates({ conversations: [item.conversation], sourceById: new Map([[item.source.id, item.source]]), max: 15, provenance: [item.provenance] });
+    expect(result.conversations).toHaveLength(0);
+    expect(result.githubFeatureEvidenceAlignment).toMatchObject({ inspectedCount: 1, alignedCount: 0, mismatchCount: 1 });
+    expect(result.githubFeatureEvidenceAlignment.mismatches[0]).toMatchObject({ conversationId: "feature-dump", queryPlanId: "feature-feature-dump", reason: "feature_evidence_mismatch" });
+  });
+
+  it.each([
+    ["duplicate copied search-result content", "Project management software features. Project management software features. Project management software features."],
+    ["internal Agile project-planning text", "It'll need to be a modified Agile process. Project management is a good topic for our internal planning."],
+  ])("rejects baseline %s without a real feature request", (_label, body) => {
+    const id = `feature-baseline-${_label.replace(/[^a-z]+/gi, "-").toLowerCase()}`;
+    const item = candidate(id, "Project planning", body, featureProvenance(id));
+    const result = selectScanCandidates({ conversations: [item.conversation], sourceById: new Map([[item.source.id, item.source]]), max: 15, provenance: [item.provenance] });
+    expect(result.conversations).toHaveLength(0);
+    expect(result.githubFeatureEvidenceAlignment).toMatchObject({ inspectedCount: 1, alignedCount: 0, mismatchCount: 1 });
+  });
+
+  it.each([
+    ["generic need alone", "Need project management software."],
+    ["category alone", "Project management software is used by teams."],
+    ["feature marker alone", "Feature request: support custom workflows."],
+  ])("requires both feature and category evidence: %s", (_label, body) => {
+    const item = candidate(`feature-${_label.replace(/\s+/g, "-")}`, "Project discussion", body, featureProvenance(`feature-${_label.replace(/\s+/g, "-")}`));
+    const result = selectScanCandidates({ conversations: [item.conversation], sourceById: new Map([[item.source.id, item.source]]), max: 15, provenance: [item.provenance] });
+    expect(result.conversations).toHaveLength(0);
+    expect(result.githubFeatureEvidenceAlignment?.mismatchCount).toBe(1);
+  });
+
+  it.each([
+    "Looking for project management software with better dependency support",
+    "Need a project management tool with native roadmap features",
+    "Looking for issue tracking software that supports custom workflows",
+    "We need software that can manage projects across engineering teams",
+    "Feature request: support cross-project dependencies in our project management workflow",
+    "Would like project management software support for dependencies, direction unknown",
+  ])("retains valid feature/category evidence without requiring product direction: %s", (body) => {
+    const id = `positive-${body.slice(0, 12).replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
+    const item = candidate(id, "Feature request", body, featureProvenance(id, `feature-${id}`, { semanticQuery: "need project management software with Project management features", concepts: ["project_management_features"] }));
+    const result = selectScanCandidates({ conversations: [item.conversation], sourceById: new Map([[item.source.id, item.source]]), max: 15, provenance: [item.provenance] });
+    expect(result.conversations.map((row) => row.id)).toEqual([id]);
+    expect(result.githubFeatureEvidenceAlignment).toMatchObject({ inspectedCount: 1, alignedCount: 1, mismatchCount: 0 });
+  });
+
+  it("does not require a Linear literal", () => {
+    const item = candidate("no-linear-feature", "Feature request", "Looking for project management software with native dependency support.", featureProvenance("no-linear-feature"));
+    const result = selectScanCandidates({ conversations: [item.conversation], sourceById: new Map([[item.source.id, item.source]]), max: 15, provenance: [item.provenance] });
+    expect(result.conversations).toHaveLength(1);
+  });
+
+  it("does not let body evidence outside the bounded opening window rescue a candidate", () => {
+    const id = "deep-feature";
+    const body = `${"Unrelated copied content. ".repeat(30)} Looking for project management software with dependency support.`;
+    const item = candidate(id, "Project", body, featureProvenance(id));
+    const result = selectScanCandidates({ conversations: [item.conversation], sourceById: new Map([[item.source.id, item.source]]), max: 15, provenance: [item.provenance] });
+    expect(result.conversations).toHaveLength(0);
+    expect(result.githubFeatureEvidenceAlignment?.mismatchCount).toBe(1);
+  });
+
+  it("keeps pain_first behavior unchanged", () => {
+    const item = candidate("pain-still", "Looking for a better tool", "We need a simpler project management workflow.", painProvenance("pain-still"));
+    const result = selectScanCandidates({ conversations: [item.conversation], sourceById: new Map([[item.source.id, item.source]]), max: 15, provenance: [item.provenance] });
+    expect(result.conversations).toHaveLength(1);
+    expect(result.githubPainEvidenceAlignment?.alignedCount).toBe(1);
+    expect(result.githubFeatureEvidenceAlignment).toEqual({ inspectedCount: 0, alignedCount: 0, mismatchCount: 0, mismatches: [] });
+  });
+
+  it("does not consume evaluation capacity when feature evidence mismatches", () => {
+    const mismatch = candidate("feature-mismatch-cap", "Project", "Need project management software.", featureProvenance("feature-mismatch-cap"));
+    const aligned = candidate("feature-aligned-cap", "Feature request", "Looking for project management software with dependency support.", featureProvenance("feature-aligned-cap"));
+    const result = selectScanCandidates({ conversations: [mismatch.conversation, aligned.conversation], sourceById: new Map([[mismatch.source.id, mismatch.source], [aligned.source.id, aligned.source]]), max: 1, provenance: [mismatch.provenance, aligned.provenance] });
+    expect(result.conversations.map((row) => row.id)).toEqual(["feature-aligned-cap"]);
+    expect(result.diagnostics.availableCount).toBe(1);
+    expect(result.diagnostics.selectedCount).toBe(1);
+    expect(result.diagnostics.suppressedByReason.feature_evidence_mismatch).toBe(1);
+    const featureDiagnostics = result.githubFeatureEvidenceAlignment;
+    expect(featureDiagnostics).toBeDefined();
+    if (!featureDiagnostics) throw new Error("Feature evidence diagnostics were not returned.");
+    expect(featureDiagnostics.inspectedCount).toBe(featureDiagnostics.alignedCount + featureDiagnostics.mismatchCount);
   });
 
   it("keeps the frozen planner, selector, qualification, threshold, and reasoning versions", () => {
