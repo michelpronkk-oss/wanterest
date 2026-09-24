@@ -373,6 +373,7 @@ export class IngestionService {
     rawItems: number;
     normalizedSourceItemIds: string[];
     canonicalizedConversationIds: string[];
+    replayMappings: Array<{ rawSourceItemId: string; sourceItemId: string; conversationId: string }>;
   }> {
     const input: ReplayInput = replayInputSchema.parse(rawInput);
     const rawItems = input.rawSourceItemIds
@@ -383,6 +384,7 @@ export class IngestionService {
     let failed = 0;
     const normalizedSourceItemIds: string[] = [];
     const canonicalizedConversationIds: string[] = [];
+    const replayMappings: Array<{ rawSourceItemId: string; sourceItemId: string; conversationId: string }> = [];
     for (const raw of rawItems) {
       try {
         const normalization = await this.normalizeRawSourceItem(raw.id, input.normalizationVersion, input.traceId);
@@ -391,11 +393,12 @@ export class IngestionService {
         const canonicalization = await this.canonicalizeSourceItem(normalization.sourceItemId, input.canonicalizationVersion, input.traceId);
         canonicalized += 1;
         canonicalizedConversationIds.push(canonicalization.conversationId);
+        replayMappings.push({ rawSourceItemId: raw.id, sourceItemId: normalization.sourceItemId, conversationId: canonicalization.conversationId });
       } catch {
         failed += 1;
       }
     }
-    return { normalized, canonicalized, failed, rawItems: rawItems.length, normalizedSourceItemIds, canonicalizedConversationIds };
+    return { normalized, canonicalized, failed, rawItems: rawItems.length, normalizedSourceItemIds, canonicalizedConversationIds, replayMappings };
   }
 
   async healthCheck(sourceKey: string): Promise<SourceHealthContract> {
