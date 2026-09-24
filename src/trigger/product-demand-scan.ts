@@ -13,6 +13,7 @@ import {
   getScanProduct,
   processScanCandidates,
   type SourceExecutionBatchResult,
+  type ScanDiscoveryProvenance,
 } from "@/server/modules/onboarding/initial-scan.service";
 import { rebuildDemandIntelligenceForScan } from "@/server/modules/demand-intelligence/demand.orchestration";
 import { generateActionsForScan } from "@/server/modules/actions/action.orchestration";
@@ -32,6 +33,12 @@ const candidateTaskInputSchema = z.object({
   profileId: z.string().uuid(),
   normalizedSourceItemIds: z.array(z.string().uuid()).max(500),
   conversationIds: z.array(z.string().uuid()).max(500),
+  provenance: z.array(z.object({
+    conversationId: z.string().uuid(), queryPlanId: z.string().max(180),
+    source: z.string().max(40), queryFamily: z.string().max(50),
+    demandSurface: z.string().max(50), concepts: z.array(z.string().max(100)).max(20),
+    competitorSpecific: z.boolean(),
+  })).max(4000).optional(),
   maxLlmEvaluations: z.number().int().nonnegative().max(500),
   traceId: z.string().trim().min(1).max(120),
 });
@@ -143,13 +150,14 @@ export const productDemandScanTask = schemaTask({
           }
         : undefined;
       const candidateExecutor = input.jobRunId
-        ? async (candidate: { product: { workspace_id: string; id: string }; profileId: string; normalizedSourceItemIds: string[]; conversationIds: string[]; traceId: string; maxLlmEvaluations: number }) => {
+        ? async (candidate: { product: { workspace_id: string; id: string }; profileId: string; normalizedSourceItemIds: string[]; conversationIds: string[]; provenance: ScanDiscoveryProvenance[]; traceId: string; maxLlmEvaluations: number }) => {
             const child = await processProductCandidatesTask.triggerAndWait({
               workspaceId: candidate.product.workspace_id,
               productId: candidate.product.id,
               profileId: candidate.profileId,
               normalizedSourceItemIds: candidate.normalizedSourceItemIds,
               conversationIds: candidate.conversationIds,
+              provenance: candidate.provenance,
               maxLlmEvaluations: candidate.maxLlmEvaluations,
               traceId: candidate.traceId,
             });
