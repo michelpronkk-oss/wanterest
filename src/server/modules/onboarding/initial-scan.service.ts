@@ -57,7 +57,7 @@ const scanResultSchema = z.object({
   actionsUpdated: z.number().int().nonnegative().optional(),
   routing: z.object({ version: z.string(), coverageStatus: z.string(), coverageConfidence: z.number(), selectedSources: z.array(z.string()), excludedSources: z.array(z.string()) }).optional(),
   queryPlanning: z.object({ version: z.string(), sourceCount: z.number().int().nonnegative(), queryCount: z.number().int().nonnegative(), queryFamilyDistribution: z.record(z.string(), z.number().int().nonnegative()), demandSurfaceCoverage: z.record(z.string(), z.enum(["covered", "uncovered"])), queriesPerSource: z.record(z.string(), z.number().int().nonnegative()), candidateBudgetPerSource: z.record(z.string(), z.number().int().nonnegative()), suppressedDuplicateCount: z.number().int().nonnegative(), lowConfidence: z.boolean(), finalQueries: z.array(z.object({ id: z.string(), source: z.string(), family: z.string(), surface: z.string(), concepts: z.array(z.string()), competitorSpecific: z.boolean() })), runtimeOverrideQueriesPerSource: z.record(z.string(), z.number().int().nonnegative()) }).optional(),
-  candidateSelection: z.object({ version: z.string(), availableCount: z.number().int().nonnegative(), selectedCount: z.number().int().nonnegative(), maxEvaluations: z.number().int().nonnegative(), availableBySource: z.record(z.string(), z.number().int().nonnegative()), selectedBySource: z.record(z.string(), z.number().int().nonnegative()), availableBySurface: z.record(z.string(), z.number().int().nonnegative()), selectedBySurface: z.record(z.string(), z.number().int().nonnegative()), suppressedDuplicateCount: z.number().int().nonnegative(), suppressedLowQualityCount: z.number().int().nonnegative(), suppressedByReason: z.record(z.string(), z.number().int().nonnegative()), selected: z.array(z.object({ conversationId: z.string(), source: z.string(), surface: z.string(), score: z.number(), reason: z.string() })) }).optional(),
+  candidateSelection: z.object({ version: z.string(), availableCount: z.number().int().nonnegative(), postDedupCandidateCount: z.number().int().nonnegative(), selectedCount: z.number().int().nonnegative(), maxEvaluations: z.number().int().nonnegative(), availableBySource: z.record(z.string(), z.number().int().nonnegative()), selectedBySource: z.record(z.string(), z.number().int().nonnegative()), availableBySurface: z.record(z.string(), z.number().int().nonnegative()), selectedBySurface: z.record(z.string(), z.number().int().nonnegative()), suppressedDuplicateCount: z.number().int().nonnegative(), suppressedLowQualityCount: z.number().int().nonnegative(), suppressedByReason: z.record(z.string(), z.number().int().nonnegative()), selected: z.array(z.object({ conversationId: z.string(), source: z.string(), surface: z.string(), surfaces: z.array(z.string()), score: z.number(), reason: z.string() })) }).optional(),
   qualification: z.object({ version: z.string(), thresholdVersion: z.string(), candidateCount: z.number().int().nonnegative(), qualifiedCount: z.number().int().nonnegative(), highConfidenceCount: z.number().int().nonnegative(), weakCount: z.number().int().nonnegative(), rejectedCount: z.number().int().nonnegative(), rejectionReasonDistribution: z.record(z.string(), z.number().int().nonnegative()), intentDistribution: z.record(z.string(), z.number().int().nonnegative()), averageDemandQuality: z.number().min(0).max(1), averageConfidence: z.number().min(0).max(1) }).optional(),
   candidateReviews: z.array(scanCandidateReviewSchema).max(100).optional(),
 });
@@ -92,6 +92,7 @@ export type SourceExecutionResult = {
   rawSourceItemIds: string[];
   normalizedSourceItemIds: string[];
   conversationIds: string[];
+  provenance: ScanDiscoveryProvenance[];
   rawInserted: number;
   itemsReturned: number;
   queryCount: number;
@@ -110,6 +111,35 @@ export type SourceExecutionResult = {
     resolverVersion: string;
   }>;
 };
+
+/** Discovery evidence for this scan, including rediscovery of canonical rows. */
+export type ScanDiscoveryProvenance = {
+  conversationId: string;
+  queryPlanId: string;
+  source: string;
+  queryFamily: string;
+  demandSurface: string;
+  concepts: string[];
+  competitorSpecific: boolean;
+};
+
+export function provenanceForReplay(request: SourceDiscoveryRequest, source: string, mappings: Array<{ conversationId: string }>): ScanDiscoveryProvenance[] {
+  const metadata = request.requestMetadata ?? {};
+  if (typeof metadata.queryPlanId !== "string" || typeof metadata.demandSurface !== "string") return [];
+  const intent = objectValue(metadata.discoveryIntent);
+  const concepts = Array.isArray(intent.concept_keys) ? intent.concept_keys.filter((value): value is string => typeof value === "string").slice(0, 20) : [];
+  return mappings.map(({ conversationId }) => ({
+    conversationId, queryPlanId: metadata.queryPlanId as string, source,
+    queryFamily: typeof metadata.queryFamily === "string" ? metadata.queryFamily : "unknown",
+    demandSurface: metadata.demandSurface as string,
+    concepts, competitorSpecific: metadata.competitorSpecific === true,
+  }));
+}
+
+function uniqueProvenance(entries: ScanDiscoveryProvenance[]): ScanDiscoveryProvenance[] {
+  return [...new Map(entries.map((entry) => [`${entry.conversationId}:${entry.source}:${entry.queryPlanId}`, entry])).values()]
+    .sort((a, b) => a.conversationId.localeCompare(b.conversationId) || a.source.localeCompare(b.source) || a.queryPlanId.localeCompare(b.queryPlanId));
+}
 
 export type SourceExecutionBatchResult = {
   sourceKey: string;
@@ -218,13 +248,10 @@ export type CandidateProcessingResult = {
   diagnostics: InitialScanResult["diagnostics"];
 };
 
-export function selectScanCandidates(input: { conversations: ConversationRow[]; sourceById: Map<string, SourceItemRow>; max: number; queryPlan?: QueryPlan | null }) {
-  const provenance = new Map<string, Set<string>>();
-  for (const plan of input.queryPlan?.source_plans ?? []) for (const query of plan.queries) {
-    const key = `${query.source_key}:${query.query_text.toLowerCase()}`;
-    provenance.set(key, new Set([...(provenance.get(key) ?? []), query.demand_surface]));
-  }
-  const deduped = new Map<string, { conversation: ConversationRow; source: SourceItemRow; surface: string; score: number }>();
+export function selectScanCandidates(input: { conversations: ConversationRow[]; sourceById: Map<string, SourceItemRow>; max: number; provenance?: ScanDiscoveryProvenance[] }) {
+  const provenance = new Map<string, ScanDiscoveryProvenance[]>();
+  for (const entry of uniqueProvenance(input.provenance ?? [])) provenance.set(entry.conversationId, [...(provenance.get(entry.conversationId) ?? []), entry]);
+  const deduped = new Map<string, { conversation: ConversationRow; source: SourceItemRow; discoverySource: string; surface: string; surfaces: string[]; score: number }>();
   for (const conversation of input.conversations) {
     const source = input.sourceById.get(conversation.primary_source_item_id);
     if (!source) continue;
@@ -232,18 +259,19 @@ export function selectScanCandidates(input: { conversations: ConversationRow[]; 
     const fingerprint = text.toLowerCase().slice(0, 400);
     const metadata = objectValue(source.metadata);
     const query = typeof metadata.query === "string" ? metadata.query.toLowerCase() : "";
-    const surfaces = provenance.get(`${source.source_key}:${query}`);
-    const surface = surfaces?.size === 1 ? [...surfaces][0] : "unknown";
+    const surfaces = [...new Set((provenance.get(conversation.id) ?? []).map((entry) => entry.demandSurface))].sort();
+    const discoverySource = (provenance.get(conversation.id) ?? [])[0]?.source ?? source.source_key;
+    const surface = surfaces[0] ?? "unknown";
     const score = Math.round(Math.min(1, text.length / 280) * 45 + (source.title ? 15 : 0) + (query ? 20 : 0) + (conversation.published_at ? 10 : 0) + 10) / 100;
     const existing = deduped.get(fingerprint);
-    if (!existing || score > existing.score || (score === existing.score && conversation.id.localeCompare(existing.conversation.id) < 0)) deduped.set(fingerprint, { conversation, source, surface, score });
+    if (!existing || score > existing.score || (score === existing.score && conversation.id.localeCompare(existing.conversation.id) < 0)) deduped.set(fingerprint, { conversation, source, discoverySource, surface, surfaces, score });
   }
-  const ranked = [...deduped.values()].sort((a, b) => b.score - a.score || a.source.source_key.localeCompare(b.source.source_key) || a.conversation.id.localeCompare(b.conversation.id));
+  const ranked = [...deduped.values()].sort((a, b) => b.score - a.score || a.discoverySource.localeCompare(b.discoverySource) || a.conversation.id.localeCompare(b.conversation.id));
   const selected: typeof ranked = [];
   const remaining = [...ranked];
   while (selected.length < Math.max(0, input.max) && remaining.length) {
     const best = remaining[0];
-    const diverse = remaining.filter((item) => item.score >= best.score * 0.8 && (!selected.some((chosen) => chosen.source.source_key === item.source.source_key) || !selected.some((chosen) => chosen.surface === item.surface)));
+    const diverse = remaining.filter((item) => item.score >= best.score * 0.8 && (!selected.some((chosen) => chosen.discoverySource === item.discoverySource) || (item.surfaces.length > 0 && item.surfaces.some((surface) => !selected.some((chosen) => chosen.surfaces.includes(surface))))));
     const next = (diverse.length ? diverse : remaining)[0];
     selected.push(next);
     remaining.splice(remaining.indexOf(next), 1);
@@ -252,18 +280,19 @@ export function selectScanCandidates(input: { conversations: ConversationRow[]; 
   return {
     conversations: selected.map((item) => item.conversation),
     diagnostics: {
-      version: "candidate_selection_v2",
+      version: "candidate_selection_v3",
       availableCount: input.conversations.length,
+      postDedupCandidateCount: ranked.length,
       selectedCount: selected.length,
       maxEvaluations: Math.max(0, input.max),
-      availableBySource: count(ranked.map((item) => item.source.source_key)),
-      selectedBySource: count(selected.map((item) => item.source.source_key)),
+      availableBySource: count(ranked.map((item) => item.discoverySource)),
+      selectedBySource: count(selected.map((item) => item.discoverySource)),
       availableBySurface: count(ranked.map((item) => item.surface)),
       selectedBySurface: count(selected.map((item) => item.surface)),
       suppressedDuplicateCount: input.conversations.length - ranked.length,
       suppressedLowQualityCount: 0,
       suppressedByReason: { duplicate_content: input.conversations.length - ranked.length, evaluation_cap: Math.max(0, ranked.length - selected.length) },
-      selected: selected.map((item) => ({ conversationId: item.conversation.id, source: item.source.source_key, surface: item.surface, score: item.score, reason: "deterministic_quality_and_diversity" })),
+      selected: selected.map((item) => ({ conversationId: item.conversation.id, source: item.discoverySource, surface: item.surface, surfaces: item.surfaces, score: item.score, reason: "deterministic_quality_and_diversity" })),
     },
   };
 }
@@ -276,7 +305,7 @@ export type InitialScanExecutionOptions = {
   triggerRunId?: string;
   sourceExecutor?: (input: SourceExecutionInput) => Promise<SourceExecutionResult>;
   sourceBatchExecutor?: (inputs: SourceExecutionInput[]) => Promise<SourceExecutionBatchResult[]>;
-  candidateExecutor?: (input: { product: ProductRow; profileId: string; normalizedSourceItemIds: string[]; conversationIds: string[]; traceId: string; maxLlmEvaluations: number }) => Promise<CandidateProcessingResult>;
+  candidateExecutor?: (input: { product: ProductRow; profileId: string; normalizedSourceItemIds: string[]; conversationIds: string[]; provenance: ScanDiscoveryProvenance[]; traceId: string; maxLlmEvaluations: number }) => Promise<CandidateProcessingResult>;
   demandExecutor?: (input: { product: ProductRow; evaluationIds: string[]; signalIds: Array<string | null>; traceId: string }) => Promise<DemandRebuildResult>;
   actionsExecutor?: (input: { product: ProductRow; traceId: string }) => Promise<ActionGenerationForScanResult>;
   onProgress?: (progress: ScanProgress) => Promise<void>;
@@ -509,6 +538,7 @@ export async function executeSourceDiscovery(input: SourceExecutionInput): Promi
   const rawSourceItemIds: string[] = [];
   const normalizedSourceItemIds: string[] = [];
   const conversationIds: string[] = [];
+  const provenance: ScanDiscoveryProvenance[] = [];
   const diagnostics: string[] = [];
   const resolutions: NonNullable<SourceExecutionResult["resolutions"]> = [];
   let rawInserted = 0;
@@ -526,6 +556,7 @@ export async function executeSourceDiscovery(input: SourceExecutionInput): Promi
     const replay = await ingestion.replayDetailed({ rawSourceItemIds: discovery.rawSourceItemIds, normalizationVersion: `${input.sourceKey}-v1`, canonicalizationVersion: "canonical-v1", limit: 100 });
     normalizedSourceItemIds.push(...replay.normalizedSourceItemIds);
     conversationIds.push(...replay.canonicalizedConversationIds);
+    provenance.push(...provenanceForReplay(request, input.sourceKey, replay.replayMappings));
     const metadata = request.requestMetadata;
     if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
       if (typeof metadata.estimatedCost === "number") estimatedCost = (estimatedCost ?? 0) + metadata.estimatedCost;
@@ -549,6 +580,7 @@ export async function executeSourceDiscovery(input: SourceExecutionInput): Promi
     rawSourceItemIds: [...new Set(rawSourceItemIds)],
     normalizedSourceItemIds: [...new Set(normalizedSourceItemIds)],
     conversationIds: [...new Set(conversationIds)],
+    provenance: uniqueProvenance(provenance),
     rawInserted,
     itemsReturned: rawSourceItemIds.length,
     queryCount: input.requests.length,
@@ -560,11 +592,11 @@ export async function executeSourceDiscovery(input: SourceExecutionInput): Promi
   };
 }
 
-export async function processScanCandidates(input: { product: ProductRow; profileId: string; normalizedSourceItemIds: string[]; conversationIds: string[]; traceId: string; maxLlmEvaluations?: number }): Promise<CandidateProcessingResult> {
+export async function processScanCandidates(input: { product: ProductRow; profileId: string; normalizedSourceItemIds: string[]; conversationIds: string[]; provenance?: ScanDiscoveryProvenance[]; traceId: string; maxLlmEvaluations?: number }): Promise<CandidateProcessingResult> {
   const client = createSupabaseServiceClient();
   const rows = await loadRows(client, [...new Set(input.normalizedSourceItemIds)], [...new Set(input.conversationIds)]);
   const sourceById = new Map(rows.sourceItems.map((item) => [item.id, item]));
-  const selection = selectScanCandidates({ conversations: rows.conversations, sourceById, max: input.maxLlmEvaluations ?? rows.conversations.length });
+  const selection = selectScanCandidates({ conversations: rows.conversations, sourceById, max: input.maxLlmEvaluations ?? rows.conversations.length, provenance: input.provenance });
   const repository = new SupabaseIntelligenceRepository(client);
   const intelligence = new IntelligenceService(repository);
   const classifier = new FixtureConversationAnalysisEngine();
@@ -799,6 +831,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
   const rawSourceItemIds: string[] = [];
   const normalizedSourceItemIds: string[] = [];
   const conversationIds: string[] = [];
+  const scanProvenance: ScanDiscoveryProvenance[] = [];
   const queryPlanBySource = new Map((queryPlan?.source_plans ?? []).map((source) => [source.source_key, source]));
   const g2ProductMappings = sourceKeys.includes("g2") ? await loadG2ProductMappings(client, product) : {};
 
@@ -862,6 +895,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
         rawSourceItemIds.push(...result.execution.rawSourceItemIds);
         normalizedSourceItemIds.push(...result.execution.normalizedSourceItemIds);
         conversationIds.push(...result.execution.conversationIds);
+        scanProvenance.push(...(result.execution.provenance ?? []));
         if (result.fallback) diagnostics.push({ sourceKey: result.sourceKey, state: "fallback", message: "Query Planning produced no executable query; using the existing conservative request." });
         diagnostics.push({ sourceKey: result.sourceKey, state: "complete", message: `${result.execution.rawInserted} new raw item${result.execution.rawInserted === 1 ? "" : "s"}.` });
       }
@@ -930,6 +964,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
           sourceNormalizedItems += replay.normalizedSourceItemIds.length;
           normalizedSourceItemIds.push(...replay.normalizedSourceItemIds);
           conversationIds.push(...replay.canonicalizedConversationIds);
+          scanProvenance.push(...provenanceForReplay(discoveryRequest, sourceKey, replay.replayMappings));
           const requestMetadata = discoveryRequest.requestMetadata;
           const semanticQuery = requestMetadata && typeof requestMetadata === "object" && !Array.isArray(requestMetadata) && "semanticQuery" in requestMetadata && typeof requestMetadata.semanticQuery === "string" ? requestMetadata.semanticQuery : null;
           const queryLabel = semanticQuery ? ` for “${semanticQuery}”` : "";
@@ -950,12 +985,12 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
     let candidateResult: CandidateProcessingResult;
     const newSignalEvaluationIds: string[] = [];
     if (options.candidateExecutor) {
-      candidateResult = await options.candidateExecutor({ product, profileId: profile.id, normalizedSourceItemIds: [...new Set(normalizedSourceItemIds)], conversationIds: [...new Set(conversationIds)], traceId, maxLlmEvaluations: scanBudget.maxLlmEvaluationsPerScan });
+      candidateResult = await options.candidateExecutor({ product, profileId: profile.id, normalizedSourceItemIds: [...new Set(normalizedSourceItemIds)], conversationIds: [...new Set(conversationIds)], provenance: uniqueProvenance(scanProvenance), traceId, maxLlmEvaluations: scanBudget.maxLlmEvaluationsPerScan });
       diagnostics.push(...candidateResult.diagnostics);
     } else {
     const rows = await loadRows(client, [...new Set(normalizedSourceItemIds)], [...new Set(conversationIds)]);
     const sourceById = new Map(rows.sourceItems.map((item) => [item.id, item]));
-    const selection = selectScanCandidates({ conversations: rows.conversations, sourceById, max: scanBudget.maxLlmEvaluationsPerScan, queryPlan });
+    const selection = selectScanCandidates({ conversations: rows.conversations, sourceById, max: scanBudget.maxLlmEvaluationsPerScan, provenance: scanProvenance });
     const intelligence = new IntelligenceService(intelligenceRepository);
     const classifier = new FixtureConversationAnalysisEngine();
     const matcher = new FixtureProductMatchingEngine();
