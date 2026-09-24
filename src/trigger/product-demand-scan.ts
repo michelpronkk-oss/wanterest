@@ -38,6 +38,11 @@ const candidateTaskInputSchema = z.object({
     source: z.string().max(40), queryFamily: z.string().max(50),
     demandSurface: z.string().max(50), concepts: z.array(z.string().max(100)).max(20),
     competitorSpecific: z.boolean(),
+    githubPainRetrievalV1: z.object({
+      templateVersion: z.literal("github_pain_retrieval_v1_1"),
+      demandAnchors: z.array(z.string().max(80)).max(12),
+      categoryAnchors: z.array(z.string().max(80)).max(8),
+    }).optional(),
   })).max(4000).optional(),
   maxLlmEvaluations: z.number().int().nonnegative().max(500),
   traceId: z.string().trim().min(1).max(120),

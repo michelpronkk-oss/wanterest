@@ -1,3 +1,5 @@
+import { githubPainRetrievalVersion, type GithubPainQueryCompilation } from "./github-query-compilation";
+
 export const githubRetrievalQualityReasons = [
   "eligible",
   "job_posting",
@@ -33,6 +35,85 @@ export type GithubRetrievalPrecisionDiagnostics = {
   suppressedByReason: Record<string, number>;
   suppressedCandidates: GithubRetrievalPrecisionSuppressedCandidate[];
 };
+
+export type GithubPainEvidenceAlignmentQuery = Pick<GithubPainQueryCompilation, "templateVersion" | "demandAnchors" | "categoryAnchors">;
+
+export type GithubPainEvidenceAlignmentMismatch = {
+  conversationId: string;
+  queryPlanId: string;
+  demandAnchorMatches: string[];
+  categoryAnchorMatches: string[];
+  reason: "query_evidence_mismatch";
+};
+
+export type GithubPainEvidenceAlignmentDiagnostics = {
+  inspectedCount: number;
+  alignedCount: number;
+  mismatchCount: number;
+  mismatches: GithubPainEvidenceAlignmentMismatch[];
+};
+
+export type GithubPainEvidenceAlignmentResult = {
+  aligned: boolean;
+  demandAnchorMatches: string[];
+  categoryAnchorMatches: string[];
+  mismatches: GithubPainEvidenceAlignmentMismatch[];
+};
+
+function normalizeEvidenceText(value: string | null | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function escaped(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function phraseMatches(text: string, phrase: string): boolean {
+  const normalized = normalizeEvidenceText(phrase);
+  if (!normalized) return false;
+  const pattern = normalized.split(" ").map(escaped).join("\\s+");
+  return new RegExp(`(?:^|\\b)${pattern}(?:\\b|$)`, "i").test(text);
+}
+
+export function matchGithubPainAnchors(text: string, anchors: string[]): string[] {
+  const normalizedText = normalizeEvidenceText(text);
+  return [...new Set(anchors.filter((anchor) => phraseMatches(normalizedText, anchor)))].sort();
+}
+
+/**
+ * Reconciles a provider-side GitHub pain match with the normalized evidence
+ * retained by Wanterest. Provider-only searchable surfaces are intentionally
+ * excluded from this check.
+ */
+export function alignGithubPainEvidence(input: {
+  conversationId: string;
+  title?: string | null;
+  body?: string | null;
+  queries: Array<{ queryPlanId: string; githubPainRetrievalV1?: GithubPainEvidenceAlignmentQuery }>;
+}): GithubPainEvidenceAlignmentResult | null {
+  if (!input.queries.length) return null;
+  const text = `${input.title ?? ""} ${input.body ?? ""}`;
+  const aligned: Array<{ demand: string[]; category: string[] }> = [];
+  const mismatches: GithubPainEvidenceAlignmentMismatch[] = [];
+
+  for (const query of input.queries) {
+    const compilation = query.githubPainRetrievalV1;
+    const demandAnchorMatches = compilation?.templateVersion === githubPainRetrievalVersion ? matchGithubPainAnchors(text, compilation.demandAnchors) : [];
+    const categoryAnchorMatches = compilation?.templateVersion === githubPainRetrievalVersion ? matchGithubPainAnchors(text, compilation.categoryAnchors) : [];
+    if (demandAnchorMatches.length && categoryAnchorMatches.length) {
+      aligned.push({ demand: demandAnchorMatches, category: categoryAnchorMatches });
+    } else {
+      mismatches.push({ conversationId: input.conversationId, queryPlanId: query.queryPlanId, demandAnchorMatches, categoryAnchorMatches, reason: "query_evidence_mismatch" });
+    }
+  }
+
+  return {
+    aligned: aligned.length > 0,
+    demandAnchorMatches: [...new Set(aligned.flatMap((value) => value.demand))].sort(),
+    categoryAnchorMatches: [...new Set(aligned.flatMap((value) => value.category))].sort(),
+    mismatches: aligned.length ? [] : mismatches,
+  };
+}
 
 const demandLanguage = [
   /\b(?:we|i|our|my|team|company)\b[^.!?\n]{0,80}\b(?:need|want|looking for|struggl|switch|replace|migrat|compar|alternat|recommend|wish|missing|support)\b/i,

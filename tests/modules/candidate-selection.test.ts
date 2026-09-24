@@ -6,6 +6,12 @@ import type { ConversationRow, SourceItemRow } from "../../src/server/db/databas
 import { provenanceForReplay, selectScanCandidates } from "../../src/server/modules/onboarding/initial-scan.service";
 
 describe("candidate selection v2", () => {
+  const painCompilation = {
+    templateVersion: "github_pain_retrieval_v1_1" as const,
+    demandAnchors: ["looking for", "struggling with", "need"],
+    categoryAnchors: ["project management", "issue tracking"],
+  };
+
   it("maps replayed existing conversations back to the executed planned query", () => {
     const request = { limit: 5, expandThreads: false, requestMetadata: { queryPlanId: "qp-1", queryFamily: "comparison", demandSurface: "competitor_pain", competitorSpecific: true, discoveryIntent: { concept_keys: ["competitor-1"] } } };
     expect(provenanceForReplay(request, "x", [{ conversationId: "existing-conversation" }])).toEqual([{
@@ -35,8 +41,8 @@ describe("candidate selection v2", () => {
 
   it("reports cap-suppressed candidates with bounded provenance metadata without evaluating them", () => {
     const conversations = ["a", "b", "c"].map((id) => ({ id, primary_source_item_id: id, published_at: "2026-01-01" } as ConversationRow));
-    const sourceById = new Map(conversations.map(({ id }) => [id, { id, source_key: "github", title: id, body: `Detailed demand evidence for ${id} ${"context ".repeat(20)}`, metadata: {} } as unknown as SourceItemRow]));
-    const result = selectScanCandidates({ conversations, sourceById, max: 2, provenance: conversations.map(({ id }) => ({ conversationId: id, queryPlanId: `query-${id}`, source: "github", queryFamily: "pain", demandSurface: "pain_first", concepts: [], competitorSpecific: false })) });
+    const sourceById = new Map(conversations.map(({ id }) => [id, { id, source_key: "github", title: id, body: `Need a project management tool. Detailed demand evidence for ${id} ${"context ".repeat(20)}`, metadata: {} } as unknown as SourceItemRow]));
+    const result = selectScanCandidates({ conversations, sourceById, max: 2, provenance: conversations.map(({ id }) => ({ conversationId: id, queryPlanId: `query-${id}`, source: "github", queryFamily: "pain", demandSurface: "pain_first", concepts: [], competitorSpecific: false, githubPainRetrievalV1: painCompilation })) });
     expect(result.conversations).toHaveLength(2);
     expect(result.diagnostics.evaluationCapDiagnostics.suppressedCount).toBe(1);
     expect(result.diagnostics.evaluationCapDiagnostics.suppressedCandidates[0]).toMatchObject({ conversationId: "c", source: "github", surfaces: ["pain_first"], queryPlanIds: ["query-c"], reason: "evaluation_cap" });
@@ -44,8 +50,8 @@ describe("candidate selection v2", () => {
 
   it("uses current scan provenance for cached and multiply discovered conversations", () => {
     const conversations = ["a", "b", "c"].map((id) => ({ id, primary_source_item_id: id, published_at: "2026-01-01" } as ConversationRow));
-    const sourceById = new Map(conversations.map(({ id }) => [id, { id, source_key: "github", title: id, body: `Distinct conversation ${id} with detailed demand evidence over many words.`, metadata: {} } as unknown as SourceItemRow]));
-    const entry = (conversationId: string, demandSurface: string, queryPlanId: string) => ({ conversationId, demandSurface, queryPlanId, source: "github", queryFamily: "pain", concepts: ["category"], competitorSpecific: false });
+    const sourceById = new Map(conversations.map(({ id }) => [id, { id, source_key: "github", title: id, body: `Need a project management tool. Distinct conversation ${id} with detailed demand evidence over many words.`, metadata: {} } as unknown as SourceItemRow]));
+    const entry = (conversationId: string, demandSurface: string, queryPlanId: string) => ({ conversationId, demandSurface, queryPlanId, source: "github", queryFamily: "pain", concepts: ["category"], competitorSpecific: false, ...(demandSurface === "pain_first" ? { githubPainRetrievalV1: painCompilation } : {}) });
     const provenance = [entry("a", "pain_first", "q1"), entry("a", "feature_demand", "q2"), entry("b", "pain_first", "q1")];
     const first = selectScanCandidates({ conversations, sourceById, max: 2, provenance });
     const shuffled = selectScanCandidates({ conversations: [...conversations].reverse(), sourceById, max: 2, provenance: [...provenance].reverse() });
@@ -57,8 +63,8 @@ describe("candidate selection v2", () => {
 
   it("prefers a new surface at comparable quality but retains clearly better evidence", () => {
     const conversations = ["a", "b", "c"].map((id) => ({ id, primary_source_item_id: id, published_at: "2026-01-01" } as ConversationRow));
-    const sourceById = new Map(conversations.map(({ id }) => [id, { id, source_key: "github", title: id, body: id === "c" ? "Short" : `Distinct ${id} ${"evidence ".repeat(45)}`, metadata: {} } as unknown as SourceItemRow]));
-    const provenance = [ ["a", "pain_first"], ["b", "pain_first"], ["c", "feature_demand"] ].map(([conversationId, demandSurface]) => ({ conversationId, demandSurface, queryPlanId: conversationId, source: "github", queryFamily: "pain", concepts: [], competitorSpecific: false }));
+    const sourceById = new Map(conversations.map(({ id }) => [id, { id, source_key: "github", title: id, body: id === "c" ? "Short" : `Need a project management tool. Distinct ${id} ${"evidence ".repeat(45)}`, metadata: {} } as unknown as SourceItemRow]));
+    const provenance = [ ["a", "pain_first"], ["b", "pain_first"], ["c", "feature_demand"] ].map(([conversationId, demandSurface]) => ({ conversationId, demandSurface, queryPlanId: conversationId, source: "github", queryFamily: "pain", concepts: [], competitorSpecific: false, ...(demandSurface === "pain_first" ? { githubPainRetrievalV1: painCompilation } : {}) }));
     const selected = selectScanCandidates({ conversations, sourceById, max: 2, provenance });
     expect(selected.conversations.map((row) => row.id)).toEqual(["a", "b"]);
   });
