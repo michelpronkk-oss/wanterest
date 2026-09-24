@@ -3,9 +3,17 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import type { ConversationRow, SourceItemRow } from "../../src/server/db/database.helpers";
-import { selectScanCandidates } from "../../src/server/modules/onboarding/initial-scan.service";
+import { provenanceForReplay, selectScanCandidates } from "../../src/server/modules/onboarding/initial-scan.service";
 
 describe("candidate selection v2", () => {
+  it("maps replayed existing conversations back to the executed planned query", () => {
+    const request = { limit: 5, expandThreads: false, requestMetadata: { queryPlanId: "qp-1", queryFamily: "comparison", demandSurface: "competitor_pain", competitorSpecific: true, discoveryIntent: { concept_keys: ["competitor-1"] } } };
+    expect(provenanceForReplay(request, "x", [{ conversationId: "existing-conversation" }])).toEqual([{
+      conversationId: "existing-conversation", queryPlanId: "qp-1", source: "x", queryFamily: "comparison",
+      demandSurface: "competitor_pain", concepts: ["competitor-1"], competitorSpecific: true,
+    }]);
+    expect(provenanceForReplay({ limit: 5, expandThreads: false, requestMetadata: {} }, "x", [{ conversationId: "existing-conversation" }])).toEqual([]);
+  });
   it("is stable when Supabase returns the same rows in a different order", () => {
     const sources = ["github", "hacker-news", "x"];
     const conversations = Array.from({ length: 25 }, (_, index) => ({ id: `conversation-${index}`, primary_source_item_id: `source-${index}`, published_at: "2026-01-01T00:00:00.000Z" } as ConversationRow));
@@ -21,5 +29,26 @@ describe("candidate selection v2", () => {
     expect(first.diagnostics).toEqual(shuffled.diagnostics);
     expect(first.diagnostics.selectedCount).toBe(15);
     expect(first.diagnostics.selectedBySource).toMatchObject({ github: expect.any(Number), "hacker-news": expect.any(Number), x: expect.any(Number) });
+  });
+
+  it("uses current scan provenance for cached and multiply discovered conversations", () => {
+    const conversations = ["a", "b", "c"].map((id) => ({ id, primary_source_item_id: id, published_at: "2026-01-01" } as ConversationRow));
+    const sourceById = new Map(conversations.map(({ id }) => [id, { id, source_key: "github", title: id, body: `Distinct conversation ${id} with detailed demand evidence over many words.`, metadata: {} } as unknown as SourceItemRow]));
+    const entry = (conversationId: string, demandSurface: string, queryPlanId: string) => ({ conversationId, demandSurface, queryPlanId, source: "github", queryFamily: "pain", concepts: ["category"], competitorSpecific: false });
+    const provenance = [entry("a", "pain_first", "q1"), entry("a", "feature_demand", "q2"), entry("b", "pain_first", "q1")];
+    const first = selectScanCandidates({ conversations, sourceById, max: 2, provenance });
+    const shuffled = selectScanCandidates({ conversations: [...conversations].reverse(), sourceById, max: 2, provenance: [...provenance].reverse() });
+    expect(first.diagnostics).toEqual(shuffled.diagnostics);
+    expect(first.diagnostics.selected.find((item) => item.conversationId === "a")?.surfaces).toEqual(["feature_demand", "pain_first"]);
+    expect(first.diagnostics.availableBySurface.unknown).toBe(1);
+    expect(first.diagnostics.availableCount).toBe(first.diagnostics.postDedupCandidateCount + first.diagnostics.suppressedDuplicateCount);
+  });
+
+  it("prefers a new surface at comparable quality but retains clearly better evidence", () => {
+    const conversations = ["a", "b", "c"].map((id) => ({ id, primary_source_item_id: id, published_at: "2026-01-01" } as ConversationRow));
+    const sourceById = new Map(conversations.map(({ id }) => [id, { id, source_key: "github", title: id, body: id === "c" ? "Short" : `Distinct ${id} ${"evidence ".repeat(45)}`, metadata: {} } as unknown as SourceItemRow]));
+    const provenance = [ ["a", "pain_first"], ["b", "pain_first"], ["c", "feature_demand"] ].map(([conversationId, demandSurface]) => ({ conversationId, demandSurface, queryPlanId: conversationId, source: "github", queryFamily: "pain", concepts: [], competitorSpecific: false }));
+    const selected = selectScanCandidates({ conversations, sourceById, max: 2, provenance });
+    expect(selected.conversations.map((row) => row.id)).toEqual(["a", "b"]);
   });
 });
