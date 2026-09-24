@@ -34,6 +34,7 @@ import { buildSourceRoutingPlan, selectExecutableSourceRoutes, type SourceRoutin
 import { buildQueryPlan, githubPainCompilationFromMetadata, githubPainRetrievalDiagnostics, toSourceDiscoveryRequest, type GithubPainQueryCompilation, type QueryPlan } from "@/server/modules/operations/query-planning.index";
 import { getDiscoveryCoverageConfig } from "@/server/modules/operations/discovery-coverage.config";
 import { alignGithubFeatureEvidence, alignGithubJobEvidence, alignGithubPainEvidence, classifyGithubRetrievalQuality, emptyGithubJobEvidenceAlignmentDiagnostics, githubJobEvidenceMismatchReason, type GithubFeatureEvidenceAlignmentDiagnostics, type GithubJobEvidenceAlignmentDiagnostics, type GithubPainEvidenceAlignmentDiagnostics, type GithubPainEvidenceAlignmentQuery, type GithubRetrievalPrecisionDiagnostics } from "@/server/modules/operations/github-retrieval-quality";
+import { emptyHackerNewsPainLaunchFilterDiagnostics, hackerNewsPainLaunchMismatchReason, titleMatchesExplicitShowHnLaunch, type HackerNewsPainLaunchFilterDiagnostics } from "@/server/modules/operations/hacker-news-retrieval-quality";
 import { alignXCompetitorPainEvidence, emptyXCompetitorEvidenceAlignmentDiagnostics, xCompetitorMissingCompilerProvenanceReason, xCompetitorPainCompilationFromMetadata, type XCompetitorEvidenceAlignmentDiagnostics, type XCompetitorPainRetrievalProvenance } from "@/server/modules/operations/x-retrieval-quality";
 import type { QueryYieldExecutionStatus, QueryYieldStopReason, QueryYieldTelemetry } from "@/server/modules/operations/query-yield-telemetry";
 import { aggregateQueryYield, boundedCursorContinuationCount, finalizeQueryYieldTelemetry, reconcileQueryYieldTelemetry, sourceHealthStatus } from "@/server/modules/operations/query-yield-telemetry";
@@ -148,6 +149,17 @@ const scanResultSchema = z.object({
       buyerContextMatched: z.boolean(),
       categoryContextMatched: z.boolean(),
       subreason: z.enum(["employment_mismatch", "maintainer_mismatch", "sparse_or_generic_mismatch", "buyer_context_missing", "category_context_missing"]),
+    })).max(100),
+  }).optional(),
+  hackerNewsPainLaunchFilter: z.object({
+    inspectedCount: z.number().int().nonnegative(),
+    suppressedCount: z.number().int().nonnegative(),
+    passedCount: z.number().int().nonnegative(),
+    suppressionReason: z.literal("hn_show_hn_launch_mismatch"),
+    suppressed: z.array(z.object({
+      conversationId: z.string().uuid(),
+      queryPlanId: z.string().trim().min(1).max(180),
+      titleMatchedShowHn: z.literal(true),
     })).max(100),
   }).optional(),
   githubPainRetrievalV1: z.array(z.object({
@@ -424,6 +436,7 @@ export type CandidateProcessingResult = {
   githubPainEvidenceAlignment?: GithubPainEvidenceAlignmentDiagnostics;
   githubFeatureEvidenceAlignment?: GithubFeatureEvidenceAlignmentDiagnostics;
   githubJobEvidenceAlignment?: GithubJobEvidenceAlignmentDiagnostics;
+  hackerNewsPainLaunchFilter?: HackerNewsPainLaunchFilterDiagnostics;
   xCompetitorEvidenceAlignment?: XCompetitorEvidenceAlignmentDiagnostics;
   qualification?: InitialScanResult["qualification"];
   semanticReasoningShadow?: Omit<NonNullable<InitialScanResult["semanticReasoningShadow"]>, "routerVersion" | "promptSchemaVersion" | "enabled" | "maxNewProviderCallsPerScan"> & { routerVersion: string; promptSchemaVersion: string; enabled: boolean; maxNewProviderCallsPerScan: number };
@@ -502,6 +515,7 @@ export function selectScanCandidates(input: { conversations: ConversationRow[]; 
   const githubPainEvidenceAlignment: GithubPainEvidenceAlignmentDiagnostics = { inspectedCount: 0, alignedCount: 0, mismatchCount: 0, mismatches: [] };
   const githubFeatureEvidenceAlignment: GithubFeatureEvidenceAlignmentDiagnostics = { inspectedCount: 0, alignedCount: 0, mismatchCount: 0, mismatches: [] };
   const githubJobEvidenceAlignment = emptyGithubJobEvidenceAlignmentDiagnostics();
+  const hackerNewsPainLaunchFilter = emptyHackerNewsPainLaunchFilterDiagnostics();
   const xCompetitorEvidenceAlignment = emptyXCompetitorEvidenceAlignmentDiagnostics();
   let featureEvidenceSuppressedCount = 0;
   let jobEvidenceSuppressedCount = 0;
@@ -616,6 +630,23 @@ export function selectScanCandidates(input: { conversations: ConversationRow[]; 
       }
       githubRetrievalPrecision.eligibleCount += 1;
     }
+    if (source.source_key === "hacker-news") {
+      const painProvenance = provenanceEntries.filter((entry) => entry.source === "hacker-news" && entry.demandSurface === "pain_first");
+      if (painProvenance.length) {
+        hackerNewsPainLaunchFilter.inspectedCount += 1;
+        const titleMatchedShowHn = objectValue(source.metadata).providerType === "story" && titleMatchesExplicitShowHnLaunch(source.title ?? conversation.title);
+        const hasAlternateDiscoveryPath = provenanceEntries.some((entry) => entry.source !== "hacker-news" || entry.demandSurface !== "pain_first");
+        if (titleMatchedShowHn && !hasAlternateDiscoveryPath) {
+          hackerNewsPainLaunchFilter.suppressedCount += 1;
+          if (hackerNewsPainLaunchFilter.suppressed.length < 100) {
+            const queryPlanId = [...new Set(painProvenance.map((entry) => entry.queryPlanId))].sort()[0];
+            if (queryPlanId) hackerNewsPainLaunchFilter.suppressed.push({ conversationId: conversation.id, queryPlanId, titleMatchedShowHn: true });
+          }
+          continue;
+        }
+        hackerNewsPainLaunchFilter.passedCount += 1;
+      }
+    }
     const text = `${source.title ?? ""} ${source.body ?? conversation.body ?? ""}`.replace(/\s+/g, " ").trim();
     const fingerprint = text.toLowerCase().slice(0, 400);
     const metadata = objectValue(source.metadata);
@@ -642,7 +673,7 @@ export function selectScanCandidates(input: { conversations: ConversationRow[]; 
   const evaluationCapSuppressed = selected.length >= Math.max(0, input.max) ? remaining : [];
   const suppressedSurfaces = evaluationCapSuppressed.flatMap((item) => item.surfaces.length ? item.surfaces : [item.surface]);
   const alignmentSuppressedCount = githubPainEvidenceAlignment.mismatchCount;
-  const eligibleInputCount = Math.max(0, input.conversations.length - alignmentSuppressedCount - featureEvidenceSuppressedCount - jobEvidenceSuppressedCount - xCompetitorEvidenceSuppressedCount);
+  const eligibleInputCount = Math.max(0, input.conversations.length - alignmentSuppressedCount - featureEvidenceSuppressedCount - jobEvidenceSuppressedCount - hackerNewsPainLaunchFilter.suppressedCount - xCompetitorEvidenceSuppressedCount);
   const duplicateSuppressedCount = Math.max(0, eligibleInputCount - ranked.length);
   return {
     conversations: selected.map((item) => item.conversation),
@@ -658,7 +689,7 @@ export function selectScanCandidates(input: { conversations: ConversationRow[]; 
       selectedBySurface: count(selected.map((item) => item.surface)),
       suppressedDuplicateCount: duplicateSuppressedCount,
       suppressedLowQualityCount: 0,
-      suppressedByReason: { duplicate_content: duplicateSuppressedCount, query_evidence_mismatch: alignmentSuppressedCount, [githubJobEvidenceMismatchReason]: jobEvidenceSuppressedCount, feature_evidence_mismatch: featureEvidenceSuppressedCount, x_competitor_evidence_mismatch: xCompetitorEvidenceSuppressedCount, evaluation_cap: Math.max(0, ranked.length - selected.length) },
+      suppressedByReason: { duplicate_content: duplicateSuppressedCount, query_evidence_mismatch: alignmentSuppressedCount, [githubJobEvidenceMismatchReason]: jobEvidenceSuppressedCount, [hackerNewsPainLaunchMismatchReason]: hackerNewsPainLaunchFilter.suppressedCount, feature_evidence_mismatch: featureEvidenceSuppressedCount, x_competitor_evidence_mismatch: xCompetitorEvidenceSuppressedCount, evaluation_cap: Math.max(0, ranked.length - selected.length) },
       evaluationCapDiagnostics: {
         availableCount: eligibleInputCount,
         evaluatedCount: selected.length,
@@ -674,6 +705,7 @@ export function selectScanCandidates(input: { conversations: ConversationRow[]; 
     githubPainEvidenceAlignment,
     githubFeatureEvidenceAlignment,
     githubJobEvidenceAlignment,
+    hackerNewsPainLaunchFilter,
     xCompetitorEvidenceAlignment,
   };
 }
@@ -1224,6 +1256,7 @@ export async function processScanCandidates(input: { product: ProductRow; profil
     githubPainEvidenceAlignment: selection.githubPainEvidenceAlignment,
     githubFeatureEvidenceAlignment: selection.githubFeatureEvidenceAlignment,
     githubJobEvidenceAlignment: selection.githubJobEvidenceAlignment,
+    hackerNewsPainLaunchFilter: selection.hackerNewsPainLaunchFilter,
     xCompetitorEvidenceAlignment: selection.xCompetitorEvidenceAlignment,
     diagnostics,
     ...(semanticReasoningShadow ? { semanticReasoningShadow } : {}),
@@ -1680,6 +1713,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       githubPainEvidenceAlignment: selection.githubPainEvidenceAlignment,
       githubFeatureEvidenceAlignment: selection.githubFeatureEvidenceAlignment,
       githubJobEvidenceAlignment: selection.githubJobEvidenceAlignment,
+      hackerNewsPainLaunchFilter: selection.hackerNewsPainLaunchFilter,
       xCompetitorEvidenceAlignment: selection.xCompetitorEvidenceAlignment,
       diagnostics: [],
       ...(qualificationRows.length ? { qualification: {
@@ -1778,6 +1812,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       ...(candidateResult.githubPainEvidenceAlignment ? { githubPainEvidenceAlignment: candidateResult.githubPainEvidenceAlignment } : {}),
       ...(candidateResult.githubFeatureEvidenceAlignment ? { githubFeatureEvidenceAlignment: candidateResult.githubFeatureEvidenceAlignment } : {}),
       ...(candidateResult.githubJobEvidenceAlignment ? { githubJobEvidenceAlignment: candidateResult.githubJobEvidenceAlignment } : {}),
+      ...(candidateResult.hackerNewsPainLaunchFilter ? { hackerNewsPainLaunchFilter: candidateResult.hackerNewsPainLaunchFilter } : {}),
       ...(candidateResult.xCompetitorEvidenceAlignment ? { xCompetitorEvidenceAlignment: candidateResult.xCompetitorEvidenceAlignment } : {}),
       ...(githubPainRetrievalV1.length ? { githubPainRetrievalV1: [...new Map(githubPainRetrievalV1.map((entry) => [entry.semanticQuery, entry])).values()] } : {}),
       ...(finalizedQueryYield.length ? { queryYield: queryYieldDiagnostics } : {}),
