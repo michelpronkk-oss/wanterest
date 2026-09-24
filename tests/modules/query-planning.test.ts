@@ -8,6 +8,7 @@ import {
   buildQueryPlan,
   buildSourceRoutingPlan,
   compileGithubPainQuery,
+  compileGithubPainProviderQueryForTest,
   formatQueryPlanDryRun,
   toSourceDiscoveryRequest,
   competitorReferencesForText,
@@ -292,7 +293,6 @@ describe("Query Planning v1", () => {
           category: "project management software",
           product_name: "Linear",
           competitors: ["Jira"],
-          pains: ["Inefficient software development workflows"],
         },
       },
     };
@@ -301,7 +301,7 @@ describe("Query Planning v1", () => {
     const compiled = compileGithubPainQuery({ semanticQuery: query.query_text, metadata: query.metadata });
 
     expect(request.query).toBe(compiled.providerQuery);
-    expect(request.query).toBe('\"Inefficient software development workflows\" \"project management software\"');
+    expect(request.query).toBe('(\"looking for\" OR \"struggling with\" OR \"need\") (\"project management\" OR \"issue tracking\")');
     expect(request.requestMetadata).toMatchObject({
       semanticQuery: query.query_text,
       contentType: "all",
@@ -310,8 +310,11 @@ describe("Query Planning v1", () => {
     });
     expect(compiled.providerQuery).not.toContain("Linear");
     expect(compiled.providerQuery).not.toContain("Jira");
-    expect(compiled.demandAnchors).toEqual(["Inefficient software development workflows"]);
-    expect(compiled.categoryAnchors).toEqual(["project management software"]);
+    expect(compiled.booleanOperatorCount).toBe(3);
+    expect(compiled.booleanOperatorCount).toBeLessThanOrEqual(4);
+    expect(compiled.demandAnchors).toEqual(["looking for", "struggling with", "need"]);
+    expect(compiled.categoryAnchors).toEqual(["project management", "issue tracking"]);
+    expect(compiled.providerQuery).not.toContain("Inefficient software development workflows");
 
     const feature = { ...query, query_family: "feature_requirement", demand_surface: "feature_demand", query_text: "need project management software with project management features" } satisfies QueryPlanQuery;
     const job = { ...query, query_family: "jtbd", demand_surface: "job_demand", query_text: "need project management software to plan and ship software efficiently" } satisfies QueryPlanQuery;
@@ -319,6 +322,14 @@ describe("Query Planning v1", () => {
     expect(toSourceDiscoveryRequest({ sourcePlan, query: job, maxPages: 1 }).query).toBe(job.query_text);
     expect(toSourceDiscoveryRequest({ sourcePlan, query: feature, maxPages: 1 }).requestMetadata.githubPainRetrievalV1).toBeUndefined();
     expect(toSourceDiscoveryRequest({ sourcePlan, query: job, maxPages: 1 }).requestMetadata.githubPainRetrievalV1).toBeUndefined();
+
+    const fallback = compileGithubPainProviderQueryForTest({
+      demandAnchors: ["one", "two", "three", "four", "five", "six"],
+      categoryAnchors: ["project management", "issue tracking"],
+    });
+    expect(fallback.usedFallback).toBe(true);
+    expect(fallback.booleanOperatorCount).toBe(0);
+    expect(fallback.providerQuery).toBe('\"one\" \"project management\"');
   });
 
   it("adds bounded provider-native budgets for YouTube and GitLab", () => {

@@ -91,7 +91,8 @@ const scanResultSchema = z.object({
   githubPainRetrievalV1: z.array(z.object({
     semanticQuery: z.string(),
     providerQuery: z.string(),
-    templateVersion: z.literal("github_pain_retrieval_v1"),
+    templateVersion: z.literal("github_pain_retrieval_v1_1"),
+    booleanOperatorCount: z.number().int().min(0).max(4),
     demandAnchors: z.array(z.string()).max(12),
     categoryAnchors: z.array(z.string()).max(8),
   })).max(20).optional(),

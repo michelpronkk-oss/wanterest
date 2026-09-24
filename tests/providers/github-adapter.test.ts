@@ -56,29 +56,30 @@ describe("GitHub source adapter", () => {
   });
 
   it("executes the bounded pain query with valid issue and discussion syntax", async () => {
-    const providerQuery = '\"Inefficient software development workflows\" \"project management software\"';
+    const providerQuery = '(\"looking for\" OR \"struggling with\" OR \"need\") (\"project management\" OR \"issue tracking\")';
     const painMetadata = {
       githubPainRetrievalV1: {
         semanticQuery: "project management software inefficient software development workflows",
         providerQuery,
-        templateVersion: "github_pain_retrieval_v1",
-        demandAnchors: ["Inefficient software development workflows"],
-        categoryAnchors: ["project management software"],
+        templateVersion: "github_pain_retrieval_v1_1",
+        booleanOperatorCount: 3,
+        demandAnchors: ["looking for", "struggling with", "need"],
+        categoryAnchors: ["project management", "issue tracking"],
       },
     };
     const issueFetch = vi.fn<typeof fetch>().mockResolvedValue(response({ ...githubIssueSearchResponse, items: [] }));
     await new GitHubSourceAdapter({ fetchImpl: issueFetch }).discover({ query: providerQuery, limit: 1, expandThreads: false, requestMetadata: { ...painMetadata, contentType: "issues" } });
     const issueRequest = new URL(String(issueFetch.mock.calls[0]?.[0]));
     expect(issueRequest.searchParams.get("q")).toBe(`${providerQuery} is:issue`);
-    expect(issueRequest.searchParams.get("q")).not.toContain("(");
-    expect(issueRequest.searchParams.get("q")).not.toContain(" OR ");
+    expect(issueRequest.searchParams.get("q")).toContain("(");
+    expect(issueRequest.searchParams.get("q")).toContain(" OR ");
 
     const discussionFetch = vi.fn<typeof fetch>().mockResolvedValue(response(githubDiscussionsResponse));
     await new GitHubSourceAdapter({ fetchImpl: discussionFetch, token: "test-token" }).discover({ query: providerQuery, limit: 1, expandThreads: false, requestMetadata: { ...painMetadata, contentType: "discussions" } });
     const discussionBody = JSON.parse(String(discussionFetch.mock.calls[0]?.[1]?.body));
     expect(discussionBody.variables.query).toBe(`${providerQuery} is:discussion`);
-    expect(discussionBody.variables.query).not.toContain("(");
-    expect(discussionBody.variables.query).not.toContain(" OR ");
+    expect(discussionBody.variables.query).toContain("(");
+    expect(discussionBody.variables.query).toContain(" OR ");
   });
 
   it("preserves the bounded GitHub provider error for an over-operator query", async () => {
