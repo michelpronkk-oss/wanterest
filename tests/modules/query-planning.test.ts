@@ -292,6 +292,7 @@ describe("Query Planning v1", () => {
           category: "project management software",
           product_name: "Linear",
           competitors: ["Jira"],
+          pains: ["Inefficient software development workflows"],
         },
       },
     };
@@ -300,7 +301,7 @@ describe("Query Planning v1", () => {
     const compiled = compileGithubPainQuery({ semanticQuery: query.query_text, metadata: query.metadata });
 
     expect(request.query).toBe(compiled.providerQuery);
-    expect(request.query).toBe('(\"struggling with\" OR \"problem with\" OR \"looking for\" OR \"need a better\" OR \"replace\" OR \"too complex\" OR \"missing\") (\"project management software\" OR \"issue tracking\" OR \"software development\")');
+    expect(request.query).toBe('\"Inefficient software development workflows\" \"project management software\"');
     expect(request.requestMetadata).toMatchObject({
       semanticQuery: query.query_text,
       contentType: "all",
@@ -309,8 +310,8 @@ describe("Query Planning v1", () => {
     });
     expect(compiled.providerQuery).not.toContain("Linear");
     expect(compiled.providerQuery).not.toContain("Jira");
-    expect(compiled.demandAnchors.length).toBeLessThanOrEqual(10);
-    expect(compiled.categoryAnchors).toEqual(["project management software", "issue tracking", "software development"]);
+    expect(compiled.demandAnchors).toEqual(["Inefficient software development workflows"]);
+    expect(compiled.categoryAnchors).toEqual(["project management software"]);
 
     const feature = { ...query, query_family: "feature_requirement", demand_surface: "feature_demand", query_text: "need project management software with project management features" } satisfies QueryPlanQuery;
     const job = { ...query, query_family: "jtbd", demand_surface: "job_demand", query_text: "need project management software to plan and ship software efficiently" } satisfies QueryPlanQuery;

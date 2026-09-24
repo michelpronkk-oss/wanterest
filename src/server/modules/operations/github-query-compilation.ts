@@ -10,27 +10,6 @@ export type GithubPainQueryCompilation = {
   categoryAnchors: string[];
 };
 
-const demandAnchors = [
-  "struggling with",
-  "problem with",
-  "looking for",
-  "need a better",
-  "replace",
-  "too complex",
-  "missing",
-] as const;
-
-const categoryExpansions: Array<{ matches: string[]; anchors: string[] }> = [
-  {
-    matches: ["project management", "issue tracking", "software development"],
-    anchors: ["project management software", "issue tracking", "software development"],
-  },
-  {
-    matches: ["software development", "developer tools", "developer tool"],
-    anchors: ["software development", "developer tools", "issue tracking"],
-  },
-];
-
 function clean(value: unknown, max = 100): string {
   return typeof value === "string" ? value.replace(/\s+/g, " ").replace(/["'`]/g, "").trim().slice(0, max) : "";
 }
@@ -49,11 +28,19 @@ function contextCategory(context: Record<string, unknown>): string {
   return category || "software tools";
 }
 
-function categoryAnchorsFor(category: string): string[] {
-  const normalized = category.toLowerCase();
-  const expansion = categoryExpansions.find((candidate) => candidate.matches.some((match) => normalized.includes(match)));
-  const values = expansion?.anchors ?? [category];
-  return [...new Set(values.map((value) => clean(value, 80)).filter(Boolean))].slice(0, 4);
+function contextStrings(context: Record<string, unknown>, key: string): string[] {
+  const value = context[key];
+  return (Array.isArray(value) ? value : [value])
+    .map((item) => clean(item, 80))
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function painPhraseFor(semanticQuery: string, category: string, context: Record<string, unknown>): string {
+  const configuredPain = contextStrings(context, "pains")[0];
+  if (configuredPain) return configuredPain;
+  const withoutCategory = category ? semanticQuery.replace(new RegExp(category.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), " ") : semanticQuery;
+  return clean(withoutCategory, 80) || "struggling with";
 }
 
 /**
@@ -63,9 +50,11 @@ function categoryAnchorsFor(category: string): string[] {
  */
 export function compileGithubPainQuery(input: { semanticQuery: string; metadata?: JsonObject }): GithubPainQueryCompilation {
   const context = providerContext(input.metadata ?? {});
-  const categoryAnchors = categoryAnchorsFor(contextCategory(context));
-  const demand = [...demandAnchors];
-  const providerQuery = `(${demand.map(quote).join(" OR ")}) (${categoryAnchors.map(quote).join(" OR ")})`;
+  const category = contextCategory(context);
+  const painPhrase = painPhraseFor(input.semanticQuery, category, context);
+  const demand = [painPhrase];
+  const categoryAnchors = [category];
+  const providerQuery = `${quote(painPhrase)} ${quote(category)}`;
   return {
     semanticQuery: clean(input.semanticQuery, 180),
     providerQuery,

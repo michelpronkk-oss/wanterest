@@ -101,18 +101,24 @@ function rateLimit(response: Response, clock: () => Date, token?: string, body?:
 
 function messageFromBody(body: unknown): string | undefined {
   if (!body || typeof body !== "object" || !("message" in body) || typeof body.message !== "string") return undefined;
-  return body.message.slice(0, 200);
+  const rootMessage = body.message;
+  const errors = "errors" in body && Array.isArray(body.errors) ? body.errors : [];
+  const detail = errors.find((item) => item && typeof item === "object" && "message" in item && typeof item.message === "string");
+  const detailMessage = detail && typeof detail === "object" && "message" in detail && typeof detail.message === "string" ? detail.message : undefined;
+  return `${rootMessage}${detailMessage ? `: ${detailMessage}` : ""}`.slice(0, 200);
 }
 
 function responseError(response: Response, body: unknown, limits: RateLimitMetadata): SourceAdapterError {
   const message = messageFromBody(body)?.toLowerCase() ?? "";
-  if (response.status === 401) return new SourceAdapterError("AUTH_FAILED", "GitHub API authentication was rejected.");
+  const providerMessage = messageFromBody(body);
+  const details = { status: response.status, ...(providerMessage ? { message: providerMessage } : {}) };
+  if (response.status === 401) return new SourceAdapterError("AUTH_FAILED", "GitHub API authentication was rejected.", false, details);
   if (response.status === 403 && (limits.remaining === 0 || message.includes("rate limit") || response.headers.has("retry-after"))) {
-    return new SourceAdapterError("RATE_LIMITED", "GitHub API rate limit reached.", true);
+    return new SourceAdapterError("RATE_LIMITED", "GitHub API rate limit reached.", true, details);
   }
-  if (response.status === 403) return new SourceAdapterError("FORBIDDEN", "GitHub API access was forbidden.");
-  if (response.status === 429) return new SourceAdapterError("RATE_LIMITED", "GitHub API rate limit reached.", true);
-  return new SourceAdapterError(`HTTP_${response.status}`, "GitHub API request failed.", response.status >= 500);
+  if (response.status === 403) return new SourceAdapterError("FORBIDDEN", "GitHub API access was forbidden.", false, details);
+  if (response.status === 429) return new SourceAdapterError("RATE_LIMITED", "GitHub API rate limit reached.", true, details);
+  return new SourceAdapterError(`HTTP_${response.status}`, "GitHub API request failed.", response.status >= 500, details);
 }
 
 function nextPageFromLink(response: Response): number | undefined {

@@ -118,6 +118,7 @@ export class SourceAdapterError extends Error {
     public readonly code: string,
     message: string,
     public readonly retryable = false,
+    public readonly providerDetails?: { status?: number; message?: string },
   ) {
     super(message);
     this.name = "SourceAdapterError";

@@ -34,7 +34,7 @@ import { buildSourceRoutingPlan, selectExecutableSourceRoutes, type SourceRoutin
 import { buildQueryPlan, githubPainRetrievalDiagnostics, toSourceDiscoveryRequest, type GithubPainQueryCompilation, type QueryPlan } from "@/server/modules/operations/query-planning.index";
 import { getDiscoveryCoverageConfig } from "@/server/modules/operations/discovery-coverage.config";
 import { classifyGithubRetrievalQuality, type GithubRetrievalPrecisionDiagnostics } from "@/server/modules/operations/github-retrieval-quality";
-import type { QueryYieldTelemetry } from "@/server/modules/operations/query-yield-telemetry";
+import type { QueryYieldExecutionStatus, QueryYieldStopReason, QueryYieldTelemetry } from "@/server/modules/operations/query-yield-telemetry";
 import { aggregateQueryYield, boundedCursorContinuationCount, finalizeQueryYieldTelemetry, reconcileQueryYieldTelemetry, sourceHealthStatus } from "@/server/modules/operations/query-yield-telemetry";
 import { QueryYieldRepository } from "@/server/modules/operations/query-yield.repository";
 import { sourceDiscoveryRequestSchema, type SourceDiscoveryRequest } from "@/server/providers/source/contracts";
@@ -137,6 +137,8 @@ export type SourceExecutionResult = {
   rateLimitRemaining: number | null;
   estimatedCost: number | null;
   queryTelemetry: QueryYieldTelemetry[];
+  failedQueryCount?: number;
+  errorCode?: string | null;
   providerMetrics?: Record<string, unknown>;
   resolutions?: Array<{
     status: "resolved" | "no_match" | "ambiguous_match";
@@ -219,6 +221,65 @@ function g2ProductTarget(product: ProductRow): G2ProductResolutionTarget {
 
 function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function queryPlanIdForRequest(request: SourceDiscoveryRequest, source: string): string {
+  const metadata = objectValue(request.requestMetadata);
+  return typeof metadata.queryPlanId === "string" ? metadata.queryPlanId : `fallback:${source}:${request.query ?? "default"}`;
+}
+
+function queryTelemetryForRequest(input: {
+  request: SourceDiscoveryRequest;
+  source: string;
+  pagesRequested: number;
+  pagesCompleted: number;
+  cursorContinuationCount: number;
+  continuationStoppedReason: QueryYieldStopReason;
+  executionStatus: QueryYieldExecutionStatus;
+  rawItems: number;
+  normalizedItems: number;
+  conversationIds: string[];
+  estimatedCostUsd: number | null;
+}): QueryYieldTelemetry {
+  const metadata = objectValue(input.request.requestMetadata);
+  const intent = objectValue(metadata.discoveryIntent);
+  const uniqueConversations = new Set(input.conversationIds).size;
+  return {
+    queryPlanId: queryPlanIdForRequest(input.request, input.source),
+    source: input.source,
+    family: typeof metadata.queryFamily === "string" ? metadata.queryFamily : "fallback",
+    surface: typeof metadata.demandSurface === "string" ? metadata.demandSurface : "unknown",
+    concepts: Array.isArray(intent.concept_keys) ? (intent.concept_keys as unknown[]).filter((value): value is string => typeof value === "string") : [],
+    competitorSpecific: metadata.competitorSpecific === true,
+    pagesRequested: input.pagesRequested,
+    pagesCompleted: input.pagesCompleted,
+    cursorContinuationCount: input.cursorContinuationCount,
+    continuationStoppedReason: input.continuationStoppedReason,
+    executionStatus: input.executionStatus,
+    rawItems: input.rawItems,
+    normalizedItems: input.normalizedItems,
+    uniqueConversations,
+    duplicateCount: Math.max(0, input.normalizedItems - uniqueConversations),
+    estimatedCostUsd: input.estimatedCostUsd,
+  };
+}
+
+function queryFailureDiagnostic(error: unknown, request: SourceDiscoveryRequest, source: string): string {
+  const value = error && typeof error === "object" ? error as { code?: unknown; providerDetails?: { status?: unknown; message?: unknown } } : {};
+  const metadata = objectValue(request.requestMetadata);
+  const queryPlanId = queryPlanIdForRequest(request, source).slice(0, 180);
+  const code = typeof value.code === "string" ? value.code : "REQUEST_FAILED";
+  const status = typeof value.providerDetails?.status === "number" ? String(value.providerDetails.status) : "unknown";
+  const providerMessage = typeof value.providerDetails?.message === "string" ? value.providerDetails.message : safeSummary(error);
+  const requestType = source === "github"
+    ? metadata.contentType === "discussions" ? "github_discussion_search" : "github_issue_search"
+    : `${source}_search`;
+  return `query provider_error queryPlanId=${queryPlanId} requestType=${requestType} providerStatus=${status} providerCode=${code} message=${providerMessage.replace(/\s+/g, " ").slice(0, 200)}`;
+}
+
+function errorCodeOf(error: unknown): string | null {
+  const value = error && typeof error === "object" ? error as { code?: unknown } : {};
+  return typeof value.code === "string" ? value.code : null;
 }
 
 async function loadG2ProductMappings(client: Client, product: ProductRow): Promise<Record<string, G2ProductMapping>> {
@@ -679,6 +740,8 @@ export async function executeSourceDiscovery(input: SourceExecutionInput): Promi
   let estimatedCost: number | null = null;
   const providerMetrics: Record<string, unknown> = {};
   const queryTelemetry: QueryYieldTelemetry[] = [];
+  let failedQueryCount = 0;
+  let firstQueryErrorCode: string | null = null;
   if (input.sourceKey === "x") logXDiscoveryOverride(input.workspaceId, input.requests);
   for (const rawRequest of input.requests) {
     const request = sourceDiscoveryRequestSchema.parse(rawRequest);
@@ -691,39 +754,54 @@ export async function executeSourceDiscovery(input: SourceExecutionInput): Promi
     let pagesCompleted = 0;
     let continuations = 0;
     let queryCost: number | null = null;
-    for (let page = 1; page <= maxPages; page += 1) {
-      const discovery = await ingestion.discoverSource(input.sourceKey, requestScopedToScan({ ...request, ...(cursor ? { cursor } : {}) }, input.jobRunId, input.sourceKey, input.workspaceId), input.traceId);
-      rawSourceItemIds.push(...discovery.rawSourceItemIds);
-      rawItems += discovery.rawSourceItemIds.length;
-      rawInserted += discovery.rawInserted;
-      diagnostics.push(...discovery.diagnostics);
-      if (discovery.resolutions) resolutions.push(...discovery.resolutions);
-      const replay = await ingestion.replayDetailed({ rawSourceItemIds: discovery.rawSourceItemIds, normalizationVersion: `${input.sourceKey}-v1`, canonicalizationVersion: "canonical-v1", limit: 100 });
-      normalizedSourceItemIds.push(...replay.normalizedSourceItemIds);
-      normalizedItems += replay.normalizedSourceItemIds.length;
-      pagesCompleted += 1;
-      conversationIds.push(...replay.canonicalizedConversationIds);
-      queryConversationIds.push(...replay.canonicalizedConversationIds);
-      provenance.push(...provenanceForReplay(request, input.sourceKey, replay.replayMappings));
-      if (typeof metadata.estimatedCost === "number") estimatedCost = (estimatedCost ?? 0) + metadata.estimatedCost;
-      if (typeof metadata.rateLimitRemaining === "number") rateLimitRemaining = metadata.rateLimitRemaining;
-      if (typeof discovery.estimatedCost === "number") { estimatedCost = (estimatedCost ?? 0) + discovery.estimatedCost; queryCost = (queryCost ?? 0) + discovery.estimatedCost; }
-      if (typeof discovery.rateLimit?.remaining === "number") rateLimitRemaining = discovery.rateLimit.remaining;
-      if (discovery.providerMetrics) for (const [key, value] of Object.entries(discovery.providerMetrics)) {
-        if (typeof value === "number" && typeof providerMetrics[key] === "number") providerMetrics[key] = (providerMetrics[key] as number) + value;
-        else providerMetrics[key] = value;
+    let queryError: unknown;
+    try {
+      for (let page = 1; page <= maxPages; page += 1) {
+        const discovery = await ingestion.discoverSource(input.sourceKey, requestScopedToScan({ ...request, ...(cursor ? { cursor } : {}) }, input.jobRunId, input.sourceKey, input.workspaceId), input.traceId);
+        rawSourceItemIds.push(...discovery.rawSourceItemIds);
+        rawItems += discovery.rawSourceItemIds.length;
+        rawInserted += discovery.rawInserted;
+        diagnostics.push(...discovery.diagnostics);
+        if (discovery.resolutions) resolutions.push(...discovery.resolutions);
+        const replay = await ingestion.replayDetailed({ rawSourceItemIds: discovery.rawSourceItemIds, normalizationVersion: `${input.sourceKey}-v1`, canonicalizationVersion: "canonical-v1", limit: 100 });
+        normalizedSourceItemIds.push(...replay.normalizedSourceItemIds);
+        normalizedItems += replay.normalizedSourceItemIds.length;
+        pagesCompleted += 1;
+        conversationIds.push(...replay.canonicalizedConversationIds);
+        queryConversationIds.push(...replay.canonicalizedConversationIds);
+        provenance.push(...provenanceForReplay(request, input.sourceKey, replay.replayMappings));
+        if (typeof metadata.estimatedCost === "number") estimatedCost = (estimatedCost ?? 0) + metadata.estimatedCost;
+        if (typeof metadata.rateLimitRemaining === "number") rateLimitRemaining = metadata.rateLimitRemaining;
+        if (typeof discovery.estimatedCost === "number") { estimatedCost = (estimatedCost ?? 0) + discovery.estimatedCost; queryCost = (queryCost ?? 0) + discovery.estimatedCost; }
+        if (typeof discovery.rateLimit?.remaining === "number") rateLimitRemaining = discovery.rateLimit.remaining;
+        if (discovery.providerMetrics) for (const [key, value] of Object.entries(discovery.providerMetrics)) {
+          if (typeof value === "number" && typeof providerMetrics[key] === "number") providerMetrics[key] = (providerMetrics[key] as number) + value;
+          else providerMetrics[key] = value;
+        }
+        cursor = discovery.nextCursor;
+        if (!cursor) break;
+        continuations += 1;
       }
-      cursor = discovery.nextCursor;
-      if (!cursor) break;
-      continuations += 1;
+    } catch (error) {
+      queryError = error;
+      failedQueryCount += 1;
+      firstQueryErrorCode ??= errorCodeOf(error);
+      diagnostics.push(queryFailureDiagnostic(error, request, input.sourceKey));
     }
-    const queryPlanId = typeof metadata.queryPlanId === "string" ? metadata.queryPlanId : `fallback:${input.sourceKey}:${request.query ?? "default"}`;
-    queryTelemetry.push({
-      queryPlanId, source: input.sourceKey, family: typeof metadata.queryFamily === "string" ? metadata.queryFamily : "fallback", surface: typeof metadata.demandSurface === "string" ? metadata.demandSurface : "unknown",
-      concepts: Array.isArray(objectValue(metadata.discoveryIntent).concept_keys) ? (objectValue(metadata.discoveryIntent).concept_keys as unknown[]).filter((value): value is string => typeof value === "string") : [], competitorSpecific: metadata.competitorSpecific === true,
-      pagesRequested: maxPages, pagesCompleted, cursorContinuationCount: boundedCursorContinuationCount(continuations, maxPages), continuationStoppedReason: cursor ? "page_cap_reached" : rawItems ? "no_cursor" : "zero_results",
-      executionStatus: rawItems ? "completed_with_results" : "completed_zero_results", rawItems, normalizedItems, uniqueConversations: new Set(queryConversationIds).size, duplicateCount: Math.max(0, normalizedItems - new Set(queryConversationIds).size), estimatedCostUsd: queryCost,
-    });
+    const executionStatus: QueryYieldExecutionStatus = queryError ? errorCodeOf(queryError) === "RATE_LIMITED" ? "rate_limited" : "provider_error" : rawItems ? "completed_with_results" : "completed_zero_results";
+    queryTelemetry.push(queryTelemetryForRequest({
+      request,
+      source: input.sourceKey,
+      pagesRequested: maxPages,
+      pagesCompleted,
+      cursorContinuationCount: boundedCursorContinuationCount(continuations, maxPages),
+      continuationStoppedReason: queryError ? "error" : cursor ? "page_cap_reached" : rawItems ? "no_cursor" : "zero_results",
+      executionStatus,
+      rawItems,
+      normalizedItems,
+      conversationIds: queryConversationIds,
+      estimatedCostUsd: queryCost,
+    }));
   }
   if (input.sourceKey === "g2") {
     const context = g2ContextFromRequests(input.requests);
@@ -742,6 +820,7 @@ export async function executeSourceDiscovery(input: SourceExecutionInput): Promi
     rateLimitRemaining,
     estimatedCost,
     queryTelemetry,
+    ...(failedQueryCount ? { failedQueryCount, errorCode: firstQueryErrorCode } : {}),
     ...(Object.keys(providerMetrics).length ? { providerMetrics } : {}),
     ...(resolutions.length ? { resolutions } : {}),
   };
@@ -1191,7 +1270,9 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
           diagnostics.push({ sourceKey: result.sourceKey, state: "failed", message: result.error ?? "Source task returned no result." });
           continue;
         }
-        sourceResults.push({ sourceKey: result.sourceKey, planned: true, executed: true, status: "completed", queryCount: sourceInput?.input.requests.length ?? 0, candidateBudget: sourceInput?.candidateBudget ?? 0, itemsReturned: result.execution.itemsReturned, rawItems: result.execution.rawInserted, normalizedItems: result.execution.normalizedSourceItemIds.length, warnings: result.execution.diagnostics, errorCode: null, rateLimitRemaining: result.execution.rateLimitRemaining, estimatedCost: result.execution.estimatedCost, ...(result.execution.providerMetrics ? { providerMetrics: result.execution.providerMetrics } : {}), ...(result.execution.resolutions?.length ? { resolutions: result.execution.resolutions } : {}) });
+        const failedQueryCount = result.execution.failedQueryCount ?? 0;
+        const requestCount = sourceInput?.input.requests.length ?? 0;
+        sourceResults.push({ sourceKey: result.sourceKey, planned: true, executed: true, status: failedQueryCount > 0 && failedQueryCount === requestCount ? "failed" : "completed", queryCount: requestCount, candidateBudget: sourceInput?.candidateBudget ?? 0, itemsReturned: result.execution.itemsReturned, rawItems: result.execution.rawInserted, normalizedItems: result.execution.normalizedSourceItemIds.length, warnings: result.execution.diagnostics, errorCode: result.execution.errorCode ?? null, rateLimitRemaining: result.execution.rateLimitRemaining, estimatedCost: result.execution.estimatedCost, ...(result.execution.providerMetrics ? { providerMetrics: result.execution.providerMetrics } : {}), ...(result.execution.resolutions?.length ? { resolutions: result.execution.resolutions } : {}) });
         rawSourceItemIds.push(...result.execution.rawSourceItemIds);
         normalizedSourceItemIds.push(...result.execution.normalizedSourceItemIds);
         conversationIds.push(...result.execution.conversationIds);
@@ -1247,9 +1328,12 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
         let sourceWarnings: string[] = [];
         const sourceMetrics: Record<string, unknown> = {};
         const sourceResolutions: NonNullable<SourceExecutionResult["resolutions"]> = [];
+        let sourceFailedQueryCount = 0;
+        let sourceErrorCode: string | null = null;
         if (!plannedRequests.length && queryPlan) diagnostics.push({ sourceKey, state: "fallback", message: "Query Planning produced no executable query; using the existing conservative request." });
         if (sourceKey === "x") logXDiscoveryOverride(product.workspace_id, requests);
         for (const discoveryRequest of requests) {
+          try {
           const discovery = await ingestion.discoverSource(sourceKey, requestScopedToScan(discoveryRequest, job.id, sourceKey, product.workspace_id));
           sourceItemsReturned += discovery.rawSourceItemIds.length;
           sourceRawItems += discovery.rawInserted;
@@ -1281,9 +1365,31 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
           const semanticQuery = requestMetadata && typeof requestMetadata === "object" && !Array.isArray(requestMetadata) && "semanticQuery" in requestMetadata && typeof requestMetadata.semanticQuery === "string" ? requestMetadata.semanticQuery : null;
           const queryLabel = semanticQuery ? ` for “${semanticQuery}”` : "";
           diagnostics.push({ sourceKey, state: "complete", message: `${discovery.rawInserted} new raw item${discovery.rawInserted === 1 ? "" : "s"}${queryLabel}.` });
+          } catch (error) {
+            sourceFailedQueryCount += 1;
+            sourceErrorCode ??= errorCodeOf(error);
+            const metadata = objectValue(discoveryRequest.requestMetadata);
+            const pagesRequested = Math.min(3, Math.max(1, typeof metadata.maxPages === "number" ? Math.floor(metadata.maxPages) : 1));
+            const failureMessage = queryFailureDiagnostic(error, discoveryRequest, sourceKey);
+            sourceWarnings = [...sourceWarnings, failureMessage];
+            diagnostics.push({ sourceKey, state: "failed", message: failureMessage });
+            queryYieldTelemetry.push(queryTelemetryForRequest({
+              request: discoveryRequest,
+              source: sourceKey,
+              pagesRequested,
+              pagesCompleted: 0,
+              cursorContinuationCount: 0,
+              continuationStoppedReason: "error",
+              executionStatus: errorCodeOf(error) === "RATE_LIMITED" ? "rate_limited" : "provider_error",
+              rawItems: 0,
+              normalizedItems: 0,
+              conversationIds: [],
+              estimatedCostUsd: null,
+            }));
+          }
         }
         if (sourceKey === "g2") await persistG2Resolutions(client, { workspaceId: product.workspace_id, productId: product.id }, sourceResolutions);
-        sourceResults.push({ sourceKey, planned: true, executed: true, status: "completed", queryCount: requests.length, candidateBudget: requests.reduce((sum, request) => sum + request.limit, 0), itemsReturned: sourceItemsReturned, rawItems: sourceRawItems, normalizedItems: sourceNormalizedItems, warnings: sourceWarnings, errorCode: null, rateLimitRemaining: null, estimatedCost: null, ...(Object.keys(sourceMetrics).length ? { providerMetrics: sourceMetrics } : {}), ...(sourceResolutions.length ? { resolutions: sourceResolutions } : {}) });
+        sourceResults.push({ sourceKey, planned: true, executed: true, status: sourceFailedQueryCount > 0 && sourceFailedQueryCount === requests.length ? "failed" : "completed", queryCount: requests.length, candidateBudget: requests.reduce((sum, request) => sum + request.limit, 0), itemsReturned: sourceItemsReturned, rawItems: sourceRawItems, normalizedItems: sourceNormalizedItems, warnings: sourceWarnings, errorCode: sourceErrorCode, rateLimitRemaining: null, estimatedCost: null, ...(Object.keys(sourceMetrics).length ? { providerMetrics: sourceMetrics } : {}), ...(sourceResolutions.length ? { resolutions: sourceResolutions } : {}) });
       } catch (error) {
         sourceResults.push({ sourceKey, planned: true, executed: true, status: "failed", queryCount: requests?.length ?? 0, candidateBudget: requests?.reduce((sum, request) => sum + request.limit, 0) ?? 0, itemsReturned: 0, rawItems: 0, normalizedItems: 0, warnings: [safeSummary(error)], errorCode: null, rateLimitRemaining: null, estimatedCost: null });
         diagnostics.push({ sourceKey, state: "failed", message: safeSummary(error) });

@@ -55,6 +55,44 @@ describe("GitHub source adapter", () => {
     expect(page.rateLimit).toMatchObject({ provider: "github-rest", mode: "public", resource: "search", remaining: 4999, limit: 5000 });
   });
 
+  it("executes the bounded pain query with valid issue and discussion syntax", async () => {
+    const providerQuery = '\"Inefficient software development workflows\" \"project management software\"';
+    const painMetadata = {
+      githubPainRetrievalV1: {
+        semanticQuery: "project management software inefficient software development workflows",
+        providerQuery,
+        templateVersion: "github_pain_retrieval_v1",
+        demandAnchors: ["Inefficient software development workflows"],
+        categoryAnchors: ["project management software"],
+      },
+    };
+    const issueFetch = vi.fn<typeof fetch>().mockResolvedValue(response({ ...githubIssueSearchResponse, items: [] }));
+    await new GitHubSourceAdapter({ fetchImpl: issueFetch }).discover({ query: providerQuery, limit: 1, expandThreads: false, requestMetadata: { ...painMetadata, contentType: "issues" } });
+    const issueRequest = new URL(String(issueFetch.mock.calls[0]?.[0]));
+    expect(issueRequest.searchParams.get("q")).toBe(`${providerQuery} is:issue`);
+    expect(issueRequest.searchParams.get("q")).not.toContain("(");
+    expect(issueRequest.searchParams.get("q")).not.toContain(" OR ");
+
+    const discussionFetch = vi.fn<typeof fetch>().mockResolvedValue(response(githubDiscussionsResponse));
+    await new GitHubSourceAdapter({ fetchImpl: discussionFetch, token: "test-token" }).discover({ query: providerQuery, limit: 1, expandThreads: false, requestMetadata: { ...painMetadata, contentType: "discussions" } });
+    const discussionBody = JSON.parse(String(discussionFetch.mock.calls[0]?.[1]?.body));
+    expect(discussionBody.variables.query).toBe(`${providerQuery} is:discussion`);
+    expect(discussionBody.variables.query).not.toContain("(");
+    expect(discussionBody.variables.query).not.toContain(" OR ");
+  });
+
+  it("preserves the bounded GitHub provider error for an over-operator query", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response({
+      message: "Validation Failed",
+      errors: [{ message: "More than five AND / OR / NOT operators were used.", resource: "Search", field: "q", code: "invalid" }],
+      status: "422",
+    }, 422));
+    await expect(new GitHubSourceAdapter({ fetchImpl }).discover({ query: "(one OR two OR three OR four OR five OR six) (a OR b)", limit: 1, expandThreads: false, requestMetadata: { contentType: "issues" } })).rejects.toMatchObject({
+      code: "HTTP_422",
+      providerDetails: { status: 422, message: "Validation Failed: More than five AND / OR / NOT operators were used." },
+    });
+  });
+
   it("attaches GITHUB_TOKEN to authenticated REST search and reports authenticated limits", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response(githubIssueSearchResponse, 200, {
       "x-ratelimit-remaining": "4999",

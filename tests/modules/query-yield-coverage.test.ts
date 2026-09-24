@@ -236,6 +236,28 @@ describe("Discovery Coverage V1 and query-yield persistence", () => {
     expect(result.rows.every((row) => row.executionStatus === "provider_error" && row.normalizedItems === 0)).toBe(true);
   });
 
+  it("keeps successful sibling query artifacts when one planned query has a provider error", () => {
+    const result = reconcileQueryYieldTelemetry(
+      [
+        { queryPlanId: "github-pain", source: "github", family: "pain", surface: "pain_first", concepts: ["pain"], competitorSpecific: false },
+        { queryPlanId: "github-feature", source: "github", family: "feature_requirement", surface: "feature_demand", concepts: ["feature"], competitorSpecific: false },
+        { queryPlanId: "github-job", source: "github", family: "jtbd", surface: "job_demand", concepts: ["job"], competitorSpecific: false },
+      ],
+      [
+        { ...telemetry("github-pain", 0, 0), executionStatus: "provider_error", continuationStoppedReason: "error", rawItems: 0, normalizedItems: 0, uniqueConversations: 0, duplicateCount: 0 },
+        telemetry("github-feature", 2, 2),
+        telemetry("github-job", 1, 1),
+      ],
+      [{ source: "github", status: "completed", queryCount: 3, errorCode: "HTTP_422" }],
+    );
+    expect(result.rows.map((row) => [row.queryPlanId, row.executionStatus, row.normalizedItems])).toEqual([
+      ["github-pain", "provider_error", 0],
+      ["github-feature", "completed_with_results", 2],
+      ["github-job", "completed_with_results", 1],
+    ]);
+    expect(result.missingQueryPlanIds).toEqual([]);
+  });
+
   it("gives explicit failed source status precedence over zero-result classification", () => {
     expect(sourceHealthStatus({ planned: true, executed: true, executionStatus: "failed", normalizedItems: 0, errorCode: null })).toBe("provider_error");
     expect(sourceHealthStatus({ planned: true, executed: true, executionStatus: "completed", normalizedItems: 0, errorCode: null })).toBe("completed_zero_results");
