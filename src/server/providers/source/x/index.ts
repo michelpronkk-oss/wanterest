@@ -30,6 +30,7 @@ import {
 } from "./x.schemas";
 import { normalizeXItem } from "./x.normalizer";
 import { getInternalXDiscoveryOverride } from "./x.internal";
+import { X_PAIN_REQUEST_ANCHORS, X_PAIN_RETRIEVAL_TEMPLATE_VERSION } from "./x.query";
 
 type XAdapterOptions = XClientOptions & {
   clock?: () => Date;
@@ -112,6 +113,7 @@ export class XSourceAdapter implements SourceAdapter {
     const metadata = xRequestMetadataSchema.parse(request.requestMetadata);
     if (request.expandThreads) throw new SourceAdapterError("THREAD_EXPANSION_UNSUPPORTED", "X thread expansion is not available in the bounded search adapter.");
     if (metadata.postId && request.cursor) throw new SourceAdapterError("PAGINATION_UNAVAILABLE", "X post lookup does not support pagination.");
+    if (typeof metadata.xQueryCompilationError === "string") throw new SourceAdapterError("INVALID_QUERY", `X query compilation failed: ${metadata.xQueryCompilationError}`);
 
     const messages: string[] = [];
     const items: RawSourceItemEnvelope[] = [];
@@ -168,6 +170,16 @@ export class XSourceAdapter implements SourceAdapter {
     }
 
     const query = composeQuery(request, metadata);
+    const xPainRetrievalV1 = request.requestMetadata.demandSurface === "pain_first" && request.requestMetadata.queryFamily === "pain"
+      ? {
+          templateVersion: X_PAIN_RETRIEVAL_TEMPLATE_VERSION,
+          providerQuery: query,
+          requestAnchors: [...X_PAIN_REQUEST_ANCHORS],
+          requestCount: 1,
+          maxBillablePosts: budget,
+          estimatedCostUsd: estimatedReadCost,
+        }
+      : undefined;
     const state = request.cursor ? decodeXCursor(request.cursor) : { nextToken: undefined, pagesFetched: 0, billablePosts: 0 };
     if (state.pagesFetched >= metadata.maxPages) {
       messages.push(`${diagnostic}; additional-page discovery is unavailable because the page budget is exhausted.`);
@@ -223,6 +235,7 @@ export class XSourceAdapter implements SourceAdapter {
       nextCursor: canContinue && nextToken ? encodeXCursor({ nextToken, pagesFetched: pageNumber, billablePosts }) : undefined,
       rateLimit,
       estimatedCost: estimatedReadCost,
+      ...(xPainRetrievalV1 ? { providerMetrics: { xPainRetrievalV1 } } : {}),
       diagnostics: { accepted: items.length, rejected, messages },
     };
   }

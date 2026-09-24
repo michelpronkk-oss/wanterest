@@ -16,7 +16,12 @@ export type XQueryCompilation = {
   query: string;
   usedFallback: boolean;
   diagnostic?: string;
+  templateVersion?: typeof X_PAIN_RETRIEVAL_TEMPLATE_VERSION;
+  requestAnchors?: string[];
 };
+
+export const X_PAIN_RETRIEVAL_TEMPLATE_VERSION = "x_pain_retrieval_v1" as const;
+export const X_PAIN_REQUEST_ANCHORS = ["I need", "we need", "looking for", "anyone recommend", "our team"] as const;
 
 const MAX_QUERY_LENGTH = 512;
 const allowedOperators = new Set(["lang", "from", "to", "has", "is"]);
@@ -91,16 +96,36 @@ function preferredQuery(family: QueryFamily | undefined, context: XQueryContext)
  * retain richer semantic text for diagnostics, but X receives only a bounded
  * human query with no internal taxonomy identifiers or synthetic explanation.
  */
-export function compileXQuery(input: { semanticQuery: string; family?: QueryFamily; context?: XQueryContext }): XQueryCompilation {
+export function compileXQuery(input: { semanticQuery: string; family?: QueryFamily; demandSurface?: string; context?: XQueryContext }): XQueryCompilation {
   const context = input.context ?? {};
-  const preferred = clean(preferredQuery(input.family, context), MAX_QUERY_LENGTH);
+  const painFirst = input.family === "pain" && input.demandSurface === "pain_first";
+  if (painFirst && (!contextValue(context.category) || !firstValue(context.pains))) {
+    throw new Error("Unable to compile a safe X pain_first query: category/pain context is unavailable or invalid.");
+  }
+  const preferredContext = clean(preferredQuery(input.family, context), MAX_QUERY_LENGTH);
+  if (painFirst && !validateXQuery(preferredContext).valid) {
+    throw new Error("Unable to compile a safe X pain_first query: category/pain context is unavailable or invalid.");
+  }
+  const requestAnchors = painFirst ? [...X_PAIN_REQUEST_ANCHORS] : undefined;
+  const requestAnchorGroup = requestAnchors ? `(${requestAnchors.map((anchor) => `\"${anchor}\"`).join(" OR ")})` : "";
+  const preferred = [requestAnchorGroup, preferredContext].filter(Boolean).join(" ").slice(0, MAX_QUERY_LENGTH);
   const preferredValidation = validateXQuery(preferred);
+  if (preferredValidation.valid && painFirst) {
+    return {
+      query: preferred,
+      usedFallback: true,
+      diagnostic: "provider query compiled with bounded first-person/request anchors",
+      templateVersion: X_PAIN_RETRIEVAL_TEMPLATE_VERSION,
+      requestAnchors,
+    };
+  }
   if (preferredValidation.valid) {
     const semanticValidation = validateXQuery(input.semanticQuery);
     return semanticValidation.valid && clean(input.semanticQuery) === preferred
       ? { query: preferred, usedFallback: false }
       : { query: preferred, usedFallback: true, diagnostic: semanticValidation.valid ? "provider query compiled from source-specific context" : `semantic query rejected: ${semanticValidation.reason}` };
   }
+  if (painFirst) throw new Error(`Unable to compile a safe X pain_first query: ${preferredValidation.reason}`);
 
   const fallback = fallbackQuery(context);
   const fallbackValidation = validateXQuery(fallback);

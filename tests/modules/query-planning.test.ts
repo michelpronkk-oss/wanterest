@@ -267,6 +267,33 @@ describe("Query Planning v1", () => {
     }
   });
 
+  it("isolates an invalid X pain_first compilation from a competitor_pain sibling", async () => {
+    const plan = await buildManualFixturePlan(0);
+    const sourcePlan = plan.source_plans.find((source) => source.source_key === "x");
+    const pain = sourcePlan?.queries.find((query) => query.demand_surface === "pain_first");
+    const competitor = pain ? {
+      ...pain,
+      query_id: "qp-x-comparison-sibling",
+      query_family: "comparison" as const,
+      demand_surface: "competitor_pain" as const,
+      query_text: "Jira vs Linear",
+      normalized_query: "jira vs linear",
+      intent_type: "comparison_intent" as const,
+      metadata: { ...pain.metadata, provider_context: { product_name: "Linear", competitors: ["Jira"], category: "project management software" } },
+    } : undefined;
+    expect(sourcePlan).toBeDefined();
+    expect(pain).toBeDefined();
+    expect(competitor).toBeDefined();
+
+    const invalidPainRequest = toSourceDiscoveryRequest({ sourcePlan: sourcePlan!, query: { ...pain!, metadata: { ...pain!.metadata, provider_context: {} } }, maxPages: 1 });
+    expect(invalidPainRequest.query).toBeUndefined();
+    expect(invalidPainRequest.requestMetadata.xQueryCompilationError).toContain("category/pain context is unavailable");
+
+    const competitorRequest = toSourceDiscoveryRequest({ sourcePlan: sourcePlan!, query: competitor!, maxPages: 1 });
+    expect(competitorRequest.query).not.toContain('"I need"');
+    expect(competitorRequest.requestMetadata.xQueryCompilationError).toBeUndefined();
+  });
+
   it("compiles only GitHub pain_first queries into bounded intent and category anchors", () => {
     const query: QueryPlanQuery = {
       query_id: "qp-github-pain",

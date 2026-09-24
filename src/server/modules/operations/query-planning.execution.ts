@@ -30,11 +30,18 @@ export function toSourceDiscoveryRequest(input: SourceQueryExecutionInput): Sour
 
   if (sourcePlan.source_key === "x") {
     const providerContext = query.metadata.provider_context;
-    const compiled = compileXQuery({
-      semanticQuery: query.query_text,
-      family: query.query_family,
-      context: providerContext && typeof providerContext === "object" && !Array.isArray(providerContext) ? providerContext as Parameters<typeof compileXQuery>[0]["context"] : undefined,
-    });
+    let compiled: ReturnType<typeof compileXQuery> | null = null;
+    let compilationError: string | null = null;
+    try {
+      compiled = compileXQuery({
+        semanticQuery: query.query_text,
+        family: query.query_family,
+        demandSurface: query.demand_surface,
+        context: providerContext && typeof providerContext === "object" && !Array.isArray(providerContext) ? providerContext as Parameters<typeof compileXQuery>[0]["context"] : undefined,
+      });
+    } catch (error) {
+      compilationError = error instanceof Error ? error.message.slice(0, 240) : "X query compilation failed.";
+    }
     metadata.maxResults = query.candidate_budget;
     metadata.maxPages = Math.min(2, Math.max(1, input.maxPages));
     // X requires a ten-post provider page. Keep the planned candidate cap for
@@ -42,12 +49,15 @@ export function toSourceDiscoveryRequest(input: SourceQueryExecutionInput): Sour
     // account is not skipped before the API can confirm availability.
     metadata.maxBillablePostsPerDiscovery = Math.max(query.candidate_budget, X_PROVIDER_MIN_RESULTS);
     metadata.excludeRetweets = true;
-    metadata.providerQuery = compiled.query;
-    if (compiled.usedFallback) metadata.queryCompilationFallback = compiled.diagnostic ?? true;
+    if (compiled) {
+      metadata.providerQuery = compiled.query;
+      if (compiled.usedFallback) metadata.queryCompilationFallback = compiled.diagnostic ?? true;
+    }
+    if (compilationError) metadata.xQueryCompilationError = compilationError;
     if (query.language_context) metadata.lang = query.language_context;
     return sourceDiscoveryRequestSchema.parse({
       limit: Math.max(1, Math.min(100, query.candidate_budget)),
-      query: compiled.query,
+      ...(compiled ? { query: compiled.query } : {}),
       requestMetadata: metadata,
     });
   } else if (sourcePlan.source_key === "reddit") {

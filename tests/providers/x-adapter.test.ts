@@ -23,7 +23,9 @@ import {
 import { estimateXReadCost } from "../../src/server/providers/source/x/x.cost";
 import { getInternalXDiscoveryOverride } from "../../src/server/providers/source/x/x.internal";
 import { XSourceAdapter } from "../../src/server/providers/source/x";
-import { compileXQuery } from "../../src/server/providers/source/x/x.query";
+import { compileXQuery, X_PAIN_REQUEST_ANCHORS, X_PAIN_RETRIEVAL_TEMPLATE_VERSION } from "../../src/server/providers/source/x/x.query";
+import { SIGNAL_QUALIFICATION_THRESHOLD_VERSION, SIGNAL_QUALIFICATION_VERSION } from "../../src/server/modules/intelligence/signal-qualification.config";
+import { SEMANTIC_REASONING_ROUTER_VERSION } from "../../src/server/modules/intelligence/semantic-reasoning-router";
 
 function response(value: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json", ...headers } });
@@ -123,6 +125,102 @@ describe("X source adapter", () => {
     expect(compiled.query).toBe("switching from Jira");
     expect(compiled.usedFallback).toBe(true);
     expect(compiled.query).not.toMatch(/productivity_software|because|workflow tools/);
+  });
+
+  it("adds bounded quoted request anchors only to X pain_first compilation", () => {
+    const compiled = compileXQuery({
+      semanticQuery: "project management software Inefficient software development workflows",
+      family: "pain",
+      demandSurface: "pain_first",
+      context: { category: "project management software", pains: ["Inefficient software development workflows"], product_name: "Linear", competitors: ["Jira"] },
+    });
+
+    expect(compiled.query).toBe('("I need" OR "we need" OR "looking for" OR "anyone recommend" OR "our team") project management software Inefficient software development workflows');
+    expect(compiled).toMatchObject({ templateVersion: X_PAIN_RETRIEVAL_TEMPLATE_VERSION, requestAnchors: [...X_PAIN_REQUEST_ANCHORS] });
+    expect(compiled.query).not.toContain("Linear");
+    expect(compiled.query).not.toContain("Jira");
+    expect(compiled.query).not.toContain("BAICLAW");
+  });
+
+  it("keeps positive request holdouts representable without changing category or pain context", () => {
+    const holdouts = [
+      "We need a better project management tool for our engineering team",
+      "I'm looking for project management software that is less complex",
+      "Our team is struggling with issue tracking and we need something simpler",
+      "Anyone recommend a project management alternative for a small dev team?",
+      "Looking for an issue tracking tool with better workflows",
+    ];
+    const compiled = compileXQuery({
+      semanticQuery: holdouts[0]!,
+      family: "pain",
+      demandSurface: "pain_first",
+      context: { category: "project management software", pains: ["Inefficient software development workflows"] },
+    });
+
+    expect(compiled.query).toContain('"we need"');
+    expect(compiled.query).toContain('"looking for"');
+    expect(compiled.query).toContain('"anyone recommend"');
+    expect(compiled.query).toContain("project management software");
+    expect(compiled.query).toContain("Inefficient software development workflows");
+    expect(compiled.query).not.toMatch(/BAICLAW|productivity tools|changing fast/i);
+    for (const holdout of holdouts) {
+      expect(compileXQuery({ semanticQuery: holdout, family: "pain", demandSurface: "pain_first", context: { category: "project management software", pains: ["Inefficient software development workflows"] } }).query).toContain('("I need" OR "we need" OR "looking for" OR "anyone recommend" OR "our team")');
+    }
+  });
+
+  it("fails a pain_first compilation without falling back to a broad query", () => {
+    expect(() => compileXQuery({ semanticQuery: "project management pain", family: "pain", demandSurface: "pain_first", context: {} })).toThrow("category/pain context is unavailable");
+  });
+
+  it("fails an invalid compiled request before any provider call", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    await expect(new XSourceAdapter({ fetchImpl, token: "test-token" }).discover({ limit: 5, requestMetadata: { xQueryCompilationError: "category/pain context is unavailable" }, expandThreads: false })).rejects.toMatchObject({ code: "INVALID_QUERY" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("keeps competitor_pain compilation unchanged", () => {
+    const compiled = compileXQuery({ semanticQuery: "Jira vs Linear", family: "comparison", demandSurface: "competitor_pain", context: { product_name: "Linear", competitors: ["Jira"], category: "project management software" } });
+    expect(compiled.query).toBe("Linear vs Jira");
+    expect(compiled.query).not.toContain('"I need"');
+    expect(compiled.templateVersion).toBeUndefined();
+  });
+
+  it("keeps qualification and semantic reasoning versions outside X retrieval compilation", () => {
+    expect(SIGNAL_QUALIFICATION_VERSION).toBe("signal_qualification_v1_7");
+    expect(SIGNAL_QUALIFICATION_THRESHOLD_VERSION).toBe("signal_qualification_thresholds_v1");
+    expect(SEMANTIC_REASONING_ROUTER_VERSION).toBe("semantic_reasoning_router_v1");
+  });
+
+  it("sends one anchored pain_first request with unchanged X caps and bounded diagnostics", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response({ data: [], meta: { result_count: 0 } }));
+    const compiled = compileXQuery({
+      semanticQuery: "project management software Inefficient software development workflows",
+      family: "pain",
+      demandSurface: "pain_first",
+      context: { category: "project management software", pains: ["Inefficient software development workflows"] },
+    });
+    const page = await new XSourceAdapter({ fetchImpl, token: "test-token" }).discover({
+      query: compiled.query,
+      limit: 5,
+      requestMetadata: { queryFamily: "pain", demandSurface: "pain_first", providerQuery: compiled.query, maxResults: 5, maxPages: 1, maxBillablePostsPerDiscovery: 10, excludeRetweets: true },
+      expandThreads: false,
+    });
+
+    const requested = new URL(String(fetchImpl.mock.calls[0]?.[0]));
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(requested.searchParams.get("query")).toBe(`${compiled.query} -is:retweet`);
+    expect(requested.searchParams.get("max_results")).toBe("10");
+    expect(page.estimatedCost).toBe(0.05);
+    expect(page.providerMetrics).toEqual({
+      xPainRetrievalV1: {
+        templateVersion: X_PAIN_RETRIEVAL_TEMPLATE_VERSION,
+        providerQuery: `${compiled.query} -is:retweet`,
+        requestAnchors: [...X_PAIN_REQUEST_ANCHORS],
+        requestCount: 1,
+        maxBillablePosts: 10,
+        estimatedCostUsd: 0.05,
+      },
+    });
   });
 
   it("rejects taxonomy leakage before making a provider request", async () => {
