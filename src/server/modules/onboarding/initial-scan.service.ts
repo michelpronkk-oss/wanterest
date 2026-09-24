@@ -1764,6 +1764,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       const plannedQueries = plannedHealthQueries.filter((query) => query.sourceKey === source.sourceKey).length;
       const configurationMissing = sourceState?.configured === false || source.errorCode === "CONFIGURATION_MISSING";
       const explicitlyDisabled = sourceState?.controlState === "disabled" || sourceState?.controlState === "paused";
+      const budgetLimited = source.status === "completed" && !source.errorCode && source.queryCount < plannedQueries;
       const fallbackExecutionStatus: SourceHealthPlannedSource["executionStatus"] = source.status === "failed"
         ? "failed"
         : source.status === "skipped"
@@ -1773,6 +1774,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
         sourceKey: source.sourceKey,
         priority: route?.priority ?? plannedQueryPriority.get(plannedHealthQueries.find((query) => query.sourceKey === source.sourceKey)?.queryPlanId ?? "") ?? "medium",
         plannedQueries,
+        budgetLimited,
         executionStatus: fallbackExecutionStatus,
         normalizedItems: source.normalizedItems,
         providerCode: source.errorCode,

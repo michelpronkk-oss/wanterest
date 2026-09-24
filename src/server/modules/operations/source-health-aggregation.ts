@@ -53,6 +53,7 @@ export type SourceHealthPlannedSource = {
   sourceKey: string;
   priority?: SourceRoutingPriority;
   plannedQueries?: number;
+  budgetLimited?: boolean;
   executionStatus?: SourceHealthExecutionStatus;
   normalizedItems?: number;
   providerStatus?: number | null;
@@ -190,17 +191,21 @@ function aggregateSource(source: SourceHealthPlannedSource, plannedQueries: Sour
     return { execution, classification: classifyExecution(source, execution) };
   });
   const classifications = queryResults.map((query) => query.classification);
-  const states = classifications.map((classification) => classification.state);
+  const intentionalBudgetBound = source.budgetLimited === true || source.controlState === "budget_limited" || source.executionStatus === "budget_limited";
+  const budgetLimitedQueries = classifications.filter((classification) => intentionalBudgetBound && classification.state === "budget_limited").length;
+  const operationalClassifications = classifications.filter((classification) => !(intentionalBudgetBound && classification.state === "budget_limited"));
+  const operationalStates = operationalClassifications.map((classification) => classification.state);
   const plannedCount = ids.length;
   const successfulQueries = classifications.filter((classification) => isHealthyState(classification.state)).length;
   const zeroResultQueries = classifications.filter((classification) => classification.state === "healthy_zero_results").length;
-  const failedQueries = Math.max(0, plannedCount - successfulQueries);
+  const failedQueries = operationalClassifications.filter((classification) => !isHealthyState(classification.state)).length;
   const executedQueries = queryResults.filter(({ execution, classification }) => execution !== undefined && !nonExecutedStates.has(classification.state)).length;
   const normalizedItems = queryResults.some((query) => query.execution !== undefined)
     ? queryResults.reduce((sum, query) => sum + (query.execution ? normalizedCount(query.execution.normalizedItems) : 0), 0)
     : normalizedCount(source.normalizedItems);
-  const firstFailure = failureState(states);
+  const firstFailure = failureState(operationalStates);
   const fallbackClassification = plannedCount === 0 ? classifyExecution(source, undefined) : null;
+  const operationalPlannedCount = Math.max(0, plannedCount - budgetLimitedQueries);
   const state = plannedCount === 0
     ? fallbackClassification?.state ?? "unknown_failure"
     : failedQueries === 0
@@ -208,7 +213,7 @@ function aggregateSource(source: SourceHealthPlannedSource, plannedQueries: Sour
       : firstFailure ?? "unknown_failure";
   const available = plannedCount === 0
     ? fallbackClassification?.available ?? false
-    : successfulQueries > 0;
+    : failedQueries === 0 || successfulQueries > 0;
   const partial = successfulQueries > 0 && failedQueries > 0;
   const retryable = plannedCount === 0
     ? fallbackClassification?.retryable ?? false
@@ -216,7 +221,7 @@ function aggregateSource(source: SourceHealthPlannedSource, plannedQueries: Sour
   const coverageFraction = isHealthyState(state)
     ? 1
     : partial && plannedCount > 0
-      ? boundedFraction(successfulQueries / plannedCount)
+      ? boundedFraction(successfulQueries / Math.max(1, operationalPlannedCount))
       : 0;
   const firstExecution = queryResults.find((query) => query.execution)?.execution;
   const providerStatus = source.providerStatus ?? firstExecution?.providerStatus ?? null;
@@ -232,6 +237,7 @@ function aggregateSource(source: SourceHealthPlannedSource, plannedQueries: Sour
     executedQueries,
     successfulQueries,
     failedQueries,
+    budgetLimitedQueries,
     zeroResultQueries,
     normalizedItems,
     providerStatus,

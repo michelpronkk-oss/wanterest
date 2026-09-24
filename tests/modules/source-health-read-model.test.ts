@@ -17,6 +17,7 @@ function health(overrides: Partial<SourceHealthV1> = {}): SourceHealthV1 {
         executedQueries: 1,
         successfulQueries: 1,
         failedQueries: 0,
+        budgetLimitedQueries: 0,
         zeroResultQueries: 0,
         normalizedItems: 2,
         providerStatus: null,

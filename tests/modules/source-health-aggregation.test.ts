@@ -58,9 +58,38 @@ describe("Source Health V1 source aggregation", () => {
     expect(result.sources.g2).toMatchObject({ state: "healthy_with_results", available: true, successfulQueries: 2, zeroResultQueries: 1, normalizedItems: 2, coverageFraction: 1 });
   });
 
-  it("classifies a planned budget-limited source as unavailable", () => {
-    const result = aggregate([source("x", "high", 1, { controlState: "budget_limited", executionStatus: "budget_limited" })], [query("x-1", "x", "high")], []);
-    expect(result.sources.x).toMatchObject({ state: "budget_limited", available: false, retryable: false, plannedQueries: 1, executedQueries: 0, failedQueries: 1, coverageFraction: 0 });
+  it("keeps an intentional budget bound informational rather than failed", () => {
+    const result = aggregate(
+      [source("x", "high", 3, { budgetLimited: true, executionStatus: "budget_limited" })],
+      [query("x-1", "x", "high"), query("x-2", "x", "high"), query("x-3", "x", "high")],
+      [artifact("x-1", "x", "completed_with_results", 2), artifact("x-2", "x", "completed_zero_results"), artifact("x-3", "x", "budget_limited")],
+    );
+    expect(result.sources.x).toMatchObject({ state: "healthy_with_results", available: true, retryable: false, plannedQueries: 3, executedQueries: 2, successfulQueries: 2, failedQueries: 0, budgetLimitedQueries: 1, coverageFraction: 1, partial: false });
+    expect(result.coverage).toMatchObject({ score: 1, label: "full_coverage" });
+  });
+
+  it("keeps real provider failures degrading coverage when a budget bound is also present", () => {
+    const result = aggregate(
+      [source("x", "high", 3, { budgetLimited: true, executionStatus: "completed" })],
+      [query("x-1", "x", "high"), query("x-2", "x", "high"), query("x-3", "x", "high")],
+      [artifact("x-1", "x", "completed_with_results", 2), artifact("x-2", "x", "failed", 0, { providerCode: "HTTP_503" }), artifact("x-3", "x", "budget_limited")],
+    );
+    expect(result.sources.x).toMatchObject({ state: "temporary_provider_error", available: true, plannedQueries: 3, executedQueries: 2, successfulQueries: 1, failedQueries: 1, budgetLimitedQueries: 1, coverageFraction: 0.5, partial: true });
+    expect(result.coverage.label).toBe("limited_coverage");
+  });
+
+  it.each([
+    ["rate limiting", "rate_limited" as const, "RATE_LIMITED", "rate_limited" as const],
+    ["quota exhaustion", "provider_error" as const, "QUOTA_EXCEEDED", "quota_exhausted" as const],
+    ["authentication failure", "provider_error" as const, "AUTH_FAILED", "auth_error" as const],
+  ])("keeps %s degrading coverage despite an intentional budget bound", (_label, executionStatus, providerCode, expectedState) => {
+    const result = aggregate(
+      [source("x", "high", 3, { budgetLimited: true, executionStatus: "completed" })],
+      [query("x-1", "x", "high"), query("x-2", "x", "high"), query("x-3", "x", "high")],
+      [artifact("x-1", "x", "completed_with_results", 2), artifact("x-2", "x", executionStatus, 0, { providerCode }), artifact("x-3", "x", "budget_limited")],
+    );
+    expect(result.sources.x).toMatchObject({ state: expectedState, failedQueries: 1, budgetLimitedQueries: 1, coverageFraction: 0.5 });
+    expect(result.coverage.label).toBe("limited_coverage");
   });
 
   it("classifies a planned missing-configuration source without an auth error", () => {
