@@ -13,7 +13,7 @@ import { IngestionService } from "@/server/modules/ingestion/ingestion.service";
 import { createSourceRegistry } from "@/server/providers/source/registry";
 import { getRedditRuntimeConfig } from "@/server/providers/source/reddit/reddit.auth";
 import { getXRuntimeConfig } from "@/server/providers/source/x/x.auth";
-import { getInternalXDiscoveryOverride, logInternalXDiscoveryOverride } from "@/server/providers/source/x/x.internal";
+import { getInternalXDiscoveryOverride, getInternalXQueryBudgetOverride, logInternalXDiscoveryOverride } from "@/server/providers/source/x/x.internal";
 import { SupabaseIntelligenceRepository } from "@/server/modules/intelligence/intelligence.repository";
 import { IntelligenceService } from "@/server/modules/intelligence/intelligence.service";
 import { qualificationFromEvidence, readBusinessClassification, readDemandProfileV2, readDemandProfileV2RoutingModel } from "@/server/modules/intelligence";
@@ -776,12 +776,13 @@ function isCycleScanMode(mode: ScanMode): boolean { return mode === "scheduled" 
 function isDeepScanMode(mode: ScanMode): boolean { return mode === "manual_deep" || mode === "deep" || mode === "deep_refresh"; }
 function isMonitoringScanMode(mode: ScanMode): boolean { return mode === "monitoring"; }
 
-function boundMonitoringRequests(
+export function boundMonitoringRequests(
   requests: SourceDiscoveryRequest[],
   sourceKey: string,
   scanMode: ScanMode,
   policy: MonitoringPolicy | null,
   capabilities: PlanCapabilities,
+  workspaceId?: string,
 ): SourceDiscoveryRequest[] {
   const profile = scanProfileForMode(scanMode);
   const providerKey = sourceKeyForProviderBudget(sourceKey);
@@ -798,10 +799,14 @@ function boundMonitoringRequests(
       ? (deep ? policy.xMaxBillablePostsPerDeepRefresh : policy.xMaxBillablePostsPerCycle)
       : Math.max(1, Math.ceil((deep ? policy.deepRefreshCandidateBudget : policy.intelligenceCycleCandidateBudget) / Math.max(1, deep ? policy.deepRefreshMaxSources : policy.intelligenceCycleMaxSources)))
     : Number.MAX_SAFE_INTEGER;
-  const maxRequests = Math.min(
-    requests.length,
+  const internalXQueryOverride = sourceKey === "x" ? getInternalXQueryBudgetOverride(workspaceId) : null;
+  const configuredMaxRequests = Math.min(
     policyMaxRequests,
     providerBudget ? (isCycleScanMode(scanMode) ? providerBudget.maxQueriesPerCycle : providerBudget.maxQueriesPerScan) : scanBudget.maxQueriesPerScan,
+  );
+  const maxRequests = Math.min(
+    requests.length,
+    internalXQueryOverride?.maxQueriesPerScan ?? configuredMaxRequests,
   );
   const maxCandidates = Math.min(
     providerBudget?.maxCandidatesPerCycle ?? scanBudget.maxCandidatesPerScan,
@@ -1480,7 +1485,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
         const fallbackRequest = sourceKey === "x"
           ? { limit: fallbackLimit, query, requestMetadata: { maxResults: fallbackLimit, maxPages: route?.max_pages ?? 1, maxBillablePostsPerDiscovery: fallbackLimit } }
           : { limit: fallbackLimit, ...(query ? { query } : {}) };
-        const requests = boundMonitoringRequests((plannedRequests.length ? plannedRequests : [fallbackRequest]).map((request) => sourceDiscoveryRequestSchema.parse(request)), sourceKey, scanMode, monitoringPolicy, capabilities)
+        const requests = boundMonitoringRequests((plannedRequests.length ? plannedRequests : [fallbackRequest]).map((request) => sourceDiscoveryRequestSchema.parse(request)), sourceKey, scanMode, monitoringPolicy, capabilities, product.workspace_id)
           .map((request) => sourceKey === "g2" ? g2RequestForProduct(request, product, g2ProductMappings) : request);
         githubPainRetrievalV1.push(...githubPainRetrievalDiagnostics(requests));
         sourceInputs.push({ input: { sourceKey, requests, traceId, jobRunId: job.id, workspaceId: product.workspace_id, productId: product.id }, fallback: !plannedRequests.length && Boolean(queryPlan), candidateBudget: requests.reduce((sum, request) => sum + request.limit, 0) });
@@ -1557,7 +1562,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
               },
             }
           : { limit: fallbackLimit, ...(query ? { query } : {}) };
-        requests = boundMonitoringRequests((plannedRequests.length ? plannedRequests : [fallbackRequest]).map((request) => sourceDiscoveryRequestSchema.parse(request)), sourceKey, scanMode, monitoringPolicy, capabilities)
+        requests = boundMonitoringRequests((plannedRequests.length ? plannedRequests : [fallbackRequest]).map((request) => sourceDiscoveryRequestSchema.parse(request)), sourceKey, scanMode, monitoringPolicy, capabilities, product.workspace_id)
           .map((request) => sourceKey === "g2" ? g2RequestForProduct(request, product, g2ProductMappings) : request);
         githubPainRetrievalV1.push(...githubPainRetrievalDiagnostics(requests));
         let sourceItemsReturned = 0;
