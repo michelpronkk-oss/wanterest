@@ -2213,3 +2213,71 @@ and Drift services (same precedent as the 9A Map's legacy section) rather than r
 `calculateGapScore`, `calculateDriftDirection`, `calculateSignificance`, `calculateGrowthRate`,
 `drift_comparability_v1`'s window/anchor rules, the Action schema and engine, qualification,
 candidate selection, provider adapters, source budgets, and lifecycle write semantics.
+
+Gate record (25 Sep 2026) — **LAYER 9B: PRODUCTION_PROVEN**
+
+- **Deploy.** Architecture SHA `8427d291f91efac6c5b72059e72738b95988c6f9`, implementation SHA
+  `adfb6d36028ffd484ecc6c33f16364041c7a2915` (local typegen, typecheck, lint, build and full suite
+  passed: 962 passed / 9 skipped / 0 failed). Flag-off baseline: Vercel `dpl_2bhHSmp9Mwtxr9UoBL63oCfopV4b`
+  and Trigger `20260925.9`, both from the implementation SHA, `DOWNSTREAM_INTELLIGENCE_V2_ENABLED`
+  confirmed absent in both beforehand. `DOWNSTREAM_INTELLIGENCE_V2_ENABLED=true` set in both Vercel
+  and Trigger production; Vercel redeployed to `dpl_B4LdAMsXriGXymEH71sh3GNSQqfh` (same commit,
+  aliased to `app.wanterest.com`); Trigger correctly needed no rebuild (env vars are read at
+  runtime) and stayed on version `20260925.9`. `/api/health` `status=ok, liveness=ok, readiness=ok`.
+  No migration; no Stage 2G/qualification/candidate-selection/provider/budget/lifecycle-write file
+  touched (confirmed via `git diff` scope).
+- **Manual signed-in UI proof (Linear).** Gap: "No current gap evidence", no fabricated scored or
+  directional opportunity, legacy `switching_intent` gap only under collapsed
+  historical/not-lifecycle-filtered. Drift: "No comparable current movement", no legacy Rising/
+  Cooling or snapshot drift presented as current, insufficient-history state truthful. Home: no
+  current Rising/Cooling trend from legacy drift. Overview: "Largest positioning gap" and "Biggest
+  change" both reflect the v2 no-current-evidence result; remaining legacy-derived cards stay
+  labelled historical. Geography: labelled "Not lifecycle-filtered" only, unchanged otherwise.
+- **Linear currentness reconciliation.** Re-verified live (not assumed): `demand_cluster_states`
+  shows `strength_level: "inactive"`, `distinct_evidence_count: 0`, `contributing_membership_count: 0`,
+  `excluded_membership_count: 11`, `exclusions: {"evaluation_superseded": 10, "signal_invalidated": 1}`
+  — identical to Stage 2G's and Layer 9A's prior proof. The deployed read path (write-blocked
+  client) run against production reproduced this independently: Gap v2 `hasCurrentEvidence: false,
+  items: []`; Drift v2 `comparable: false, reason: "insufficient_history"` for all three windows
+  (7d/30d/90d) — output was byte-identical (aside from the timestamp) before and after enabling the
+  flag, proving determinism and that enabling it caused no side effect. Map, Gap v2 and Drift v2 all
+  resolve from the same `DemandCurrentnessService` read; no subsystem has its own definition of
+  current.
+- **Zero-write proof.** 16 tables (`demand_clusters`, `demand_cluster_memberships`,
+  `demand_cluster_states`, `demand_snapshots`, `demand_observations`, `demand_gaps`, `demand_drifts`,
+  `actions`, `digests`, `digest_items`, `digest_deliveries`, `monitoring_alerts`, `signals`,
+  `product_match_evaluations`, `query_yield_artifacts`, `raw_source_items`, `job_runs`,
+  `evidence_nodes`, `evidence_provenance`) identical before and after the enable-and-validate
+  window; the read-model script itself used a client wrapper that throws on any insert/upsert/
+  update/delete and completed without throwing.
+- **No provider/LLM side effects.** Only the pre-existing scheduled `automatic-monitoring-scheduler`
+  and `monitoring-notification-delivery` ran in the validation window, both on the prior Trigger
+  version `20260925.8` — no scan, candidate selection, qualification, or LLM activity attributable
+  to 9B.
+- **Bounded reads.** One query per table for the combined Gap v2 + Drift v2 read (`product_snapshots,
+  demand_clusters, demand_cluster_memberships, demand_cluster_states, evidence_provenance,
+  product_matches, signals, demand_snapshots`); the single `demand_snapshots` query is the new
+  bounded `limit(1)` `getEarliestSnapshotTimestamp`, not the unbounded `listSnapshots`. No
+  per-concept loop. ~2s round-trip for 1 cluster / 11 memberships / 1 concept.
+- **Rollback.** Flag-off baseline observed first, before enablement; flag-off tests prove
+  byte-identical behaviour; `DOWNSTREAM_INTELLIGENCE_V2_ENABLED=false` in both runtimes plus a
+  redeploy returns to that baseline with no schema/data change. Flag left **on** in both runtimes.
+- LIVE_ACTION_PAUSE_GATE: UNREACHABLE_BEHIND_PLAN_GATE — `actions_enabled=false` (Free plan)
+  short-circuits `generateActionsForScan` before the 9B gate; not bypassed. Proven instead: flag
+  active in Trigger prod, deployed source is the implementation SHA, the source-contract test
+  confirms the gate precedes every legacy read, production Action count stayed at 0.
+- LIVE_EXISTING_ACTION_LABEL_CASE: UNAVAILABLE (0 Actions in production). Proven by test: an
+  Action's stored row is `toEqual`-identical before/after reading it with the flag on; only the read
+  model gains `basisLifecycleStatus: "not_verified"`.
+- LIVE_DIGEST_V2_CASE: UNAVAILABLE_MONITORING_DISABLED — `monitoring_enabled=false` and
+  `digest_enabled=false` for the workspace (verified live); monitoring was not enabled to force
+  this. Proven instead: deployed source contains the v2 filtering and shared-resolver call, flag
+  active, local tests prove invalidated/retracted/superseded and legacy-candidate exclusion
+  (mutation-tested), digest/delivery counts stayed at 0.
+- CROSS_WORKSPACE LIVE CASE: UNAVAILABLE (single production workspace); covered by the tenancy test.
+- POSITIVE CURRENT-DEMAND LIVE CASE: AWAITING_NATURAL_EVIDENCE.
+- All three Drift windows are presently blocked by insufficient monitoring history (earliest
+  snapshot 2026-09-21, four days of history), a stronger and more conservative honest result than
+  the 90d-specific case. The separate 90d canonical-currentness-cap limitation (a 90d window's older
+  leg exceeds the <=90-day currentness bound) is proven by `demand-drift-v2-policy.test.ts` but
+  cannot yet be isolated live because the monitoring-history gate fails first for every window.
