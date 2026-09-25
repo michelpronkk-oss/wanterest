@@ -1698,7 +1698,7 @@ reused unchanged by every stage below.
 | 2A | `ingestPublicPartition` is the only provider -> raw -> normalized -> canonical loop; tenant context is operational only. | PRODUCTION_PROVEN |
 | 2B | `market_partitions`: immutable, tenant-free identity per literal retrieval spec; `query_yield_artifacts.market_partition_key` records which product queries map to which partition. | PRODUCTION_PROVEN |
 | 2C | `market_partition_refresh_state` + `refresh-market-partition` / `market-partition-refresh-scheduler` (flag `MARKET_PARTITION_REFRESH_ENABLED`); GitHub + Stack Exchange only, 24h + deterministic jitter, lease/claim RPC, job-run idempotency per due slot. | PRODUCTION_PROVEN |
-| 2D | Incremental product matching (below). | IMPLEMENTED_NOT_PROVEN (deployed, flag off) |
+| 2D | Incremental product matching (below). | PRODUCTION_PROVEN (flag on) |
 
 ### Stage 2D — Incremental product matching
 
@@ -1744,8 +1744,20 @@ interest is not yet plan-weighted; Free products are matched because matching ma
 calls (deterministic engines; shadow reasoning keeps its own gate).
 
 Gate record (25 Sep 2026): commit d2c2c1a; Trigger 20260925.5; Vercel dpl_6vuKZHkWLoAFdM4eGevq7Mc3g5Rj;
-migration 20261014000000 applied. Proven in production: flag-off refresh (job bf6d8e42) stored 17
-conversation ids on a workspace/product-null job and dispatched nothing; evaluations, matches,
-signals, rankings, snapshots, artifacts and usage unchanged. Not yet proven: flag-on fanout,
-because enabling `INCREMENTAL_PRODUCT_MATCHING_ENABLED` needs operator approval and the only
-interested product's interest rows predate provenance capture (one new product scan records it).
+migration 20261014000000 applied; `INCREMENTAL_PRODUCT_MATCHING_ENABLED=true` in Trigger prod.
+- Flag off: refresh job bf6d8e42 stored 17 conversation ids on a tenant-free job; no dispatch;
+  zero product-scoped writes.
+- Flag on, legacy interest: fanout 0bbbc341 skipped the only interested product
+  (`provenance_missing`); replay returned `already_succeeded`; zero product-scoped writes.
+- Flag on, positive path: after a user scan (job f0d01cbb) recorded provenance (10/13 queries; HN
+  and G2 are ineligible sources), refresh 0be0a87a of the GitHub pain_first partition (10 items,
+  6 raw-new) auto-dispatched fanout 1447dfd9 -> product job 3c2cea21 for Linear only: 10 refreshed
+  conversations, 4 already matched and skipped, 6 candidates, 1 selected by candidate_selection_v3
+  with the product's GitHub pain anchors, 1 evaluation (signal_qualification_v1_7 /
+  thresholds_v1 -> weak_candidate, so no ranking/signal, correctly). Deltas: +1 evaluation,
+  +1 match, +1 analysis; signals/rankings/snapshots/usage unchanged. The other workspace product
+  (Checkoutleak) was not touched. Provider cost 0 (GitHub), matching latency 5.8s for the
+  product, 7.0s fanout. Replay run_06gdeg1rpme2dijhga4eo8lo01 returned `already_succeeded` with no
+  writes (job attempt counts stay 1).
+- Not observed in production: a qualifying incremental candidate. Materialization is the
+  unchanged product-scan path and is covered by tests; read-first reads `signals` directly.
