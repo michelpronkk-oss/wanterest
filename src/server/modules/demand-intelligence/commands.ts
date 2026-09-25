@@ -11,6 +11,8 @@ import { demandDriftWindowAllowed, resolveMonitoringPolicy } from "../entitlemen
 import { windowDays } from "./demand.schemas";
 import { geographyWindowSchema, type GeographyReadModel, type GeographySelection, type GeographyWindow } from "../geography/geography.schemas";
 import { GeographyService } from "../geography/geography.service";
+import { CurrentGeographyService } from "../geography/current-geography.service";
+import type { CurrentGeographyReadModel } from "../geography/current-geography.policy";
 import { resolveWorkspaceCapabilities } from "../entitlements/plan-capabilities";
 import { getServerEnv } from "../../lib/env";
 import { SupabaseDemandClusteringRepository } from "./demand-clustering.repository";
@@ -67,6 +69,19 @@ export async function getGeographyQuery(workspaceId: unknown, productId: unknown
     },
     selection,
   });
+}
+
+/** Layer 9D: current, lifecycle-aware Geography — product-wide by default, or scoped to one concept. Read-only. */
+export async function getCurrentGeographyQuery(workspaceId: unknown, productId: unknown, anchorConceptKey?: string): Promise<CurrentGeographyReadModel> {
+  const product = await getProductQuery(workspaceId, productId);
+  await requireUser();
+  const client = createSupabaseServiceClient();
+  const service = new CurrentGeographyService(new SupabaseDemandClusteringRepository(client), new SupabaseIntelligenceRepository(client));
+  return service.getCurrentGeography({ workspaceId: product.workspace_id, productId: product.id, anchorConceptKey });
+}
+
+export function isGeographyV2Enabled(): boolean {
+  return getServerEnv().GEOGRAPHY_V2_ENABLED === "true";
 }
 
 /** Thin read wrapper over DemandIntelligenceService.getDemandMap — no ranking/aggregation logic here. */

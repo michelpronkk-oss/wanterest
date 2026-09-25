@@ -68,6 +68,10 @@ const serverEnvSchema = publicEnvSchema.extend({
   // Layer 9C: concept-based Action generation (requires DOWNSTREAM_INTELLIGENCE_V2_ENABLED
   // and materialized state to do anything). Defaults off.
   CONCEPT_ACTIONS_ENABLED: z.enum(["true", "false"]).optional(),
+  // Layer 9D: lifecycle-aware current Geography (read-only). Read only by the
+  // Geography page's server component; no Trigger task executes this path.
+  // Defaults off.
+  GEOGRAPHY_V2_ENABLED: z.enum(["true", "false"]).optional(),
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
@@ -136,6 +140,7 @@ export function getServerEnv(): ServerEnv {
     DOWNSTREAM_INTELLIGENCE_V2_ENABLED: process.env.DOWNSTREAM_INTELLIGENCE_V2_ENABLED,
     CONCEPT_MARKET_STATE_ENABLED: process.env.CONCEPT_MARKET_STATE_ENABLED,
     CONCEPT_ACTIONS_ENABLED: process.env.CONCEPT_ACTIONS_ENABLED,
+    GEOGRAPHY_V2_ENABLED: process.env.GEOGRAPHY_V2_ENABLED,
   });
 }
 

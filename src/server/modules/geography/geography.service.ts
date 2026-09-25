@@ -62,8 +62,11 @@ function buildSignals(observations: DemandObservationRow[], conversations: Conve
   return results;
 }
 function representative(signal: GeoAggregationSignal): GeographySignalSummary { return { id: signal.id, source: signal.source, excerpt: signal.excerpt, intent: signal.intent, theme: signal.themes[0] ?? signal.pains[0] ?? null, confidence: signal.confidence, publishedAt: signal.publishedAt }; }
-function reliable(signal: GeoAggregationSignal): boolean { return (signal.location.confidence === "high" || signal.location.confidence === "medium") && Boolean(signal.location.countryCode); }
-function regionReliable(signal: GeoAggregationSignal): boolean { return reliable(signal) && Boolean(signal.location.regionCode && signal.location.regionName); }
+/** Shared with Layer 9D's current-geography policy: the one definition of "reliable enough to drive a market claim." */
+export function reliableLocation(location: GeoPublicLocation): boolean { return (location.confidence === "high" || location.confidence === "medium") && Boolean(location.countryCode); }
+export function regionReliableLocation(location: GeoPublicLocation): boolean { return reliableLocation(location) && Boolean(location.regionCode && location.regionName); }
+function reliable(signal: GeoAggregationSignal): boolean { return reliableLocation(signal.location); }
+function regionReliable(signal: GeoAggregationSignal): boolean { return regionReliableLocation(signal.location); }
 function matchesFilters(signal: GeoAggregationSignal, filters: GeographyFilterSelection | undefined): boolean {
   if (!filters) return true;
   return (!filters.theme || signal.themes.includes(filters.theme) || signal.pains.includes(filters.theme) || signal.features.includes(filters.theme)) && (!filters.intent || signal.intent === filters.intent) && (!filters.competitor || signal.competitors.includes(filters.competitor)) && (!filters.source || signal.source === filters.source);
