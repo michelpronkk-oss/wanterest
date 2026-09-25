@@ -107,12 +107,12 @@ select l10t.gap('61000000-0000-4000-8000-000000000004', '60000000-0000-4000-8000
 -- ------------------------------------------------------ privileges (grants)
 select l10t.ok(not has_function_privilege('anon', 'public.create_concept_action(jsonb, uuid, text, jsonb, numeric, jsonb, text)', 'execute')
   and not has_function_privilege('authenticated', 'public.create_concept_action(jsonb, uuid, text, jsonb, numeric, jsonb, text)', 'execute')
-  and not has_function_privilege('authenticated', 'public.transition_action(uuid, uuid, text, text, text, uuid, jsonb, jsonb, text)', 'execute')
+  and not has_function_privilege('authenticated', 'public.transition_action(uuid, uuid, text, text, text, uuid, jsonb, jsonb, text, boolean)', 'execute')
   and not has_function_privilege('authenticated', 'public.concept_latest_market_states(uuid, uuid, text, text, integer)', 'execute')
   and not has_function_privilege('anon', 'public.concept_latest_drift_states(uuid, uuid, text, text, text, integer)', 'execute')
   and not has_function_privilege('authenticated', 'public.assert_concept_action_basis_guard(uuid, uuid, text, text, jsonb)', 'execute')
   and has_function_privilege('service_role', 'public.create_concept_action(jsonb, uuid, text, jsonb, numeric, jsonb, text)', 'execute')
-  and has_function_privilege('service_role', 'public.transition_action(uuid, uuid, text, text, text, uuid, jsonb, jsonb, text)', 'execute')
+  and has_function_privilege('service_role', 'public.transition_action(uuid, uuid, text, text, text, uuid, jsonb, jsonb, text, boolean)', 'execute')
   and has_function_privilege('service_role', 'public.concept_latest_gap_states(uuid, uuid, text, text, integer)', 'execute'), 'rpc_grants_service_role_only');
 
 -- ------------------------------------------------------- schema constraints

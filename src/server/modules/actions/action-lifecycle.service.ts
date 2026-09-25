@@ -5,6 +5,7 @@ import { jsonValueSchema } from "../../db/database.helpers";
 import { AppError } from "../../lib/errors";
 import { ACTION_APPROVAL_POLICY, ACTION_EXECUTION_MODE, isConceptTriggerType, isOpenActionStatus, type ActionStatus, type UserActionTransition } from "./action.schemas";
 import type { DemandActionService } from "./action.service";
+import type { ActionBasisGuardPayload } from "./action.repository";
 import { selectFromInputs, type ConceptActionInputs } from "./concept-action.inputs";
 import { conceptIdentityOf, evaluateActionLiveBasis, type ActionLiveBasis, type ConceptSelection } from "./concept-action.selector";
 
@@ -57,6 +58,8 @@ export type ActionLifecycleDependencies = {
   loadProduct(workspaceId: string, productId: string): Promise<ProductRow>;
   loadConceptInputs(product: ProductRow, now: Date): Promise<ConceptActionInputs>;
   downstreamIntelligenceV2Enabled: boolean;
+  /** Layer 11 EXPERIMENT_MEASUREMENT_ENABLED: passed to transition_action so a ready experiment may start. */
+  experimentMeasurementEnabled?: boolean;
   now(): Date;
 };
 
@@ -103,16 +106,42 @@ export class ActionLifecycleService {
   }
 
   /**
+   * Layer 11: read-only Layer 10 revalidation before an experiment is created
+   * for an approved Action (plan gate, settled canonical selection with a
+   * candidate, current proposal fingerprint). Returns the basis guard the
+   * create RPC re-checks in its own transaction; never writes (no expiry).
+   */
+  async revalidateForMeasurement(action: ActionRow): Promise<ActionBasisGuardPayload | null> {
+    if (!(await this.deps.actionsEnabled(action.workspace_id))) {
+      throw new AppError("CAPABILITY_DISABLED", "Actions are not enabled for this workspace plan.", 403, { capability: "actions_enabled" });
+    }
+    if (!isConceptTriggerType(action.trigger_type)) {
+      throw conflict("Only lifecycle-verified Actions can be measured.", "legacy_basis_not_verified");
+    }
+    const selection = await this.selectionFor(action, this.deps.now());
+    if (!selection || selection.state === "pending") {
+      throw conflict("The evidence behind this Action changed and is being re-analysed. Try again after the next update.", `basis_update_pending:${selection?.state === "pending" ? selection.reason : "unknown"}`);
+    }
+    if (!selection.candidate) throw conflict("The evidence behind this Action is no longer valid.", "basis_invalid");
+    if (selection.candidate.proposalFingerprint !== action.proposal_fingerprint) throw conflict("A newer recommendation replaces this one.", "newer_recommendation");
+    return selection.candidate.basisGuard;
+  }
+
+  /**
    * Human transition. Approve/start: plan gate + canonical-selector revalidation
    * + fingerprint equality, then the RPC re-checks the basis guard in the same
    * transaction. Complete/dismiss: auth/membership/role only (already checked).
    */
-  async transition(access: ActionAccess, request: { toStatus: UserActionTransition; note?: string }, traceId?: string): Promise<ActionRow> {
+  async transition(access: ActionAccess, request: { toStatus: UserActionTransition; note?: string; liveSince?: string }, traceId?: string): Promise<ActionRow> {
     if (!access.canMutate) throw new AppError("FORBIDDEN", "Viewers can read Actions but cannot change them.");
     const { action } = access;
     const from = action.status as ActionStatus;
     const baseMetadata: Record<string, unknown> = { approvalPolicy: ACTION_APPROVAL_POLICY, executionMode: ACTION_EXECUTION_MODE, ...(request.note ? { note: request.note } : {}) };
-    const common = { workspaceId: action.workspace_id, actionId: action.id, actorUserId: access.userId, actorKind: "user" as const, expectedFrom: from, traceId };
+    // Layer 11: completion metadata carries the go-live date; the RPC validates it against a running experiment's window.
+    if (request.toStatus === "completed" && request.liveSince) baseMetadata.liveSince = new Date(request.liveSince).toISOString();
+    // Layer 11: the single start path; the database starts or cancels a ready experiment in the same transaction.
+    const experimentStartsAllowed = request.toStatus === "in_progress" && this.deps.experimentMeasurementEnabled === true;
+    const common = { workspaceId: action.workspace_id, actionId: action.id, actorUserId: access.userId, actorKind: "user" as const, expectedFrom: from, traceId, ...(experimentStartsAllowed ? { experimentStartsAllowed } : {}) };
 
     if (request.toStatus === "completed" || request.toStatus === "dismissed") {
       return this.deps.actionService.transitionAction({ ...common, toStatus: request.toStatus, metadata: baseMetadata });

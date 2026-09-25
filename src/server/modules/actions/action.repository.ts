@@ -48,6 +48,8 @@ export type AtomicActionTransition = {
   metadata?: JsonObject;
   basisGuard?: ActionBasisGuardPayload | null;
   traceId?: string;
+  /** Layer 11: lets `actions_reconcile_experiments` start a ready experiment (default closed). */
+  experimentStartsAllowed?: boolean;
 };
 
 export type ActionClient = SupabaseClient<Database>;
@@ -91,8 +93,12 @@ export type ActionRepository = {
 /** Maps the Layer 10 RPC exceptions to stable application errors. */
 export function actionRpcError(error: { code?: string; message: string } | null, fallback: string): AppError {
   const message = error?.message ?? "";
-  for (const reason of ["action_basis_changed", "action_status_conflict", "action_replay_conflict", "action_transition_invalid"] as const) {
+  for (const reason of ["action_basis_changed", "action_status_conflict", "action_replay_conflict", "action_transition_invalid", "experiment_state_conflict"] as const) {
     if (message.includes(reason)) return new AppError("CONFLICT", fallback, 409, { reason });
+  }
+  // Layer 11 treatment integrity: completing a measured Action needs the go-live date.
+  for (const reason of ["treatment_live_since_required", "treatment_live_since_invalid"] as const) {
+    if (message.includes(reason)) return new AppError("VALIDATION_ERROR", "Enter the date the change went live (within the measurement window).", 422, { reason });
   }
   if (message.includes("action_not_found")) return new AppError("NOT_FOUND", "Action was not found.");
   if (message.includes("action_actor_forbidden") || message.includes("action_transition_system_only")) return new AppError("FORBIDDEN", "You cannot change this Action.");
@@ -179,6 +185,7 @@ export class SupabaseActionRepository implements ActionRepository {
     if (input.actorUserId) args.p_actor_user_id = input.actorUserId;
     if (input.basisGuard) args.p_basis_guard = input.basisGuard as unknown as Json;
     if (input.traceId !== undefined) args.p_trace_id = input.traceId;
+    if (input.experimentStartsAllowed) args.p_experiment_starts_allowed = true;
     const { data, error } = await this.client.rpc("transition_action", args);
     if (error || !data) throw actionRpcError(error, "Action could not be updated.");
     return data as unknown as ActionRow;

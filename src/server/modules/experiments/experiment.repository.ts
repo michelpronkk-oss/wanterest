@@ -16,7 +16,6 @@ export type ExperimentRepository = {
   getExperiment(workspaceId: string, experimentId: string): Promise<ExperimentRow | null>;
   listExperiments(workspaceId: string, productId?: string): Promise<ExperimentRow[]>;
   updateExperiment(workspaceId: string, experimentId: string, patch: ExperimentUpdate): Promise<ExperimentRow>;
-  deleteExperiment(workspaceId: string, experimentId: string): Promise<void>;
   createVariant(input: ExperimentVariantInsert): Promise<ExperimentVariantRow>;
   listVariants(workspaceId: string, experimentId: string): Promise<ExperimentVariantRow[]>;
   createAssignment(input: ExperimentAssignmentInsert): Promise<ExperimentAssignmentRow>;
@@ -72,10 +71,6 @@ export class SupabaseExperimentRepository implements ExperimentRepository {
   }
   async updateExperiment(workspaceId: string, experimentId: string, patch: ExperimentUpdate) {
     return single<ExperimentRow>(this.client.from("experiments").update(patch).eq("workspace_id", workspaceId).eq("id", experimentId).select("*").single(), "Experiment could not be updated.");
-  }
-  async deleteExperiment(workspaceId: string, experimentId: string) {
-    const { error } = await this.client.from("experiments").delete().eq("workspace_id", workspaceId).eq("id", experimentId);
-    if (error) throw repositoryError("Experiment could not be rolled back.", error);
   }
   async createVariant(input: ExperimentVariantInsert) {
     const id = input.id ?? randomUUID();
@@ -153,7 +148,6 @@ export class InMemoryExperimentRepository implements ExperimentRepository {
   async getExperiment(workspaceId: string, experimentId: string) { const row = this.experiments.get(experimentId); return row?.workspace_id === workspaceId ? row : null; }
   async listExperiments(workspaceId: string, productId?: string) { return [...this.experiments.values()].filter((row) => row.workspace_id === workspaceId && (!productId || row.product_id === productId)).sort((a, b) => b.created_at.localeCompare(a.created_at)); }
   async updateExperiment(workspaceId: string, experimentId: string, patch: ExperimentUpdate) { const row = await this.getExperiment(workspaceId, experimentId); if (!row) throw new AppError("NOT_FOUND", "Experiment was not found."); const updated = { ...row, ...patch, updated_at: new Date().toISOString() }; this.experiments.set(row.id, updated); return updated; }
-  async deleteExperiment(workspaceId: string, experimentId: string) { const row = await this.getExperiment(workspaceId, experimentId); if (row) this.experiments.delete(row.id); }
   async createVariant(input: ExperimentVariantInsert) { const row = { ...input, id: input.id ?? randomUUID(), created_at: input.created_at ?? new Date().toISOString() } as ExperimentVariantRow; this.variants.set(row.id, row); return row; }
   async listVariants(workspaceId: string, experimentId: string) { return [...this.variants.values()].filter((row) => row.workspace_id === workspaceId && row.experiment_id === experimentId).sort((a, b) => a.created_at.localeCompare(b.created_at)); }
   async createAssignment(input: ExperimentAssignmentInsert) { const existing = await this.getAssignment(input.workspace_id, input.experiment_id, input.subject_key_hash); if (existing) return existing; const row = { ...input, id: input.id ?? randomUUID(), assigned_at: input.assigned_at ?? new Date().toISOString() } as ExperimentAssignmentRow; this.assignments.set(row.id, row); return row; }

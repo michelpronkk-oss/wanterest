@@ -6,6 +6,7 @@ import { IngestionService } from "../../src/server/modules/ingestion/ingestion.s
 import { InMemoryExperimentRepository } from "../../src/server/modules/experiments/experiment.repository";
 import { ExperimentService } from "../../src/server/modules/experiments/experiment.service";
 import { InMemorySourceControlStore, SourceControlService } from "../../src/server/modules/operations";
+import { legacyExperimentRow } from "../modules/experiment.fixtures";
 
 describe("offline system fixture smoke", () => {
   it("walks the evidence-backed path through experiment results without network access", async () => {
@@ -18,10 +19,10 @@ describe("offline system fixture smoke", () => {
     await control.assertDiscoverable("fixture");
     await ingestion.discoverSource("fixture", { limit: 4 });
     for (const raw of ingestionRepository.rawItems.values()) { const normalized = await ingestion.normalizeRawSourceItem(raw.id, "fixture-v1"); await ingestion.canonicalizeSourceItem(normalized.sourceItemId, "canonical-v1"); }
-    const action = { id: actionId, workspace_id: workspaceId, product_id: productId, evidence_node_id: "55555555-5555-4555-8555-555555555555", action_type: "landing_page", status: "approved" } as never;
     const experiments = new InMemoryExperimentRepository();
-    const service = new ExperimentService({ repository: experiments, actions: { getAction: async () => action }, entitlements: { can: async () => true, limit: async () => 10, consume: async () => undefined } });
-    const experiment = await service.createExperiment({ workspaceId, productId, actionId, name: "Fixture experiment", hypothesis: "The treatment improves conversion", experimentType: "landing_page_test", primaryMetric: "signup_completed", targetPagePath: "/", targetKey: "hero", minSampleSize: 1, createdBy: "44444444-4444-4444-8444-444444444444" });
+    const service = new ExperimentService({ repository: experiments });
+    // Layer 11: creation is only the atomic create_experiment RPC; a legacy Phase 7 row is seeded directly here.
+    const experiment = await experiments.createExperiment(legacyExperimentRow({ workspaceId, productId, actionId, name: "Fixture experiment", targetKey: "hero" }));
     const controlVariant = await service.createVariant({ workspaceId, experimentId: experiment.id, variantKey: "control", label: "Control", content: { text: "old" }, allocationWeight: 5000, isControl: true });
     await service.createVariant({ workspaceId, experimentId: experiment.id, variantKey: "treatment", label: "Treatment", content: { text: "new" }, allocationWeight: 5000, isControl: false });
     await service.transition({ workspaceId, experimentId: experiment.id, toStatus: "ready" });

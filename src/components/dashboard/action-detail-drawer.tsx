@@ -14,6 +14,7 @@ export function ActionDetailDrawer({ item, open, onClose }: { item: ActionReadMo
   const [status, setStatus] = useState(item?.action.status);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [liveSince, setLiveSince] = useState("");
 
   if (!item) return null;
   const { action } = item;
@@ -29,7 +30,9 @@ export function ActionDetailDrawer({ item, open, onClose }: { item: ActionReadMo
   function transition(toStatus: HumanTransition) {
     setError(null);
     startTransition(() => {
-      void updateActionStatusAction({ actionId: action.id, toStatus })
+      // Layer 11: completion carries when the change went live (required if the Action is being measured).
+      const live = toStatus === "completed" && liveSince ? { liveSince: new Date(liveSince).toISOString() } : {};
+      void updateActionStatusAction({ actionId: action.id, toStatus, ...live })
         .then((result) => { if (result.ok) setStatus(toStatus); else setError(result.message); })
         .catch(() => setError("This action could not be updated. Try again."));
     });
@@ -78,6 +81,12 @@ export function ActionDetailDrawer({ item, open, onClose }: { item: ActionReadMo
         <p style={{ margin: 0, fontSize: 13, color: "var(--color-ink-secondary)" }}>{workflowStatusLabel(currentStatus)}{basisLabel ? ` · ${basisLabel}` : ""}</p>
         <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-ink-muted)" }}>Wanterest proposes; you carry out the work. Starting and completing here only records what you did.</p>
       </div>
+      {allowed.includes("completed") ? (
+        <label style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--color-ink-muted)" }}>
+          When did the change go live? (needed if this Action is being measured)
+          <input type="datetime-local" value={liveSince} onChange={(event) => setLiveSince(event.target.value)} disabled={isPending} />
+        </label>
+      ) : null}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {allowed.map((toStatus) => (
           <button key={toStatus} className={toStatus === "dismissed" ? "dashboard-button dashboard-button-quiet" : "dashboard-button dashboard-button-primary"} type="button" disabled={isPending} onClick={() => transition(toStatus)}>

@@ -10,6 +10,10 @@ import { getWorkspaceQuery } from "@/server/modules/workspaces";
 import { ACTIVE_PRODUCT_COOKIE } from "@/server/modules/dashboard/dashboard.context";
 import { setSignalLifecycleCommand } from "@/server/modules/intelligence/commands";
 import { transitionActionCommand } from "@/server/modules/actions/commands";
+import {
+  addExperimentVariantCommand, cancelExperimentCommand, createMeasurementExperimentCommand, issueExperimentTokenCommand,
+  markExperimentReadyCommand, recordExperimentObservationCommand, revokeExperimentTokenCommand, updateExperimentDraftCommand,
+} from "@/server/modules/experiments/commands";
 import { requestProductDemandScanCommand } from "@/server/modules/operations/product-demand-scan.command";
 import { readProductIntelligenceCommand } from "@/server/modules/operations/read-first-intelligence.command";
 import { getInitialScanState } from "@/server/modules/onboarding";
@@ -254,3 +258,32 @@ export async function updateActionStatusAction(input: unknown): Promise<{ ok: tr
     throw error;
   }
 }
+
+type ExperimentActionResult<T> = { ok: true; value: T } | { ok: false; message: string; reason?: string };
+
+/**
+ * Layer 11: experiment mutations. The browser sends only ids and plan fields;
+ * scope, membership, role, flag and Layer 10 revalidation are resolved
+ * server-side from the experiment (or Action) itself.
+ */
+async function experimentAction<T>(run: () => Promise<T>): Promise<ExperimentActionResult<T>> {
+  try {
+    return { ok: true, value: await run() };
+  } catch (error) {
+    if (error instanceof AppError && ["CONFLICT", "FORBIDDEN", "NOT_FOUND", "CAPABILITY_DISABLED", "VALIDATION_ERROR", "USAGE_LIMIT_EXCEEDED"].includes(error.code)) {
+      const reason = typeof error.details?.reason === "string" ? error.details.reason : undefined;
+      return { ok: false, message: error.message, ...(reason ? { reason } : {}) };
+    }
+    throw error;
+  }
+}
+
+export async function createMeasurementExperimentAction(input: unknown) { return experimentAction(async () => (await createMeasurementExperimentCommand(input)).id); }
+export async function updateExperimentDraftAction(input: unknown) { return experimentAction(async () => (await updateExperimentDraftCommand(input)).id); }
+export async function addExperimentVariantAction(input: unknown) { return experimentAction(async () => (await addExperimentVariantCommand(input)).id); }
+export async function markExperimentReadyAction(input: unknown) { return experimentAction(async () => (await markExperimentReadyCommand(input)).status); }
+export async function cancelExperimentAction(input: unknown) { return experimentAction(async () => (await cancelExperimentCommand(input)).status); }
+export async function recordExperimentObservationAction(input: unknown) { return experimentAction(async () => (await recordExperimentObservationCommand(input)).id); }
+/** The raw token is returned once, to the caller only. */
+export async function issueExperimentTokenAction(input: unknown) { return experimentAction(async () => { const issued = await issueExperimentTokenCommand(input); return { token: issued.token, publicKey: issued.record.public_key, tokenId: issued.record.id }; }); }
+export async function revokeExperimentTokenAction(input: unknown) { return experimentAction(async () => (await revokeExperimentTokenCommand(input)).status); }

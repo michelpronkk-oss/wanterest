@@ -7,7 +7,7 @@ import { jsonError, readJson } from "@/server/lib/http";
 function service() {
   const client = createSupabaseServiceClient();
   const repository = new SupabaseExperimentRepository(client);
-  return { service: new ExperimentService({ repository, actions: { getAction: async () => null } }), rateLimit: new SupabaseRateLimitStore(client) };
+  return { service: new ExperimentService({ repository }), rateLimit: new SupabaseRateLimitStore(client) };
 }
 
 export async function GET(request: Request) {

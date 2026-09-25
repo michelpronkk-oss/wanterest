@@ -39,9 +39,9 @@ describe.skipIf(!host)("Layer 10 actions_lifecycle_v1 on real PostgreSQL", () =>
       psql(database, ["-f", path.join(root, "tests/rls/sql/supabase_stub_bootstrap.sql")]);
       for (const file of readdirSync(path.join(root, "supabase/migrations")).filter((name) => name.endsWith(".sql")).sort()) {
         psql(database, ["-f", path.join(root, "supabase/migrations", file)]);
+        // Idempotent re-apply of the Layer 10 migration at its own position in history.
+        if (file === "20261018000000_actions_lifecycle_v1.sql") psql(database, ["-f", path.join(root, "supabase/migrations", file)]);
       }
-      // Idempotent re-apply of the Layer 10 migration.
-      psql(database, ["-f", path.join(root, "supabase/migrations/20261018000000_actions_lifecycle_v1.sql")]);
 
       const output = psql(database, ["-f", path.join(root, "tests/rls/sql/actions_lifecycle_postgres.sql")]);
       const checks = output.split("\n").filter((line) => line.startsWith("OK "));

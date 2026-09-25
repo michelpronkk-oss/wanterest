@@ -193,7 +193,7 @@ export class DemandActionService {
    * the caller's responsibility (ActionLifecycleService for humans; the concept
    * Action pass for system expiry).
    */
-  async transitionAction(input: { workspaceId: string; actionId: string; toStatus: ActionStatus; actorUserId?: string; actorKind?: "user" | "system" | "service"; metadata?: Record<string, unknown>; basisGuard?: ActionBasisGuardPayload | null; expectedFrom?: ActionStatus; traceId?: string }): Promise<ActionRow> {
+  async transitionAction(input: { workspaceId: string; actionId: string; toStatus: ActionStatus; actorUserId?: string; actorKind?: "user" | "system" | "service"; metadata?: Record<string, unknown>; basisGuard?: ActionBasisGuardPayload | null; expectedFrom?: ActionStatus; traceId?: string; experimentStartsAllowed?: boolean }): Promise<ActionRow> {
     const parsedStatus = actionStatusSchema.safeParse(input.toStatus);
     if (!parsedStatus.success) throw new AppError("VALIDATION_ERROR", "Invalid Action status.");
     const action = await this.repository.getAction(input.workspaceId, input.actionId);
@@ -206,6 +206,7 @@ export class DemandActionService {
       workspaceId: input.workspaceId, actionId: input.actionId, from, to: parsedStatus.data,
       actorKind: input.actorKind ?? "system", actorUserId: input.actorUserId ?? null,
       metadata: jsonValueSchema.parse(input.metadata ?? {}) as JsonObject, basisGuard: input.basisGuard ?? null, traceId: input.traceId,
+      ...(input.experimentStartsAllowed ? { experimentStartsAllowed: true } : {}),
     });
   }
 

@@ -6,7 +6,6 @@ import { ZeroState } from "@/components/ui/zero-state";
 import { ExperimentCard } from "@/components/dashboard/experiment-card";
 import { ExperimentGhostPreview } from "@/components/dashboard/experiment-ghost-preview";
 import { PipelineFlow } from "@/components/dashboard/pipeline-flow";
-import { formatPercent } from "@/components/dashboard/dashboard-utils";
 import { CapabilityGate, UpgradeTrigger } from "@/components/dashboard/upgrade-surface";
 import { resolveWorkspaceCapabilities } from "@/server/modules/entitlements/plan-capabilities";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
@@ -52,7 +51,7 @@ export default async function ExperimentsPage() {
           enabled={false}
           requiredPlan="pro"
           title="Experiments are available on Pro"
-          body="Turn approved Actions into measurable tests with variants, outcomes, and validated learning."
+          body="Turn approved Actions into pre-registered measurements with honest, evidence-labelled outcomes."
         />
       </section>
     );
@@ -61,13 +60,7 @@ export default async function ExperimentsPage() {
   const experiments = await listExperimentsQuery(workspace.id, product.id);
   const running = experiments.filter((entry) => entry.experiment.status === "running").length;
   const completed = experiments.filter((entry) => entry.experiment.status === "completed");
-  const lifts = completed
-    .map((entry) => {
-      const results = entry.latestResult?.variant_results as unknown as Array<{ isControl: boolean; absoluteDeltaFromControl: number | null }> | undefined;
-      return results?.find((row) => !row.isControl)?.absoluteDeltaFromControl ?? null;
-    })
-    .filter((value): value is number => value !== null);
-  const avgLift = lifts.length ? lifts.reduce((sum, value) => sum + value, 0) / lifts.length : null;
+  const inconclusive = experiments.filter((entry) => entry.latestResult?.outcome === "inconclusive" || entry.latestResult?.outcome === "invalid").length;
 
   return (
     <section className="dashboard-page">
@@ -81,7 +74,7 @@ export default async function ExperimentsPage() {
         <div className="actions-summary">
           <div className="actions-summary-item"><strong>{running}</strong><span>Running</span></div>
           <div className="actions-summary-item"><strong>{completed.length}</strong><span>Completed</span></div>
-          <div className="actions-summary-item"><strong style={{ color: "var(--color-positive)" }}>{avgLift !== null ? formatPercent(avgLift) : "—"}</strong><span>Average validated lift</span></div>
+          <div className="actions-summary-item"><strong>{inconclusive}</strong><span>Inconclusive or invalid</span></div>
         </div>
       ) : null}
 

@@ -221,5 +221,7 @@ export const actionTransitionRequestSchema = z.object({
   actionId: z.string().uuid(),
   toStatus: userActionTransitionSchema,
   note: z.string().trim().min(1).max(1_000).optional(),
+  /** Layer 11: when the change went live (required to complete an Action measured by a running experiment). */
+  liveSince: z.string().datetime({ offset: true }).optional(),
 }).strict();
 export type ActionTransitionRequest = z.infer<typeof actionTransitionRequestSchema>;

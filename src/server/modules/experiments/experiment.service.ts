@@ -1,15 +1,14 @@
 import { createHash, randomBytes } from "node:crypto";
 
-import type { ActionRepository } from "../actions/action.repository";
 import type { ActionType } from "../../db/database.helpers";
 import type { Json } from "../../db/database.types";
 import { AppError } from "../../lib/errors";
-import type { ConsumeUsageInput } from "../entitlements/entitlement.schemas";
 import {
-  assignmentSchema, createExperimentSchema, createExperimentVariantSchema, experimentTransitionSchema,
+  assignmentSchema, createExperimentVariantSchema, experimentTransitionSchema,
   publicExperimentEventSchema, type AssignmentInput, type CreateExperimentInput, type CreateExperimentVariantInput,
   type ExperimentTransitionInput, type PublicExperimentEventInput,
 } from "./experiment.schemas";
+import { EXPERIMENT_MEASUREMENT_POLICY_VERSION } from "./measurement.schemas";
 import { hashExperimentSubject, type ExperimentRepository } from "./experiment.repository";
 import type { ExperimentRow, ExperimentVariantRow, ExperimentResultRow } from "../../db/database.helpers";
 
@@ -20,86 +19,32 @@ const allowedTransitions: Record<ExperimentRow["status"], ExperimentRow["status"
   paused: ["running", "completed", "canceled"], completed: [], canceled: [],
 };
 
-export type ExperimentEntitlements = {
-  can(workspaceId: string, capability: string): Promise<boolean>;
-  limit(workspaceId: string, entitlement: string): Promise<number | string | boolean | null>;
-  consume(workspaceId: string, input: Pick<ConsumeUsageInput, "usageType" | "amount" | "idempotencyKey" | "sourceMetadata">): Promise<unknown>;
-};
-
-const permissiveEntitlements: ExperimentEntitlements = {
-  can: async () => true,
-  limit: async () => 1_000_000,
-  consume: async () => undefined,
-};
-
+/**
+ * Phase 7 experiment service, kept for the public event API (assignment,
+ * exposure/outcome events, public token lookup) and for legacy rows.
+ * Layer 11: creation, draft edits, lifecycle, tokens and outcomes for
+ * measurement-v1 experiments go only through the atomic RPCs
+ * (ExperimentMeasurementService); the legacy paths here refuse v1 rows.
+ */
 export type ExperimentServiceOptions = {
   repository: ExperimentRepository;
-  actions: Pick<ActionRepository, "getAction">;
-  entitlements?: ExperimentEntitlements;
   audit?: (input: { workspaceId: string; actorUserId?: string; action: string; targetId: string; metadata?: Record<string, Json> }) => Promise<void>;
 };
 
-export type InternalExperimentEventInput = {
-  workspaceId: string; experimentId: string; assignmentId: string; variantId: string; eventId: string;
-  eventType: "exposure" | "cta_click" | "signup_started" | "signup_completed" | "demo_requested" | "checkout_started" | "purchase_completed";
-  occurredAt?: string; metadata?: Record<string, Json>;
-};
+function refuseMeasurementV1(experiment: ExperimentRow): void {
+  if (experiment.measurement_policy_version === EXPERIMENT_MEASUREMENT_POLICY_VERSION) {
+    throw new AppError("CONFLICT", "Measurement experiments change only through the measurement lifecycle.", 409, { reason: "measurement_v1_experiment" });
+  }
+}
 
 export class ExperimentService {
-  private readonly entitlements: ExperimentEntitlements;
-  constructor(private readonly options: ExperimentServiceOptions) { this.entitlements = options.entitlements ?? permissiveEntitlements; }
-
-  async createExperiment(input: CreateExperimentInput | unknown): Promise<ExperimentRow> {
-    const parsed = createExperimentSchema.safeParse(input);
-    if (!parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid experiment.", 422, { issues: parsed.error.issues });
-    const action = await this.options.actions.getAction(parsed.data.workspaceId, parsed.data.actionId);
-    if (!action || action.product_id !== parsed.data.productId) throw new AppError("FORBIDDEN", "The experiment Action is not in this workspace/product.");
-    if (action.status !== "approved") throw new AppError("CONFLICT", "Experiments require an approved Action.");
-    if (!actionTypeSupportsExperiment(action.action_type as ActionType, parsed.data.experimentType)) throw new AppError("VALIDATION_ERROR", "The experiment type is not compatible with the Action type.");
-    if (!(await this.entitlements.can(parsed.data.workspaceId, "actions_enabled"))) throw new AppError("CAPABILITY_DISABLED", "Actions and experiments are not enabled for this workspace.", 403, {
-      entitlementCode: "EXPERIMENTS_NOT_INCLUDED",
-      capability: "actions_enabled",
-      current: 0,
-      limit: 0,
-      upgradeTarget: "pro",
-    });
-    const max = await this.entitlements.limit(parsed.data.workspaceId, "experiments_max");
-    const current = (await this.options.repository.listExperiments(parsed.data.workspaceId)).filter((row) => !["completed", "canceled"].includes(row.status)).length;
-    if (typeof max === "number" && current >= max) throw new AppError("USAGE_LIMIT_EXCEEDED", "The workspace experiment limit was reached.", 429, {
-      entitlementCode: "EXPERIMENT_LIMIT_REACHED",
-      capability: "experiments_max",
-      current,
-      limit: max,
-      upgradeTarget: max === 0 ? "pro" : max < 10 ? "growth" : null,
-    });
-    const id = crypto.randomUUID();
-    const evidenceNodeId = crypto.randomUUID();
-    const row = await this.options.repository.createExperiment({
-      id, workspace_id: parsed.data.workspaceId, product_id: parsed.data.productId, action_id: parsed.data.actionId,
-      evidence_node_id: evidenceNodeId, experiment_type: parsed.data.experimentType, name: parsed.data.name,
-      hypothesis: parsed.data.hypothesis, primary_metric: parsed.data.primaryMetric, status: "draft",
-      traffic_allocation: {}, target_page_path: parsed.data.targetPagePath ?? null, target_key: parsed.data.targetKey ?? null,
-      assignment_method: "deterministic_hash_v1", min_sample_size: parsed.data.minSampleSize, created_by: parsed.data.createdBy,
-      engine_version_id: parsed.data.engineVersionId ?? null, current_result_id: null, started_at: null, ended_at: null,
-    });
-    try {
-      await this.entitlements.consume(parsed.data.workspaceId, { usageType: "experiment_created", amount: 1, idempotencyKey: `experiment_created:${row.id}`, sourceMetadata: { experimentId: row.id, actionId: row.action_id } });
-    } catch (error) {
-      // The Phase 7 usage ledger is the authority. Until the database-side
-      // create-and-consume RPC exists, compensate the just-created draft so a
-      // failed entitlement write cannot leave a phantom active experiment.
-      await this.options.repository.deleteExperiment(parsed.data.workspaceId, row.id).catch(() => undefined);
-      throw error;
-    }
-    await this.options.repository.linkProvenance({ derivedEvidenceNodeId: evidenceNodeId, sourceEvidenceNodeId: action.evidence_node_id, relationType: "derived_from_action", ordinal: 0 });
-    await this.audit(parsed.data.workspaceId, parsed.data.createdBy, "experiment.created", row.id, { actionId: row.action_id });
-    return row;
-  }
+  constructor(private readonly options: ExperimentServiceOptions) {}
 
   async createVariant(input: CreateExperimentVariantInput | unknown): Promise<ExperimentVariantRow> {
     const parsed = createExperimentVariantSchema.safeParse(input);
     if (!parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid experiment variant.", 422, { issues: parsed.error.issues });
     const experiment = await this.requireExperiment(parsed.data.workspaceId, parsed.data.experimentId);
+    refuseMeasurementV1(experiment);
     if (experiment.status !== "draft") throw new AppError("CONFLICT", "Variants can only be added while an experiment is a draft.");
     const variant = await this.options.repository.createVariant({
       id: crypto.randomUUID(), workspace_id: parsed.data.workspaceId, experiment_id: parsed.data.experimentId, evidence_node_id: crypto.randomUUID(),
@@ -115,6 +60,7 @@ export class ExperimentService {
     const parsed = experimentTransitionSchema.safeParse(input);
     if (!parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid experiment transition.", 422, { issues: parsed.error.issues });
     const experiment = await this.requireExperiment(parsed.data.workspaceId, parsed.data.experimentId);
+    refuseMeasurementV1(experiment);
     if (!allowedTransitions[experiment.status].includes(parsed.data.toStatus)) throw new AppError("CONFLICT", `Experiment cannot transition from ${experiment.status} to ${parsed.data.toStatus}.`);
     if (parsed.data.toStatus === "ready") await this.assertReady(experiment);
     const timestamp = new Date().toISOString();
@@ -149,9 +95,6 @@ export class ExperimentService {
     return this.recordPublicEvent(parsed.data, parsed.data.eventType);
   }
 
-  async recordExposureForAssignment(input: InternalExperimentEventInput) { return this.recordInternalAssignmentEvent(input, "exposure"); }
-  async recordOutcomeForAssignment(input: InternalExperimentEventInput) { if (input.eventType === "exposure") throw new AppError("VALIDATION_ERROR", "Outcome events cannot be exposure events."); return this.recordInternalAssignmentEvent(input, input.eventType); }
-
   async recordPublicEvent(input: PublicExperimentEventInput | unknown, expectedType?: "exposure" | string) {
     const parsed = publicExperimentEventSchema.safeParse(input);
     if (!parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid experiment event.", 422, { issues: parsed.error.issues });
@@ -166,23 +109,19 @@ export class ExperimentService {
     if (!assignment || assignment.variant_id !== parsed.data.variantId) throw new AppError("CONFLICT", "The event does not match the deterministic assignment.");
     const occurredAt = parsed.data.occurredAt ? new Date(parsed.data.occurredAt) : new Date();
     if (Math.abs(Date.now() - occurredAt.getTime()) > 24 * 60 * 60 * 1000) throw new AppError("VALIDATION_ERROR", "The event timestamp is outside the accepted window.");
+    assertMeasurementWindow(experiment, occurredAt);
     const event = await this.options.repository.recordEvent({ id: crypto.randomUUID(), workspace_id: experiment.workspace_id, experiment_id: experiment.id, variant_id: assignment.variant_id, assignment_id: assignment.id, external_event_id: parsed.data.eventId, event_type: parsed.data.eventType, subject_key_hash: subjectHash, occurred_at: occurredAt.toISOString(), received_at: new Date().toISOString(), metadata: parsed.data.metadata });
     await this.options.repository.updateToken(token.id, { last_used_at: new Date().toISOString() });
     return event;
   }
 
+  /** Legacy rows only; measurement-v1 tokens are issued by the `issue_experiment_token` RPC. */
   async issuePublicToken(workspaceId: string, experimentId: string) {
-    await this.requireExperiment(workspaceId, experimentId);
+    refuseMeasurementV1(await this.requireExperiment(workspaceId, experimentId));
     const raw = `wexp_${randomBytes(24).toString("base64url")}`;
     const publicKey = `wexp_pub_${randomBytes(12).toString("base64url")}`;
     const token = await this.options.repository.issueToken({ id: crypto.randomUUID(), workspace_id: workspaceId, experiment_id: experimentId, public_key: publicKey, token_hash: hashToken(raw), status: "active", created_at: new Date().toISOString(), revoked_at: null, last_used_at: null });
     return { token: raw, record: token };
-  }
-
-  async revokePublicToken(workspaceId: string, tokenId: string) {
-    const updated = await this.options.repository.updateToken(tokenId, { status: "revoked", revoked_at: new Date().toISOString() });
-    if (updated.workspace_id !== workspaceId) throw new AppError("FORBIDDEN", "The token is not in this workspace.");
-    return updated;
   }
 
   async getActivePublicExperiment(publicToken: string) {
@@ -198,8 +137,13 @@ export class ExperimentService {
     return Promise.all(rows.map(async (experiment) => ({ experiment, variants: await this.options.repository.listVariants(workspaceId, experiment.id) })));
   }
 
+  /**
+   * Legacy Phase 7 descriptive snapshot. Never used for measurement-v1 rows:
+   * their outcomes come only from the deterministic measurement pass.
+   */
   async calculateResults(workspaceId: string, experimentId: string): Promise<ExperimentResultRow> {
     const experiment = await this.requireExperiment(workspaceId, experimentId);
+    refuseMeasurementV1(experiment);
     const variants = await this.options.repository.listVariants(workspaceId, experimentId);
     const assignments = await this.options.repository.listAssignments(workspaceId, experimentId);
     const allAssignments = new Set(assignments.map((assignment) => assignment.id));
@@ -221,27 +165,20 @@ export class ExperimentService {
     return row;
   }
 
-  async recomputeResults(workspaceId: string, experimentId: string) { return this.calculateResults(workspaceId, experimentId); }
-
-  private async recordInternalEvent(input: { workspaceId: string; experimentId: string; eventId: string; eventType: "exposure" | "cta_click" | "signup_started" | "signup_completed" | "demo_requested" | "checkout_started" | "purchase_completed"; subjectKey: string; variantId: string; metadata?: Record<string, Json> }) {
-    return this.recordPublicEvent({ publicToken: "x".repeat(20), experimentId: input.experimentId, eventId: input.eventId, eventType: input.eventType, subjectKey: input.subjectKey, variantId: input.variantId, metadata: input.metadata ?? {} });
-  }
-
-  private async recordInternalAssignmentEvent(input: InternalExperimentEventInput, expectedType: string) {
-    if (input.eventType !== expectedType) throw new AppError("VALIDATION_ERROR", "The event type does not match the endpoint.");
-    const experiment = await this.requireActive(input.workspaceId, input.experimentId);
-    const assignment = await this.options.repository.getAssignmentById(input.workspaceId, input.experimentId, input.assignmentId);
-    if (!assignment || assignment.variant_id !== input.variantId) throw new AppError("CONFLICT", "The event does not match the assignment.");
-    const occurredAt = input.occurredAt ? new Date(input.occurredAt) : new Date();
-    if (Math.abs(Date.now() - occurredAt.getTime()) > 24 * 60 * 60 * 1000) throw new AppError("VALIDATION_ERROR", "The event timestamp is outside the accepted window.");
-    return this.options.repository.recordEvent({ id: crypto.randomUUID(), workspace_id: experiment.workspace_id, experiment_id: experiment.id, variant_id: assignment.variant_id, assignment_id: assignment.id, external_event_id: input.eventId, event_type: input.eventType, subject_key_hash: assignment.subject_key_hash, occurred_at: occurredAt.toISOString(), received_at: new Date().toISOString(), metadata: input.metadata ?? {} });
-  }
 
   private async requireExperiment(workspaceId: string, experimentId: string) { const experiment = await this.options.repository.getExperiment(workspaceId, experimentId); if (!experiment) throw new AppError("NOT_FOUND", "Experiment was not found."); return experiment; }
-  private async requireActive(workspaceId: string, experimentId: string) { const experiment = await this.requireExperiment(workspaceId, experimentId); if (!["running", "paused"].includes(experiment.status)) throw new AppError("CONFLICT", "The experiment is not accepting assignments or events."); return experiment; }
+  private async requireActive(workspaceId: string, experimentId: string) { const experiment = await this.requireExperiment(workspaceId, experimentId); if (!(experiment.measurement_policy_version === EXPERIMENT_MEASUREMENT_POLICY_VERSION ? ["running"] : ["running", "paused"]).includes(experiment.status)) throw new AppError("CONFLICT", "The experiment is not accepting assignments or events."); return experiment; }
   private async assertReady(experiment: ExperimentRow) { const variants = await this.options.repository.listVariants(experiment.workspace_id, experiment.id); this.assertWeights(variants); if (variants.filter((variant) => variant.is_control).length !== 1) throw new AppError("VALIDATION_ERROR", "An experiment requires exactly one control variant."); if (!experiment.target_page_path || !experiment.target_key) throw new AppError("VALIDATION_ERROR", "An experiment target page path and target key are required."); }
   private assertWeights(variants: ExperimentVariantRow[]) { if (variants.length < 2 || variants.reduce((sum, variant) => sum + variant.allocation_weight, 0) !== WEIGHT_TOTAL) throw new AppError("VALIDATION_ERROR", "Experiment variant weights must total 10000 and include at least two variants."); }
   private async audit(workspaceId: string, actorUserId: string | undefined, action: string, targetId: string, metadata?: Record<string, Json>) { if (this.options.audit) await this.options.audit({ workspaceId, actorUserId, action, targetId, metadata }); }
+}
+
+/** Layer 11: v1 events are accepted only inside [treatment_started_at, measurement_end) (the database enforces it too). */
+function assertMeasurementWindow(experiment: ExperimentRow, occurredAt: Date): void {
+  if (experiment.measurement_policy_version !== EXPERIMENT_MEASUREMENT_POLICY_VERSION) return;
+  const start = experiment.treatment_started_at ? new Date(experiment.treatment_started_at).getTime() : Number.POSITIVE_INFINITY;
+  const end = experiment.measurement_end ? new Date(experiment.measurement_end).getTime() : Number.NEGATIVE_INFINITY;
+  if (occurredAt.getTime() < start || occurredAt.getTime() >= end) throw new AppError("VALIDATION_ERROR", "The event is outside the experiment's measurement window.", 422, { reason: "experiment_event_outside_window" });
 }
 
 function hashToken(token: string): string { return createHash("sha256").update(token).digest("hex"); }

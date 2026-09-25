@@ -21,9 +21,10 @@ function listIn(constraint: string): string[] {
 }
 
 describe("Layer 10 actions_lifecycle_v1 migration contract", () => {
-  it("sorts strictly after the latest applied migration and is the last one (append-only history)", () => {
+  it("sorts strictly after the latest applied migration (append-only history)", () => {
     const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-    expect(names.at(-1)).toBe(migrationName);
+    // Later layers append after it (Layer 11: 20261019000000); history is never rewritten.
+    expect(names.slice(names.indexOf(migrationName) + 1).every((name) => name > migrationName)).toBe(true);
     expect(names.indexOf(migrationName)).toBeGreaterThan(names.indexOf("20261017000000_concept_market_state_v1.sql"));
   });
 

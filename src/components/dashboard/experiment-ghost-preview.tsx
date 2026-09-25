@@ -1,4 +1,4 @@
-/** Structural preview of an Experiment shell — real anatomy, placeholder copy, no fabricated lift/confidence values. */
+/** Structural preview of an Experiment shell — real anatomy, placeholder copy, no fabricated outcome/confidence values. */
 export function ExperimentGhostPreview() {
   return (
     <div className="experiment-card is-ghost" aria-hidden="true">
@@ -13,7 +13,7 @@ export function ExperimentGhostPreview() {
         <div className="action-diff-box"><div className="action-diff-box-label">Variant</div>Updated positioning</div>
       </div>
       <div className="experiment-metrics">
-        <div><div className="experiment-metric-label">Lift vs control</div><div className="experiment-metric-value is-ghost-text">—</div></div>
+        <div><div className="experiment-metric-label">Outcome</div><div className="experiment-metric-value is-ghost-text">—</div></div>
         <div><div className="experiment-metric-label">Result</div><div className="experiment-metric-value is-ghost-text" style={{ fontSize: 14 }}>Not started</div></div>
         <div><div className="experiment-metric-label">Sample size</div><div className="experiment-metric-value is-ghost-text">—</div></div>
         <div><div className="experiment-metric-label">Primary metric</div><div className="experiment-metric-value is-ghost-text" style={{ fontSize: 14 }}>cta click</div></div>

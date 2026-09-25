@@ -72,6 +72,11 @@ const serverEnvSchema = publicEnvSchema.extend({
   // Geography page's server component; no Trigger task executes this path.
   // Defaults off.
   GEOGRAPHY_V2_ENABLED: z.enum(["true", "false"]).optional(),
+  // Layer 11: experiment measurement v1. Gates only NEW work (create, draft edits,
+  // mark ready, starting a ready experiment's treatment); never blocks draining
+  // (public events, manual measurement observations, the measurement pass).
+  // Read in both Vercel and Trigger. Defaults off.
+  EXPERIMENT_MEASUREMENT_ENABLED: z.enum(["true", "false"]).optional(),
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
@@ -141,6 +146,7 @@ export function getServerEnv(): ServerEnv {
     CONCEPT_MARKET_STATE_ENABLED: process.env.CONCEPT_MARKET_STATE_ENABLED,
     CONCEPT_ACTIONS_ENABLED: process.env.CONCEPT_ACTIONS_ENABLED,
     GEOGRAPHY_V2_ENABLED: process.env.GEOGRAPHY_V2_ENABLED,
+    EXPERIMENT_MEASUREMENT_ENABLED: process.env.EXPERIMENT_MEASUREMENT_ENABLED,
   });
 }
 

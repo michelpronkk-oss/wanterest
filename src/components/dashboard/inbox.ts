@@ -108,18 +108,19 @@ export async function getInboxItems(workspaceId: string, productId: string): Pro
       .filter((entry) => entry.experiment.status === "completed" && entry.latestResult)
       .sort((a, b) => (b.latestResult?.calculated_at ?? "").localeCompare(a.latestResult?.calculated_at ?? ""))[0];
     if (completed?.latestResult) {
-      const variants = completed.latestResult.variant_results as unknown as Array<{ isControl: boolean; conversionRate: number; absoluteDeltaFromControl: number | null }>;
-      const winner = variants.find((variant) => !variant.isControl && (variant.absoluteDeltaFromControl ?? 0) > 0);
+      const result = completed.latestResult;
+      // Layer 11: the stored outcome summary is the only headline; legacy rows stay descriptive.
+      const headline = result.summary ?? `${completed.experiment.name} finished collecting results (descriptive only)`;
       items.push({
         id: `experiment:${completed.experiment.id}`,
         type: "experiment",
         label: "Experiment result",
-        headline: winner ? `Variant outperformed control by ${formatPercent(winner.absoluteDeltaFromControl ?? 0)}` : `${completed.experiment.name} finished collecting results`,
-        context: `${completed.latestResult.result_state} · ${completed.latestResult.total_exposed_subjects} exposed`,
-        meta: formatRelativeTime(completed.latestResult.calculated_at),
+        headline,
+        context: result.outcome ? `${result.outcome} · ${result.attribution_class?.replaceAll("_", " ") ?? "descriptive"}` : `${result.result_state} · ${result.total_exposed_subjects} exposed`,
+        meta: formatRelativeTime(result.calculated_at),
         cta: { label: "View result", href: "/app/experiments" },
-        timestamp: completed.latestResult.calculated_at,
-        confidence: completed.latestResult.result_state === "completed" ? 1 : 0.6,
+        timestamp: result.calculated_at,
+        confidence: result.outcome && result.outcome !== "inconclusive" && result.outcome !== "invalid" ? 1 : 0.6,
       });
     }
   }

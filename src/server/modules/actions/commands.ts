@@ -28,7 +28,7 @@ function readService() {
 }
 
 /** Service-role wiring used only AFTER the caller has been authorized against the Action's own workspace. */
-function lifecycleService(): ActionLifecycleService {
+export function lifecycleService(): ActionLifecycleService {
   const client = createSupabaseServiceClient();
   const repository = new SupabaseActionRepository(client);
   return new ActionLifecycleService({
@@ -41,12 +41,13 @@ function lifecycleService(): ActionLifecycleService {
     },
     loadConceptInputs: (product, now) => loadConceptActionInputs({ ...conceptActionInputPorts(client), states: new SupabaseConceptMarketStateRepository(client) }, product, now),
     downstreamIntelligenceV2Enabled: downstreamV2Enabled(),
+    experimentMeasurementEnabled: getServerEnv().EXPERIMENT_MEASUREMENT_ENABLED === "true",
     now: () => new Date(),
   });
 }
 
 /** RLS/user-scoped reads only — never the service role — so a foreign Action id resolves to nothing. */
-async function actionAccessPorts(): Promise<ActionAccessPorts> {
+export async function actionAccessPorts(): Promise<ActionAccessPorts> {
   const client = await createSupabaseServerClient();
   return {
     currentUser: async () => { const user = await getCurrentUser(); return user ? { id: user.id } : null; },
@@ -100,7 +101,7 @@ export async function transitionActionCommand(input: unknown) {
   const parsed = actionTransitionRequestSchema.safeParse(input);
   if (!parsed.success) throw new AppError("VALIDATION_ERROR", "The Action update is invalid.");
   const access = await authorizeActionAccess(await actionAccessPorts(), parsed.data.actionId, "mutate");
-  return lifecycleService().transition(access, { toStatus: parsed.data.toStatus, note: parsed.data.note });
+  return lifecycleService().transition(access, { toStatus: parsed.data.toStatus, note: parsed.data.note, liveSince: parsed.data.liveSince });
 }
 
 export function generateActions(service: DemandActionService, input: ActionGenerationInput, engine?: DemandActionEngine) {
