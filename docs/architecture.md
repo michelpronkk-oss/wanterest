@@ -3132,3 +3132,230 @@ approve/start/complete lifecycle with revalidation at approve and start; expiry;
 idempotency; incremental matching path included; legacy v2 safety preserved; migration, code and
 tests green; structural production proof recorded — without fabricating a paid entitlement,
 natural evidence or a live production Action.
+
+## 22. Layer 10 — Production proof and closeout
+
+Production validation completed 25 Sep 2026.
+
+### Release records
+
+- Architecture commit: `d17204628ce4aecf747f7236eb9a57ddf88a6451`
+- Implementation commit: `77be4c94ec0f98f09a0353002b7949f199d191ea` (pushed to `main` as a normal
+  fast-forward `9968224..77be4c9`).
+- Migration: `20261018000000_actions_lifecycle_v1.sql` (file sha256
+  `f3a88b3f09ce2993a1acf1b9608cf5c6f50e9530dcd436f042e1a28b51b968a6`).
+- Vercel production: `dpl_cpjMCYJbgSE86KfXU7msLqEJBEeD`, built from `77be4c9…`, READY, serving
+  `app.wanterest.com`.
+- Trigger production: version `20260925.11`, deploy `08xkfcla`, deployed with
+  `trigger.dev@4.6.4 deploy --env prod --external-id 77be4c94ec0f98f09a0353002b7949f199d191ea`.
+  Current prod worker `20260925.11` (SDK 4.6.4) registers `generate-product-actions` and
+  `match-refreshed-partition`. The Trigger API available during validation could not read the
+  external-id back without the project secret key; the exact implementation SHA was supplied as the
+  deploy external-id and the deploy list shows the implementation commit message.
+- `/api/health`: `status=ok`, `liveness=ok`, `readiness=ok`.
+
+### Migration
+
+Production history was verified before apply: latest applied `20261017000000_concept_market_state_v1`,
+only pending `20261018000000_actions_lifecycle_v1`, no gaps. The Supabase CLI was not available in
+the validation environment. The committed migration file was applied unchanged in one production
+transaction, and the migration history row `20261018000000 / actions_lifecycle_v1` was written
+manually in the same transaction. Its `statements` field contains a short line identifying the
+migration file, its hash and the implementation commit rather than the full SQL text.
+
+**Operational follow-up (not a Layer 10 blocker):** before the next production migration, run a real
+`supabase migration list` and verify repository/remote history still align on version
+`20261018000000`. Do not rewrite the migration or its history.
+
+### Flags and entitlement (unchanged)
+
+- Trigger production: `DOWNSTREAM_INTELLIGENCE_V2_ENABLED=true`; `CONCEPT_ACTIONS_ENABLED` absent.
+- Vercel production: `CONCEPT_ACTIONS_ENABLED` absent; `DOWNSTREAM_INTELLIGENCE_V2_ENABLED` present
+  (the encrypted value was not read directly during validation).
+- Production workspace: `plan=free`, `actions_enabled=false`. Nothing was changed.
+
+### Live schema and function proof
+
+- `actions`: `expired` accepted; `trigger_clustering_version` and `proposal_fingerprint` exist and
+  are nullable for legacy compatibility; `actions_concept_identity_check` requires canonical concept
+  identity and a sha256-hex `proposal_fingerprint` for `concept_gap`/`concept_drift` and keeps both
+  null for legacy trigger types; both fields are immutable generated fields.
+- `actions_one_open_concept_action` is enforced on `(workspace_id, product_id,
+  trigger_clustering_version, trigger_concept_key)` for open concept Actions and intentionally does
+  not include `trigger_type`: Gap and Drift compete for one canonical open Action slot per concept.
+- `action_events` accepts `expired` and `revalidated`.
+- `validate_action_trigger()` verifies concept basis identity (workspace, product,
+  clustering_version, anchor_concept_key; `action_concept_identity_mismatch`); all four legacy
+  trigger branches remain present.
+- `create_concept_action`, `transition_action`, `assert_concept_action_basis_guard`,
+  `concept_latest_market_states`, `concept_latest_gap_states`, `concept_latest_drift_states` are
+  live. Execute: public DENIED, anon DENIED, authenticated DENIED, service_role EXECUTE. None of
+  these functions is `SECURITY DEFINER`.
+
+### Security / IDOR
+
+The previous service-role IDOR is removed. Browser Action transitions accept only `actionId`,
+`toStatus` and an optional `note`; the input schema is strict and a browser-supplied `workspaceId`
+is rejected. Server order: require user → load the Action through the user's RLS-scoped client →
+derive `workspace_id`/`product_id` from that row → verify active membership → verify role → plan /
+selector / revalidation checks → only then the service-role RPC. Read: viewer/member/admin/owner
+through normal workspace access. Mutation: viewer FORBIDDEN; member/admin/owner eligible for valid
+human transitions. System expiry/supersession is server-owned only.
+
+Live: logged-out `/app/actions`, `/app` and `/app/insights/gap` redirect to `/login`; a forged
+server-action request including `workspaceId` returns 404. AUTHENTICATED MADE-UP ACTION ID: LIVE CASE
+UNAVAILABLE and LIVE CROSS-WORKSPACE ACTION ID: UNAVAILABLE (0 Actions; the validator could not sign
+in) — covered by deterministic tests and the real-Postgres suite; no rows were fabricated.
+
+### Production baseline (21:44 UTC) and zero-write proof
+
+| Table | Before | After (~21:50 UTC) |
+| --- | ---: | ---: |
+| actions | 0 | 0 |
+| action_events | 0 | 0 |
+| audit_log | 4 | 4 |
+| concept_market_states / gap / drift | 1 / 1 / 3 | 1 / 1 / 3 |
+| usage_ledger (`action_generated`) | 0 | 0 |
+| evidence_nodes | 7120 | 7120 |
+| evidence_provenance | 14494 | 14494 |
+| raw_source_items | 230 | 230 |
+| product_match_evaluations | 180 | 180 |
+| job_runs | 1010 | 1010 |
+| demand_cluster_states | 1 | 1 |
+| signals | 10 | 10 |
+
+`job_runs` created since 21:40 UTC: 0. Production validation caused no Action-system writes and no
+9C state changes from Action reads.
+
+### Free-plan Action generation
+
+One normal `generate-product-actions` production invocation was attempted, with no bypass. The
+platform safety classifier blocked it as a shared-production-resource change; the block was
+respected, no workaround was attempted, and it was not retried. **LIVE ACTION GENERATION:
+UNREACHABLE_BEHIND_PLAN_GATE (not invoked)** — supported by `plan=free`, `actions_enabled=false`,
+`CONCEPT_ACTIONS_ENABLED` absent. No Action was generated; no entitlement was changed.
+
+### Canonical selector on the real 9C basis
+
+Production concept `jira`: latest market state sequence 1 with 0 current evidence; latest Gap
+`no_current_demand` with a product snapshot equal to `current_snapshot_id`; Drift 7d/30d/90d all
+`comparable=false` (`insufficient_history`), each linked to the latest market state. The persisted
+member set was rebuilt from 9C provenance and its recomputed market fingerprint matched the stored
+fingerprint exactly. The deployed selector code was run read-only against these exact rows:
+`state=settled, candidate=null, reason=no_eligible_basis` — Gap cannot become an Action, Drift
+cannot become an Action, no legacy fallback occurs.
+
+Limitation: `DemandCurrentnessService` could not be executed directly against production (the
+validation environment had no service-role credentials). Had live currentness differed from the
+persisted fingerprint, the selector returns `pending(currentness)`, which is also non-actionable and
+writes nothing. No direct deployed-service currentness invocation is claimed.
+
+### Materialization-lag safety, cross-type selection, continuity
+
+- The deployed selector implements `pending(currentness)`, `pending(gap_materialization)`,
+  `pending(drift_materialization)`, `pending(positioning)` and
+  `pending(clustering_version_unsupported)`. Pending never creates, expires or supersedes an Action
+  and never falls back from Gap to Drift. An unchanged Drift window is distinguished from missing
+  materialization by reproducing its fingerprint through the same shared function 9C uses. No
+  positive production lag case was fabricated; tests cover every pending branch.
+- One exported selector is used by generation, reconciliation, list, detail, approve and start.
+  Priority: eligible scored Gap, otherwise eligible Drift (strong before notable, then 7d, 30d,
+  90d, then id). Positive live Drift→Gap, Gap→Drift, Gap→Gap and Drift→Drift cases:
+  AWAITING_NATURAL_EVIDENCE (covered by deterministic and database tests).
+- Continuity: same `proposal_fingerprint` → keep the Action, add `revalidated_by`, one idempotent
+  `revalidated` event per new basis. Different fingerprint → proposed/approved atomically
+  superseded with a replacement; in_progress never auto-superseded (`proposalCurrent=false`, no
+  second open Action until the human work closes). No canonical candidate → proposed/approved
+  expired, in_progress unchanged. A superseded Action is never committed without a resolvable
+  replacement.
+
+### Idempotency and atomic RPCs
+
+Concept Action creation key: `action:{product}:{trigger_type}:{basis_state_id}:{engine}:{proposal_fingerprint}`.
+This intentionally differs from the earlier architecture draft: a semantically changed proposal
+can occur on an unchanged basis row (for example after a deterministic proposal input such as the
+product name changes); without the fingerprint in the key, that change would resolve back to the
+previous Action instead of superseding it. The key is replay-stable; legacy keys are unchanged;
+tests cover it.
+
+`create_concept_action` locks the old Action on supersession, advisory-locks the creation key,
+resolves any existing row first by `(workspace_id, idempotency_key)`, checks the basis guard,
+compare-and-sets the old status, supersedes it, inserts the evidence node and new Action atomically,
+sets `superseded_by_action_id`, writes `triggered_by`/`supersedes_action` provenance and the
+events, and consumes usage exactly once; any failure rolls back the whole operation. Replay
+correctness depends on `workspace_id + idempotency_key`, not on a caller UUID. `transition_action`
+compare-and-sets status, validates the lifecycle, checks the basis guard for approve/start, and
+writes the Action event and (for users) the audit event in the same transaction.
+
+### Bounded reads — 9C warning RESOLVED
+
+The active concept Action path no longer performs unbounded all-history batch reads; it uses the
+bounded SQL functions. Limits (database-side, not fetch-all-then-truncate): latest market / gap /
+drift concepts 500 each, open concept Actions 500, episode-break history 100, new/replacement
+proposals 5 per pass. A live request with a very high requested limit returned only the one existing
+concept. The earlier Layer 9C `ConceptActionService` unbounded-read warning is **RESOLVED**.
+
+### Empty read model, legacy safety, incremental path
+
+- With 0 Actions the list loader returns early: no currentness, concept-state or entitlement read,
+  no writes, no provider or LLM calls.
+- With `DOWNSTREAM_INTELLIGENCE_V2_ENABLED=true`, automatic legacy generation from `demand_gap`,
+  `demand_drift`, `demand_snapshot` and geography stays paused; Layer 10 does not reopen it; legacy
+  schema compatibility is preserved.
+- Worker `20260925.11` runs the Layer 10 Action pass after a successful 2D incremental rebuild via
+  the same `generateActionsForScan` (no second writer), behind the plan gate and
+  `CONCEPT_ACTIONS_ENABLED`, non-fatal to the rebuild. No production demand was manufactured to
+  exercise it.
+
+### Side effects and frozen systems
+
+No discovery, provider retrieval, candidate selection, qualification or LLM call ran because of
+Layer 10 validation. The only Trigger runs in the window were the unrelated scheduled
+`automatic-monitoring-scheduler` and `monitoring-notification-delivery`, both still on version
+`20260925.10`.
+
+Layer 10 did not change the semantics of Stage 2G clustering or strengthening, the 9A Map, 9B
+Gap/Drift, `DemandCurrentnessService`, 9C market-state semantics, 9D Geography, query planning,
+retrieval precision, source health, candidate selection, qualification thresholds, providers,
+signal lifecycle writes, plans, pricing or entitlements. The only 9C refactor made the Drift
+fingerprint one exported shared function used by 9C materialization and the Layer 10 lag check;
+all three production Drift-state fingerprints recomputed through it match the stored values
+exactly, and every Layer 9 regression remains green.
+
+### Test proof
+
+Full suite 1090 passed / 9 skipped / 0 failed; typecheck, lint and `next build` pass. New suites:
+canonical selector, concept Action service, lifecycle, bounded reads, migration contract,
+incremental integration, digest expiry. Real PostgreSQL 16 (opt-in via `WANTEREST_PG_TEST_HOST`):
+all 32 migrations applied, 51 SQL checks passed, three two-session concurrency scenarios passed.
+
+### Manual signed-in UI
+
+**MANUAL_SIGNED_IN_UI_CHECK: PASSED.** The production owner verified
+`https://app.wanterest.com/app/actions`: the page loads; the no-qualified-action state renders and
+reports that scanned conversations did not meet the current demand threshold; the preview card
+("Make [your differentiator] explicit") is visible and is clearly example content, not a persisted
+Action; nothing claims Wanterest executed anything. No live Action was fabricated for UI proof.
+
+### Pending live cases (not blockers, not manufactured)
+
+- LIVE PAID CONCEPT ACTION CREATION: UNREACHABLE_BEHIND_PLAN_GATE
+- LIVE FREE-PLAN GENERATION RUN: UNREACHABLE_BEHIND_PLAN_GATE (not invoked)
+- LIVE APPROVE / START / COMPLETE: AWAITING ELIGIBLE PAID REAL CASE
+- LIVE EXPIRY / CONTINUITY / SUPERSESSION: AWAITING ELIGIBLE PAID REAL CASE / NATURAL EVIDENCE
+- LIVE basisStatus=valid: AWAITING_NATURAL_EVIDENCE
+- LIVE CROSS-WORKSPACE ACTION: UNAVAILABLE
+- POSITIVE LIVE CROSS-TYPE GAP/DRIFT REPLACEMENT: AWAITING_NATURAL_EVIDENCE
+
+### Verdict
+
+**LAYER 10 CORE ACTION ARCHITECTURE: PRODUCTION_PROVEN.**
+
+**CONCEPT_ACTIONS_ENABLED: FALSE / NOT ENABLED IN PRODUCTION.**
+
+**LAYER 10: COMPLETE.**
+
+Wanterest Layer 10 currently provides a production-proven, provenance-backed, lifecycle-safe Action
+proposal system with human-controlled manual execution semantics. This verdict does not mean that
+live paid Action creation or human execution has occurred in production; those cases remain pending
+exactly as listed above. No Layer 11 is started.
