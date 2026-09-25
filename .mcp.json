@@ -3,9 +3,13 @@
     "trigger": {
       "command": "npx",
       "args": [
-        "trigger.dev@4.6.4",
+        "-y",
+        "trigger.dev@latest",
         "mcp"
-      ]
+      ],
+      "env": {
+        "TRIGGER_ACCESS_TOKEN": "${TRIGGER_ACCESS_TOKEN}"
+      }
     }
   }
 }
