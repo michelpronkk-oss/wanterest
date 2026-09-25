@@ -12,6 +12,10 @@ import { windowDays } from "./demand.schemas";
 import { geographyWindowSchema, type GeographyReadModel, type GeographySelection, type GeographyWindow } from "../geography/geography.schemas";
 import { GeographyService } from "../geography/geography.service";
 import { resolveWorkspaceCapabilities } from "../entitlements/plan-capabilities";
+import { getServerEnv } from "../../lib/env";
+import { SupabaseDemandClusteringRepository } from "./demand-clustering.repository";
+import { demandMapV2Enabled, type DemandMapV2ReadModel } from "./demand-map.policy";
+import { DemandMapService } from "./demand-map.service";
 
 export const DEMAND_JOB_TYPES = ["aggregate-demand", "calculate-demand-gap", "calculate-demand-drift", "backfill-demand-snapshots"] as const;
 export type DemandJobType = (typeof DEMAND_JOB_TYPES)[number];
@@ -67,6 +71,24 @@ export async function getDemandMapQuery(workspaceId: unknown, productId: unknown
   const product = await getProductQuery(workspaceId, productId);
   await requireUser();
   return readService().getDemandMap(product.workspace_id, product.id, window);
+}
+
+export function isDemandMapV2Enabled(): boolean {
+  return demandMapV2Enabled(getServerEnv().DEMAND_MAP_V2_ENABLED);
+}
+
+/**
+ * Layer 9A: current demand from live-validated Stage 2G clusters; the legacy 30d
+ * snapshot is attached only as labelled history. Read-only.
+ */
+export async function getDemandMapV2Query(workspaceId: unknown, productId: unknown): Promise<DemandMapV2ReadModel> {
+  const product = await getProductQuery(workspaceId, productId);
+  await requireUser();
+  const legacy = await readService().getDemandMap(product.workspace_id, product.id, "30d").catch((error: unknown) => {
+    if (error instanceof AppError && error.code === "NOT_FOUND") return null;
+    throw error;
+  });
+  return new DemandMapService(new SupabaseDemandClusteringRepository(createSupabaseServiceClient())).getDemandMap({ workspaceId: product.workspace_id, productId: product.id, legacy });
 }
 
 /** Thin read wrapper over DemandIntelligenceService.getDemandGap — no gap-score logic here. */

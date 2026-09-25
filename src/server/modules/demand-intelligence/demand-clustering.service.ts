@@ -15,7 +15,7 @@ import {
   type DemandClusterStrengthLevel,
   type DemandClusterTargetScope,
 } from "./demand-clustering.policy";
-import type { DemandClusteringEvidence, DemandClusteringRepository, DemandClusterMembershipRow, DemandClusterRow, DemandClusterStateRow } from "./demand-clustering.repository";
+import type { DemandClusteringEvidence, DemandClusteringRepository, DemandClusterMembershipRow, DemandClusterRow, DemandClusterStateContribution, DemandClusterStateRow } from "./demand-clustering.repository";
 
 function json(value: unknown): Json { return jsonValueSchema.parse(value); }
 function numberRecord(value: Json): Record<string, number> {
@@ -213,13 +213,17 @@ export class DemandClusteringService {
   /** Product-private read model; strongest clusters first. */
   async getDemandClusters(workspaceId: string, productId: string): Promise<DemandClusterReadModel[]> {
     const clusters = await this.repository.listClusters(workspaceId, productId, DEMAND_CLUSTERING_VERSION);
+    if (!clusters.length) return [];
     const memberships = await this.repository.listMemberships(workspaceId, productId, DEMAND_CLUSTERING_VERSION);
+    // Batched reads: one latest-state query and chunked contribution edges, never one query per cluster.
+    const latest = await this.repository.listLatestStates(workspaceId, productId, DEMAND_CLUSTER_STRENGTH_VERSION);
+    const stateByCluster = new Map(latest.states.map((row) => [row.cluster_id, row]));
+    const edges = latest.states.length ? await this.repository.listStateContributionsForStates(latest.states.map((row) => row.evidence_node_id)) : [];
     const models: DemandClusterReadModel[] = [];
     for (const cluster of clusters) {
-      const history = await this.repository.listStates(workspaceId, productId, cluster.id, DEMAND_CLUSTER_STRENGTH_VERSION);
-      const state: DemandClusterStateRow | undefined = history.at(-1);
+      const state: DemandClusterStateRow | undefined = stateByCluster.get(cluster.id);
       const members = memberships.filter((row) => row.cluster_id === cluster.id);
-      const statusByMembership = await this.contributionStatus(state, members);
+      const statusByMembership = this.contributionStatus(state, members, edges);
       models.push({
         clusterId: cluster.id,
         clusterKey: cluster.cluster_key,
@@ -237,7 +241,7 @@ export class DemandClusteringService {
           averageDemandQuality: Number(state.average_demand_quality), averageConfidence: Number(state.average_confidence), components: state.components,
           sourceMix: numberRecord(state.source_mix), intentMix: numberRecord(state.intent_mix), alternativeMix: numberRecord(state.alternative_mix),
           lifecycleMix: numberRecord(state.lifecycle_mix), exclusions: numberRecord(state.exclusions), firstEvidenceAt: state.first_evidence_at,
-          lastEvidenceAt: state.last_evidence_at, computedAt: state.computed_at, stateEvidenceNodeId: state.evidence_node_id, historyLength: history.length,
+          lastEvidenceAt: state.last_evidence_at, computedAt: state.computed_at, stateEvidenceNodeId: state.evidence_node_id, historyLength: latest.historyLength[cluster.id] ?? 1,
         } : null,
         members: members.map((row) => ({ membershipId: row.id, matchEvaluationId: row.match_evaluation_id, conversationId: row.conversation_id, sourceKey: row.source_key, evidenceAt: row.evidence_at, evidenceNodeId: row.evidence_node_id, ...(statusByMembership.get(row.id) ?? { contributes: false, exclusionReason: null }) })),
       });
@@ -249,11 +253,11 @@ export class DemandClusteringService {
    * Contribution status exactly as recorded by the latest state's provenance
    * edges (never recomputed on read), so the read model matches history.
    */
-  private async contributionStatus(state: DemandClusterStateRow | undefined, members: DemandClusterMembershipRow[]) {
+  private contributionStatus(state: DemandClusterStateRow | undefined, members: DemandClusterMembershipRow[], edges: DemandClusterStateContribution[]) {
     const status = new Map<string, { contributes: boolean; exclusionReason: DemandClusterExclusionReason | null }>();
     if (!state) return status;
     const membershipByNode = new Map(members.map((row) => [row.evidence_node_id, row.id]));
-    for (const edge of await this.repository.listStateContributions(state.evidence_node_id)) {
+    for (const edge of edges.filter((item) => item.stateEvidenceNodeId === state.evidence_node_id)) {
       const membershipId = membershipByNode.get(edge.sourceEvidenceNodeId);
       if (!membershipId) continue;
       status.set(membershipId, { contributes: edge.relationType === "strengthened_by", exclusionReason: edge.relationType === "strengthened_by" ? null : edge.reason as DemandClusterExclusionReason | null });

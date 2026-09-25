@@ -56,6 +56,9 @@ const serverEnvSchema = publicEnvSchema.extend({
   // Stage 2G kill switch for product-private demand clustering/strengthening
   // during demand rebuilds. Defaults to disabled unless exactly "true".
   DEMAND_CLUSTERING_ENABLED: z.enum(["true", "false"]).optional(),
+  // Layer 9A: cluster-led Demand Map / Overview market state (read-only).
+  // Defaults to the legacy view unless exactly "true".
+  DEMAND_MAP_V2_ENABLED: z.enum(["true", "false"]).optional(),
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
@@ -120,6 +123,7 @@ export function getServerEnv(): ServerEnv {
     MARKET_PARTITION_REFRESH_ENABLED: process.env.MARKET_PARTITION_REFRESH_ENABLED,
     INCREMENTAL_PRODUCT_MATCHING_ENABLED: process.env.INCREMENTAL_PRODUCT_MATCHING_ENABLED,
     DEMAND_CLUSTERING_ENABLED: process.env.DEMAND_CLUSTERING_ENABLED,
+    DEMAND_MAP_V2_ENABLED: process.env.DEMAND_MAP_V2_ENABLED,
   });
 }
 

@@ -2015,3 +2015,62 @@ Gate record (25 Sep 2026):
   Source Health V1, `candidate_selection_v3`, `signal_qualification_v1_7`/thresholds,
   `semantic_reasoning_router_v1`, provider adapters, product-scan budgets) was touched. No
   embeddings, no new LLM calls, no threshold change.
+
+## 16. Layer 9 — Market intelligence views
+
+### Layer 9A — Demand Map v2 (`demand_map_v2`)
+
+Architecture decision (approved 25 Sep 2026). Read-side correctness change only: no migration, no
+Trigger change, no new writes of any kind.
+
+Problem found in review: the legacy Map (latest 30d `demand_snapshot` + fixture themes, phrases,
+alternatives) is built from `demand_observations`, which are extracted once per qualified evaluation
+and never re-checked against lifecycle. In production the 30d snapshot reported "8 qualified
+signals" for Linear while Stage 2G proved every underlying evaluation superseded (10) or invalidated
+(1). Snapshot/theme data therefore cannot represent *current* demand.
+
+Contract:
+- **Current demand source of truth:** Stage 2G clusters + live read-time lifecycle validation.
+- **Historical context:** legacy snapshot themes / buyer language / alternatives only, labelled
+  "Historical evidence (not lifecycle-filtered)" and collapsed by default. Never used to fill the
+  current section, never counted in current headline numbers.
+- **Map item = demand concept, not a cluster row.** Clusters are rolled up by
+  `anchor_concept_key`; intent family and target scope are facets. Stable identity:
+  `(workspace_id, product_id, clustering_version, anchor_concept_key)`.
+- **Read-time validation:** a membership counts only if the latest persisted state lists it as
+  contributing (`strengthened_by`) *and*, at read time, its evaluation is still the match's
+  `current_match_evaluation_id`, its signal is not `invalidated`/`retracted`, and its evidence is
+  inside the 90-day window relative to *now*. Anything failing is excluded from current counts and
+  flags the concept `updatePending` (persisted state is older than lifecycle). Persisted exclusions
+  are never revived.
+- **Current concept** requires >= 1 live contributing membership (distinct by conversation).
+  Inactive concepts are excluded from current counts and ranking and appear only under
+  "Previously observed" with exclusion reasons; provenance/history is retained.
+- **Exposed per concept:** label, status, active evidence count, active source count, source mix,
+  intent-family and target-scope mixes, level (`single`/`repeated`/`corroborated`, same rule as
+  `demand_cluster_strength_v1` applied to live counts), first/last active evidence, oldest state
+  computed-at, exclusions by reason, up to 3 buyer-language phrases taken only from live contributing
+  evaluations' observations, and a cluster -> membership drill-down with evidence node IDs. No new
+  composite score.
+- **Ranking:** active evidence count, then active source count, then most recent active evidence
+  (concept key as final deterministic tie-break).
+- **Empty state:** no current concept => "No current demand confirmed", with an honest reason
+  (previously observed evidence no longer valid, or none clustered yet). Existing scan-state empty
+  states (no scan / running / completed with nothing) are unchanged.
+- **Overview:** the "Market state" line becomes cluster-led; remaining legacy cards are labelled
+  historical.
+- **Performance:** no per-cluster state reads. Batched reads: clusters, memberships, latest states
+  (one bounded query, reduced to latest per cluster), state contribution edges, product-match and
+  signal lifecycle (chunked `in` queries), buyer-language observations for live contributors only.
+  The existing Stage 2G `getDemandClusters` N+1 is fixed with the same batched reads.
+- **Rollout:** `DEMAND_MAP_V2_ENABLED` (Vercel runtime). Off => legacy Map/Overview unchanged.
+  Rollback = flag off.
+- **Out of scope (Layer 9B decision):** lifecycle-aware snapshot aggregation, Gap, Drift, Actions,
+  Digests. Their current legacy behaviour is documented technical debt; 9A creates no actions or
+  other downstream writes and does not change action generation.
+- **Geography** later becomes a facet over live contributing members; never part of cluster or
+  concept identity.
+- **Production proof:** Linear signed in with the flag on shows "No current demand confirmed", Jira
+  under "Previously observed" (10 superseded / 1 invalidated), legacy numbers only inside the
+  historical section; SQL cross-check of counts vs `demand_cluster_states` and live lifecycle; zero
+  row-count change in any table across page loads; no cross-workspace visibility.

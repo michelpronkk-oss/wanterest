@@ -87,6 +87,36 @@ export type DemandClusteringEvidence = {
   sourceItem: { id: string; evidence_node_id: string; source_key: string; content_hash: string | null; published_at: string | null } | null;
 };
 
+/** Upper bound of state-history rows read in one batched latest-state lookup. */
+export const DEMAND_CLUSTER_STATE_READ_LIMIT = 5000;
+
+export type DemandClusterLatestStates = {
+  /** Latest state per cluster (highest sequence), ordered by cluster id. */
+  states: DemandClusterStateRow[];
+  historyLength: Record<string, number>;
+  /** True when the bounded read hit its limit; missing clusters must be treated as unknown, never as current. */
+  truncated: boolean;
+};
+
+export type DemandClusterStateContribution = { stateEvidenceNodeId: string; sourceEvidenceNodeId: string; relationType: string; reason: string | null };
+
+/** Live lifecycle of one product match, read at request time. */
+export type DemandClusterMatchLifecycle = { productMatchId: string; found: boolean; currentEvaluationId: string | null; signalLifecycleStatus: string | null };
+
+export type DemandClusterBuyerLanguage = { matchEvaluationId: string; phrase: string; normalizedValue: string };
+
+/** Reduces a batch of state rows to the latest state per cluster (highest sequence). */
+export function reduceLatestStates(rows: DemandClusterStateRow[], limit: number): DemandClusterLatestStates {
+  const latest = new Map<string, DemandClusterStateRow>();
+  const historyLength: Record<string, number> = {};
+  for (const row of rows) {
+    historyLength[row.cluster_id] = (historyLength[row.cluster_id] ?? 0) + 1;
+    const current = latest.get(row.cluster_id);
+    if (!current || row.sequence > current.sequence) latest.set(row.cluster_id, row);
+  }
+  return { states: [...latest.values()].sort((left, right) => left.cluster_id.localeCompare(right.cluster_id)), historyLength, truncated: rows.length >= limit };
+}
+
 export type DemandClusteringProvenanceEdge = {
   derivedEvidenceNodeId: string;
   sourceEvidenceNodeId: string;
@@ -115,6 +145,14 @@ export interface DemandClusteringRepository {
   linkProvenance(edge: DemandClusteringProvenanceEdge): Promise<void>;
   /** A state's `strengthened_by` / `excluded_membership` edges (membership evidence nodes). */
   listStateContributions(stateEvidenceNodeId: string): Promise<Array<{ sourceEvidenceNodeId: string; relationType: string; reason: string | null }>>;
+  /** Latest state of every cluster of the product in one bounded read (no per-cluster queries). */
+  listLatestStates(workspaceId: string, productId: string, strengthVersion: string): Promise<DemandClusterLatestStates>;
+  /** Contribution edges of many states, in chunked batch reads. */
+  listStateContributionsForStates(stateEvidenceNodeIds: string[]): Promise<DemandClusterStateContribution[]>;
+  /** Current evaluation and signal lifecycle for product matches, product-scoped, chunked. */
+  loadMatchLifecycle(workspaceId: string, productId: string, productMatchIds: string[]): Promise<DemandClusterMatchLifecycle[]>;
+  /** Buyer-language observations for the given evaluations, product-scoped, chunked. */
+  listBuyerLanguage(workspaceId: string, productId: string, evaluationIds: string[]): Promise<DemandClusterBuyerLanguage[]>;
 }
 
 const CONTRIBUTION_RELATIONS = ["strengthened_by", "excluded_membership"];
@@ -277,6 +315,40 @@ export class SupabaseDemandClusteringRepository implements DemandClusteringRepos
     const rows = await this.rows(this.table("evidence_provenance").select("source_evidence_node_id, relation_type, measurement").eq("derived_evidence_node_id", stateEvidenceNodeId).in("relation_type", CONTRIBUTION_RELATIONS), "state contribution lookup");
     return rows.map((row) => ({ sourceEvidenceNodeId: String(row.source_evidence_node_id), relationType: String(row.relation_type), reason: reasonOf(row.measurement) }));
   }
+
+  async listLatestStates(workspaceId: string, productId: string, strengthVersion: string) {
+    const rows = await this.rows(this.table("demand_cluster_states").select("*").eq("workspace_id", workspaceId).eq("product_id", productId).eq("strength_version", strengthVersion).order("created_at", { ascending: false }).limit(DEMAND_CLUSTER_STATE_READ_LIMIT), "latest state batch lookup") as DemandClusterStateRow[];
+    return reduceLatestStates(rows, DEMAND_CLUSTER_STATE_READ_LIMIT);
+  }
+
+  async listStateContributionsForStates(stateEvidenceNodeIds: string[]) {
+    const result: DemandClusterStateContribution[] = [];
+    for (const part of chunks([...new Set(stateEvidenceNodeIds)])) {
+      const rows = await this.rows(this.table("evidence_provenance").select("derived_evidence_node_id, source_evidence_node_id, relation_type, measurement").in("derived_evidence_node_id", part).in("relation_type", CONTRIBUTION_RELATIONS), "state contribution batch lookup");
+      result.push(...rows.map((row) => ({ stateEvidenceNodeId: String(row.derived_evidence_node_id), sourceEvidenceNodeId: String(row.source_evidence_node_id), relationType: String(row.relation_type), reason: reasonOf(row.measurement) })));
+    }
+    return result;
+  }
+
+  async loadMatchLifecycle(workspaceId: string, productId: string, productMatchIds: string[]) {
+    const ids = [...new Set(productMatchIds)];
+    if (!ids.length) return [];
+    const matches = await this.byIds("product_matches", "id, current_match_evaluation_id", ids, { workspaceId, productId }, "match lifecycle lookup");
+    const signals = await this.byIds("signals", "id, product_match_id, lifecycle_status", ids, { workspaceId, productId }, "signal lifecycle lookup", "product_match_id");
+    const matchById = new Map(matches.map((row) => [String(row.id), row]));
+    const signalByMatch = new Map(signals.map((row) => [String(row.product_match_id), row]));
+    return ids.map((id) => {
+      const match = matchById.get(id);
+      const signal = signalByMatch.get(id);
+      return { productMatchId: id, found: Boolean(match), currentEvaluationId: match ? (match.current_match_evaluation_id as string | null) : null, signalLifecycleStatus: signal ? String(signal.lifecycle_status) : null };
+    });
+  }
+
+  async listBuyerLanguage(workspaceId: string, productId: string, evaluationIds: string[]) {
+    if (!evaluationIds.length) return [];
+    const rows = await this.byIds("demand_observations", "match_evaluation_id, observation_type, facet_value, normalized_value", evaluationIds, { workspaceId, productId }, "buyer language lookup", "match_evaluation_id");
+    return rows.filter((row) => row.observation_type === "buyer_language").map((row) => ({ matchEvaluationId: String(row.match_evaluation_id), phrase: String(row.facet_value), normalizedValue: String(row.normalized_value) }));
+  }
 }
 
 /**
@@ -289,7 +361,14 @@ export class InMemoryDemandClusteringRepository implements DemandClusteringRepos
   readonly memberships = new Map<string, DemandClusterMembershipRow>();
   readonly states = new Map<string, DemandClusterStateRow>();
   readonly provenance: DemandClusteringProvenanceEdge[] = [];
+  readonly buyerLanguage: Array<DemandClusterBuyerLanguage & { workspaceId: string; productId: string }> = [];
+  /** Read-call counters, so tests can assert batched (non N+1) access. */
+  readonly calls: Record<string, number> = {};
   private clock = 0;
+
+  private count(method: string) {
+    this.calls[method] = (this.calls[method] ?? 0) + 1;
+  }
 
   private stamp(): string {
     this.clock += 1;
@@ -335,12 +414,18 @@ export class InMemoryDemandClusteringRepository implements DemandClusteringRepos
     return row;
   }
 
-  async listStates(workspaceId: string, productId: string, clusterId: string, strengthVersion: string) {
+  private statesFor(workspaceId: string, productId: string, clusterId: string, strengthVersion: string) {
     return [...this.states.values()].filter((row) => row.workspace_id === workspaceId && row.product_id === productId && row.cluster_id === clusterId && row.strength_version === strengthVersion).sort((left, right) => left.sequence - right.sequence);
   }
 
+  async listStates(workspaceId: string, productId: string, clusterId: string, strengthVersion: string) {
+    this.count("listStates");
+    return this.statesFor(workspaceId, productId, clusterId, strengthVersion);
+  }
+
   async latestState(workspaceId: string, productId: string, clusterId: string, strengthVersion: string) {
-    return (await this.listStates(workspaceId, productId, clusterId, strengthVersion)).at(-1) ?? null;
+    this.count("latestState");
+    return this.statesFor(workspaceId, productId, clusterId, strengthVersion).at(-1) ?? null;
   }
 
   async createState(input: DemandClusterStateInsert) {
@@ -357,6 +442,34 @@ export class InMemoryDemandClusteringRepository implements DemandClusteringRepos
   }
 
   async listStateContributions(stateEvidenceNodeId: string) {
+    this.count("listStateContributions");
     return this.provenance.filter((edge) => edge.derivedEvidenceNodeId === stateEvidenceNodeId && CONTRIBUTION_RELATIONS.includes(edge.relationType)).map((edge) => ({ sourceEvidenceNodeId: edge.sourceEvidenceNodeId, relationType: edge.relationType, reason: reasonOf(edge.measurement) }));
+  }
+
+  async listLatestStates(workspaceId: string, productId: string, strengthVersion: string) {
+    this.count("listLatestStates");
+    const rows = [...this.states.values()].filter((row) => row.workspace_id === workspaceId && row.product_id === productId && row.strength_version === strengthVersion);
+    return reduceLatestStates(rows, Number.POSITIVE_INFINITY);
+  }
+
+  async listStateContributionsForStates(stateEvidenceNodeIds: string[]) {
+    this.count("listStateContributionsForStates");
+    const wanted = new Set(stateEvidenceNodeIds);
+    return this.provenance.filter((edge) => wanted.has(edge.derivedEvidenceNodeId) && CONTRIBUTION_RELATIONS.includes(edge.relationType)).map((edge) => ({ stateEvidenceNodeId: edge.derivedEvidenceNodeId, sourceEvidenceNodeId: edge.sourceEvidenceNodeId, relationType: edge.relationType, reason: reasonOf(edge.measurement) }));
+  }
+
+  async loadMatchLifecycle(workspaceId: string, productId: string, productMatchIds: string[]) {
+    this.count("loadMatchLifecycle");
+    const scoped = [...this.evidence.values()].filter((item) => item.evaluation.workspace_id === workspaceId && item.evaluation.product_id === productId);
+    return [...new Set(productMatchIds)].map((id) => {
+      const item = scoped.filter((candidate) => candidate.evaluation.product_match_id === id).at(-1);
+      return { productMatchId: id, found: Boolean(item), currentEvaluationId: item?.currentEvaluationId ?? null, signalLifecycleStatus: item?.signal?.lifecycle_status ?? null };
+    });
+  }
+
+  async listBuyerLanguage(workspaceId: string, productId: string, evaluationIds: string[]) {
+    this.count("listBuyerLanguage");
+    const wanted = new Set(evaluationIds);
+    return this.buyerLanguage.filter((row) => row.workspaceId === workspaceId && row.productId === productId && wanted.has(row.matchEvaluationId)).map(({ matchEvaluationId, phrase, normalizedValue }) => ({ matchEvaluationId, phrase, normalizedValue }));
   }
 }

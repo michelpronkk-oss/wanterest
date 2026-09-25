@@ -5,3 +5,5 @@ export * from "./demand.service";
 export * from "./demand-clustering.policy";
 export * from "./demand-clustering.repository";
 export * from "./demand-clustering.service";
+export * from "./demand-map.policy";
+export * from "./demand-map.service";
