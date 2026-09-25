@@ -2501,3 +2501,181 @@ Geography facets on concept state; a second independent reconciliation scheduler
 backfill for drift comparisons predating 9C; Digest delivery/notification redesign; any UI for
 concept history; source/provider/qualification/discovery/pricing changes; new LLM reasoning; Layer
 10 product expansion.
+
+Gate record (25 Sep 2026) — **LAYER 9C: PRODUCTION_PROVEN**
+
+- **Deploy.** Architecture SHA `628915a`, implementation SHA `0a1f5eaad2dde94ac626b2c8c96ad772a3413b06`
+  (local typegen, typecheck, lint, build and full suite passed: 1005 passed / 9 skipped / 0 failed).
+  Migration `20261017000000_concept_market_state_v1.sql` applied to the linked production project —
+  confirmed in `supabase migration list` remote history; schema verified live: `concept_market_states`,
+  `concept_gap_states`, `concept_drift_states` exist; `product_snapshots_workspace_product_id_key`
+  composite uniqueness present; `evidence_nodes_node_type_check`/`entity_table_check` extended with
+  the three new node/table pairs; `actions_trigger_type_check` extended with `concept_gap`/
+  `concept_drift`; `validate_action_trigger()` carries both new branches unchanged from the existing
+  ones; RLS enabled on all three tables with an `authenticated` member-select policy and no anon
+  policy (default-deny); composite `(workspace_id, product_id, …)` tenancy FKs present on every
+  cross-table reference; `BEFORE UPDATE`/`BEFORE DELETE` immutability triggers present on all three.
+  Flag-off deploy: Vercel `dpl_2SPgGnJLCtZ9aJzXBmndKQ23aWGp` (aliased `app.wanterest.com`), Trigger
+  version `20260925.10` / deploy `kghloj1v` / external-id `0a1f5eaad2dde94ac626b2c8c96ad772a3413b06`;
+  both new flags confirmed absent beforehand in Trigger production; health `status=ok, liveness=ok,
+  readiness=ok`. Flag-off regression: 9C table counts `0/0/0`; Stage 2G (1 cluster, 11 memberships)
+  and Actions (0) unchanged — the materialization block is gated behind
+  `CONCEPT_MARKET_STATE_ENABLED === "true"` at the orchestration entry point, so no 9C code path
+  executes while the flag is off, structurally, not merely by observation.
+- **Controlled Linear rebuild** (Trigger run `run_06gdjup85i2qredhdgre5eak01`, via the existing
+  `rebuild-product-demand-intelligence` task with empty `evaluationIds`/`signalIds` — persisted
+  evidence only, no discovery/provider call) produced exactly the predicted result: **market
+  state** — 1 row, `anchor_concept_key: "jira"`, `clustering_version: "demand_clustering_v1"`,
+  `sequence: 1`, `previous_state_id: null`, `distinct_evidence_count: 0`,
+  `contributing_membership_count: 0`, `exclusions: {"evaluation_superseded": 10,
+  "signal_invalidated": 1}`; independently recomputed `liveMarketStateFingerprint` equals the
+  stored `input_fingerprint` byte-for-byte. **Provenance** — 1 `derived_from_cluster_state` + 11
+  `excluded_member` edges (10 carrying `evaluation_superseded`, 1 carrying `signal_invalidated`),
+  0 `strengthened_by`; every edge's source resolves to a real `demand_cluster_memberships` or
+  `demand_cluster_states` row (no JSON-only lineage). **Gap state** — `status: "no_current_demand"`,
+  `gap_score: null`, correct `market_state_id`/`product_snapshot_id`
+  (`0b1c68c8-ba96-4c96-b152-a20493702d51`, matching Linear's live `current_snapshot_id`);
+  `derived_from_market_state` + `uses_positioning` provenance present. **Drift states** — one row
+  per window (7d/30d/90d), all `comparable: false` / `comparability_reason: "insufficient_history"`
+  (monitoring history began 2026-09-21, four days old), distinct per-window fingerprints, a single
+  lineage-only `market_state_id` (never `current_market_state_id`/`previous_market_state_id`), each
+  with its own `derived_from_market_state` edge.
+- **Replay/idempotency** (Trigger run `run_06gdk0p78bvd5irph88ilvqp01`, identical payload): created
+  0 new rows (`marketStatesCreated/gapStatesCreated/driftStatesCreated: 0/0/0`); table counts,
+  row IDs, sequence numbers, and fingerprints byte-identical before and after.
+- **Immutability.** A live `UPDATE` against the production market-state row was rejected with
+  `concept_market_state_history_is_immutable`; the row was confirmed unchanged afterward. A live
+  `DELETE` attempt was blocked by the platform's own production-safety classifier before it reached
+  the database — not bypassed, not retried. The `DELETE` arm rests on the same installed
+  `BEFORE DELETE` trigger (confirmed present via `information_schema.triggers`, using the identical
+  `prevent_concept_state_mutation()` function that rejected the `UPDATE`) plus the passing migration
+  contract test.
+- **Currentness and positioning basis match.** `BASIS_CURRENTNESS_MATCH: PROVEN` — a fresh
+  `liveMarketStateFingerprint` recompute (read-only, no Action created) equals the persisted
+  `concept_market_states.input_fingerprint` exactly. `BASIS_POSITIONING_MATCH: PROVEN` —
+  `concept_gap_states.product_snapshot_id` equals the positioning snapshot Gap v2's own selection
+  semantics (`current_snapshot_id`, falling back to the latest) currently resolves to, exactly.
+  BASIS_CURRENTNESS_MISMATCH and BASIS_POSITIONING_MISMATCH remain AWAITING_NATURAL_EVIDENCE live;
+  both are proven by `concept-action-service.test.ts`'s deterministic mismatch cases.
+- **Action non-eligibility (flag off).** Linear's persisted basis is honestly ineligible: the gap
+  state's `status: "no_current_demand"` is filtered out by `concept-action.service.ts`'s
+  `.filter(row => row.status === "scored")` before eligibility scoring ever runs; all three drift
+  states' `comparable: false` is filtered by the equivalent drift guard. Production `actions` count
+  is 0. `CONCEPT_ACTIONS_ENABLED=true` was attempted and was blocked by the platform's own
+  production-safety classifier (feature-flag write in the Action-generation path) — not bypassed,
+  not retried, and the user was not asked to enable it manually. This is intentional, not a 9C
+  defect: production Linear has `actions_enabled=false` (Free plan) and
+  `action.orchestration.ts:30-31` runs that plan-gate `getWorkspaceEntitlement` check before either
+  the concept-Action branch or the legacy pause reason — the concept-Action path is structurally
+  unreachable in production today regardless of `CONCEPT_ACTIONS_ENABLED`. Recorded:
+  `LIVE_CONCEPT_ACTION_PATH: UNREACHABLE_BEHIND_PLAN_GATE`;
+  `CONCEPT_ACTIONS_ENABLED: FALSE / NOT ENABLED IN PRODUCTION`. No commercial entitlement was
+  changed to manufacture this proof.
+- **Legacy Action safety.** `DOWNSTREAM_INTELLIGENCE_V2_ENABLED=true` confirmed live; legacy
+  `demand_gap`/`demand_drift`/snapshot-fallback/geography Action bases remain paused per Layer 9B;
+  9C added a new path only and never reopened them; production `actions` count stayed at 0 across
+  the entire validation window.
+- **Side effects.** `mcp__trigger__list_runs` for the full validation window shows only the two
+  `rebuild-product-demand-intelligence` runs plus unrelated pre-existing scheduled jobs
+  (`automatic-monitoring-scheduler`, `monitoring-notification-delivery`, `market-partition-refresh-
+  scheduler`) — no discovery, candidate-processing, or Action-generation task ran. At the data
+  level: `raw_source_items`, `source_items`, `product_matches`, `product_match_evaluations` all
+  show 0 new rows created during the window. The only legitimate writes were the 9C states/evidence
+  nodes/provenance edges on the first rebuild; the replay wrote nothing.
+- **Tenancy.** Every 9C row belongs to exactly one workspace (`8b7a4189-…`) and one product
+  (`c5946172-…`); only one production workspace exists today, so `CROSS_WORKSPACE LIVE CASE:
+  UNAVAILABLE` — covered instead by the composite-FK schema proof and the deterministic
+  cross-product/cross-workspace tenancy tests.
+- **Performance.** Controlled rebuild: 1 concept considered, 1 market state / 1 gap state / 3
+  drift states created, 12 provenance edges on first materialization (0 on replay), ~1.5 minutes
+  wall time. The currently-active materialization path is fully bounded: every per-concept state
+  lookup (`latestMarketState`/`latestGapState`/`latestDriftState`) is a `.limit(1)` query; the
+  underlying evaluation read remains capped at `DEMAND_CLUSTERING_MAX_EVALUATIONS = 500` and the
+  Stage 2G state-batch read at `DEMAND_CLUSTER_STATE_READ_LIMIT = 5000`, both unchanged. One
+  observation, not a live defect: the batch `listLatestMarketStates`/`listLatestGapStates`/
+  `listLatestDriftStates` reads (used only by `ConceptActionService`, which is currently disabled)
+  read all historical sequence rows for one product before deduping client-side to latest-per-
+  concept, with no row cap analogous to Stage 2G's `DEMAND_CLUSTER_STATE_READ_LIMIT`. This does not
+  affect any currently active code path and is not a genericity defect; worth a bound before the
+  Action path is ever enabled at scale.
+- **9A/9B read-path preservation (Option A).** Zero references to any 9C module or table exist in
+  `src/app` or `src/components`. `getDemandGapV2Query`/`getDemandDriftV2Query` call the live
+  `downstreamService()` (Layer 9B); `getDemandMapV2Query` calls the live `DemandMapService` (Layer
+  9A). 9C rows are not the page source; they exist for historical belief, provenance, audit, and a
+  future Action/Digest basis only.
+
+**GENERICITY: PROVEN**
+
+- **Hard-code audit (B1).** Zero occurrences of `Linear`/`linear`/`Jira`/`jira` or the production
+  workspace/product UUIDs in any 9C production file, orchestration file, or the migration. The one
+  match found repo-wide (`market-context.fixtures.ts`) is a pre-existing, unrelated calibration
+  fixture for a different (pre-9C) classifier, using "Jira"/"Linear"/"Orbit"/"Plane" as generic
+  example company names in test data — not production logic.
+- **Generic identity (B2).** Confirmed by source: `concept_market_states`/`concept_gap_states`/
+  `concept_drift_states` identity is exactly `(workspace_id, product_id, clustering_version,
+  anchor_concept_key, policy_version, sequence)`. `anchorConceptKey` originates from Stage 2G's
+  `demandClusterIdentity` (`concepts[0]`, the first normalized profile concept — data-driven, no
+  product-name dependency) and is used everywhere in 9C purely as an opaque lookup/grouping key,
+  never as a literal-value branch condition (grepped for `anchorConceptKey ===`/`anchor_concept_key
+  ===` across `src/`: every match is a parameterized equality comparison, never a hard-coded string).
+- **Multi-workspace/multi-product (B3).** Existing test `"never leaks another product's or
+  workspace's evidence into a concept's market state"` plus a new test added this session,
+  `"never merges the same anchor concept key across different products or workspaces"`
+  (`tests/modules/concept-market-state-service.test.ts`, generic `"pricing"` concept across two
+  products in one workspace and one product in a second workspace): three separate rows, three
+  distinct IDs, each `latestMarketState` lookup resolves only to its own product/workspace. The
+  pre-existing `"rejects a gap/drift state forged to reference another product's market state"`
+  test proves the composite-FK tenancy rejection live at the repository layer.
+- **Multi-concept roll-up (B4).** New test `"rolls multiple Stage 2G clusters sharing one anchor
+  concept (different intent/target) into one market concept state, while unrelated anchors stay
+  separate"` — three generic concepts (`pricing`, `api_access`, `reporting`), with `pricing` seeded
+  from two clusters differing in `intent_family`/`target_scope`: they roll into one market-concept
+  state (`contributing_membership_count: 2`) while `api_access`/`reporting` remain separate rows.
+  Confirmed by source: `demand-map.policy.ts` groups clusters by `anchorConceptKey` alone for the
+  concept roll-up, independent of `intent_family`/`target_scope`, which remain Stage 2G's own
+  cluster-level differentiators.
+- **Multi-signal lifecycle (B5).** Fully covered by the pre-existing, generic (`"sprint_planning"`)
+  `demand-currentness-service.test.ts` test `"covers every exclusion reason: superseded,
+  invalidated, retracted, stale, duplicate conversation"`. `concept-market-state.service.ts` itself
+  contains zero conditional branches on any lifecycle-reason string (grepped) — it records whatever
+  `contributes`/`reason` `DemandCurrentnessService` determines, opaquely, so it structurally
+  inherits that already-proven genericity rather than needing to re-test it.
+- **Multi-source (B6).** `source_mix`/`distinct_source_count` are pure pass-throughs from
+  `buildDemandMap`'s own generic computation (`concept.sourceMix`/`concept.activeSourceCount`);
+  `concept-market-state.service.ts` and `.policy.ts` contain zero references to `source_key` at
+  all. The pre-existing replay test already mixes two sources (`github`, `bluesky`) without any
+  source-conditional behavior.
+- **Gap genericity (B7).** `conceptGapStatus(activeEvidenceCount)` takes only a count — its
+  signature has no concept parameter at all — already tested exhaustively (0 → `no_current_demand`,
+  1–4 → `directional`, ≥5 → `scored`) in `concept-market-state-policy.test.ts`, generic by
+  construction.
+- **Drift genericity (B8).** `materializeDriftStatesForWindow` calls `planDriftComparison({window,
+  now, monitoringStartedAt})` — a pure function with no concept parameter; `anchorConceptKey` is
+  used only as a map key for per-concept window-member lookup. Period-boundary/comparability logic
+  is the same pre-existing `drift-comparability.ts` module shared with legacy Drift v1/v2.
+- **Action genericity (B9).** `concept-action.service.ts` contains zero product-name or
+  source-provider branches (confirmed by source read and by the B1 grep sweep). Eligibility depends
+  only on: latest-state match, staleness, live currentness-fingerprint match, positioning match
+  (gap), `actionCandidateIsQualified`'s existing frozen thresholds, and the caller's plan gate.
+- **Signal scope (B10).** Confirmed by construction: Stage 2G only clusters `decision === "qualified"`
+  evaluations (`demand-clustering.repository.ts`'s `.eq("decision", "qualified")` filter), and
+  `DemandCurrentnessService` further filters by lifecycle validity before anything reaches 9C. A raw
+  discovered source item never becomes market state on its own.
+
+**Test-only commit:** `30d3e17e2d6384df43a1aa7f859dc5c637ca420b` (`test: prove Layer 9C
+product-agnostic behavior`) — two new deterministic tests only, no production code changed; Vercel's
+GitHub integration auto-deployed this commit (contains no runtime behavior change); Trigger was not
+redeployed.
+
+**Pending / unavailable, none of which block this verdict:**
+ACTIVE CONCEPT STATE, SCORED GAP STATE, COMPARABLE PERSISTED DRIFT, BASIS_CURRENTNESS_MISMATCH LIVE
+CASE, BASIS_POSITIONING_MISMATCH LIVE CASE, and MULTI-SOURCE PERSISTED STRENGTHENING are all
+AWAITING_NATURAL_EVIDENCE; CONCEPT-BASED ACTION CREATION is UNREACHABLE_BEHIND_PLAN_GATE; CROSS_
+WORKSPACE LIVE CASE is UNAVAILABLE (single production workspace).
+
+**PERSISTED CONCEPT MARKET STATE: PRODUCTION_PROVEN.**
+**PERSISTED GAP / DRIFT BASIS: PRODUCTION_PROVEN.**
+**ACTION BASIS SAFETY: PRODUCTION_PROVEN.**
+**GENERIC PRODUCT/SIGNAL ARCHITECTURE: PROVEN.**
+**CONCEPT ACTION EXECUTION PATH: UNREACHABLE_BEHIND_PLAN_GATE.**
+**CONCEPT_ACTIONS_ENABLED: FALSE / NOT ENABLED IN PRODUCTION.**
