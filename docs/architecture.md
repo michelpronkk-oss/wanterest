@@ -1699,8 +1699,8 @@ reused unchanged by every stage below.
 | 2B | `market_partitions`: immutable, tenant-free identity per literal retrieval spec; `query_yield_artifacts.market_partition_key` records which product queries map to which partition. | PRODUCTION_PROVEN |
 | 2C | `market_partition_refresh_state` + `refresh-market-partition` / `market-partition-refresh-scheduler` (flag `MARKET_PARTITION_REFRESH_ENABLED`); GitHub + Stack Exchange only, 24h + deterministic jitter, lease/claim RPC, job-run idempotency per due slot. | PRODUCTION_PROVEN |
 | 2D | Incremental product matching (below). | PRODUCTION_PROVEN (flag on) |
-| 2E | Read-first freshness v2: evidence vs interpretation freshness (below). | see 2E gate |
-| 2F | Adaptive cadence `market_partition_cadence_v2` with hard per-source daily caps (below). | see 2F gate |
+| 2E | Read-first freshness v2: evidence vs interpretation freshness (below). | PRODUCTION_PROVEN (read-model values; UI render pending a signed-in view) |
+| 2F | Adaptive cadence `market_partition_cadence_v2` with hard per-source daily caps (below). | PRODUCTION_PROVEN |
 
 ### Stage 2D — Incremental product matching
 
@@ -1838,3 +1838,19 @@ Migration `20261015000000_market_partition_adaptive_cadence_v1.sql` adds global,
 state: `consecutive_zero_new`, `last_raw_items`, `last_raw_new_items`, `last_cadence_seconds`,
 `cadence_policy_version`, plus a partial index for the daily-budget lookup. Each refresh job's stored
 result records the full cadence decision (factors, clamp, next due) for audit.
+
+Gate records (25 Sep 2026):
+- 2E - commit 82ef440, Vercel production. For the Linear product the repository inputs are: last
+  scan 06:23:50, last incremental match 06:26:23, last evidence retrieval 06:25:41, newest current
+  signal publication 14 Sep. v1 would report stale + refresh due (would enqueue a paid scan); v2
+  reports evidence `state=stale`, interpretation `fresh` via `incremental`, `refreshDue=false`.
+  Read-model only; no migration.
+- Drift comparability - commit 7d201e4, Trigger 20260925.6. Controlled rebuild
+  run_06gdeii66b8n9d2bttdhtvsr01 wrote 3 current-window snapshots and 0 drift rows (50 legacy
+  overlapping rows unchanged, never surfaced) with warnings `Drift 7d/30d/90d skipped:
+  insufficient_history` (monitoring started 21 Sep; first honest 7d drift from 5 Oct).
+- 2F - commit 972636c, migration 20261015000000 applied, Trigger 20260925.7. Refresh
+  run_06gdek1ke02rhkf2uad8v6j301 (Stack Exchange pain_first, 0 items): attempt 06:45:56 (claim),
+  success 06:45:59 (completion), zero-new streak 1, cadence 48h (24h x 2), next due 27 Sep 06:50:59
+  (5 min jitter), job tagged `stack-exchange` at creation, decision stored on the job, lease cleared,
+  no incremental dispatch (0 conversations). Rolling 24h use: GitHub 5/120, Stack Exchange 1/60.
