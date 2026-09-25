@@ -9,7 +9,11 @@ import { getServerEnv } from "@/server/lib/env";
 import { legacyActionGenerationPauseReason } from "./action.schemas";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
 import { SupabaseDemandRepository } from "../demand-intelligence/demand.repository";
+import { SupabaseDemandClusteringRepository } from "../demand-intelligence/demand-clustering.repository";
+import { SupabaseConceptMarketStateRepository } from "../demand-intelligence/concept-market-state.repository";
+import { ConceptMarketStateService } from "../demand-intelligence/concept-market-state.service";
 import { actionInputFromDrift, actionInputFromGap, actionInputFromGeoMarket, actionInputFromSnapshot } from "./action.candidates";
+import { ConceptActionService } from "./concept-action.service";
 import { GeographyService } from "../geography/geography.service";
 import { resolveWorkspaceCapabilities } from "../entitlements/plan-capabilities";
 import { SupabaseIntelligenceRepository } from "../intelligence/intelligence.repository";
@@ -29,9 +33,14 @@ export async function generateActionsForScan(input: { product: ProductRow; trace
   // Layer 9B: none of the legacy triggers below (gap, drift, snapshot fallback,
   // geography) carry a lifecycle-verified Stage 2G concept basis. Rather than
   // generate an Action that could rest on superseded/invalidated/stale evidence,
-  // generation is paused until Layer 9C adds a verified concept trigger. Existing
-  // persisted Actions are never touched here. See docs/architecture.md §17.
-  const pauseReason = legacyActionGenerationPauseReason(getServerEnv().DOWNSTREAM_INTELLIGENCE_V2_ENABLED === "true");
+  // generation is paused until Layer 9C's persisted, live-validated concept
+  // basis is enabled. Existing persisted Actions are never touched here. See
+  // docs/architecture.md §17/§18.
+  const downstreamV2Enabled = getServerEnv().DOWNSTREAM_INTELLIGENCE_V2_ENABLED === "true";
+  if (downstreamV2Enabled && getServerEnv().CONCEPT_ACTIONS_ENABLED === "true") {
+    return generateConceptActionsForScan(client, input.product, input.traceId);
+  }
+  const pauseReason = legacyActionGenerationPauseReason(downstreamV2Enabled);
   if (pauseReason) return { actionsUpdated: 0, warnings: [pauseReason] };
 
   const demand = new SupabaseDemandRepository(client);
@@ -110,4 +119,31 @@ export async function generateActionsForScan(input: { product: ProductRow; trace
     warnings.push(error instanceof Error ? `Geo action skipped: ${error.message.slice(0, 180)}` : "Geo action skipped.");
   }
   return { actionsUpdated, warnings };
+}
+
+/**
+ * Layer 9C: Actions generated only from a persisted, live-validated
+ * concept_gap_states / concept_drift_states basis (ConceptActionService).
+ * Legacy gap/drift/snapshot/geography triggers are never used here. Plan
+ * gating already happened in the caller. See docs/architecture.md §18.
+ */
+async function generateConceptActionsForScan(client: ReturnType<typeof createSupabaseServiceClient>, product: ProductRow, traceId?: string): Promise<ActionGenerationForScanResult> {
+  const engineVersion = await ensureEngineVersion(client, {
+    engine_type: "action",
+    version: "concept-actions-v1",
+    model: "deterministic",
+    prompt_version: "concept-actions-v1",
+    config_hash: null,
+    metadata: { workflow: "product-demand-scan", stage: "concept-actions", traceId: traceId ?? null },
+  });
+  const conceptActionService = new ConceptActionService(
+    new SupabaseConceptMarketStateRepository(client),
+    new ConceptMarketStateService(new SupabaseConceptMarketStateRepository(client), new SupabaseDemandClusteringRepository(client)),
+    new DemandActionService(new SupabaseActionRepository(client), { can: async () => true }),
+    new SupabaseIntelligenceRepository(client),
+  );
+  const { attempts, actionsCreated } = await conceptActionService.generateEligibleActions({ product, now: new Date(), actionEngineVersionId: engineVersion.id });
+  const skipped = attempts.filter((attempt) => attempt.outcome === "skipped");
+  const warnings = skipped.map((attempt) => `${attempt.triggerType} action skipped for ${attempt.conceptKey}${attempt.window ? ` (${attempt.window})` : ""}: ${attempt.reason ?? "not_eligible"}.`);
+  return { actionsUpdated: actionsCreated, warnings };
 }

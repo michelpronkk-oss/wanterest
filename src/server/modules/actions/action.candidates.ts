@@ -1,6 +1,9 @@
 import type { DemandDriftRow, DemandGapRow, DemandSnapshotRow, ProductRow, SignalRow } from "../../db/database.helpers";
 import type { ActionGenerationInput } from "./action.schemas";
 import type { GeographyMarketSummary } from "../geography/geography.schemas";
+import { sampleFactor } from "../demand-intelligence/demand.engines";
+import { demandGapV2SampleQuality } from "../demand-intelligence/demand-gap-v2.policy";
+import type { ConceptDriftStateRow, ConceptGapStateRow, ConceptMarketStateRow } from "../demand-intelligence/concept-market-state.repository";
 
 type CandidateOptions = {
   conceptLabel?: string;
@@ -92,6 +95,58 @@ export function actionInputFromSignal(product: ProductRow, signal: SignalRow, op
     freshness: 1, sampleSize: 5, sampleQuality: "normal", positioningWeight: 0,
     highIntentShare: signal.intent_type === "high_intent" ? 1 : 0.5, specificity: options.specificity,
     buyerLanguage: signal.buyer_language && Array.isArray(signal.buyer_language) ? signal.buyer_language.filter((value): value is string => typeof value === "string") : [],
+    actionEngineVersionId: options.actionEngineVersionId,
+  };
+}
+
+/** Same "switch + evaluate intent families = high commercial intent" definition demand-gap-v2.policy.ts's highIntentShareOf already uses. */
+function marketStateHighIntentShare(marketState: ConceptMarketStateRow): number {
+  if (marketState.contributing_membership_count <= 0) return 0;
+  const mix = marketState.intent_family_mix;
+  const record = mix && typeof mix === "object" && !Array.isArray(mix) ? (mix as Record<string, unknown>) : {};
+  const count = (typeof record.switch === "number" ? record.switch : 0) + (typeof record.evaluate === "number" ? record.evaluate : 0);
+  return Math.max(0, Math.min(1, count / marketState.contributing_membership_count));
+}
+
+/**
+ * Layer 9C: a persisted, lifecycle-verified concept_gap_states basis. Only a
+ * "scored" gap state may reach this — callers must check that before invoking.
+ * See docs/architecture.md Section 18.
+ */
+export function actionInputFromConceptGap(product: ProductRow, gapState: ConceptGapStateRow, marketState: ConceptMarketStateRow, options: CandidateOptions = {}): ActionGenerationInput {
+  const sampleQuality = demandGapV2SampleQuality(marketState.distinct_evidence_count);
+  const confidence = sampleFactor(sampleQuality);
+  return {
+    ...base(product, gapState, options.conceptLabel ?? gapState.anchor_concept_key, options), triggerType: "concept_gap", marketWeight: gapState.share_of_current_demand,
+    gapScore: gapState.gap_score ?? 0, driftStrength: 0, intentStrength: gapState.high_intent_share,
+    opportunityScore: gapState.gap_score ?? 0, evidenceStrength: confidence, confidence,
+    freshness: 1, sampleSize: marketState.distinct_evidence_count, sampleQuality,
+    positioningWeight: gapState.positioning_weight, highIntentShare: gapState.high_intent_share, specificity: confidence,
+    actionEngineVersionId: options.actionEngineVersionId,
+  };
+}
+
+/**
+ * Layer 9C: a persisted, lifecycle-verified concept_drift_states basis. Only a
+ * comparable, rising, notable/strong-significance drift state may reach this
+ * with a real effect — callers should still run it through
+ * actionCandidateIsQualified, which enforces that. See docs/architecture.md
+ * Section 18.
+ */
+export function actionInputFromConceptDrift(product: ProductRow, driftState: ConceptDriftStateRow, marketState: ConceptMarketStateRow, options: CandidateOptions = {}): ActionGenerationInput {
+  const minCount = Math.min(driftState.current_frozen_evidence_count ?? 0, driftState.previous_frozen_evidence_count ?? 0);
+  const sampleQuality = demandGapV2SampleQuality(minCount);
+  const confidence = sampleFactor(sampleQuality);
+  const shareDelta = driftState.share_delta ?? 0;
+  // Same count/20 normalization demand.service.ts's aggregateDemand already uses for its own confidence scaling.
+  const marketWeight = Math.min(1, (driftState.current_frozen_evidence_count ?? 0) / 20);
+  return {
+    ...base(product, driftState, options.conceptLabel ?? driftState.anchor_concept_key, options), triggerType: "concept_drift", marketWeight,
+    gapScore: 0, driftStrength: Math.min(1, Math.abs(shareDelta)), intentStrength: marketStateHighIntentShare(marketState),
+    opportunityScore: Math.min(1, Math.abs(shareDelta)), evidenceStrength: confidence, confidence,
+    freshness: 1, sampleSize: minCount, sampleQuality,
+    driftDirection: (driftState.direction as ActionGenerationInput["driftDirection"]) ?? undefined, driftSignificance: (driftState.significance as ActionGenerationInput["driftSignificance"]) ?? undefined,
+    positioningWeight: 0, highIntentShare: marketStateHighIntentShare(marketState), specificity: confidence,
     actionEngineVersionId: options.actionEngineVersionId,
   };
 }

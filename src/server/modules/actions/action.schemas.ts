@@ -8,7 +8,10 @@ export const actionTypeSchema = z.enum([
 ]);
 export type ActionType = z.infer<typeof actionTypeSchema>;
 
-export const actionTriggerTypeSchema = z.enum(["demand_gap", "demand_drift", "demand_snapshot", "signal"]);
+// concept_gap/concept_drift are Layer 9C's persisted, lifecycle-verified basis
+// types (docs/architecture.md Section 18). Additive; existing trigger types
+// and rows are unchanged.
+export const actionTriggerTypeSchema = z.enum(["demand_gap", "demand_drift", "demand_snapshot", "signal", "concept_gap", "concept_drift"]);
 export type ActionTriggerType = z.infer<typeof actionTriggerTypeSchema>;
 
 /**

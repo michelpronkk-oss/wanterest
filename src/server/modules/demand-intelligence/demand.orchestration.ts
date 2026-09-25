@@ -12,6 +12,8 @@ import { FixtureDemandThemeEngine } from "./demand.engines";
 import { DEMAND_CLUSTERING_VERSION } from "./demand-clustering.policy";
 import { SupabaseDemandClusteringRepository } from "./demand-clustering.repository";
 import { DemandClusteringService, type DemandClusteringRunResult } from "./demand-clustering.service";
+import { SupabaseConceptMarketStateRepository } from "./concept-market-state.repository";
+import { ConceptMarketStateService, type ConceptMaterializationResult } from "./concept-market-state.service";
 import type { DemandWindow } from "./demand.schemas";
 
 export type DemandRebuildInput = {
@@ -29,6 +31,8 @@ export type DemandRebuildResult = {
   driftUpdated: number;
   /** Stage 2G; absent when DEMAND_CLUSTERING_ENABLED is not "true" or the step failed. */
   clustering?: DemandClusteringRunResult;
+  /** Layer 9C; absent when CONCEPT_MARKET_STATE_ENABLED is not "true" or the step failed. */
+  conceptMarketState?: ConceptMaterializationResult;
   warnings: string[];
 };
 
@@ -129,6 +133,32 @@ export async function rebuildDemandIntelligenceForScan(input: DemandRebuildInput
     }
   }
 
+  // Layer 9C: durable, append-only concept market/gap/drift state and the
+  // future Action basis. Additive and non-fatal; it never changes Stage 2G,
+  // observations, or map/gap/drift inputs, and pages do not read it (Option A).
+  let conceptMarketState: ConceptMaterializationResult | undefined;
+  if (getServerEnv().CONCEPT_MARKET_STATE_ENABLED === "true") {
+    try {
+      const [marketStateEngine, gapEngine, driftEngine] = await Promise.all([
+        ensureEngineVersion(client, { engine_type: "map", version: "concept_market_state_v1", model: "deterministic", prompt_version: "concept_market_state_v1", config_hash: null, metadata: { workflow: "product-demand-scan", stage: "concept-market-state", traceId: input.traceId ?? null } }),
+        ensureEngineVersion(client, { engine_type: "gap", version: "concept_gap_state_v1", model: "deterministic", prompt_version: "concept_gap_state_v1", config_hash: null, metadata: { workflow: "product-demand-scan", stage: "concept-gap-state", traceId: input.traceId ?? null } }),
+        ensureEngineVersion(client, { engine_type: "drift", version: "concept_drift_state_v1", model: "deterministic", prompt_version: "concept_drift_state_v1", config_hash: null, metadata: { workflow: "product-demand-scan", stage: "concept-drift-state", traceId: input.traceId ?? null } }),
+      ]);
+      const monitoringStartedAt = await repository.getEarliestSnapshotTimestamp(input.product.workspace_id, input.product.id);
+      conceptMarketState = await new ConceptMarketStateService(new SupabaseConceptMarketStateRepository(client), new SupabaseDemandClusteringRepository(client)).materializeForProduct({
+        workspaceId: input.product.workspace_id,
+        productId: input.product.id,
+        now: new Date(),
+        engineVersions: { marketStateEngineVersionId: marketStateEngine.id, gapEngineVersionId: gapEngine.id, driftEngineVersionId: driftEngine.id },
+        positioning: productSnapshot,
+        monitoringStartedAt,
+      });
+      warnings.push(...conceptMarketState.warnings);
+    } catch (error) {
+      warnings.push(error instanceof Error ? `Concept market state materialization skipped: ${error.message.slice(0, 180)}` : "Concept market state materialization skipped.");
+    }
+  }
+
   const snapshotsByWindow = new Map<DemandWindow, Awaited<ReturnType<typeof service.aggregateDemand>>[]>();
   let mapUpdated = 0;
   let gapUpdated = 0;
@@ -171,6 +201,7 @@ export async function rebuildDemandIntelligenceForScan(input: DemandRebuildInput
     gapUpdated,
     driftUpdated,
     ...(clustering ? { clustering } : {}),
+    ...(conceptMarketState ? { conceptMarketState } : {}),
     warnings,
   };
 }

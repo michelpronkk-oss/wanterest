@@ -23,10 +23,13 @@ export function calculateActionPriority(input: ActionPriorityInputs): number {
 
 export function actionCandidateIsQualified(input: ActionGenerationInput): boolean {
   if (input.sampleQuality === "insufficient_data" || input.sampleSize < 5) return false;
-  if (input.triggerType === "demand_gap") {
+  // concept_gap/concept_drift (Layer 9C) reuse the exact demand_gap/demand_drift
+  // thresholds below unmodified — a different, lifecycle-verified persisted
+  // basis, never a different number. See docs/architecture.md Section 18.
+  if (input.triggerType === "demand_gap" || input.triggerType === "concept_gap") {
     return input.gapScore >= 0.35 && input.marketWeight >= 0.15 && input.positioningWeight <= 0.75;
   }
-  if (input.triggerType === "demand_drift") {
+  if (input.triggerType === "demand_drift" || input.triggerType === "concept_drift") {
     return input.driftDirection === "rising" && (input.driftSignificance === "notable" || input.driftSignificance === "strong") && input.driftStrength >= 0.2;
   }
   if (input.triggerType === "signal") {
@@ -55,15 +58,20 @@ export interface DemandActionEngine {
   generate(input: ActionGenerationInput): Promise<DemandActionResult[]>;
 }
 
+/** concept_drift (Layer 9C) reuses demand_drift's copy branch throughout — same trigger shape, a different persisted basis. */
+function isDriftTrigger(input: ActionGenerationInput): boolean {
+  return input.triggerType === "demand_drift" || input.triggerType === "concept_drift";
+}
+
 function targetFor(input: ActionGenerationInput): string {
   if (input.targetKey !== "auto") return input.targetKey;
-  if (input.triggerType === "demand_drift") return "new_landing_page";
+  if (isDriftTrigger(input)) return "new_landing_page";
   if (input.triggerType === "signal") return "product_research";
   return "homepage_hero";
 }
 
 function typeFor(input: ActionGenerationInput): ActionType {
-  if (input.triggerType === "demand_drift") return "landing_page";
+  if (isDriftTrigger(input)) return "landing_page";
   if (input.triggerType === "signal") return "product_research";
   return "messaging_change";
 }
@@ -80,7 +88,7 @@ export class FixtureDemandActionEngine implements DemandActionEngine {
     const priorityScore = calculateActionPriority(input);
     const triggerLabel = input.conceptLabel.trim();
     const geoQualifier = input.geoContext ? ` in ${input.geoContext.market}` : "";
-    const observation = input.triggerType === "demand_drift"
+    const observation = isDriftTrigger(input)
       ? `${triggerLabel} is showing a notable upward change in observed demand.`
       : input.triggerType === "signal"
         ? `A high-fit signal specifically mentions ${triggerLabel}.`
@@ -93,15 +101,15 @@ export class FixtureDemandActionEngine implements DemandActionEngine {
       target,
       metric,
     });
-    const title = input.triggerType === "demand_drift"
+    const title = isDriftTrigger(input)
       ? `Create a ${triggerLabel} landing page`
       : input.triggerType === "signal"
         ? `Research the ${triggerLabel} capability gap`
         : `Update the ${target} for ${triggerLabel}`;
-    const summary = input.triggerType === "demand_drift"
+    const summary = isDriftTrigger(input)
       ? `${triggerLabel} is rising enough to justify a focused landing-page hypothesis.`
       : `Observed evidence suggests the product could speak more directly to ${triggerLabel}.`;
-    const suggestedChange = input.triggerType === "demand_drift"
+    const suggestedChange = isDriftTrigger(input)
       ? `Create a landing page explaining how ${input.productName} addresses ${triggerLabel}.`
       : input.triggerType === "signal"
         ? `Investigate the missing capability and validate it with additional buyer conversations.`

@@ -62,6 +62,12 @@ const serverEnvSchema = publicEnvSchema.extend({
   // Layer 9B: lifecycle-aware Gap/Drift v2, paused legacy Action generation,
   // lifecycle-filtered Digests. Read in both Vercel and Trigger. Defaults off.
   DOWNSTREAM_INTELLIGENCE_V2_ENABLED: z.enum(["true", "false"]).optional(),
+  // Layer 9C: persisted, append-only concept market/gap/drift state materialization.
+  // Read by Trigger only (the rebuild path). Defaults off.
+  CONCEPT_MARKET_STATE_ENABLED: z.enum(["true", "false"]).optional(),
+  // Layer 9C: concept-based Action generation (requires DOWNSTREAM_INTELLIGENCE_V2_ENABLED
+  // and materialized state to do anything). Defaults off.
+  CONCEPT_ACTIONS_ENABLED: z.enum(["true", "false"]).optional(),
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
@@ -128,6 +134,8 @@ export function getServerEnv(): ServerEnv {
     DEMAND_CLUSTERING_ENABLED: process.env.DEMAND_CLUSTERING_ENABLED,
     DEMAND_MAP_V2_ENABLED: process.env.DEMAND_MAP_V2_ENABLED,
     DOWNSTREAM_INTELLIGENCE_V2_ENABLED: process.env.DOWNSTREAM_INTELLIGENCE_V2_ENABLED,
+    CONCEPT_MARKET_STATE_ENABLED: process.env.CONCEPT_MARKET_STATE_ENABLED,
+    CONCEPT_ACTIONS_ENABLED: process.env.CONCEPT_ACTIONS_ENABLED,
   });
 }
 
