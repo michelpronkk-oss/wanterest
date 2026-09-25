@@ -2074,3 +2074,52 @@ Contract:
   under "Previously observed" (10 superseded / 1 invalidated), legacy numbers only inside the
   historical section; SQL cross-check of counts vs `demand_cluster_states` and live lifecycle; zero
   row-count change in any table across page loads; no cross-workspace visibility.
+
+Gate record (25 Sep 2026) — **LAYER 9A: PRODUCTION_PROVEN**
+
+- **Deploy.** Implementation SHA `bf6413a77d674bf38e113c40818d3282030b4bff` (local typegen,
+  typecheck, lint, build and full suite passed: 926 passed / 9 skipped / 0 failed). Flag-off
+  deployment `dpl_3xUXJ7SZcP9nSg5U1JEBsSewZgp4` (same commit, READY, health ok) is the rollback
+  baseline. `DEMAND_MAP_V2_ENABLED=true` set in Vercel production only, same commit redeployed:
+  `dpl_ABKne9PksGoMdLA4WQTpRzeKDMrF`, READY, serving `app.wanterest.com`; `/api/health`
+  `status=ok, liveness=ok, readiness=ok`. No migration; Trigger not redeployed (stays `20260925.8`).
+- **Manual signed-in UI proof (Linear).** Current demand concepts 0, current distinct evidence 0,
+  current sources 0, last current evidence "—"; "No current demand confirmed" renders; Jira appears
+  only under "Previously observed (1) - not current demand" as "10 items, none current" with
+  "10 re-evaluated below the qualification bar · 1 invalidated"; "Historical evidence (not
+  lifecycle-filtered)" renders separately; legacy evidence is not presented as current demand.
+  Overview market state: "No current demand confirmed." Visual styling is out of scope for 9A.
+- **Read model.** The deployed read path (`DemandMapService` + legacy `getDemandMap`, commit
+  `bf6413a`) run read-only against production: `current = []`, totals 0/0/0; previously observed
+  concept `jira` (identity `demand_clustering_v1` + `jira`), cluster
+  `concept:jira|intent:switch|target:market`, 11 memberships over 10 distinct conversations (one
+  conversation evaluated twice), 0 contributing, latest persisted state sequence 1 (`inactive`),
+  `updatePending = false`. Legacy 30d snapshot carried only as `not_lifecycle_filtered`
+  (8 qualified signals / 7 conversations), absent from every current total.
+- **SQL reconciliation.** All 11 memberships belong to Linear's workspace/product; live
+  `product_matches.current_match_evaluation_id` excludes 10 (`evaluation_superseded`), live signal
+  lifecycle excludes `d0faa8a3` (`signal_invalidated`); current = 0, historical = 11, exclusions
+  10 / 1 — identical to the persisted Stage 2G state, so the read-time check agreed with storage.
+- **Zero writes.** Read path executed through a client wrapper that throws on insert/upsert/update/
+  delete (completed), plus repeated page requests: counts of `demand_clusters` 1,
+  `demand_cluster_memberships` 11, `demand_cluster_states` 1, `demand_snapshots` 171,
+  `demand_observations` 85, `demand_themes` 1, `demand_gaps` 53, `demand_drifts` 50,
+  `evidence_nodes` 6951, `evidence_provenance` 13911, `actions` 0, `signals` 10,
+  `product_match_evaluations` 180, `job_runs` 1010, `query_yield_artifacts` 359,
+  `raw_source_items` 230 — identical before and after.
+- **No provider/LLM/Trigger side effects.** Only scheduled `automatic-monitoring-scheduler` and
+  `monitoring-notification-delivery` runs occurred in the validation window (15:25-15:34 UTC); no
+  scan, rebuild, candidate selection, qualification, LLM or provider activity.
+- **Tenancy.** Unauthenticated `/app/insights/map` and `/app/insights` return 307 to `/login`.
+  Every product-owned read filters on `workspace_id` and `product_id` (fake-client contract test and
+  the production run). CROSS_WORKSPACE LIVE CASE: UNAVAILABLE (single production workspace);
+  covered by `demand-map-service` / `demand-map-supabase-reads` tests.
+- **Performance.** One query per table (clusters, memberships, states, provenance, product matches,
+  signals; buyer language skipped with no live contributors), ~570 ms from a remote client for 1
+  cluster / 11 memberships / 1 concept; no per-cluster state loop.
+- **Rollback.** `DEMAND_MAP_V2_ENABLED=false` + redeploy returns Map and Overview to the legacy path
+  with no schema or data change (flag tests; flag-off deployment observed first). Flag left on.
+- POSITIVE CURRENT-DEMAND LIVE CASE: AWAITING_NATURAL_EVIDENCE.
+- Known legacy debt for 9B: 30d snapshots have had 0 snapshot themes since at least
+  24 Sep 22:29 UTC (predates 9A), so the historical theme table is empty; the app home page still
+  reads legacy drift.
