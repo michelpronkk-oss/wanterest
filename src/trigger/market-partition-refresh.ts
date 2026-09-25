@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { getServerEnv } from "@/server/lib/env";
 import { refreshMarketPartition, ensureMarketPartitionRefreshState, listDueMarketPartitionRefreshes } from "@/server/modules/ingestion/market-partition-refresh.service";
+import { incrementalMatchDispatchKey, incrementalProductMatchingEnabled, matchRefreshedPartitionTask } from "./incremental-product-matching";
 
 /**
  * Wanterest 1B Stage 2C: autonomous public market-partition refresh.
@@ -31,7 +32,19 @@ export const refreshMarketPartitionTask = schemaTask({
     traceId: z.string().trim().min(1).max(120),
   }),
   run: async (input) => {
-    return refreshMarketPartition({ partitionId: input.partitionId, traceId: input.traceId });
+    const outcome = await refreshMarketPartition({ partitionId: input.partitionId, traceId: input.traceId });
+    // Stage 2D: hand newly persisted public evidence to interested products.
+    // Only a fresh success with evidence dispatches; a replayed slot
+    // ("already_succeeded_for_slot") already dispatched on its first run, and
+    // the dispatch itself is idempotent on the refresh job run id.
+    if (outcome.status === "succeeded" && outcome.jobRunId && outcome.conversations > 0 && outcome.reason !== "already_succeeded_for_slot" && incrementalProductMatchingEnabled()) {
+      await matchRefreshedPartitionTask.trigger(
+        { refreshJobRunId: outcome.jobRunId, traceId: input.traceId },
+        { idempotencyKey: incrementalMatchDispatchKey(outcome.jobRunId) },
+      );
+      return { ...outcome, incrementalMatchDispatched: true };
+    }
+    return { ...outcome, incrementalMatchDispatched: false };
   },
 });
 

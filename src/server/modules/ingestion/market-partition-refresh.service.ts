@@ -52,7 +52,7 @@ export type MarketPartitionRefreshOutcome = {
   distinctInterestCount?: number;
 };
 
-type StoredRefreshJobResult = {
+export type StoredRefreshJobResult = {
   partitionKey: string;
   sourceKey: string;
   policyVersion: string;
@@ -65,6 +65,14 @@ type StoredRefreshJobResult = {
     conversations: number;
     estimatedCostUsd: number | null;
     durationMs: number;
+    /**
+     * Stage 2D: the exact public evidence this refresh persisted (bounded by
+     * MARKET_PARTITION_REFRESH_LIMIT x MARKET_PARTITION_REFRESH_MAX_PAGES), so
+     * incremental product matching reads durable job state rather than a
+     * transient Trigger payload. Absent on pre-2D refresh jobs.
+     */
+    conversationIds?: string[];
+    normalizedSourceItemIds?: string[];
   };
 };
 
@@ -213,7 +221,7 @@ export async function refreshMarketPartition(input: { partitionId: string; trace
     sourceKey: partition.source_key,
     policyVersion: MARKET_PARTITION_REFRESH_POLICY_VERSION,
     request: built.request,
-    result: { executionStatus, rawItems, rawNewItems, normalizedItems, conversations, estimatedCostUsd: ingestionResult.estimatedCost, durationMs },
+    result: { executionStatus, rawItems, rawNewItems, normalizedItems, conversations, estimatedCostUsd: ingestionResult.estimatedCost, durationMs, conversationIds: [...ingestionResult.conversationIds].sort(), normalizedSourceItemIds: [...ingestionResult.normalizedSourceItemIds].sort() },
   };
 
   // Source-control conflicts ("CONFLICT") surface through ingestPublicPartition's

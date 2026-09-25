@@ -218,6 +218,25 @@ describe("refreshMarketPartition", () => {
     expect(jobRuns[0].status).toBe("succeeded");
   });
 
+  it("persists the exact conversation and normalized ids it ingested on the refresh job (Stage 2D durable evidence)", async () => {
+    const partition = validPartition();
+    partition.partition_key = await computeRealPartitionKey(partition.source_key, partition.retrieval_spec as Record<string, unknown>);
+    getStateRow.mockResolvedValueOnce(baseState());
+    claim.mockResolvedValueOnce(baseState());
+    getMarketPartitionById.mockResolvedValueOnce(partition);
+    ingestPublicPartitionMock.mockResolvedValueOnce({
+      sourceKey: "github", rawSourceItemIds: ["raw-1", "raw-2"], normalizedSourceItemIds: ["norm-2", "norm-1"], conversationIds: ["conv-2", "conv-1"],
+      provenance: [], rawInserted: 1, itemsReturned: 2, queryCount: 1, diagnostics: [], rateLimitRemaining: null, estimatedCost: null,
+      queryTelemetry: [{ queryPlanId: "x", source: "github", family: "fallback", surface: "unknown", concepts: [], competitorSpecific: false, pagesRequested: 1, pagesCompleted: 1, cursorContinuationCount: 0, continuationStoppedReason: "no_cursor", executionStatus: "completed_with_results", rawItems: 2, normalizedItems: 2, uniqueConversations: 2, duplicateCount: 0, estimatedCostUsd: null, marketPartitionKey: partition.partition_key, marketPartitionIneligibleReason: null, rawNewItems: 1 }],
+    });
+
+    await refreshMarketPartition({ partitionId: PARTITION_ID, traceId: "t1" });
+
+    const stored = jobRuns[0].input_reference as { result: { conversationIds: string[]; normalizedSourceItemIds: string[] } };
+    expect(stored.result.conversationIds).toEqual(["conv-1", "conv-2"]);
+    expect(stored.result.normalizedSourceItemIds).toEqual(["norm-1", "norm-2"]);
+  });
+
   it("disables the partition and calls no provider when the rebuilt request does not round-trip to the stored key", async () => {
     const partition = validPartition({ partition_key: "market_partition_identity_v1:deliberately-wrong-key" });
     getStateRow.mockResolvedValueOnce(baseState());

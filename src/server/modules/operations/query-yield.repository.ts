@@ -11,6 +11,8 @@ export type QueryYieldArtifact = {
   marketPartitionKey?: string | null;
   marketPartitionIneligibleReason?: string | null;
   rawNewItems?: number | null;
+  /** Stage 2D: product-relative provenance template for incremental matching. */
+  discoveryProvenance?: Record<string, unknown> | null;
 };
 
 type Row = Record<string, unknown>;
@@ -36,6 +38,7 @@ export class QueryYieldRepository {
       duplicate_count: input.duplicateCount, source_budget_suppressed_count: input.sourceBudgetSuppressedCount, candidate_budget_suppressed_count: input.candidateBudgetSuppressedCount, evaluation_cap_suppressed_count: input.evaluationCapSuppressedCount,
       selected_count: input.selectedCount, evaluated_count: input.evaluatedCount, qualified_influenced_count: input.qualifiedInfluencedCount, weak_influenced_count: input.weakInfluencedCount, rejected_influenced_count: input.rejectedInfluencedCount, estimated_cost_usd: input.estimatedCostUsd,
       market_partition_key: input.marketPartitionKey ?? null, market_partition_ineligible_reason: input.marketPartitionIneligibleReason ?? null, raw_new_items: input.rawNewItems ?? null,
+      discovery_provenance: input.discoveryProvenance ?? null,
     };
     const { data, error } = await this.table().insert(row).select("*").maybeSingle();
     if (!error && data) return data;

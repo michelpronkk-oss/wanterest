@@ -72,6 +72,27 @@ export function provenanceForReplay(request: SourceDiscoveryRequest, source: str
   }));
 }
 
+export type DiscoveryProvenanceTemplate = Omit<ScanDiscoveryProvenance, "conversationId">;
+
+/**
+ * Wanterest 1B Stage 2D: the conversation-independent part of the discovery
+ * provenance a request produces. Uses exactly the same derivation as
+ * `provenanceForReplay` so an incremental match can rebuild provenance that is
+ * byte-identical to what the product's own scan would have produced for the
+ * same conversation. Returns null for requests without planner metadata.
+ */
+export function discoveryProvenanceTemplate(request: SourceDiscoveryRequest, source: string): DiscoveryProvenanceTemplate | null {
+  const [entry] = provenanceForReplay(request, source, [{ conversationId: "00000000-0000-4000-8000-000000000000" }]);
+  if (!entry) return null;
+  const { conversationId: _conversationId, ...template } = entry;
+  void _conversationId;
+  return template;
+}
+
+export function provenanceFromTemplate(template: DiscoveryProvenanceTemplate, conversationIds: string[]): ScanDiscoveryProvenance[] {
+  return conversationIds.map((conversationId) => ({ ...template, conversationId }));
+}
+
 export function uniqueProvenance(entries: ScanDiscoveryProvenance[]): ScanDiscoveryProvenance[] {
   return [...new Map(entries.map((entry) => [`${entry.conversationId}:${entry.source}:${entry.queryPlanId}`, entry])).values()]
     .sort((a, b) => a.conversationId.localeCompare(b.conversationId) || a.source.localeCompare(b.source) || a.queryPlanId.localeCompare(b.queryPlanId));
@@ -106,6 +127,7 @@ function queryTelemetryForRequest(input: {
   marketPartitionKey?: string | null;
   marketPartitionIneligibleReason?: string | null;
   rawNewItems?: number | null;
+  discoveryProvenance?: DiscoveryProvenanceTemplate | null;
 }): QueryYieldTelemetry {
   const metadata = objectValue(input.request.requestMetadata);
   const intent = objectValue(metadata.discoveryIntent);
@@ -130,6 +152,7 @@ function queryTelemetryForRequest(input: {
     marketPartitionKey: input.marketPartitionKey ?? null,
     marketPartitionIneligibleReason: input.marketPartitionIneligibleReason ?? null,
     rawNewItems: input.rawNewItems ?? null,
+    ...(input.discoveryProvenance ? { discoveryProvenance: input.discoveryProvenance as unknown as Record<string, unknown> } : {}),
   };
 }
 
@@ -315,6 +338,7 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
     let queryError: unknown;
     let marketPartitionKey: string | null = null;
     let marketPartitionIneligibleReason: string | null = null;
+    let discoveryProvenance: DiscoveryProvenanceTemplate | null = null;
     try {
       request = input.sourceKey === "stack-exchange" ? prepareStackExchangeFeatureRequest(parsedRequest) : parsedRequest;
       metadata = request.requestMetadata as Record<string, unknown>;
@@ -326,6 +350,7 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
       const partitionIdentity = deriveMarketPartitionIdentity({ sourceKey: input.sourceKey, request });
       if (partitionIdentity.eligible) {
         marketPartitionKey = partitionIdentity.partitionKey;
+        discoveryProvenance = discoveryProvenanceTemplate(request, input.sourceKey);
         try {
           await marketPartitionRepository.ensure({
             id: partitionIdentity.partitionId,
@@ -393,6 +418,7 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
       marketPartitionKey,
       marketPartitionIneligibleReason,
       rawNewItems: queryRawInserted,
+      discoveryProvenance,
     }));
   }
   if (input.sourceKey === "g2") {

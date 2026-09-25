@@ -1684,3 +1684,61 @@ safe plan/reason codes); provider diagnostics remain server-only. Manual scans h
 `manual_scan` usage ledger type so recurring monitoring scans do not consume the user-facing
 monthly manual-scan allowance. The associated forward migration is
 `supabase/migrations/20261005000000_paywall_usage_contract_v1.sql`.
+
+## 15. 1B Continuous Intelligence (Stage 2)
+
+Stage 2 moves Wanterest from "scan, then read" to "maintain public market intelligence, then match
+products incrementally". The frozen quality stack (query_planning_v7, Retrieval Precision V1,
+Source Health V1, candidate_selection_v3 with maxEvaluations 15, signal_qualification_v1_7 and
+thresholds v1, semantic_reasoning_router_v1, provider adapters, X Signal Yield experiment) is
+reused unchanged by every stage below.
+
+| Stage | Seam | Status |
+| --- | --- | --- |
+| 2A | `ingestPublicPartition` is the only provider -> raw -> normalized -> canonical loop; tenant context is operational only. | PRODUCTION_PROVEN |
+| 2B | `market_partitions`: immutable, tenant-free identity per literal retrieval spec; `query_yield_artifacts.market_partition_key` records which product queries map to which partition. | PRODUCTION_PROVEN |
+| 2C | `market_partition_refresh_state` + `refresh-market-partition` / `market-partition-refresh-scheduler` (flag `MARKET_PARTITION_REFRESH_ENABLED`); GitHub + Stack Exchange only, 24h + deterministic jitter, lease/claim RPC, job-run idempotency per due slot. | PRODUCTION_PROVEN |
+| 2D | Incremental product matching (below). | see gate record |
+
+### Stage 2D — Incremental product matching
+
+Problem: a refreshed partition persisted new public evidence, but products only received it on
+their next full product scan.
+
+Interest: a product is interested in a partition when one of its own scans executed a query that
+maps to that partition inside a 14-day window (`query_yield_artifacts`, workspace-scoped, RLS).
+No new interest table: the artifact row is the durable, explainable relationship (which scan,
+which query plan). Stage 2D adds `query_yield_artifacts.discovery_provenance`, the exact
+conversation-independent discovery provenance template the product's query produced (query plan,
+family, surface, concepts, compiled GitHub pain / X competitor anchors). It is derived with the
+same function as scan provenance, so the frozen Retrieval Precision filters see byte-identical
+product context. Artifacts without it (pre-2D) are skipped (`provenance_missing`), never guessed.
+
+Flow: `refresh-market-partition` succeeds with evidence and stores the (<=10) conversation ids it
+persisted on its job run -> dispatches `match-refreshed-partition` (idempotency key = refresh job
+run id; flag `INCREMENTAL_PRODUCT_MATCHING_ENABLED`, re-checked at run time; queue concurrency 1)
+-> `matchRefreshedPartitionIncrementally` loads interest, selects at most 20 products (newest
+interest first, deterministic) -> per product: load the product by the artifact's own
+(workspace_id, product_id), drop conversations the product already has a `product_matches` row
+for, and run the unchanged `processScanCandidates` with maxLlmEvaluations 15 -> Map/Gap/Drift
+re-aggregation only if new signals materialized. Read-first reads `signals` directly, so results
+are visible on the next read without a scan.
+
+Idempotency: `job_runs` with unique (job_type, idempotency_key): one GLOBAL
+`match-partition-incremental` row per refresh job (workspace/product null; stores fanout,
+skips and per-product results) and one PRODUCT PRIVATE `match-product-incremental` row per
+(refresh job, product). A succeeded fanout or product row short-circuits replays; after a partial
+failure only the failed products re-run. Analyses, matches, evaluations, rankings and signals keep
+their existing fingerprint/natural-key idempotency.
+
+Invariants: no provider calls; no writes to global partition identity/state; no product without
+recorded interest is loaded or evaluated; hard caps of 20 products per refresh, 50 candidate
+conversations and 15 evaluations per product; thresholds and selection unchanged.
+
+Rollback: set `INCREMENTAL_PRODUCT_MATCHING_ENABLED=false` (queued runs also no-op). The migration
+`20261014000000_incremental_product_matching_v1.sql` is additive (one nullable column, two job
+types); leaving it in place is safe.
+
+Deferred to 2E/2F: read-first `lastSuccessfulRefreshAt` still reflects product scans only;
+interest is not yet plan-weighted; Free products are matched because matching makes no provider
+calls (deterministic engines; shadow reasoning keeps its own gate).

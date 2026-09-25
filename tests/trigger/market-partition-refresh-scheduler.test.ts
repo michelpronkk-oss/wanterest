@@ -19,6 +19,14 @@ vi.mock("@/server/modules/ingestion/market-partition-refresh.service", () => ({
   refreshMarketPartition: refreshMarketPartitionMock,
 }));
 
+const incrementalTriggerMock = vi.fn(async () => ({ id: "run_incremental" }));
+let incrementalEnabled = false;
+vi.mock("../../src/trigger/incremental-product-matching", () => ({
+  incrementalProductMatchingEnabled: () => incrementalEnabled,
+  incrementalMatchDispatchKey: (refreshJobRunId: string) => `match-partition-incremental:${refreshJobRunId}`,
+  matchRefreshedPartitionTask: { trigger: incrementalTriggerMock },
+}));
+
 let envValue: string | undefined;
 vi.mock("@/server/lib/env", () => ({ getServerEnv: () => ({ MARKET_PARTITION_REFRESH_ENABLED: envValue }) }));
 
@@ -77,5 +85,46 @@ describe("market-partition-refresh-scheduler", () => {
   it("declares the child task with concurrency limit 2 and 2 max attempts", () => {
     expect((refreshMarketPartitionTask as unknown as { queue: { concurrencyLimit: number } }).queue.concurrencyLimit).toBe(2);
     expect((refreshMarketPartitionTask as unknown as { retry: { maxAttempts: number } }).retry.maxAttempts).toBe(2);
+  });
+});
+
+describe("refresh-market-partition Stage 2D dispatch", () => {
+  const runRefresh = (refreshMarketPartitionTask as unknown as { run: (input: unknown) => Promise<Record<string, unknown>> }).run;
+  const success = { status: "succeeded", jobRunId: "11111111-1111-4111-8111-111111111111", rawItems: 10, rawNewItems: 3, normalizedItems: 5, conversations: 5, executionStatus: "completed_with_results" };
+
+  beforeEach(() => {
+    incrementalEnabled = false;
+    incrementalTriggerMock.mockClear();
+    refreshMarketPartitionMock.mockReset();
+  });
+
+  it("dispatches incremental matching exactly once, keyed by the refresh job run, when enabled", async () => {
+    incrementalEnabled = true;
+    refreshMarketPartitionMock.mockResolvedValueOnce(success);
+    const result = await runRefresh({ partitionId: "p1", traceId: "trace-1" });
+    expect(result.incrementalMatchDispatched).toBe(true);
+    expect(incrementalTriggerMock).toHaveBeenCalledTimes(1);
+    expect(incrementalTriggerMock).toHaveBeenCalledWith(
+      { refreshJobRunId: success.jobRunId, traceId: "trace-1" },
+      { idempotencyKey: `match-partition-incremental:${success.jobRunId}` },
+    );
+  });
+
+  it("never dispatches when the Stage 2D flag is off", async () => {
+    refreshMarketPartitionMock.mockResolvedValueOnce(success);
+    const result = await runRefresh({ partitionId: "p1", traceId: "trace-1" });
+    expect(result.incrementalMatchDispatched).toBe(false);
+    expect(incrementalTriggerMock).not.toHaveBeenCalled();
+  });
+
+  it("never dispatches for a replayed slot, zero evidence, or a non-success outcome", async () => {
+    incrementalEnabled = true;
+    refreshMarketPartitionMock
+      .mockResolvedValueOnce({ ...success, reason: "already_succeeded_for_slot" })
+      .mockResolvedValueOnce({ ...success, conversations: 0 })
+      .mockResolvedValueOnce({ ...success, status: "failed" })
+      .mockResolvedValueOnce({ ...success, status: "skipped", jobRunId: null });
+    for (let index = 0; index < 4; index += 1) await runRefresh({ partitionId: "p1", traceId: "trace-1" });
+    expect(incrementalTriggerMock).not.toHaveBeenCalled();
   });
 });

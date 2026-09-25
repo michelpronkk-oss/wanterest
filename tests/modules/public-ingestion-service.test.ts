@@ -208,6 +208,31 @@ describe("ingestPublicPartition market-partition wiring (Stage 2B, observational
     expect(result.queryTelemetry[0]?.marketPartitionIneligibleReason).toBeNull();
   });
 
+  it("attaches the product-relative provenance template for an eligible partition, identical to replay provenance minus conversationId (Stage 2D)", async () => {
+    discoverSourceMock.mockResolvedValueOnce(discoveryPage({ rawSourceItemIds: ["raw-1"], rawInserted: 1 }));
+    replayDetailedMock.mockResolvedValueOnce(replayResult({ normalizedSourceItemIds: ["norm-1"], canonicalizedConversationIds: ["conv-1"] }));
+    const request = req({ requestMetadata: { queryPlanId: "qp-github-feature", demandSurface: "feature_demand", queryFamily: "feature_requirement", discoveryIntent: { concept_keys: ["project_management_features"] }, competitorSpecific: false } });
+
+    const result = await ingestPublicPartition({ sourceKey: "github", requests: [request], traceId: "trace-1" });
+
+    const [replayEntry] = result.provenance;
+    const { conversationId, ...expectedTemplate } = replayEntry!;
+    expect(conversationId).toBe("conv-1");
+    expect(result.queryTelemetry[0]?.discoveryProvenance).toEqual(expectedTemplate);
+    expect(result.queryTelemetry[0]?.discoveryProvenance).toMatchObject({ queryPlanId: "qp-github-feature", source: "github", demandSurface: "feature_demand" });
+    expect(result.queryTelemetry[0]?.discoveryProvenance).not.toHaveProperty("conversationId");
+  });
+
+  it("attaches no provenance template for an ineligible source or a request without planner metadata", async () => {
+    discoverSourceMock.mockResolvedValue(discoveryPage({ rawSourceItemIds: ["raw-1"], rawInserted: 1 }));
+    replayDetailedMock.mockResolvedValue(replayResult({ normalizedSourceItemIds: ["norm-1"], canonicalizedConversationIds: ["conv-1"] }));
+    const planned = req({ requestMetadata: { queryPlanId: "qp-hn", demandSurface: "pain_first" } });
+    const ineligible = await ingestPublicPartition({ sourceKey: "hacker-news", requests: [planned], traceId: "trace-1" });
+    const unplanned = await ingestPublicPartition({ sourceKey: "github", requests: [req()], traceId: "trace-1" });
+    expect(ineligible.queryTelemetry[0]?.discoveryProvenance).toBeUndefined();
+    expect(unplanned.queryTelemetry[0]?.discoveryProvenance).toBeUndefined();
+  });
+
   it("attaches an ineligible reason and never persists a partition for an ineligible source", async () => {
     discoverSourceMock.mockResolvedValueOnce(discoveryPage({ rawSourceItemIds: ["raw-1"], rawInserted: 1 }));
     replayDetailedMock.mockResolvedValueOnce(replayResult({ normalizedSourceItemIds: ["norm-1"], canonicalizedConversationIds: ["conv-1"] }));

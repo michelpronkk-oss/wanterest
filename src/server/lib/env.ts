@@ -50,6 +50,9 @@ const serverEnvSchema = publicEnvSchema.extend({
   // Stage 2C kill switch for the autonomous market-partition refresh scheduler.
   // Defaults to disabled (treated as "false" unless exactly "true").
   MARKET_PARTITION_REFRESH_ENABLED: z.enum(["true", "false"]).optional(),
+  // Stage 2D kill switch for incremental product matching after a successful
+  // partition refresh. Defaults to disabled unless exactly "true".
+  INCREMENTAL_PRODUCT_MATCHING_ENABLED: z.enum(["true", "false"]).optional(),
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
@@ -112,6 +115,7 @@ export function getServerEnv(): ServerEnv {
     READ_FIRST_FRESH_HOURS: process.env.READ_FIRST_FRESH_HOURS,
     READ_FIRST_RECENT_HOURS: process.env.READ_FIRST_RECENT_HOURS,
     MARKET_PARTITION_REFRESH_ENABLED: process.env.MARKET_PARTITION_REFRESH_ENABLED,
+    INCREMENTAL_PRODUCT_MATCHING_ENABLED: process.env.INCREMENTAL_PRODUCT_MATCHING_ENABLED,
   });
 }
 

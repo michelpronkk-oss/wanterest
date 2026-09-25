@@ -23,6 +23,14 @@ export type QueryYieldTelemetry = {
    * IngestionService.discoverSource's own rawInserted field - not inferred.
    */
   rawNewItems?: number | null;
+  /**
+   * Wanterest 1B Stage 2D: the product-relative discovery provenance template
+   * (every ScanDiscoveryProvenance field except conversationId) for this
+   * executed query. Persisted only on workspace-scoped query_yield_artifacts so
+   * incremental matching can re-apply the frozen candidate-selection filters
+   * with the product's own query context. Never part of partition identity.
+   */
+  discoveryProvenance?: Record<string, unknown> | null;
 };
 
 export type QueryYieldOutcome = { conversationId: string; selected: boolean; evaluated: boolean; qualificationStatus: "qualified" | "weak_candidate" | "rejected" | null };
