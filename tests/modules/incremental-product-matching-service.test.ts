@@ -6,6 +6,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/server/providers/supabase/service", () => ({ createSupabaseServiceClient: () => ({}) }));
 vi.mock("@/server/modules/onboarding/initial-scan.service", () => ({ getScanProduct: vi.fn(), processScanCandidates: vi.fn() }));
 vi.mock("@/server/modules/demand-intelligence/demand.orchestration", () => ({ rebuildDemandIntelligenceForScan: vi.fn() }));
+vi.mock("@/server/modules/actions/action.orchestration", () => ({ generateActionsForScan: vi.fn(async () => ({ actionsUpdated: 0, warnings: [] })) }));
 vi.mock("@/server/modules/ingestion/public-ingestion.service", () => ({
   provenanceFromTemplate: (template: Record<string, unknown>, ids: string[]) => ids.map((conversationId) => ({ ...template, conversationId })),
 }));
@@ -169,6 +170,29 @@ describe("matchRefreshedPartitionIncrementally (Stage 2D)", () => {
     expect(rebuildDemand.mock.calls[0][0].evaluationIds).toEqual([`eval-${C1}`, `eval-${C2}`, `eval-${C3}`]);
     expect(outcome.products[0]).toMatchObject({ signals: 1, qualifiedCount: 1, demandRebuilt: true, signalIds: [`signal-${C1}`] });
     expect(outcome.totals).toMatchObject({ signals: 1, evaluations: 3, candidateConversations: 3, productsWithNewEvidence: 1 });
+  });
+
+  it("Layer 10: runs the single gated Action pass after an incremental rebuild, never without one, and never fails the match on an Action error", async () => {
+    processCandidates = vi.fn(async (input: { conversationIds: string[] }) => processResult(input.conversationIds, 1));
+    const generateActions = vi.fn<(input: { product: unknown; traceId?: string }) => Promise<{ actionsUpdated: number; warnings: string[] }>>(async () => ({ actionsUpdated: 2, warnings: ["Concept action pending for pricing: currentness."] }));
+    const { repository } = makeRepository({ refresh: refreshJob(), artifacts: [artifact(WS_A, "prod-a")], matched: new Map() });
+    const outcome = await matchRefreshedPartitionIncrementally({ refreshJobRunId: REFRESH_JOB, traceId: "t" }, { repository, loadProduct, processCandidates, rebuildDemand, generateActions, now } as never);
+    expect(generateActions).toHaveBeenCalledTimes(1);
+    expect(generateActions.mock.calls[0][0]).toMatchObject({ product: { workspace_id: WS_A, id: "prod-a" }, traceId: "t" });
+    expect(rebuildDemand.mock.invocationCallOrder[0]).toBeLessThan(generateActions.mock.invocationCallOrder[0]);
+    expect(outcome.products[0]).toMatchObject({ demandRebuilt: true, actionsUpdated: 2, actionWarnings: ["Concept action pending for pricing: currentness."] });
+
+    const noSignals = vi.fn(async () => ({ actionsUpdated: 0, warnings: [] }));
+    processCandidates = vi.fn(async (input: { conversationIds: string[] }) => processResult(input.conversationIds, 0));
+    const second = makeRepository({ refresh: refreshJob(), artifacts: [artifact(WS_A, "prod-a")], matched: new Map() });
+    await matchRefreshedPartitionIncrementally({ refreshJobRunId: REFRESH_JOB, traceId: "t" }, { repository: second.repository, loadProduct, processCandidates, rebuildDemand, generateActions: noSignals, now } as never);
+    expect(noSignals).not.toHaveBeenCalled();
+
+    const failing = vi.fn(async () => { throw new Error("boom"); });
+    processCandidates = vi.fn(async (input: { conversationIds: string[] }) => processResult(input.conversationIds, 1));
+    const third = makeRepository({ refresh: refreshJob(), artifacts: [artifact(WS_A, "prod-a")], matched: new Map() });
+    const failed = await matchRefreshedPartitionIncrementally({ refreshJobRunId: REFRESH_JOB, traceId: "t" }, { repository: third.repository, loadProduct, processCandidates, rebuildDemand, generateActions: failing, now } as never);
+    expect(failed.products[0]).toMatchObject({ status: "succeeded", demandRebuilt: true, actionsUpdated: 0, actionWarnings: ["actions_skipped:boom"] });
   });
 
   it("is idempotent on replay: a succeeded fanout never re-evaluates", async () => {

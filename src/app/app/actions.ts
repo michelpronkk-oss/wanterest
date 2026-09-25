@@ -16,7 +16,7 @@ import { getInitialScanState } from "@/server/modules/onboarding";
 import { scanResultSummarySchema, type ScanResultSummary } from "@/server/modules/operations/product-demand-scan.schemas";
 import type { ProductDemandScanHandle, ScanProgress } from "@/server/modules/operations/product-demand-scan.schemas";
 import type { ReadFirstProductIntelligence } from "@/server/modules/operations/read-first-intelligence.service";
-import { toPublicError } from "@/server/lib/errors";
+import { AppError, toPublicError } from "@/server/lib/errors";
 import { redactMessage } from "@/server/lib/http";
 import { getTraceId } from "@/server/lib/request-context";
 import { nextActiveProductId } from "@/server/modules/products/product-lifecycle";
@@ -240,15 +240,17 @@ export async function getScanProgressAction(input: unknown): Promise<ScanProgres
   return { status: state.status, progress: state.progress, errorMessage: state.errorMessage, result: result?.success ? result.data : null };
 }
 
-const actionStatusActionSchema = z.object({
-  workspaceId: workspaceIdSchema,
-  actionId: z.string().uuid(),
-  toStatus: z.enum(["approved", "dismissed"]),
-});
-
-export async function updateActionStatusAction(input: unknown): Promise<{ ok: true }> {
-  const parsed = actionStatusActionSchema.safeParse(input);
-  if (!parsed.success) throw new Error("The action update is invalid.");
-  await transitionActionCommand(parsed.data.workspaceId, parsed.data.actionId, parsed.data.toStatus);
-  return { ok: true };
+/**
+ * Layer 10: the browser sends only { actionId, toStatus, note? }. Scope,
+ * membership, role, plan and basis revalidation are all resolved server-side
+ * from the Action itself (transitionActionCommand); a workspace id is rejected.
+ */
+export async function updateActionStatusAction(input: unknown): Promise<{ ok: true } | { ok: false; message: string }> {
+  try {
+    await transitionActionCommand(input);
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof AppError && ["CONFLICT", "FORBIDDEN", "NOT_FOUND", "CAPABILITY_DISABLED", "VALIDATION_ERROR"].includes(error.code)) return { ok: false, message: error.message };
+    throw error;
+  }
 }

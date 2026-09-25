@@ -59,18 +59,26 @@ export interface DemandActionEngine {
 }
 
 /** concept_drift (Layer 9C) reuses demand_drift's copy branch throughout — same trigger shape, a different persisted basis. */
-function isDriftTrigger(input: ActionGenerationInput): boolean {
+function isDriftTrigger(input: Pick<ActionGenerationInput, "triggerType">): boolean {
   return input.triggerType === "demand_drift" || input.triggerType === "concept_drift";
 }
 
-function targetFor(input: ActionGenerationInput): string {
+/**
+ * Layer 10: the deterministic (actionType, targetKey) an input maps to. Shared by
+ * the engine and by the proposal-continuity fingerprint so they can never drift.
+ */
+export function actionShapeFor(input: Pick<ActionGenerationInput, "triggerType" | "targetKey">): { actionType: ActionType; targetKey: string } {
+  return { actionType: typeFor(input), targetKey: targetFor(input) };
+}
+
+function targetFor(input: Pick<ActionGenerationInput, "triggerType" | "targetKey">): string {
   if (input.targetKey !== "auto") return input.targetKey;
   if (isDriftTrigger(input)) return "new_landing_page";
   if (input.triggerType === "signal") return "product_research";
   return "homepage_hero";
 }
 
-function typeFor(input: ActionGenerationInput): ActionType {
+function typeFor(input: Pick<ActionGenerationInput, "triggerType">): ActionType {
   if (isDriftTrigger(input)) return "landing_page";
   if (input.triggerType === "signal") return "product_research";
   return "messaging_change";

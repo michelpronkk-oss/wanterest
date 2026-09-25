@@ -40,7 +40,9 @@ export const NO_LIFECYCLE_VERIFIED_BASIS_WARNING = "no_lifecycle_verified_basis"
 export function legacyActionGenerationPauseReason(downstreamIntelligenceV2Enabled: boolean): typeof NO_LIFECYCLE_VERIFIED_BASIS_WARNING | null {
   return downstreamIntelligenceV2Enabled ? NO_LIFECYCLE_VERIFIED_BASIS_WARNING : null;
 }
-export const actionStatusSchema = z.enum(["proposed", "approved", "in_progress", "completed", "dismissed", "superseded"]);
+// Layer 10 adds `expired` (system-only: the settled canonical selector found no
+// eligible basis). See docs/architecture.md Section 21.
+export const actionStatusSchema = z.enum(["proposed", "approved", "in_progress", "completed", "dismissed", "superseded", "expired"]);
 export type ActionStatus = z.infer<typeof actionStatusSchema>;
 export const actionVariantStatusSchema = z.enum(["generated", "selected", "rejected", "archived"]);
 export type ActionVariantStatus = z.infer<typeof actionVariantStatusSchema>;
@@ -49,7 +51,7 @@ export const actionFeedbackTypeSchema = z.enum([
   "saved", "approved", "dismissed", "completed",
 ]);
 export type ActionFeedbackType = z.infer<typeof actionFeedbackTypeSchema>;
-export const actionEventTypeSchema = z.enum(["approved", "dismissed", "started", "completed", "superseded", "regenerated"]);
+export const actionEventTypeSchema = z.enum(["approved", "dismissed", "started", "completed", "superseded", "regenerated", "expired", "revalidated"]);
 export type ActionEventType = z.infer<typeof actionEventTypeSchema>;
 
 export const digestTypeSchema = z.enum(["daily", "weekly"]);
@@ -119,6 +121,8 @@ export const actionGenerationInputSchema = z.object({
   triggerId: z.string().uuid(),
   triggerEvidenceNodeId: z.string().uuid(),
   triggerConceptKey: z.string().trim().min(1).max(300),
+  /** Layer 10: concept_gap/concept_drift only — the basis row's clustering_version (canonical concept identity). */
+  triggerClusteringVersion: z.string().trim().min(1).max(120).optional(),
   conceptLabel: z.string().trim().min(1).max(500),
   targetKey: z.string().trim().min(1).max(200),
   marketWeight: z.number().min(0).max(1).default(0),
@@ -185,3 +189,37 @@ export type DigestBuildInput = z.infer<typeof digestBuildInputSchema>;
 export function clampAction(value: number): number {
   return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
 }
+
+/** Layer 10: open concept-Action workflow states (one per canonical concept, DB-enforced). */
+export const OPEN_ACTION_STATUSES = ["proposed", "approved", "in_progress"] as const;
+export const CONCEPT_ACTION_TRIGGER_TYPES = ["concept_gap", "concept_drift"] as const;
+export type ConceptActionTriggerType = (typeof CONCEPT_ACTION_TRIGGER_TYPES)[number];
+
+export function isConceptTriggerType(value: string): value is ConceptActionTriggerType {
+  return value === "concept_gap" || value === "concept_drift";
+}
+
+export function isOpenActionStatus(value: string): value is (typeof OPEN_ACTION_STATUSES)[number] {
+  return value === "proposed" || value === "approved" || value === "in_progress";
+}
+
+/** Layer 10: approval policy is always a human decision; no autonomy. */
+export const ACTION_APPROVAL_POLICY = "human_required_v1" as const;
+/** Layer 10: Wanterest proposes; the human executes. Never "executed by Wanterest". */
+export const ACTION_EXECUTION_MODE = "manual" as const;
+
+/** Human-initiated transitions. `expired`/`superseded` are server-owned only. */
+export const userActionTransitionSchema = z.enum(["approved", "in_progress", "completed", "dismissed"]);
+export type UserActionTransition = z.infer<typeof userActionTransitionSchema>;
+
+/**
+ * Layer 10 browser contract: the browser sends only the Action id, the desired
+ * transition and an optional note. A workspace id is never accepted — scope is
+ * derived server-side from the Action itself (docs/architecture.md Section 21).
+ */
+export const actionTransitionRequestSchema = z.object({
+  actionId: z.string().uuid(),
+  toStatus: userActionTransitionSchema,
+  note: z.string().trim().min(1).max(1_000).optional(),
+}).strict();
+export type ActionTransitionRequest = z.infer<typeof actionTransitionRequestSchema>;

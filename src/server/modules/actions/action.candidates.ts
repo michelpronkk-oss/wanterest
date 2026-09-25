@@ -117,7 +117,10 @@ export function actionInputFromConceptGap(product: ProductRow, gapState: Concept
   const sampleQuality = demandGapV2SampleQuality(marketState.distinct_evidence_count);
   const confidence = sampleFactor(sampleQuality);
   return {
-    ...base(product, gapState, options.conceptLabel ?? gapState.anchor_concept_key, options), triggerType: "concept_gap", marketWeight: gapState.share_of_current_demand,
+    ...base(product, gapState, options.conceptLabel ?? gapState.anchor_concept_key, options),
+    // Layer 10: canonical concept identity is the opaque anchor key exactly as persisted (never re-normalized) plus its clustering version.
+    triggerConceptKey: gapState.anchor_concept_key, triggerClusteringVersion: gapState.clustering_version,
+    triggerType: "concept_gap", marketWeight: gapState.share_of_current_demand,
     gapScore: gapState.gap_score ?? 0, driftStrength: 0, intentStrength: gapState.high_intent_share,
     opportunityScore: gapState.gap_score ?? 0, evidenceStrength: confidence, confidence,
     freshness: 1, sampleSize: marketState.distinct_evidence_count, sampleQuality,
@@ -141,7 +144,9 @@ export function actionInputFromConceptDrift(product: ProductRow, driftState: Con
   // Same count/20 normalization demand.service.ts's aggregateDemand already uses for its own confidence scaling.
   const marketWeight = Math.min(1, (driftState.current_frozen_evidence_count ?? 0) / 20);
   return {
-    ...base(product, driftState, options.conceptLabel ?? driftState.anchor_concept_key, options), triggerType: "concept_drift", marketWeight,
+    ...base(product, driftState, options.conceptLabel ?? driftState.anchor_concept_key, options),
+    triggerConceptKey: driftState.anchor_concept_key, triggerClusteringVersion: driftState.clustering_version,
+    triggerType: "concept_drift", marketWeight,
     gapScore: 0, driftStrength: Math.min(1, Math.abs(shareDelta)), intentStrength: marketStateHighIntentShare(marketState),
     opportunityScore: Math.min(1, Math.abs(shareDelta)), evidenceStrength: confidence, confidence,
     freshness: 1, sampleSize: minCount, sampleQuality,

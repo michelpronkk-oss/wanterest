@@ -11,7 +11,7 @@ import {
   CONCEPT_DRIFT_STATE_POLICY_VERSION,
   CONCEPT_GAP_STATE_POLICY_VERSION,
   CONCEPT_MARKET_STATE_POLICY_VERSION,
-  conceptDriftStateInputFingerprint,
+  expectedConceptDriftStateFingerprint,
   conceptGapStateInputFingerprint,
   conceptGapStatus,
   conceptMarketStateInputFingerprint,
@@ -137,12 +137,8 @@ export class ConceptMarketStateService {
       if (!marketState) continue;
       const windowRow = byConceptKey.get(concept.conceptKey);
       const item = plan.comparable && windowRow ? buildDemandDriftV2Item(concept, windowRow.current, windowRow.previous, totalCurrent, totalPrevious) : null;
-      const fingerprint = conceptDriftStateInputFingerprint({
-        clusteringVersion: DEMAND_CLUSTERING_VERSION, anchorConceptKey: concept.identity.anchorConceptKey, window,
-        previousPeriodStart: plan.comparable ? plan.previousPeriodStart : null, previousPeriodEnd: plan.comparable ? plan.previousPeriodEnd : null,
-        currentPeriodStart: plan.comparable ? plan.previousPeriodEnd : null, currentPeriodEnd: plan.comparable ? plan.currentPeriodEnd : null,
-        monitoringStartedAtBasis: monitoringStartedAt, currentWindowMemberIds: item?.currentWindowMemberIds ?? [], previousWindowMemberIds: item?.previousWindowMemberIds ?? [],
-      });
+      // Same function Layer 10's materialization-lag guardrail uses (one implementation).
+      const fingerprint = expectedConceptDriftStateFingerprint({ concept, clusteringVersion: DEMAND_CLUSTERING_VERSION, window, now, monitoringStartedAt });
       const latest = await this.repository.latestDriftState(workspaceId, productId, DEMAND_CLUSTERING_VERSION, concept.identity.anchorConceptKey, CONCEPT_DRIFT_STATE_POLICY_VERSION, window);
       if (latest?.input_fingerprint === fingerprint) continue;
       const sequence = (latest?.sequence ?? 0) + 1;

@@ -1,4 +1,5 @@
 import type { Json } from "../../db/database.helpers";
+import { DEMAND_CLUSTERING_MAX_EVALUATIONS } from "./demand-clustering.policy";
 
 /**
  * Wanterest Layer 9C persistence port. Every read and write is scoped by the
@@ -123,13 +124,33 @@ export interface ConceptMarketStateRepository {
   createDriftState(input: ConceptDriftStateInsert): Promise<ConceptDriftStateRow>;
 
   linkProvenance(edge: ConceptProvenanceEdge): Promise<void>;
+
+  /** Layer 10 (bounded): one basis row by id, scoped to the product. */
+  getGapState(workspaceId: string, productId: string, id: string): Promise<ConceptGapStateRow | null>;
+  getDriftState(workspaceId: string, productId: string, id: string): Promise<ConceptDriftStateRow | null>;
+  /** Layer 10 (bounded): market states by id, scoped to the product; at most CONCEPT_EPISODE_HISTORY_LIMIT ids. */
+  getMarketStatesByIds(workspaceId: string, productId: string, ids: string[]): Promise<ConceptMarketStateRow[]>;
+  /** Layer 10 episode-break lookup: one concept, sequence > afterSequence, ascending, DB-side limit. */
+  listGapStatesAfter(workspaceId: string, productId: string, clusteringVersion: string, anchorConceptKey: string, policyVersion: string, afterSequence: number, limit: number): Promise<ConceptGapStateRow[]>;
+  listDriftStatesAfter(workspaceId: string, productId: string, clusteringVersion: string, anchorConceptKey: string, policyVersion: string, window: string, afterSequence: number, limit: number): Promise<ConceptDriftStateRow[]>;
 }
+
+/**
+ * Layer 10 DB-side bounds. Concepts per product can never exceed the Stage 2G
+ * evaluation cap (every concept needs at least one evaluation), so the latest-
+ * state functions are capped at that same number; episode history is capped at
+ * 100 rows (a processing bound, not an eligibility threshold).
+ */
+export const CONCEPT_LATEST_STATE_LIMIT = DEMAND_CLUSTERING_MAX_EVALUATIONS;
+export const CONCEPT_EPISODE_HISTORY_LIMIT = 100;
 
 type Row = Record<string, unknown>;
 type ErrorResult = { code?: string; message?: string } | null;
 type Result<T> = PromiseLike<{ data: T; error: ErrorResult }>;
 type Filterable = Result<Row[] | null> & {
   eq(field: string, value: unknown): Filterable;
+  gt(field: string, value: unknown): Filterable;
+  in(field: string, values: unknown[]): Filterable;
   order(field: string, options: { ascending: boolean }): Filterable;
   limit(count: number): Filterable;
 };
@@ -138,7 +159,8 @@ type Query = {
   insert(row: Row): { select(columns: string): { single(): Result<Row | null> } };
   upsert(row: Row, options: { onConflict: string; ignoreDuplicates: boolean }): Result<null>;
 };
-type Client = { from(table: string): Query };
+type RpcResult = PromiseLike<{ data: unknown; error: ErrorResult }>;
+type Client = { from(table: string): Query; rpc(fn: string, args: Row): RpcResult };
 
 function persistenceError(error: ErrorResult, context: string): Error {
   const code = error?.code ? ` (${error.code})` : "";
@@ -169,9 +191,15 @@ export class SupabaseConceptMarketStateRepository implements ConceptMarketStateR
     return (rows[0] as ConceptMarketStateRow | undefined) ?? null;
   }
 
+  private async rpcRows(fn: string, args: Row, context: string): Promise<Row[]> {
+    const { data, error } = await (this.client as Client).rpc(fn, args);
+    if (error) throw persistenceError(error, context);
+    return Array.isArray(data) ? (data as Row[]) : [];
+  }
+
+  /** Layer 10: DB-side DISTINCT ON latest-per-concept, capped at CONCEPT_LATEST_STATE_LIMIT (no fetch-all-and-trim). */
   async listLatestMarketStates(workspaceId: string, productId: string, clusteringVersion: string, policyVersion: string) {
-    const rows = await this.rows(this.table("concept_market_states").select("*").eq("workspace_id", workspaceId).eq("product_id", productId).eq("clustering_version", clusteringVersion).eq("concept_market_state_policy_version", policyVersion).order("sequence", { ascending: false }), "latest market states batch lookup") as ConceptMarketStateRow[];
-    return latestPerKey(rows, (row) => row.anchor_concept_key);
+    return await this.rpcRows("concept_latest_market_states", { p_workspace_id: workspaceId, p_product_id: productId, p_clustering_version: clusteringVersion, p_policy_version: policyVersion, p_limit: CONCEPT_LATEST_STATE_LIMIT }, "latest market states batch lookup") as ConceptMarketStateRow[];
   }
 
   async createMarketState(input: ConceptMarketStateInsert) {
@@ -190,8 +218,7 @@ export class SupabaseConceptMarketStateRepository implements ConceptMarketStateR
   }
 
   async listLatestGapStates(workspaceId: string, productId: string, clusteringVersion: string, policyVersion: string) {
-    const rows = await this.rows(this.table("concept_gap_states").select("*").eq("workspace_id", workspaceId).eq("product_id", productId).eq("clustering_version", clusteringVersion).eq("gap_state_policy_version", policyVersion).order("sequence", { ascending: false }), "latest gap states batch lookup") as ConceptGapStateRow[];
-    return latestPerKey(rows, (row) => row.anchor_concept_key);
+    return await this.rpcRows("concept_latest_gap_states", { p_workspace_id: workspaceId, p_product_id: productId, p_clustering_version: clusteringVersion, p_policy_version: policyVersion, p_limit: CONCEPT_LATEST_STATE_LIMIT }, "latest gap states batch lookup") as ConceptGapStateRow[];
   }
 
   async createGapState(input: ConceptGapStateInsert) {
@@ -210,8 +237,7 @@ export class SupabaseConceptMarketStateRepository implements ConceptMarketStateR
   }
 
   async listLatestDriftStates(workspaceId: string, productId: string, clusteringVersion: string, policyVersion: string, window: string) {
-    const rows = await this.rows(this.table("concept_drift_states").select("*").eq("workspace_id", workspaceId).eq("product_id", productId).eq("clustering_version", clusteringVersion).eq("drift_state_policy_version", policyVersion).eq("window_type", window).order("sequence", { ascending: false }), "latest drift states batch lookup") as ConceptDriftStateRow[];
-    return latestPerKey(rows, (row) => row.anchor_concept_key);
+    return await this.rpcRows("concept_latest_drift_states", { p_workspace_id: workspaceId, p_product_id: productId, p_clustering_version: clusteringVersion, p_policy_version: policyVersion, p_window: window, p_limit: CONCEPT_LATEST_STATE_LIMIT }, "latest drift states batch lookup") as ConceptDriftStateRow[];
   }
 
   async createDriftState(input: ConceptDriftStateInsert) {
@@ -228,6 +254,30 @@ export class SupabaseConceptMarketStateRepository implements ConceptMarketStateR
     const { error } = await this.table("evidence_provenance").upsert({ derived_evidence_node_id: edge.derivedEvidenceNodeId, source_evidence_node_id: edge.sourceEvidenceNodeId, relation_type: edge.relationType, weight: edge.weight ?? null, ordinal: edge.ordinal ?? null, span: null, measurement: edge.measurement ?? null, engine_version_id: edge.engineVersionId ?? null }, { onConflict: "derived_evidence_node_id,source_evidence_node_id,relation_type,ordinal", ignoreDuplicates: true });
     if (error) throw persistenceError(error, "provenance link");
   }
+
+  async getGapState(workspaceId: string, productId: string, id: string) {
+    const rows = await this.rows(this.table("concept_gap_states").select("*").eq("workspace_id", workspaceId).eq("product_id", productId).eq("id", id).limit(1), "gap state lookup");
+    return (rows[0] as ConceptGapStateRow | undefined) ?? null;
+  }
+
+  async getDriftState(workspaceId: string, productId: string, id: string) {
+    const rows = await this.rows(this.table("concept_drift_states").select("*").eq("workspace_id", workspaceId).eq("product_id", productId).eq("id", id).limit(1), "drift state lookup");
+    return (rows[0] as ConceptDriftStateRow | undefined) ?? null;
+  }
+
+  async getMarketStatesByIds(workspaceId: string, productId: string, ids: string[]) {
+    const unique = [...new Set(ids)].slice(0, CONCEPT_EPISODE_HISTORY_LIMIT);
+    if (!unique.length) return [];
+    return await this.rows(this.table("concept_market_states").select("*").eq("workspace_id", workspaceId).eq("product_id", productId).in("id", unique).limit(CONCEPT_EPISODE_HISTORY_LIMIT), "market states by id lookup") as ConceptMarketStateRow[];
+  }
+
+  async listGapStatesAfter(workspaceId: string, productId: string, clusteringVersion: string, anchorConceptKey: string, policyVersion: string, afterSequence: number, limit: number) {
+    return await this.rows(this.table("concept_gap_states").select("*").eq("workspace_id", workspaceId).eq("product_id", productId).eq("clustering_version", clusteringVersion).eq("anchor_concept_key", anchorConceptKey).eq("gap_state_policy_version", policyVersion).gt("sequence", afterSequence).order("sequence", { ascending: true }).limit(Math.min(limit, CONCEPT_EPISODE_HISTORY_LIMIT)), "gap state history lookup") as ConceptGapStateRow[];
+  }
+
+  async listDriftStatesAfter(workspaceId: string, productId: string, clusteringVersion: string, anchorConceptKey: string, policyVersion: string, window: string, afterSequence: number, limit: number) {
+    return await this.rows(this.table("concept_drift_states").select("*").eq("workspace_id", workspaceId).eq("product_id", productId).eq("clustering_version", clusteringVersion).eq("anchor_concept_key", anchorConceptKey).eq("drift_state_policy_version", policyVersion).eq("window_type", window).gt("sequence", afterSequence).order("sequence", { ascending: true }).limit(Math.min(limit, CONCEPT_EPISODE_HISTORY_LIMIT)), "drift state history lookup") as ConceptDriftStateRow[];
+  }
 }
 
 function latestPerKey<T extends { sequence: number }>(rows: T[], keyOf: (row: T) => string): T[] {
@@ -238,6 +288,11 @@ function latestPerKey<T extends { sequence: number }>(rows: T[], keyOf: (row: T)
     if (!current || row.sequence > current.sequence) latest.set(key, row);
   }
   return [...latest.values()];
+}
+
+/** Mirrors the SQL functions: DISTINCT ON (anchor_concept_key) latest sequence, ordered by key, capped at CONCEPT_LATEST_STATE_LIMIT. */
+function boundedLatestPerKey<T extends { sequence: number; anchor_concept_key: string }>(rows: T[]): T[] {
+  return latestPerKey(rows, (row) => row.anchor_concept_key).sort((left, right) => left.anchor_concept_key.localeCompare(right.anchor_concept_key)).slice(0, CONCEPT_LATEST_STATE_LIMIT);
 }
 
 /** In-memory implementation for tests and fixtures, mirroring the migration's natural keys. */
@@ -263,7 +318,7 @@ export class InMemoryConceptMarketStateRepository implements ConceptMarketStateR
 
   async listLatestMarketStates(workspaceId: string, productId: string, clusteringVersion: string, policyVersion: string) {
     const rows = [...this.marketStates.values()].filter((row) => row.workspace_id === workspaceId && row.product_id === productId && row.clustering_version === clusteringVersion && row.concept_market_state_policy_version === policyVersion);
-    return latestPerKey(rows, (row) => row.anchor_concept_key);
+    return boundedLatestPerKey(rows);
   }
 
   async createMarketState(input: ConceptMarketStateInsert) {
@@ -284,7 +339,7 @@ export class InMemoryConceptMarketStateRepository implements ConceptMarketStateR
 
   async listLatestGapStates(workspaceId: string, productId: string, clusteringVersion: string, policyVersion: string) {
     const rows = [...this.gapStates.values()].filter((row) => row.workspace_id === workspaceId && row.product_id === productId && row.clustering_version === clusteringVersion && row.gap_state_policy_version === policyVersion);
-    return latestPerKey(rows, (row) => row.anchor_concept_key);
+    return boundedLatestPerKey(rows);
   }
 
   async createGapState(input: ConceptGapStateInsert) {
@@ -307,7 +362,7 @@ export class InMemoryConceptMarketStateRepository implements ConceptMarketStateR
 
   async listLatestDriftStates(workspaceId: string, productId: string, clusteringVersion: string, policyVersion: string, window: string) {
     const rows = [...this.driftStates.values()].filter((row) => row.workspace_id === workspaceId && row.product_id === productId && row.clustering_version === clusteringVersion && row.drift_state_policy_version === policyVersion && row.window_type === window);
-    return latestPerKey(rows, (row) => row.anchor_concept_key);
+    return boundedLatestPerKey(rows);
   }
 
   async createDriftState(input: ConceptDriftStateInsert) {
@@ -322,5 +377,27 @@ export class InMemoryConceptMarketStateRepository implements ConceptMarketStateR
 
   async linkProvenance(edge: ConceptProvenanceEdge) {
     if (!this.provenance.some((item) => item.derivedEvidenceNodeId === edge.derivedEvidenceNodeId && item.sourceEvidenceNodeId === edge.sourceEvidenceNodeId && item.relationType === edge.relationType && item.ordinal === edge.ordinal)) this.provenance.push(edge);
+  }
+
+  async getGapState(workspaceId: string, productId: string, id: string) {
+    const row = this.gapStates.get(id);
+    return row && row.workspace_id === workspaceId && row.product_id === productId ? row : null;
+  }
+
+  async getDriftState(workspaceId: string, productId: string, id: string) {
+    const row = this.driftStates.get(id);
+    return row && row.workspace_id === workspaceId && row.product_id === productId ? row : null;
+  }
+
+  async getMarketStatesByIds(workspaceId: string, productId: string, ids: string[]) {
+    return [...new Set(ids)].slice(0, CONCEPT_EPISODE_HISTORY_LIMIT).map((id) => this.marketStates.get(id)).filter((row): row is ConceptMarketStateRow => Boolean(row && row.workspace_id === workspaceId && row.product_id === productId));
+  }
+
+  async listGapStatesAfter(workspaceId: string, productId: string, clusteringVersion: string, anchorConceptKey: string, policyVersion: string, afterSequence: number, limit: number) {
+    return this.gapStatesFor(workspaceId, productId, clusteringVersion, anchorConceptKey, policyVersion).filter((row) => row.sequence > afterSequence).slice(0, Math.min(limit, CONCEPT_EPISODE_HISTORY_LIMIT));
+  }
+
+  async listDriftStatesAfter(workspaceId: string, productId: string, clusteringVersion: string, anchorConceptKey: string, policyVersion: string, window: string, afterSequence: number, limit: number) {
+    return this.driftStatesFor(workspaceId, productId, clusteringVersion, anchorConceptKey, policyVersion, window).filter((row) => row.sequence > afterSequence).slice(0, Math.min(limit, CONCEPT_EPISODE_HISTORY_LIMIT));
   }
 }

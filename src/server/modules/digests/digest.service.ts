@@ -50,7 +50,8 @@ export class DigestService {
     const [candidates, sourceWarnings] = await Promise.all([this.source.listCandidates(sourceInput), this.source.listWarnings?.(sourceInput) ?? Promise.resolve([])]);
     const actions = input.productId ? await this.repository.listActions(input.workspaceId, input.productId, { stale: false }) : [];
     const actionCandidates: DigestCandidate[] = actions
-      .filter((action) => action.status !== "dismissed" && action.status !== "superseded")
+      // Layer 10: expired Actions (basis no longer valid) are never digest content, even if stale_at was not yet visible.
+      .filter((action) => action.status !== "dismissed" && action.status !== "superseded" && action.status !== "expired")
       .filter((action) => action.created_at >= input.periodStart && action.created_at < input.periodEnd)
       .map((action) => ({ itemType: "action", itemId: action.id, sourceEvidenceNodeId: action.evidence_node_id, score: action.priority_score, reason: action.summary, createdAt: action.created_at }));
     const selected = selectDigestCandidates([...candidates, ...actionCandidates], input.digestType === "daily" ? 12 : 20);

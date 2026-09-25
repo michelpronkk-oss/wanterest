@@ -6,9 +6,11 @@ import type { ActionReadModel } from "@/server/modules/actions/action.service";
 import { Drawer } from "@/components/ui/drawer";
 import { updateActionStatusAction } from "@/app/app/actions";
 import { themeLabel } from "./dashboard-utils";
-import { actionTypeLabel, buyerLanguageQuote, evidenceStrip, priorityLabel } from "./action-view-model";
+import { actionTypeLabel, basisStatusLabel, buyerLanguageQuote, evidenceStrip, priorityLabel, TRANSITION_LABELS, workflowStatusLabel } from "./action-view-model";
 
-export function ActionDetailDrawer({ item, workspaceId, open, onClose }: { item: ActionReadModel | null; workspaceId: string; open: boolean; onClose: () => void }) {
+type HumanTransition = "approved" | "in_progress" | "completed" | "dismissed";
+
+export function ActionDetailDrawer({ item, open, onClose }: { item: ActionReadModel | null; workspaceId?: string; open: boolean; onClose: () => void }) {
   const [status, setStatus] = useState(item?.action.status);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -20,11 +22,15 @@ export function ActionDetailDrawer({ item, workspaceId, open, onClose }: { item:
   const quote = buyerLanguageQuote(item);
   const hasVariant = Boolean(action.current_state && action.suggested_change);
 
-  function transition(toStatus: "approved" | "dismissed") {
+  const basisLabel = basisStatusLabel(item);
+  // Layer 10: only transitions the server derived for this Action (live basis + role + plan). A local change disables further buttons until refresh.
+  const allowed = (currentStatus === action.status ? item.liveBasis?.allowedTransitions ?? [] : []) as HumanTransition[];
+
+  function transition(toStatus: HumanTransition) {
     setError(null);
     startTransition(() => {
-      void updateActionStatusAction({ workspaceId, actionId: action.id, toStatus })
-        .then(() => setStatus(toStatus))
+      void updateActionStatusAction({ actionId: action.id, toStatus })
+        .then((result) => { if (result.ok) setStatus(toStatus); else setError(result.message); })
         .catch(() => setError("This action could not be updated. Try again."));
     });
   }
@@ -67,13 +73,17 @@ export function ActionDetailDrawer({ item, workspaceId, open, onClose }: { item:
         <p style={{ margin: 0, fontSize: 13, color: "var(--color-ink-secondary)" }}>{action.summary}</p>
       </div>
       {error ? <p className="signal-error" role="alert">{error}</p> : null}
+      <div>
+        <div className="ui-section-label" style={{ marginBottom: 6 }}>Status</div>
+        <p style={{ margin: 0, fontSize: 13, color: "var(--color-ink-secondary)" }}>{workflowStatusLabel(currentStatus)}{basisLabel ? ` · ${basisLabel}` : ""}</p>
+        <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-ink-muted)" }}>Wanterest proposes; you carry out the work. Starting and completing here only records what you did.</p>
+      </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button className="dashboard-button dashboard-button-primary" type="button" disabled={isPending || currentStatus !== "proposed"} onClick={() => transition("approved")}>
-          {currentStatus === "approved" ? "Approved" : "Mark reviewed"}
-        </button>
-        <button className="dashboard-button dashboard-button-quiet" type="button" disabled={isPending || currentStatus !== "proposed"} onClick={() => transition("dismissed")}>
-          {currentStatus === "dismissed" ? "Dismissed" : "Dismiss"}
-        </button>
+        {allowed.map((toStatus) => (
+          <button key={toStatus} className={toStatus === "dismissed" ? "dashboard-button dashboard-button-quiet" : "dashboard-button dashboard-button-primary"} type="button" disabled={isPending} onClick={() => transition(toStatus)}>
+            {TRANSITION_LABELS[toStatus]}
+          </button>
+        ))}
       </div>
     </Drawer>
   );

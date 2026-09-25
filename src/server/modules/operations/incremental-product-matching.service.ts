@@ -7,6 +7,7 @@ import { createSupabaseServiceClient } from "@/server/providers/supabase/service
 import { provenanceFromTemplate } from "@/server/modules/ingestion/public-ingestion.service";
 import { getScanProduct, processScanCandidates } from "@/server/modules/onboarding/initial-scan.service";
 import { rebuildDemandIntelligenceForScan } from "@/server/modules/demand-intelligence/demand.orchestration";
+import { generateActionsForScan } from "@/server/modules/actions/action.orchestration";
 import { IncrementalProductMatchingRepository } from "./incremental-product-matching.repository";
 import {
   INCREMENTAL_MATCH_INTEREST_WINDOW_MS,
@@ -53,6 +54,8 @@ export type IncrementalMatchingDependencies = {
   loadProduct: (workspaceId: string, productId: string) => Promise<ProductRow>;
   processCandidates: typeof processScanCandidates;
   rebuildDemand: typeof rebuildDemandIntelligenceForScan;
+  /** Layer 10: the single gated Action writer, run after a successful incremental rebuild. */
+  generateActions: typeof generateActionsForScan;
   now: () => Date;
   maxProducts?: number;
 };
@@ -75,6 +78,9 @@ export type ProductIncrementalMatchResult = {
   evaluationIds: string[];
   signalIds: string[];
   demandRebuilt: boolean;
+  /** Layer 10: Actions created/superseded/expired by the gated pass after the rebuild (0 when gated off). */
+  actionsUpdated: number;
+  actionWarnings: string[];
   durationMs: number;
 };
 
@@ -101,6 +107,7 @@ function defaultDependencies(): IncrementalMatchingDependencies {
     loadProduct: getScanProduct,
     processCandidates: processScanCandidates,
     rebuildDemand: rebuildDemandIntelligenceForScan,
+    generateActions: generateActionsForScan,
     now: () => new Date(),
   };
 }
@@ -122,7 +129,7 @@ function baseProductResult(interest: InterestedProduct, refreshConversationCount
   return {
     workspaceId: interest.workspaceId, productId: interest.productId, jobRunId: null, status: "skipped", interestArtifactId: interest.interestArtifactId,
     refreshConversationCount, alreadyMatchedCount: 0, candidateCount: 0, overflowCount: 0, selectedCount: 0, evaluations: 0, signals: 0, qualifiedCount: 0,
-    evaluationIds: [], signalIds: [], demandRebuilt: false, durationMs: 0,
+    evaluationIds: [], signalIds: [], demandRebuilt: false, actionsUpdated: 0, actionWarnings: [], durationMs: 0,
   };
 }
 
@@ -198,6 +205,17 @@ async function matchOneProduct(input: {
           result.demandRebuilt = true;
         } catch (error) {
           result.reason = `demand_rebuild_skipped:${safeMessage(error)}`;
+        }
+        if (result.demandRebuilt) {
+          // Layer 10: same single, plan- and flag-gated Action writer the full scan uses.
+          // Non-fatal: an Action failure never fails the incremental match.
+          try {
+            const actions = await deps.generateActions({ product, traceId: input.traceId });
+            result.actionsUpdated = actions.actionsUpdated;
+            result.actionWarnings = actions.warnings.slice(0, 10).map((warning) => warning.slice(0, 240));
+          } catch (error) {
+            result.actionWarnings = [`actions_skipped:${safeMessage(error)}`];
+          }
         }
       }
     } else {

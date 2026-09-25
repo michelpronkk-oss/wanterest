@@ -1,10 +1,11 @@
 import { AppError } from "../../lib/errors";
 import { deterministicUuid, sha256Json } from "../ingestion/hash";
-import { jsonValueSchema, type Json } from "../../db/database.helpers";
+import { jsonValueSchema, type Json, type JsonObject } from "../../db/database.helpers";
 import type { ActionEventRow, ActionFeedbackRow, ActionRow, ActionVariantRow } from "../../db/database.helpers";
-import { actionBasisLifecycleStatus, actionFeedbackInputSchema, actionFeedbackTypeSchema, actionGenerationInputSchema, actionListFiltersSchema, actionStatusSchema, actionTypeSchema, businessHypothesisSchema, parseVariantContent, type ActionBasisLifecycleStatus, type ActionFeedbackType, type ActionGenerationInput, type ActionListFilters, type ActionStatus } from "./action.schemas";
+import { isConceptTriggerType, actionBasisLifecycleStatus, actionFeedbackInputSchema, actionFeedbackTypeSchema, actionGenerationInputSchema, actionListFiltersSchema, actionStatusSchema, actionTypeSchema, businessHypothesisSchema, parseVariantContent, type ActionBasisLifecycleStatus, type ActionFeedbackType, type ActionGenerationInput, type ActionListFilters, type ActionStatus } from "./action.schemas";
 import { ACTION_PRIORITY_FORMULA_VERSION, FixtureDemandActionEngine, FixtureDemandActionVariantEngine, type DemandActionEngine, type DemandActionVariantEngine } from "./action.engines";
-import type { ActionClient, ActionRepository } from "./action.repository";
+import type { ActionBasisGuardPayload, ActionClient, ActionRepository } from "./action.repository";
+import type { ActionLiveBasis } from "./concept-action.selector";
 
 export type ActionEntitlementPort = { can(workspaceId: string, capability: "actions_enabled"): Promise<boolean> };
 export type ActionAuditPort = { record(input: { workspaceId: string; actorUserId: string; action: string; targetId: string; metadata?: Record<string, unknown> }): Promise<void> };
@@ -36,17 +37,23 @@ export type ActionReadModel = {
   provenance: { actionEvidenceNodeId: string; triggerEvidenceNodeId: string; supportingEvidenceNodeIds: string[] };
   /** Layer 9B, read-only (see action.schemas.ts). Never rewrites the stored Action. */
   basisLifecycleStatus: ActionBasisLifecycleStatus;
+  /** Layer 10, derived and read-only: live basis safety + allowed human transitions (null until evaluated). */
+  liveBasis: ActionLiveBasis | null;
 };
 
 export type ActionGenerationOutput = { actions: ActionRow[]; suppressed: string[] };
 
+// Layer 10 lifecycle (docs/architecture.md Section 21). `expired` is system-only
+// and `superseded` of a concept Action only happens atomically inside
+// create_concept_action; in_progress is never auto-expired or auto-superseded.
 const transitions: Record<ActionStatus, readonly ActionStatus[]> = {
-  proposed: ["approved", "dismissed", "superseded"],
-  approved: ["in_progress", "dismissed", "superseded"],
-  in_progress: ["completed", "dismissed", "superseded"],
+  proposed: ["approved", "dismissed", "superseded", "expired"],
+  approved: ["in_progress", "dismissed", "superseded", "expired"],
+  in_progress: ["completed", "dismissed"],
   completed: [],
   dismissed: [],
   superseded: [],
+  expired: [],
 };
 
 function json(value: unknown): Json { return jsonValueSchema.parse(value); }
@@ -63,6 +70,8 @@ export class DemandActionService {
 
   async generateActions(input: ActionGenerationInput, engine: DemandActionEngine = new FixtureDemandActionEngine()): Promise<ActionGenerationOutput> {
     const parsed = actionGenerationInputSchema.parse(input);
+    // Layer 10: concept Actions are written only by ConceptActionService through the atomic RPC.
+    if (isConceptTriggerType(parsed.triggerType)) throw new AppError("VALIDATION_ERROR", "Concept Actions are generated only by the concept Action pass.");
     if (this.entitlements && !(await this.entitlements.can(parsed.workspaceId, "actions_enabled"))) {
       return { actions: [], suppressed: ["actions_enabled"] };
     }
@@ -177,26 +186,27 @@ export class DemandActionService {
     return variants;
   }
 
-  async transitionAction(input: { workspaceId: string; actionId: string; toStatus: ActionStatus; actorUserId?: string; actorKind?: "user" | "system" | "service"; metadata?: Record<string, unknown> }): Promise<ActionRow> {
+  /**
+   * Compare-and-set transition through the atomic `transition_action` RPC: the
+   * status change, the action_events row and (for users) the audit_log row are
+   * written in one transaction. Authorization, plan and basis revalidation are
+   * the caller's responsibility (ActionLifecycleService for humans; the concept
+   * Action pass for system expiry).
+   */
+  async transitionAction(input: { workspaceId: string; actionId: string; toStatus: ActionStatus; actorUserId?: string; actorKind?: "user" | "system" | "service"; metadata?: Record<string, unknown>; basisGuard?: ActionBasisGuardPayload | null; expectedFrom?: ActionStatus; traceId?: string }): Promise<ActionRow> {
     const parsedStatus = actionStatusSchema.safeParse(input.toStatus);
     if (!parsedStatus.success) throw new AppError("VALIDATION_ERROR", "Invalid Action status.");
     const action = await this.repository.getAction(input.workspaceId, input.actionId);
     if (!action) throw new AppError("NOT_FOUND", "Action was not found.");
     const currentStatus = actionStatusSchema.safeParse(action.status);
     if (!currentStatus.success) throw new AppError("INTERNAL_ERROR", "Stored Action status is invalid.");
-    if (!transitions[currentStatus.data].includes(parsedStatus.data)) throw new AppError("CONFLICT", `Action cannot transition from ${currentStatus.data} to ${parsedStatus.data}.`);
-    const timestamp = now();
-    const patch = {
-      status: parsedStatus.data,
-      approved_at: parsedStatus.data === "approved" ? timestamp : action.approved_at,
-      completed_at: parsedStatus.data === "completed" ? timestamp : action.completed_at,
-      dismissed_at: parsedStatus.data === "dismissed" ? timestamp : action.dismissed_at,
-    } as const;
-    const updated = await this.repository.updateAction(input.workspaceId, input.actionId, patch);
-    const eventType = parsedStatus.data === "in_progress" ? "started" : parsedStatus.data === "superseded" ? "superseded" : parsedStatus.data === "completed" ? "completed" : parsedStatus.data === "approved" ? "approved" : "dismissed";
-    await this.repository.createEvent({ workspace_id: input.workspaceId, product_id: action.product_id, action_id: action.id, actor_user_id: input.actorUserId ?? null, actor_kind: input.actorKind ?? "system", event_type: eventType, from_status: currentStatus.data, to_status: parsedStatus.data, metadata: json(input.metadata ?? {}) });
-    if (this.audit && input.actorUserId) await this.audit.record({ workspaceId: input.workspaceId, actorUserId: input.actorUserId, action: `action.${parsedStatus.data}`, targetId: action.id, metadata: input.metadata });
-    return updated;
+    const from = input.expectedFrom ?? currentStatus.data;
+    if (!transitions[from].includes(parsedStatus.data)) throw new AppError("CONFLICT", `Action cannot transition from ${from} to ${parsedStatus.data}.`);
+    return this.repository.transitionActionAtomic({
+      workspaceId: input.workspaceId, actionId: input.actionId, from, to: parsedStatus.data,
+      actorKind: input.actorKind ?? "system", actorUserId: input.actorUserId ?? null,
+      metadata: jsonValueSchema.parse(input.metadata ?? {}) as JsonObject, basisGuard: input.basisGuard ?? null, traceId: input.traceId,
+    });
   }
 
   async markStale(workspaceId: string, actionId: string, staleAt = now()): Promise<ActionRow> {
@@ -211,7 +221,8 @@ export class DemandActionService {
     const action = await this.repository.getAction(parsed.data.workspaceId, parsed.data.actionId);
     if (!action || action.product_id !== parsed.data.productId) throw new AppError("FORBIDDEN", "The Action does not belong to this workspace/product.");
     const feedback = await this.repository.createFeedback({ workspace_id: parsed.data.workspaceId, product_id: parsed.data.productId, action_id: parsed.data.actionId, actor_user_id: parsed.data.actorUserId, feedback_type: parsed.data.feedbackType, reason: parsed.data.reason ?? null, metadata: json(parsed.data.metadata) });
-    if (parsed.data.feedbackType === "approved" && action.status === "proposed") await this.transitionAction({ workspaceId: action.workspace_id, actionId: action.id, toStatus: "approved", actorUserId: parsed.data.actorUserId });
+    // Layer 10: feedback never approves a concept Action — approval must pass live basis revalidation (ActionLifecycleService).
+    if (parsed.data.feedbackType === "approved" && action.status === "proposed" && !isConceptTriggerType(action.trigger_type)) await this.transitionAction({ workspaceId: action.workspace_id, actionId: action.id, toStatus: "approved", actorUserId: parsed.data.actorUserId });
     if (parsed.data.feedbackType === "dismissed" && action.status === "proposed") await this.transitionAction({ workspaceId: action.workspace_id, actionId: action.id, toStatus: "dismissed", actorUserId: parsed.data.actorUserId });
     return feedback;
   }
@@ -260,7 +271,7 @@ export class DemandActionService {
     const supportingEvidenceNodeIds = evidenceContext && typeof evidenceContext === "object" && !Array.isArray(evidenceContext) && Array.isArray(evidenceContext.supportingEvidenceNodeIds)
       ? evidenceContext.supportingEvidenceNodeIds.filter((value): value is string => typeof value === "string")
       : [];
-    return { action, variants, feedback, events, evidenceContext, feedbackState, provenance: { actionEvidenceNodeId: action.evidence_node_id, triggerEvidenceNodeId: action.trigger_evidence_node_id, supportingEvidenceNodeIds }, basisLifecycleStatus: actionBasisLifecycleStatus(this.options?.downstreamIntelligenceV2Enabled ?? false) };
+    return { action, variants, feedback, events, evidenceContext, feedbackState, provenance: { actionEvidenceNodeId: action.evidence_node_id, triggerEvidenceNodeId: action.trigger_evidence_node_id, supportingEvidenceNodeIds }, basisLifecycleStatus: actionBasisLifecycleStatus(this.options?.downstreamIntelligenceV2Enabled ?? false), liveBasis: null };
   }
 
   static inputFingerprint(input: ActionGenerationInput, engineVersion: string): string {

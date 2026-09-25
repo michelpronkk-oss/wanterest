@@ -2,7 +2,8 @@ import { sha256Json } from "../ingestion/hash";
 import { DEMAND_GAP_V2_MIN_SCORED_EVIDENCE } from "./demand-gap-v2.policy";
 import { DEMAND_DRIFT_V2_MIN_WINDOW_EVIDENCE } from "./demand-drift-v2.policy";
 import type { DemandMapConcept, DemandMapResolvedMember } from "./demand-map.policy";
-import type { DriftSkipReason } from "./drift-comparability";
+import { planDriftComparison, type DriftSkipReason } from "./drift-comparability";
+import { windowMembers } from "./demand-drift-v2.policy";
 
 /**
  * Wanterest Layer 9C: persisted, append-only concept market/gap/drift state.
@@ -77,6 +78,34 @@ export function conceptDriftStateInputFingerprint(input: ConceptDriftFingerprint
     monitoringStartedAtBasis: input.monitoringStartedAtBasis,
     currentWindowMemberIds: [...input.currentWindowMemberIds].sort(),
     previousWindowMemberIds: [...input.previousWindowMemberIds].sort(),
+  });
+}
+
+/**
+ * The exact drift-state fingerprint materialization would compute for one
+ * concept/window at `now` — the same frozen window planning and member
+ * bucketing (planDriftComparison + windowMembers) and the same fingerprint
+ * function. Used by materialization itself and by Layer 10's materialization-lag
+ * guardrail, which must recognise a legitimately unchanged drift window (whose
+ * latest row still points at an older market state) without re-deriving drift
+ * with separate logic.
+ */
+export function expectedConceptDriftStateFingerprint(input: {
+  concept: Pick<DemandMapConcept, "identity"> & { clusters: Array<{ members: DemandMapResolvedMember[] }> };
+  clusteringVersion: string;
+  window: string;
+  now: Date;
+  monitoringStartedAt: string | null;
+}): string {
+  const plan = planDriftComparison({ window: input.window, now: input.now, monitoringStartedAt: input.monitoringStartedAt });
+  const members = input.concept.clusters.flatMap((cluster) => cluster.members);
+  const current = plan.comparable ? windowMembers(members, plan.previousPeriodEnd, plan.currentPeriodEnd) : null;
+  const previous = plan.comparable ? windowMembers(members, plan.previousPeriodStart, plan.previousPeriodEnd) : null;
+  return conceptDriftStateInputFingerprint({
+    clusteringVersion: input.clusteringVersion, anchorConceptKey: input.concept.identity.anchorConceptKey, window: input.window,
+    previousPeriodStart: plan.comparable ? plan.previousPeriodStart : null, previousPeriodEnd: plan.comparable ? plan.previousPeriodEnd : null,
+    currentPeriodStart: plan.comparable ? plan.previousPeriodEnd : null, currentPeriodEnd: plan.comparable ? plan.currentPeriodEnd : null,
+    monitoringStartedAtBasis: input.monitoringStartedAt, currentWindowMemberIds: current?.memberIds ?? [], previousWindowMemberIds: previous?.memberIds ?? [],
   });
 }
 

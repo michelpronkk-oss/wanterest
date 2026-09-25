@@ -13,7 +13,8 @@ import { SupabaseDemandClusteringRepository } from "../demand-intelligence/deman
 import { SupabaseConceptMarketStateRepository } from "../demand-intelligence/concept-market-state.repository";
 import { ConceptMarketStateService } from "../demand-intelligence/concept-market-state.service";
 import { actionInputFromDrift, actionInputFromGap, actionInputFromGeoMarket, actionInputFromSnapshot } from "./action.candidates";
-import { ConceptActionService } from "./concept-action.service";
+import { ConceptActionService, type ConceptActionPassResult } from "./concept-action.service";
+import type { ConceptActionInputPorts } from "./concept-action.inputs";
 import { GeographyService } from "../geography/geography.service";
 import { resolveWorkspaceCapabilities } from "../entitlements/plan-capabilities";
 import { SupabaseIntelligenceRepository } from "../intelligence/intelligence.repository";
@@ -23,6 +24,8 @@ import { DemandActionService } from "./action.service";
 export type ActionGenerationForScanResult = {
   actionsUpdated: number;
   warnings: string[];
+  /** Layer 10 concept pass detail (absent for the legacy/paused paths). */
+  conceptActions?: ConceptActionPassResult;
 };
 
 export async function generateActionsForScan(input: { product: ProductRow; traceId?: string }): Promise<ActionGenerationForScanResult> {
@@ -122,10 +125,11 @@ export async function generateActionsForScan(input: { product: ProductRow; trace
 }
 
 /**
- * Layer 9C: Actions generated only from a persisted, live-validated
- * concept_gap_states / concept_drift_states basis (ConceptActionService).
- * Legacy gap/drift/snapshot/geography triggers are never used here. Plan
- * gating already happened in the caller. See docs/architecture.md §18.
+ * Layer 10: the single concept-Action writer. Reconciles every canonical concept
+ * against the shared selector (expire / carry forward / atomically supersede /
+ * create) from the persisted, live-validated 9C basis only. Legacy
+ * gap/drift/snapshot/geography triggers are never used here. Plan gating already
+ * happened in the caller. See docs/architecture.md Section 21.
  */
 async function generateConceptActionsForScan(client: ReturnType<typeof createSupabaseServiceClient>, product: ProductRow, traceId?: string): Promise<ActionGenerationForScanResult> {
   const engineVersion = await ensureEngineVersion(client, {
@@ -136,14 +140,29 @@ async function generateConceptActionsForScan(client: ReturnType<typeof createSup
     config_hash: null,
     metadata: { workflow: "product-demand-scan", stage: "concept-actions", traceId: traceId ?? null },
   });
-  const conceptActionService = new ConceptActionService(
-    new SupabaseConceptMarketStateRepository(client),
-    new ConceptMarketStateService(new SupabaseConceptMarketStateRepository(client), new SupabaseDemandClusteringRepository(client)),
-    new DemandActionService(new SupabaseActionRepository(client), { can: async () => true }),
-    new SupabaseIntelligenceRepository(client),
-  );
-  const { attempts, actionsCreated } = await conceptActionService.generateEligibleActions({ product, now: new Date(), actionEngineVersionId: engineVersion.id });
-  const skipped = attempts.filter((attempt) => attempt.outcome === "skipped");
-  const warnings = skipped.map((attempt) => `${attempt.triggerType} action skipped for ${attempt.conceptKey}${attempt.window ? ` (${attempt.window})` : ""}: ${attempt.reason ?? "not_eligible"}.`);
-  return { actionsUpdated: actionsCreated, warnings };
+  const service = createConceptActionService(client);
+  const result = await service.reconcileAndGenerate({ product, now: new Date(), actionEngineVersionId: engineVersion.id, traceId });
+  const warnings = [
+    ...result.warnings,
+    ...result.attempts
+      .filter((attempt) => attempt.outcome === "failed" || attempt.outcome === "deferred" || attempt.outcome === "pending")
+      .map((attempt) => `Concept action ${attempt.outcome} for ${attempt.conceptKey}: ${attempt.reason ?? "unknown"}.`),
+  ];
+  return { actionsUpdated: result.actionsCreated + result.actionsSuperseded + result.actionsExpired, warnings, conceptActions: result };
+}
+
+/** Layer 10 wiring shared by the Action pass and the authorized read/transition paths (server-only, service role). */
+export function createConceptActionService(client: ReturnType<typeof createSupabaseServiceClient>): ConceptActionService {
+  return new ConceptActionService(new SupabaseConceptMarketStateRepository(client), new SupabaseActionRepository(client), conceptActionInputPorts(client));
+}
+
+export function conceptActionInputPorts(client: ReturnType<typeof createSupabaseServiceClient>): Omit<ConceptActionInputPorts, "states"> {
+  const marketStateService = new ConceptMarketStateService(new SupabaseConceptMarketStateRepository(client), new SupabaseDemandClusteringRepository(client));
+  const actions = new SupabaseActionRepository(client);
+  const demand = new SupabaseDemandRepository(client);
+  return {
+    liveConcepts: (workspaceId, productId, now) => marketStateService.liveConcepts(workspaceId, productId, now),
+    positioning: (product) => actions.getPositioningSnapshot(product),
+    monitoringStartedAt: (workspaceId, productId) => demand.getEarliestSnapshotTimestamp(workspaceId, productId),
+  };
 }

@@ -2934,7 +2934,11 @@ policy is the constant `human_required_v1`.
   `trigger_type in ('concept_gap','concept_drift') and status in ('proposed','approved',
   'in_progress')`. `trigger_type` is deliberately not part of the slot: Gap and Drift compete for
   one semantic Action per concept.
-- Creation idempotency is unchanged: `action:{product}:{trigger_type}:{trigger_id}:{engine}`.
+- Legacy creation idempotency is unchanged (`action:{product}:{trigger_type}:{trigger_id}:{engine}`).
+  Concept Actions append the proposal fingerprint
+  (`action:{product}:{trigger_type}:{basis_state_id}:{engine}:{proposal_fingerprint}`): still
+  replay-stable, and a changed proposal on an unchanged basis row can never resolve to the Action
+  it replaces.
 
 ### Safe bases
 

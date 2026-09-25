@@ -1,6 +1,6 @@
 import type { ActionReadModel } from "@/server/modules/actions/action.service";
 import { themeLabel } from "./dashboard-utils";
-import { actionTypeLabel, buyerLanguageQuote, evidenceStrip, priorityLabel } from "./action-view-model";
+import { actionTypeLabel, basisStatusLabel, buyerLanguageQuote, evidenceStrip, priorityLabel, workflowStatusLabel } from "./action-view-model";
 
 export function ActionCard({ item, onOpen }: { item: ActionReadModel; onOpen: (id: string) => void }) {
   const { action } = item;
@@ -8,6 +8,7 @@ export function ActionCard({ item, onOpen }: { item: ActionReadModel; onOpen: (i
   const strip = evidenceStrip(item);
   const quote = buyerLanguageQuote(item);
   const hasVariant = Boolean(action.current_state && action.suggested_change);
+  const basisLabel = basisStatusLabel(item);
 
   function handleKeyDown(event: React.KeyboardEvent) {
     if (event.key === "Enter" || event.key === " ") {
@@ -23,6 +24,7 @@ export function ActionCard({ item, onOpen }: { item: ActionReadModel; onOpen: (i
         <span style={{ fontWeight: 500, color: "var(--color-ink-faint)", textTransform: "none", letterSpacing: 0 }}>Based on {themeLabel(action.trigger_concept_key ?? action.trigger_type)}</span>
       </div>
       <p className="action-card-title">{action.title}</p>
+      <p style={{ margin: 0, fontSize: 12, color: "var(--color-ink-muted)" }}>{workflowStatusLabel(action.status)}{basisLabel ? ` · ${basisLabel}` : ""}</p>
       <p className="action-card-why"><strong style={{ color: "var(--color-ink)" }}>Why now — </strong>{action.why}</p>
       {hasVariant ? (
         <div className="action-diff">

@@ -95,4 +95,17 @@ describe("Phase 5 actions", () => {
     expect(first.items.map((item) => item.item_id)).not.toContain(dismissed.id);
     expect(first.provenance.sourceEvidenceNodeIds).toContain(triggerEvidenceNodeId);
   });
+
+  it("Layer 10: expired Actions are never digest content (even before stale_at is visible)", async () => {
+    const repository = new InMemoryActionRepository();
+    const service = new DemandActionService(repository);
+    const [kept] = (await service.generateActions(input())).actions;
+    const [expired] = (await service.generateActions(input({ triggerId: "88888888-8888-4888-8888-888888888888", triggerEvidenceNodeId: "99999999-9999-4999-8999-999999999999" }))).actions;
+    repository.actions.set(expired.id, { ...repository.actions.get(expired.id)!, status: "expired", stale_at: null });
+    const digests = new DigestService(repository, new InMemoryDigestSource());
+    const built = await digests.buildDigest({ workspaceId, productId, periodStart: "2020-01-01T00:00:00.000Z", periodEnd: "2100-01-01T00:00:00.000Z", digestType: "weekly", renderVersion: "render-v1" });
+    const ids = built.items.map((item) => item.item_id);
+    expect(ids).toContain(kept.id);
+    expect(ids).not.toContain(expired.id);
+  });
 });
