@@ -3359,3 +3359,194 @@ Wanterest Layer 10 currently provides a production-proven, provenance-backed, li
 proposal system with human-controlled manual execution semantics. This verdict does not mean that
 live paid Action creation or human execution has occurred in production; those cases remain pending
 exactly as listed above. No Layer 11 is started.
+
+## 23. Layer 11 — Experiments / Measurement (`experiment_measurement_v1`)
+
+Architecture decision (approved after one review and one final amendment). Layer 11 answers "what
+happened after a verified Action, and how strong is the evidence that the Action contributed?"
+without collapsing *after* into *because of*. It builds on the Layer 10 Action lifecycle and never
+feeds back into Layer 9/10 (Layer 12 territory).
+
+### Vocabulary
+
+- **Experiment** — a pre-registered measurement of one human intervention (one Layer 10 Action)
+  under a frozen contract. The existing `experiments` row carries the frozen **measurement plan**
+  (no separate plan table).
+- **Observation** — a measured value: `experiment_events` for controlled splits (first-party public
+  event API), the new append-only `experiment_observations` for before/after, manual and internal
+  context values.
+- **Outcome** — an append-only `experiment_results` revision computed deterministically from the
+  frozen plan and the current non-superseded observations.
+
+Five statements are kept distinct: the Action was executed; a metric changed after execution; the
+change is associated with the Action; a randomized comparison met a pre-registered threshold; there
+is not enough evidence. No Layer 11 v1 output claims causality, validation or significance.
+
+### Designs
+
+New measurement-v1 experiments are either `controlled_split` (concurrent randomized control and
+treatment through the existing deterministic assignment + public event machinery) or
+`before_after` (one metric, frozen baseline window before treatment, measurement window after
+treatment, no control). A baseline-free "observational experiment" is not allowed; `descriptive` is
+an attribution/read label only (legacy results, or inconclusive outcomes with an observed value).
+
+### Measurement plan (frozen)
+
+`measurement_policy_version = experiment_measurement_v1`, `evidence_design`, one `primary_metric`,
+`metric_source` (`experiment_events` | `manual`), `metric_label`/`metric_unit` (for
+`manual_custom`), `measurement_window` (`7d`|`30d`|`90d`, the existing demand windows),
+`washout_days` (0–14), `success_criterion` (`direction` increase|decrease, `measure`
+absolute_delta|relative_delta, human-supplied `minimumEffect > 0`, and for controlled splits a
+human-supplied `minSamplePerArm ≥ 1`; no system defaults), the structured hypothesis
+(`experiment_hypothesis_v1`: actionId, proposalFingerprint, clusteringVersion, anchorConceptKey,
+actionType, targetKey, intervention, primaryMetric, expectedDirection, measurementWindow,
+washoutDays, successCriterion, hypothesisVersion — the sentence is derived from it),
+`treatment_action_id` + `treatment_proposal_fingerprint`, and `measurement_plan_fingerprint`. A DB
+trigger freezes every plan field once the experiment leaves `draft`; a materially different plan
+means cancel before treatment and create a new experiment.
+
+### Metrics
+
+One pre-registered primary metric. Controlled: the six first-party conversion keys through
+`experiment_events`. Before/after: the same six keys as manual count/rate values, or
+`manual_custom` with a required label and unit (count|rate|currency). Manual metrics are labelled
+`manual` everywhere and are capped at `before_after_association`. Wanterest market intelligence
+(evidence count, share, gap, drift) is recorded only as `wanterest_internal` **context** and never
+drives the outcome. No connector metrics exist in v1.
+
+### Baseline and window
+
+Before/after baseline window: the L days ending at the UTC day boundary of registration
+(`[floor_day(registered_at) − L, floor_day(registered_at))`), L = measurement window; the manual
+baseline observation for exactly that window must exist before `draft → ready`
+(`mark_experiment_ready` enforces it). Controlled splits need no baseline — the concurrent control
+arm is the comparator. Measurement window: `[treatment_started_at + washout, + L)`, UTC, frozen at
+treatment start. A manual measurement aggregate is accepted only after the window closes, within a
+7-day grace period (the window itself never moves). A zero baseline for a relative criterion or a
+zero denominator yields `inconclusive(insufficient_baseline | zero_denominator)`; no minimum manual
+sample is invented.
+
+### Action integration
+
+- Experiments are created only from an **approved** Action, under Layer 10 revalidation (RLS-
+  visible Action, membership, role, `actions_enabled`, `experiments_max`, canonical selector
+  settled with a candidate, `proposalCurrent`, matching proposal fingerprint, basis guard current).
+- **One canonical start path.** Every `approved → in_progress` still goes through Layer 10's
+  `transition_action`, now with `p_experiment_starts_allowed boolean default false` (the app passes
+  `EXPERIMENT_MEASUREMENT_ENABLED`), stored as the transaction-local setting
+  `wanterest.experiment_starts_allowed`. The trigger `actions_reconcile_experiments` (AFTER UPDATE
+  OF status on `actions`, v1 experiments only) locks the Action's non-terminal experiment and
+  branches: none → normal start; `draft` → canceled `treatment_started_before_registration`;
+  `ready` + allowed → `running` with `treatment_started_at = started_at = transaction timestamp`
+  (equal to the Action's `started` event); `ready` + not allowed → canceled
+  `measurement_disabled_at_treatment`; `running`/`paused` → `experiment_state_conflict`, whole start
+  rolls back. The default is closed.
+- **Close reconciliation (same trigger, same transaction, every writer incl. `create_concept_action`
+  supersession):** proposed/approved → dismissed/expired/superseded cancels a draft/ready experiment
+  (`action_closed_before_treatment`, never rebound); in_progress → dismissed cancels the running
+  experiment (`treatment_abandoned`, outcome `invalid`); in_progress → completed does not complete
+  the experiment. A recommendation that goes stale after treatment cannot close an in_progress
+  Action (Layer 10), so the running experiment stays tied to the original Action.
+- **Treatment integrity:** `unconfirmed` (Action in progress), `confirmed` (Action completed with the
+  required `liveSince` completion metadata, validated in `transition_action` to lie within
+  `[treatment_started_at, measurement_end)`), `verified_exposure` (controlled treatment-arm
+  exposure). Attribution is capped by integrity; `approved` never counts as treated.
+- **One experiment per Action:** partial unique index (one non-terminal) plus the BEFORE INSERT
+  trigger `experiments_enforce_action_rule`, which locks the Action, requires `approved`, and allows
+  a new experiment only if every earlier one never reached treatment and was closed by the user as
+  `canceled_before_treatment`. Once any experiment reached treatment, the Action can never get
+  another.
+
+### Controlled event semantics
+
+Events are tied to the subject's one assignment by a composite FK
+`(workspace_id, experiment_id, assignment_id, variant_id, subject_key_hash)`; external-id
+idempotency is unchanged. v1 events are accepted only while `running` and with `occurred_at` in
+`[treatment_started_at, measurement_end)`. Per arm, within the frozen window, computed in SQL:
+denominator = distinct subjects with an exposure; numerator = those subjects with ≥ 1 primary-metric
+conversion in the same variant at or after their exposure. Duplicates count once; conversions
+without or before exposure count zero. Any window day without exposure makes the data `partial`.
+
+### Outcome (`experiment_outcome_v1`, deterministic, no LLM)
+
+Outcomes: `positive | negative | neutral | inconclusive | invalid`, separate from lifecycle.
+Invalid/inconclusive rules apply first (treatment abandoned → invalid; missing/insufficient
+baseline, missing observation after grace, window interrupted, sample below the pre-registered
+minimum, treatment unconfirmed or not live for the full window, zero denominator, effect not
+computable, partial/missing data → inconclusive with every applicable reason). Otherwise effect =
+observed − baseline (or relative), controlled = treatment rate − control rate (or relative):
+expected direction and `|effect| ≥ minimumEffect` → positive; opposite direction and
+`|effect| ≥ minimumEffect` → negative; else neutral. Attribution: `none`, `descriptive`,
+`before_after_association` (frozen baseline + complete measurement + confirmed treatment; manual
+maximum), `controlled_comparison` (randomized, complete, both arms ≥ `minSamplePerArm`, verified
+exposure). Controlled copy: "Observed randomized comparison met / did not meet the pre-registered
+effect threshold." plus "Not statistically tested."; per-arm exposed/converted/rate are always
+shown. No p-values, significance, confidence intervals, "winner", "lift" or causal wording.
+
+### Lifecycle, pause, flag
+
+Lifecycle stays `draft → ready → running → completed | canceled` (`paused` kept for legacy only;
+v1 `running → paused` raises `experiment_pause_not_supported`; stopping early = cancel →
+`inconclusive(window_interrupted)`). `closed_reason`: `canceled_before_treatment`,
+`treatment_started_before_registration`, `measurement_disabled_at_treatment`,
+`action_closed_before_treatment`, `treatment_abandoned`, `window_elapsed`, `stopped_early`.
+`EXPERIMENT_MEASUREMENT_ENABLED` (default off) blocks only **new work**: create, draft edits, mark
+ready, and starting a ready experiment's treatment (canceled `measurement_disabled_at_treatment`;
+the Action still starts). It never blocks **draining**: public events and manual measurement
+observations for already-running experiments, and the measurement pass, keep working, so a
+rollback cannot turn a collection gap into a positive/negative (gaps → inconclusive).
+
+### Writes, audit, history, provenance
+
+All writes go through service-role-only RPCs (`create_experiment`, `update_experiment_draft`,
+`add_experiment_variant`, `mark_experiment_ready`, `cancel_experiment`,
+`record_experiment_observation`, `issue_experiment_token`, `revoke_experiment_token`,
+`finalize_experiment_outcome`) after the Layer 10 authorization pattern (RLS load → derive scope →
+membership → role). User mutations write `audit_log` atomically; idempotent replays write nothing.
+Every experiment status change writes one append-only `experiment_transitions` row (system actor for
+automatic changes). Creation is atomic with usage (`experiment_created`), evidence node,
+`derived_from_action` provenance, audit and the creation transition (idempotency key
+`experiment:{action_id}:{measurement_plan_fingerprint}`; no compensating delete). Observations are
+append-only with `supersedes_observation_id` corrections; results are append-only revisions keyed
+by `input_fingerprint` with a `current_result_id` pointer. Provenance: result → `measures_experiment`
+→ experiment; result → `uses_observation` → observation; context observation → `context_from` →
+concept state.
+
+### Scheduler, bounds, isolation
+
+One daily Trigger task, `experiment-measurement-pass`, is the single automatic writer: at most 50
+due experiments per run (oldest `measurement_end` first; controlled splits finalize one day after
+the window to absorb the existing 24-hour event lag, before/after after the observation arrives or
+the 7-day grace expires; canceled-after-treatment experiments get their invalid/inconclusive
+revision), one context snapshot, outcome append only on a new fingerprint, finalization. It runs
+regardless of the flag (draining), makes no provider or LLM calls. Bounds: 200 observations and 100
+result revisions per experiment, 100 listed experiments, SQL-side controlled aggregates. Layer 11
+never feeds outcomes into query planning, candidate selection, qualification, Gap/Drift scoring,
+Action eligibility/ranking/thresholds, source selection or retrieval. Outcomes are
+workspace/product-private.
+
+### Security fixes carried by Layer 11
+
+Every experiment mutation command previously trusted a browser `workspaceId` with the service role;
+all are replaced by the Layer 10 authorization pattern (viewer read-only; member/admin/owner
+mutate). `revokePublicToken` mutated before checking the workspace; revoke is now scoped inside the
+same UPDATE. Service-role list queries are scoped through RLS-resolved context and capped.
+
+### Production proof limitations and completion
+
+Production is Free (`experiments_max = 0`, `actions_enabled = false`), with 0 Actions and 0
+experiments; no live experiment is fabricated. Structural proof: migration-list precheck, migration,
+schema/trigger/grant/RLS verification, deployment at one SHA, security rejection, Free-plan gating,
+the natural scheduled pass doing zero work with zero writes, zero-write counts, no provider/LLM side
+effects, frozen systems intact, relabelled UI confirmed. Live experiment creation, before/after and
+controlled outcomes, manual observation and treatment integrity remain
+UNREACHABLE_BEHIND_PLAN_GATE / AWAITING ELIGIBLE PAID REAL CASE.
+
+**LAYER 11 COMPLETE means:** secure experiment lifecycle (IDOR class and token bug fixed);
+pre-registered immutable plan; baseline frozen before treatment; one canonical Action start path
+with atomic experiment start; Action-close reconciliation in the database; treatment integrity;
+observation provenance with manual labelling and caps; deterministic outcomes with inconclusive and
+invalid first-class; capped attribution and no unjustified causal/statistical wording; bounded,
+idempotent single-writer measurement pass; append-only results, observations and transitions;
+audit; Layer 12 isolation; migration, code and tests green (including real Postgres); structural
+production proof recorded — without requiring natural production outcomes.
