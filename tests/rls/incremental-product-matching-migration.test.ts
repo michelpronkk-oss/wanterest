@@ -3,8 +3,10 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const migrationName = "20261014000000_incremental_product_matching_v1.sql";
-const migration = readFileSync(path.resolve(process.cwd(), "supabase/migrations", migrationName), "utf8");
-const stage2c = readFileSync(path.resolve(process.cwd(), "supabase/migrations/20261013000000_market_partition_refresh_v1.sql"), "utf8");
+// Normalize line endings so the contract holds on Windows (core.autocrlf) checkouts too.
+const read = (file: string) => readFileSync(path.resolve(process.cwd(), "supabase/migrations", file), "utf8").replace(/\r\n/g, "\n");
+const migration = read(migrationName);
+const stage2c = read("20261013000000_market_partition_refresh_v1.sql");
 
 function jobTypesFrom(sql: string): string[] {
   const match = sql.match(/job_runs_job_type_check check \(job_type in \(([\s\S]*?)\)\);/);
