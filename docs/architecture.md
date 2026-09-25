@@ -2679,3 +2679,119 @@ WORKSPACE LIVE CASE is UNAVAILABLE (single production workspace).
 **GENERIC PRODUCT/SIGNAL ARCHITECTURE: PROVEN.**
 **CONCEPT ACTION EXECUTION PATH: UNREACHABLE_BEHIND_PLAN_GATE.**
 **CONCEPT_ACTIONS_ENABLED: FALSE / NOT ENABLED IN PRODUCTION.**
+
+## 19. Layer 9D — Lifecycle-aware Geography (`GEOGRAPHY_V2_ENABLED`)
+
+Architecture decision (approved 25 Sep 2026). Answers "where is CURRENT, lifecycle-valid demand
+coming from?" using the exact same canonical currentness already proven in Stage 2G/9A/9B/9C — no
+second definition of current is introduced.
+
+### Core principle
+
+Geography is a **facet** over demand evidence, never part of concept/cluster/Gap/Drift/market-state
+identity. `pricing` remains one concept; US/UK/Canada are breakdowns of it, not separate concepts
+(`pricing_us` never exists). The existing geo evidence model is unchanged: explicit-only extraction
+(`provider_country`, `structured_metadata`, `review_region`, `public_profile_location`,
+`explicit_thread_context`), never inferred from language/writing style/names/provider/product
+identity; `language_only` stays non-reliable; unknown stays unknown; source/provider never defines
+location (no `github = US`-style shortcut). `reliableLocation`/`regionReliableLocation` (extracted
+from `geography.service.ts`, unchanged logic) become the one shared reliability predicate for both
+the legacy and the v2 model.
+
+### Currentness
+
+Current Geography is derived, read-time, from `DemandCurrentnessService.getCurrentness()` +
+`buildDemandMap()` — the identical call 9A's Map and 9C's materialization already make. A
+conversation contributes to current Geography only through a Stage 2G membership where
+`contributes === true`; superseded evaluations, invalidated/retracted signals, and stale evidence
+(>90 days) contribute zero, by construction (they never appear in `buildDemandMap`'s `current`
+bucket). No new lifecycle rule is written.
+
+### Product-wide dedupe (Guardrail 1)
+
+The same conversation may legitimately evidence more than one concept. Concept-scoped Geography
+dedupes by `conversation_id` **within** that concept only (a conversation may legitimately appear
+again under a different concept's own Geography). Product-wide Geography dedupes by
+`conversation_id` **across all current concepts first** — the member set is built once, uniquely
+keyed by conversation id, before any geography aggregation runs; product-wide totals are never the
+sum of per-concept totals. Invariant: product-wide geographic evidence count <= canonical distinct
+current conversations for the product; a concept's geographic evidence count <= that concept's
+`activeEvidenceCount`.
+
+### No current-geo trend (Guardrail 2)
+
+Current Geography is a point-in-time distribution. The legacy current-vs-previous-window trend
+calculation is not reused for it and no rising/cooling/growth/decline claim is produced from the v2
+current model. Legacy trend remains available only inside the clearly labelled historical,
+not-lifecycle-filtered section. True lifecycle-aware Geographic Drift (frozen period-over-period
+geography, mirroring 9C's frozen drift boundaries) is explicitly deferred to a future stage.
+
+### Read model
+
+A new `CurrentGeographyReadModel` (product-wide by default, optional `anchorConceptKey` scope):
+`generatedAt`, `clusteringVersion`, `currentnessPolicyVersion`, `anchorConceptKey`,
+`currentEvidenceCount`, `knownLocationCount`, `unknownLocationCount`, `reliableCoveragePercent`,
+`countries[]` (`countryCode`, `countryName`, `currentEvidenceCount`,
+`percentageOfAllCurrentEvidence`, `percentageOfKnownLocationEvidence`, gated `regions[]`,
+`representativeSignals[]` sourced only from current contributing members), `diagnostics`. Deliberate
+naming departs from the legacy `qualifiedSignalCount` vocabulary (which could imply all
+historically-qualified evidence counts) in favor of explicit `current*` terms. Unknown location
+evidence is always part of the truthful denominator: `unknownGeoSignalCount` is reported and
+`reliableCoveragePercent` is computed over known-only and labelled as such; a percentage of *all*
+current evidence is exposed separately. No city-level precision is exposed (no reliable source
+supports it).
+
+### Historical Geography
+
+The existing legacy raw-window `GeographyService`/`aggregateGeoIntelligence` path is unchanged and
+stays available, labelled "historical / not lifecycle-filtered," reusing the same
+`HistoricalEvidenceSection` collapsible pattern 9A already uses for the Map. Current and historical
+counts are never blended; historical data never fills an empty current section. With zero current
+contributing evidence (Linear today), current Geography honestly reports an empty state ("No current
+geographic demand confirmed") rather than presenting legacy numbers as current.
+
+### Deferred (not built in 9D)
+
+Geographic Drift (frozen historical geography snapshots would be needed first); geographic Gap
+segmentation (regional opportunity claims); any new Geography Action trigger (`concept_geo`,
+`concept_gap_geo`, or equivalent) — legacy geography-based Action generation stays paused exactly as
+9B left it; Geography as descriptive context on an already-eligible 9C concept Action (future work,
+not 9D); a concept-selector UI (backend/read-model capability only in 9D).
+
+### Persistence
+
+None. No migration, no new table, no new evidence nodes solely for Geography. Current Geography
+derives entirely from already-persisted canonical evidence (Stage 2G memberships +
+`source_items.metadata.geo`), matching the strong default from the architecture review — schema is
+not added merely because 9C introduced persisted state.
+
+### Provenance
+
+Read-time traversable, not stored as new edges: concept/product -> Stage 2G membership -> evaluation
+-> conversation -> primary source item -> `source_items.metadata.geo` -> explicit location basis.
+Every `representativeSignals` entry resolves back to a real conversation/source id from the current
+contributing member set only.
+
+### Tenancy, performance, genericity
+
+Every v2 read is scoped by `workspace_id`/`product_id`; an optional `anchorConceptKey` filter applies
+inside that scope only, never across products/workspaces. Reuses the already-batched
+conversation/source-item bulk loads (`intelligence.listConversations`/`listSourceItems`, `.in(...)`
+queries, no N+1); the currentness read is bounded exactly as 9A/9C already proved. No provider or
+LLM calls. No product-name/source-provider branch anywhere in the new code; concept identity and
+geography resolution both remain generic by construction (opaque `anchorConceptKey`, opaque
+`countryCode`).
+
+### Feature flag
+
+`GEOGRAPHY_V2_ENABLED`, default false/absent, Vercel/read-side only (the Geography page's server
+component; no Trigger task executes this read path). Flag off: existing Geography behavior
+byte-identical. Flag on: current lifecycle-aware Geography renders first, legacy Geography renders
+below as clearly labelled historical context. Rollback: flag false, no schema/data to revert.
+
+### Layer 9 completion
+
+A successfully production-proven 9D closes Layer 9: every user-facing current-demand claim (Map,
+Gap/Drift, Actions, Geography) now traces back to the one canonical `DemandCurrentnessService`
+definition. Geographic Drift/Gap segmentation remain deliberately-scoped future enhancements on top
+of an already-correct foundation, not outstanding Layer-9 correctness gaps.
