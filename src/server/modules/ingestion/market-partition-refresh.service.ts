@@ -16,7 +16,11 @@ import {
   buildMarketPartitionRefreshRequest,
   marketPartitionRefreshDeferralAt,
   marketPartitionRefreshFailureBackoffAt,
-  marketPartitionRefreshNextDueAtAfterSuccess,
+  adaptiveMarketPartitionCadence,
+  isMarketPartitionRefreshSource,
+  marketPartitionRefreshNextDueAtAdaptive,
+  remainingDailyRefreshBudget,
+  type AdaptiveCadenceDecision,
 } from "@/server/modules/ingestion/market-partition-refresh.policy";
 
 /**
@@ -74,6 +78,8 @@ export type StoredRefreshJobResult = {
     conversationIds?: string[];
     normalizedSourceItemIds?: string[];
   };
+  /** Stage 2F: the adaptive cadence decision taken on success. */
+  cadence?: AdaptiveCadenceDecision & { nextDueAt: string };
 };
 
 function zeroOutcome(status: MarketPartitionRefreshOutcome["status"], jobRunId: string | null, reason?: string): MarketPartitionRefreshOutcome {
@@ -86,7 +92,7 @@ async function getJobRun(client: Client, idempotencyKey: string): Promise<JobRun
   return data;
 }
 
-async function createOrResumeJobRun(client: Client, input: { idempotencyKey: string; traceId: string }): Promise<JobRunRow> {
+async function createOrResumeJobRun(client: Client, input: { idempotencyKey: string; traceId: string; sourceKey: string; partitionKey: string }): Promise<JobRunRow> {
   const existing = await getJobRun(client, input.idempotencyKey);
   if (existing) {
     const { data, error } = await client.from("job_runs").update({ status: "running", attempt_count: existing.attempt_count + 1, started_at: new Date().toISOString(), completed_at: null, error_code: null, error_details: null }).eq("id", existing.id).select("*").single();
@@ -98,7 +104,8 @@ async function createOrResumeJobRun(client: Client, input: { idempotencyKey: str
     workspace_id: null,
     product_id: null,
     idempotency_key: input.idempotencyKey,
-    input_reference: {},
+    // Source tagged at creation so the Stage 2F daily budget counts in-flight refreshes too.
+    input_reference: { sourceKey: input.sourceKey, partitionKey: input.partitionKey },
     status: "running",
     attempt_count: 1,
     started_at: new Date().toISOString(),
@@ -167,7 +174,7 @@ export async function refreshMarketPartition(input: { partitionId: string; trace
     return zeroOutcome("failed", null, "partition_not_found");
   }
 
-  const job = await createOrResumeJobRun(client, { idempotencyKey, traceId: input.traceId });
+  const job = await createOrResumeJobRun(client, { idempotencyKey, traceId: input.traceId, sourceKey: partition.source_key, partitionKey: partition.partition_key });
 
   const built = buildMarketPartitionRefreshRequest({ sourceKey: partition.source_key, retrievalSpec: partition.retrieval_spec as never });
   if (!built.ok) {
@@ -208,6 +215,9 @@ export async function refreshMarketPartition(input: { partitionId: string; trace
     return zeroOutcome("failed", job.id, "discovery_threw");
   }
   const durationMs = Date.now() - startedAt;
+  // Handoff follow-up #3: attempt time stays the claim time (`now`), but
+  // success/failure/next-due are anchored to when the work actually finished.
+  const finishedAt = new Date().toISOString();
 
   const telemetry = ingestionResult.queryTelemetry[0];
   const rawItems = telemetry?.rawItems ?? 0;
@@ -230,7 +240,7 @@ export async function refreshMarketPartition(input: { partitionId: string; trace
   // ingestion or refresh-policy problem.
   if (ingestionResult.errorCode === "CONFLICT") {
     await completeJobRun(client, job.id, "failed", storedResult, "Source control reported the source as temporarily unavailable.");
-    await repository.recordDeferral({ partitionId: input.partitionId, leaseToken, nextDueAt: marketPartitionRefreshDeferralAt(now) });
+    await repository.recordDeferral({ partitionId: input.partitionId, leaseToken, nextDueAt: marketPartitionRefreshDeferralAt(finishedAt) });
     return { status: "deferred", jobRunId: job.id, rawItems, rawNewItems, normalizedItems, conversations, executionStatus, reason: "source_control_conflict", partitionKey: partition.partition_key, sourceKey: partition.source_key, estimatedCostUsd: ingestionResult.estimatedCost, durationMs };
   }
 
@@ -240,19 +250,30 @@ export async function refreshMarketPartition(input: { partitionId: string; trace
     if (consecutiveFailures >= MARKET_PARTITION_REFRESH_MAX_CONSECUTIVE_FAILURES) {
       await repository.disable({ partitionId: input.partitionId, leaseToken, reason: "repeated_failure" });
     } else {
-      await repository.recordFailure({ partitionId: input.partitionId, leaseToken, now, nextDueAt: marketPartitionRefreshFailureBackoffAt(now, stateBefore.consecutive_failures), consecutiveFailures, jobRunId: job.id });
+      await repository.recordFailure({ partitionId: input.partitionId, leaseToken, now: finishedAt, nextDueAt: marketPartitionRefreshFailureBackoffAt(finishedAt, stateBefore.consecutive_failures), consecutiveFailures, jobRunId: job.id });
     }
     return { status: "failed", jobRunId: job.id, rawItems, rawNewItems, normalizedItems, conversations, executionStatus, reason: ingestionResult.errorCode ?? "provider_error", partitionKey: partition.partition_key, sourceKey: partition.source_key, estimatedCostUsd: ingestionResult.estimatedCost, durationMs };
   }
 
   // Success, including zero results - a query that legitimately found
   // nothing new is not a failure.
-  await completeJobRun(client, job.id, "succeeded", storedResult);
-  const nextDueAt = marketPartitionRefreshNextDueAtAfterSuccess(input.partitionId, now);
-  await repository.recordSuccess({ partitionId: input.partitionId, leaseToken, now, nextDueAt, jobRunId: job.id });
-
-  const interestSince = new Date(Date.parse(now) - MARKET_PARTITION_REFRESH_INTEREST_WINDOW_MS).toISOString();
+  const interestSince = new Date(Date.parse(finishedAt) - MARKET_PARTITION_REFRESH_INTEREST_WINDOW_MS).toISOString();
   const distinctInterestCount = await repository.countDistinctInterests(partition.partition_key, interestSince);
+  // Stage 2F: adaptive cadence (bounded per source) instead of a fixed 24h.
+  const decision = adaptiveMarketPartitionCadence({
+    sourceKey: partition.source_key as Parameters<typeof adaptiveMarketPartitionCadence>[0]["sourceKey"],
+    rawItems,
+    rawNewItems,
+    consecutiveZeroNewBefore: stateBefore.consecutive_zero_new ?? 0,
+    distinctInterestCount,
+  });
+  const nextDueAt = marketPartitionRefreshNextDueAtAdaptive(input.partitionId, finishedAt, decision.cadenceMs);
+  storedResult.cadence = { ...decision, nextDueAt };
+  await completeJobRun(client, job.id, "succeeded", storedResult);
+  await repository.recordSuccess({
+    partitionId: input.partitionId, leaseToken, now: finishedAt, nextDueAt, jobRunId: job.id,
+    cadence: { consecutiveZeroNew: decision.consecutiveZeroNew, rawItems, rawNewItems, cadenceSeconds: Math.round(decision.cadenceMs / 1000), policyVersion: decision.policyVersion },
+  });
 
   return {
     status: "succeeded",
@@ -285,8 +306,23 @@ export async function ensureMarketPartitionRefreshState(): Promise<{ ensured: nu
   return { ensured: missing.length };
 }
 
+/**
+ * Stage 2F: due selection bounded by the per-tick limit AND the rolling 24h
+ * per-source hard cap, so no amount of due partitions can exceed the budget.
+ */
 export async function listDueMarketPartitionRefreshes(limit: number): Promise<DueMarketPartitionCandidate[]> {
   const client = createSupabaseServiceClient();
   const repository = new MarketPartitionRefreshRepository(client);
-  return repository.listDuePartitions(new Date().toISOString(), limit);
+  const now = new Date();
+  const used = await repository.countRefreshJobsBySourceSince(new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString());
+  const remaining: Record<string, number> = remainingDailyRefreshBudget(used);
+  const candidates = await repository.listDuePartitions(now.toISOString(), Math.max(limit * 4, limit));
+  const selected: DueMarketPartitionCandidate[] = [];
+  for (const candidate of candidates) {
+    if (!isMarketPartitionRefreshSource(candidate.sourceKey) || (remaining[candidate.sourceKey] ?? 0) <= 0) continue;
+    remaining[candidate.sourceKey] -= 1;
+    selected.push(candidate);
+    if (selected.length >= limit) break;
+  }
+  return selected;
 }

@@ -13,9 +13,11 @@ function jobTypesFrom(sql: string): string[] {
 }
 
 describe("Incremental Product Matching V1 migration contract (Wanterest 1B Stage 2D)", () => {
-  it("sorts after every existing migration (append-only history)", () => {
+  it("sorts after every migration that preceded it (append-only history)", () => {
     const names = readdirSync(path.resolve(process.cwd(), "supabase/migrations")).filter((name) => name.endsWith(".sql")).sort();
-    expect(names.at(-1)).toBe(migrationName);
+    const index = names.indexOf(migrationName);
+    expect(index).toBeGreaterThan(names.indexOf("20261013000000_market_partition_refresh_v1.sql"));
+    expect(names.slice(0, index).every((name) => name < migrationName)).toBe(true);
   });
 
   it("adds only a nullable, object-typed provenance column to the RLS-protected workspace artifact table", () => {

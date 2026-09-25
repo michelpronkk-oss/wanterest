@@ -94,6 +94,8 @@ const recordFailure = vi.fn();
 const recordDeferral = vi.fn();
 const disable = vi.fn();
 const countDistinctInterests = vi.fn(async () => 0);
+const countRefreshJobsBySourceSince = vi.fn(async (): Promise<Record<string, number>> => ({}));
+const listDuePartitions = vi.fn(async (): Promise<Array<{ partitionId: string; sourceKey: string; partitionKey: string; nextDueAt: string }>> => []);
 
 vi.mock("@/server/modules/ingestion/market-partition-refresh.repository", () => ({
   MarketPartitionRefreshRepository: vi.fn().mockImplementation(() => ({
@@ -105,17 +107,19 @@ vi.mock("@/server/modules/ingestion/market-partition-refresh.repository", () => 
     recordDeferral,
     disable,
     countDistinctInterests,
+    countRefreshJobsBySourceSince,
+    listDuePartitions,
   })),
 }));
 
 const ingestPublicPartitionMock = vi.fn();
 vi.mock("@/server/modules/ingestion/public-ingestion.service", () => ({ ingestPublicPartition: ingestPublicPartitionMock }));
 
-const { refreshMarketPartition } = await import("../../src/server/modules/ingestion/market-partition-refresh.service");
+const { refreshMarketPartition, listDueMarketPartitionRefreshes } = await import("../../src/server/modules/ingestion/market-partition-refresh.service");
 
 const PARTITION_ID = "33333333-3333-4333-8333-333333333333";
 
-function baseState(overrides: Partial<{ next_due_at: string; consecutive_failures: number }> = {}) {
+function baseState(overrides: Partial<{ next_due_at: string; consecutive_failures: number; consecutive_zero_new: number }> = {}) {
   return {
     partition_id: PARTITION_ID,
     source_key: "github",
@@ -362,5 +366,63 @@ describe("refreshMarketPartition", () => {
 
     // Only job_runs (global, workspace/product null) was touched by this test's fake client.
     expect(jobRuns.every((row) => row.workspace_id === null && row.product_id === null)).toBe(true);
+  });
+
+  it("Stage 2F: anchors success to completion time, stores the adaptive cadence, and tags the job's source", async () => {
+    const partition = validPartition();
+    partition.partition_key = await computeRealPartitionKey(partition.source_key, partition.retrieval_spec as Record<string, unknown>);
+    getStateRow.mockResolvedValueOnce(baseState({ consecutive_zero_new: 1 }));
+    claim.mockResolvedValueOnce(baseState());
+    getMarketPartitionById.mockResolvedValueOnce(partition);
+    ingestPublicPartitionMock.mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return {
+        sourceKey: "github", rawSourceItemIds: ["r1", "r2"], normalizedSourceItemIds: ["n1", "n2"], conversationIds: ["c1", "c2"], provenance: [], rawInserted: 0, itemsReturned: 2, queryCount: 1,
+        diagnostics: [], rateLimitRemaining: null, estimatedCost: null,
+        queryTelemetry: [{ queryPlanId: "x", source: "github", family: "fallback", surface: "unknown", concepts: [], competitorSpecific: false, pagesRequested: 1, pagesCompleted: 1, cursorContinuationCount: 0, continuationStoppedReason: "no_cursor", executionStatus: "completed_with_results", rawItems: 2, normalizedItems: 2, uniqueConversations: 2, duplicateCount: 0, estimatedCostUsd: null, marketPartitionKey: partition.partition_key, marketPartitionIneligibleReason: null, rawNewItems: 0 }],
+      };
+    });
+    const before = Date.now();
+    await refreshMarketPartition({ partitionId: PARTITION_ID, traceId: "t1" });
+
+    const attemptAt = Date.parse(claim.mock.calls[0][2] as string);
+    const success = recordSuccess.mock.calls[0][0];
+    expect(Date.parse(success.now)).toBeGreaterThanOrEqual(attemptAt + 15);
+    expect(Date.parse(success.now)).toBeGreaterThanOrEqual(before);
+    // Second consecutive zero-new refresh on GitHub: 12h base x 2^2 = 48h (+ jitter).
+    expect(success.cadence).toEqual({ consecutiveZeroNew: 2, rawItems: 2, rawNewItems: 0, cadenceSeconds: 48 * 3600, policyVersion: "market_partition_cadence_v2" });
+    const dueDelayMs = Date.parse(success.nextDueAt) - Date.parse(success.now);
+    expect(dueDelayMs).toBeGreaterThanOrEqual(48 * 3600_000);
+    expect(dueDelayMs).toBeLessThan(49 * 3600_000);
+    const stored = jobRuns[0].input_reference as { cadence: { cadenceMs: number; factors: { zeroNewBackoff: number } } };
+    expect(stored.cadence.cadenceMs).toBe(48 * 3600_000);
+    expect(stored.cadence.factors.zeroNewBackoff).toBe(4);
+  });
+
+  it("Stage 2F: tags a new refresh job with its source at creation so in-flight work counts against the daily cap", async () => {
+    const partition = validPartition();
+    partition.partition_key = await computeRealPartitionKey(partition.source_key, partition.retrieval_spec as Record<string, unknown>);
+    getStateRow.mockResolvedValueOnce(baseState());
+    claim.mockResolvedValueOnce(baseState());
+    getMarketPartitionById.mockResolvedValueOnce(partition);
+    let referenceDuringIngestion: unknown;
+    ingestPublicPartitionMock.mockImplementationOnce(async () => {
+      referenceDuringIngestion = jobRuns[0]?.input_reference;
+      throw new Error("boom");
+    });
+    await refreshMarketPartition({ partitionId: PARTITION_ID, traceId: "t1" });
+    expect(referenceDuringIngestion).toEqual({ sourceKey: "github", partitionKey: partition.partition_key });
+  });
+
+  it("Stage 2F: due selection never exceeds the rolling 24h per-source hard cap", async () => {
+    countRefreshJobsBySourceSince.mockResolvedValueOnce({ github: 119, "stack-exchange": 60 });
+    listDuePartitions.mockResolvedValueOnce([
+      { partitionId: "g1", sourceKey: "github", partitionKey: "k1", nextDueAt: "2026-01-01T00:00:00.000Z" },
+      { partitionId: "s1", sourceKey: "stack-exchange", partitionKey: "k2", nextDueAt: "2026-01-01T00:00:00.000Z" },
+      { partitionId: "g2", sourceKey: "github", partitionKey: "k3", nextDueAt: "2026-01-01T00:00:00.000Z" },
+      { partitionId: "x1", sourceKey: "x", partitionKey: "k4", nextDueAt: "2026-01-01T00:00:00.000Z" },
+    ]);
+    const due = await listDueMarketPartitionRefreshes(5);
+    expect(due.map((candidate) => candidate.partitionId)).toEqual(["g1"]);
   });
 });

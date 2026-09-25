@@ -28,6 +28,7 @@ export type MarketPartitionRefreshStateRow = {
   last_success_at: string | null;
   last_failure_at: string | null;
   consecutive_failures: number;
+  consecutive_zero_new?: number;
   last_job_run_id: string | null;
 };
 
@@ -204,7 +205,7 @@ export class MarketPartitionRefreshRepository {
     if (error) throw persistenceError(error, "state update");
   }
 
-  async recordSuccess(input: { partitionId: string; leaseToken: string; now: string; nextDueAt: string; jobRunId: string }): Promise<void> {
+  async recordSuccess(input: { partitionId: string; leaseToken: string; now: string; nextDueAt: string; jobRunId: string; cadence?: { consecutiveZeroNew: number; rawItems: number; rawNewItems: number; cadenceSeconds: number; policyVersion: string } }): Promise<void> {
     await this.update(input.partitionId, input.leaseToken, {
       last_success_at: input.now,
       consecutive_failures: 0,
@@ -212,7 +213,27 @@ export class MarketPartitionRefreshRepository {
       next_due_at: input.nextDueAt,
       lease_token: null,
       lease_expires_at: null,
+      ...(input.cadence ? {
+        consecutive_zero_new: input.cadence.consecutiveZeroNew,
+        last_raw_items: input.cadence.rawItems,
+        last_raw_new_items: input.cadence.rawNewItems,
+        last_cadence_seconds: input.cadence.cadenceSeconds,
+        cadence_policy_version: input.cadence.policyVersion,
+      } : {}),
     });
+  }
+
+  /** Stage 2F daily budget: refresh job runs created since `sinceIso`, per source (source recorded on job creation). */
+  async countRefreshJobsBySourceSince(sinceIso: string): Promise<Record<string, number>> {
+    const { data, error } = await (this.client as unknown as { from(table: "job_runs"): Query }).from("job_runs").select("input_reference").eq("job_type", "refresh-market-partition").gte("created_at", sinceIso).limit(10_000);
+    if (error) throw persistenceError(error, "daily budget lookup");
+    const counts: Record<string, number> = {};
+    for (const row of data ?? []) {
+      const reference = row.input_reference && typeof row.input_reference === "object" ? row.input_reference as Record<string, unknown> : {};
+      const sourceKey = typeof reference.sourceKey === "string" ? reference.sourceKey : "unknown";
+      counts[sourceKey] = (counts[sourceKey] ?? 0) + 1;
+    }
+    return counts;
   }
 
   async recordFailure(input: { partitionId: string; leaseToken: string; now: string; nextDueAt: string; consecutiveFailures: number; jobRunId: string | null }): Promise<void> {

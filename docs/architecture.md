@@ -1700,6 +1700,7 @@ reused unchanged by every stage below.
 | 2C | `market_partition_refresh_state` + `refresh-market-partition` / `market-partition-refresh-scheduler` (flag `MARKET_PARTITION_REFRESH_ENABLED`); GitHub + Stack Exchange only, 24h + deterministic jitter, lease/claim RPC, job-run idempotency per due slot. | PRODUCTION_PROVEN |
 | 2D | Incremental product matching (below). | PRODUCTION_PROVEN (flag on) |
 | 2E | Read-first freshness v2: evidence vs interpretation freshness (below). | see 2E gate |
+| 2F | Adaptive cadence `market_partition_cadence_v2` with hard per-source daily caps (below). | see 2F gate |
 
 ### Stage 2D — Incremental product matching
 
@@ -1810,3 +1811,30 @@ Fix (`src/server/modules/demand-intelligence/drift-comparability.ts`):
 
 Expected production state: no drift is shown until a product has two full windows of observed
 history (7d: ~14 days after first intelligence). That is correct - no fabricated trends.
+
+### Stage 2F — Adaptive cadence (`market_partition_cadence_v2`)
+
+Replaces the fixed 24h + jitter success cadence of Stage 2C with a bounded, deterministic policy
+(`adaptiveMarketPartitionCadence`, `market-partition-refresh.policy.ts`):
+
+- Per-source bounds: GitHub base 12h (min 6h, max 7d); Stack Exchange base 24h (min 12h, max 7d).
+- Novelty (raw new / raw items) >= 0.5 halves the interval, >= 0.2 multiplies it by 0.75.
+- Consecutive zero-new refreshes back off x2, x4, x8, x16 (capped); any new item resets the streak.
+- Three or more interested products multiply the interval by 0.75.
+- Plan entitlement is intentionally not an input: a public partition is retrieved once for everyone.
+  Plan-aware priority belongs to product matching/refresh requests, not duplicated retrieval.
+- Next due = completion time + cadence + the existing deterministic per-partition jitter.
+
+Hard ceilings: the scheduler selects at most 5 partitions per hourly tick AND never more than a
+rolling-24h per-source cap (GitHub 120, Stack Exchange 60) counted from `refresh-market-partition`
+job runs, which are tagged with their source at creation so in-flight work counts. X and YouTube stay
+outside automatic refresh. Kill switch: `MARKET_PARTITION_REFRESH_ENABLED=false` (and 2D's
+`INCREMENTAL_PRODUCT_MATCHING_ENABLED` for downstream fanout).
+
+Timestamp semantics (handoff follow-up #3): `last_attempt_at` stays the claim time; `last_success_at`
+/ `last_failure_at` and every next-due computation use the time the work actually finished.
+
+Migration `20261015000000_market_partition_adaptive_cadence_v1.sql` adds global, service-role-only
+state: `consecutive_zero_new`, `last_raw_items`, `last_raw_new_items`, `last_cadence_seconds`,
+`cadence_policy_version`, plus a partial index for the daily-budget lookup. Each refresh job's stored
+result records the full cadence decision (factors, clamp, next due) for audit.

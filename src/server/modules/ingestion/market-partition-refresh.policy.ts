@@ -94,3 +94,80 @@ export function buildMarketPartitionRefreshRequest(input: { sourceKey: string; r
   });
   return { ok: true, request };
 }
+
+/**
+ * Wanterest 1B Stage 2F: adaptive cadence. Pure and deterministic.
+ *
+ * The next refresh interval adapts to what the partition actually produced,
+ * bounded per source by hard minimum/maximum intervals:
+ * - novelty (raw new items / raw items) shortens the interval when a
+ *   partition keeps producing new public evidence;
+ * - consecutive zero-new refreshes back off exponentially (capped);
+ * - broader product interest mildly shortens the interval.
+ * Plan entitlement deliberately does NOT affect global cadence: the same
+ * public partition is retrieved once for everyone, never per plan.
+ */
+export const MARKET_PARTITION_CADENCE_POLICY_VERSION = "market_partition_cadence_v2" as const;
+
+const HOUR_MS = 60 * 60 * 1000;
+export const MARKET_PARTITION_CADENCE_BY_SOURCE: Readonly<Record<MarketPartitionRefreshSourceKey, { baseMs: number; minMs: number; maxMs: number }>> = {
+  github: { baseMs: 12 * HOUR_MS, minMs: 6 * HOUR_MS, maxMs: 7 * 24 * HOUR_MS },
+  "stack-exchange": { baseMs: 24 * HOUR_MS, minMs: 12 * HOUR_MS, maxMs: 7 * 24 * HOUR_MS },
+};
+
+/** Hard global ceilings: refresh jobs per source per rolling 24h, regardless of how many partitions are due. */
+export const MARKET_PARTITION_REFRESH_DAILY_CAP: Readonly<Record<MarketPartitionRefreshSourceKey, number>> = {
+  github: 120,
+  "stack-exchange": 60,
+};
+
+const MAX_ZERO_NEW_BACKOFF_STEPS = 4;
+const BROAD_INTEREST_PRODUCTS = 3;
+
+export type AdaptiveCadenceInput = {
+  sourceKey: MarketPartitionRefreshSourceKey;
+  rawItems: number;
+  rawNewItems: number;
+  consecutiveZeroNewBefore: number;
+  distinctInterestCount: number;
+};
+
+export type AdaptiveCadenceDecision = {
+  policyVersion: typeof MARKET_PARTITION_CADENCE_POLICY_VERSION;
+  cadenceMs: number;
+  consecutiveZeroNew: number;
+  novelty: number;
+  factors: { novelty: number; zeroNewBackoff: number; interest: number };
+  clamped: "min" | "max" | null;
+};
+
+export function adaptiveMarketPartitionCadence(input: AdaptiveCadenceInput): AdaptiveCadenceDecision {
+  const bounds = MARKET_PARTITION_CADENCE_BY_SOURCE[input.sourceKey];
+  const rawItems = Math.max(0, Math.floor(input.rawItems));
+  const rawNewItems = Math.min(rawItems, Math.max(0, Math.floor(input.rawNewItems)));
+  const novelty = rawItems ? rawNewItems / rawItems : 0;
+  const consecutiveZeroNew = rawNewItems === 0 ? Math.max(0, Math.floor(input.consecutiveZeroNewBefore)) + 1 : 0;
+  const noveltyFactor = rawNewItems === 0 ? 1 : novelty >= 0.5 ? 0.5 : novelty >= 0.2 ? 0.75 : 1;
+  const zeroNewBackoff = consecutiveZeroNew ? 2 ** Math.min(consecutiveZeroNew, MAX_ZERO_NEW_BACKOFF_STEPS) : 1;
+  const interestFactor = input.distinctInterestCount >= BROAD_INTEREST_PRODUCTS ? 0.75 : 1;
+  const raw = bounds.baseMs * noveltyFactor * zeroNewBackoff * interestFactor;
+  const cadenceMs = Math.round(Math.min(bounds.maxMs, Math.max(bounds.minMs, raw)));
+  return {
+    policyVersion: MARKET_PARTITION_CADENCE_POLICY_VERSION,
+    cadenceMs,
+    consecutiveZeroNew,
+    novelty: Number(novelty.toFixed(4)),
+    factors: { novelty: noveltyFactor, zeroNewBackoff, interest: interestFactor },
+    clamped: raw < bounds.minMs ? "min" : raw > bounds.maxMs ? "max" : null,
+  };
+}
+
+export function marketPartitionRefreshNextDueAtAdaptive(partitionId: string, completedAtIso: string, cadenceMs: number): string {
+  const jitterMs = marketPartitionRefreshJitterMinutes(partitionId) * 60_000;
+  return new Date(Date.parse(completedAtIso) + cadenceMs + jitterMs).toISOString();
+}
+
+/** Remaining refresh budget per source for the rolling 24h window. */
+export function remainingDailyRefreshBudget(usedBySource: Record<string, number>): Record<MarketPartitionRefreshSourceKey, number> {
+  return Object.fromEntries(MARKET_PARTITION_REFRESH_SOURCE_KEYS.map((sourceKey) => [sourceKey, Math.max(0, MARKET_PARTITION_REFRESH_DAILY_CAP[sourceKey] - (usedBySource[sourceKey] ?? 0))])) as Record<MarketPartitionRefreshSourceKey, number>;
+}
