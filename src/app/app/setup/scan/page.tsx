@@ -57,9 +57,9 @@ export default async function ScanSetupPage() {
           ) : null}
         </div>
 
-        <OnboardingScanStatus workspaceId={workspace.id} productId={product.id} hasScan={scan !== null} initialStatus={status} />
+        <Link className="onboarding-cta" href="/app">Open my dashboard now →</Link>
 
-        <Link className="onboarding-cta" href="/app">Go to my dashboard →</Link>
+        <OnboardingScanStatus workspaceId={workspace.id} productId={product.id} hasScan={scan !== null} initialStatus={status} />
       </div>
     </OnboardingShell>
   );

@@ -14,9 +14,11 @@ import { formatPercent, themeLabel } from "@/components/dashboard/dashboard-util
 import { getProductScanState } from "@/components/dashboard/scan-state";
 import { scanResultEmptyBody } from "@/components/dashboard/scan-status.view-model";
 import { ScanStatusBanner } from "@/components/dashboard/scan-status-banner";
+import { ReadFirstIntelligenceStatus } from "@/components/dashboard/read-first-intelligence-status";
 import { RescanRetryLink } from "@/components/dashboard/rescan-retry-link";
 import { getMonitoringOverview } from "@/server/modules/monitoring/monitoring.read-model";
 import { UpgradeTrigger } from "@/components/dashboard/upgrade-surface";
+import { readProductIntelligenceCommand } from "@/server/modules/operations/read-first-intelligence.command";
 
 const HOME_PIPELINE = [
   { label: "Understand", hint: "Wanterest reads your product and market." },
@@ -56,13 +58,15 @@ export default async function HomePage() {
     );
   }
 
-  const [signals, actionsResult, driftResult, digestsResult, monitoring] = await Promise.all([
-    listSignalsQuery(workspace.id, product.id, { limit: 50 }),
+  const [readFirst, actionsResult, driftResult, digestsResult, monitoring] = await Promise.all([
+    readProductIntelligenceCommand(workspace.id, product.id).catch(() => null),
     listActionsQuery(workspace.id, product.id, { status: "proposed" }).catch(() => []),
     getDemandDriftQuery(workspace.id, product.id).catch(() => null),
     listDigestsQuery(workspace.id, product.id).catch(() => []),
     getMonitoringOverview(workspace.id, product.id).catch(() => null),
   ]);
+
+  const signals = readFirst?.intelligence.signals ?? await listSignalsQuery(workspace.id, product.id, { limit: 50 });
 
   const scanState = await getProductScanState(workspace.id, product.id, signals.length > 0);
 
@@ -98,7 +102,8 @@ export default async function HomePage() {
         <p className="dashboard-subtitle">{signals.length} qualified signal{signals.length === 1 ? "" : "s"} for {product.name}.</p>
       </header>
 
-      <ScanStatusBanner state={scanState} workspaceId={workspace.id} productId={product.id} />
+      {readFirst ? <ReadFirstIntelligenceStatus freshness={readFirst.freshness} refresh={readFirst.refresh} intelligence={readFirst.intelligence} /> : null}
+      {scanState.kind !== "running" || !readFirst ? <ScanStatusBanner state={scanState} workspaceId={workspace.id} productId={product.id} /> : null}
 
       {monitoring?.plan === "free" ? (
         <div className="home-section monitoring-summary" aria-label="Automatic monitoring">

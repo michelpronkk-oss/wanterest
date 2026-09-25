@@ -45,6 +45,8 @@ const serverEnvSchema = publicEnvSchema.extend({
   DISCOVERY_COVERAGE_V1_MAX_SOURCES: optionalServerPositiveInt,
   DISCOVERY_COVERAGE_V1_MAX_QUERIES: optionalServerPositiveInt,
   DISCOVERY_COVERAGE_V1_MAX_CANDIDATES: optionalServerPositiveInt,
+  READ_FIRST_FRESH_HOURS: optionalServerPositiveInt,
+  READ_FIRST_RECENT_HOURS: optionalServerPositiveInt,
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
@@ -104,6 +106,8 @@ export function getServerEnv(): ServerEnv {
     DISCOVERY_COVERAGE_V1_MAX_SOURCES: process.env.DISCOVERY_COVERAGE_V1_MAX_SOURCES,
     DISCOVERY_COVERAGE_V1_MAX_QUERIES: process.env.DISCOVERY_COVERAGE_V1_MAX_QUERIES,
     DISCOVERY_COVERAGE_V1_MAX_CANDIDATES: process.env.DISCOVERY_COVERAGE_V1_MAX_CANDIDATES,
+    READ_FIRST_FRESH_HOURS: process.env.READ_FIRST_FRESH_HOURS,
+    READ_FIRST_RECENT_HOURS: process.env.READ_FIRST_RECENT_HOURS,
   });
 }
 

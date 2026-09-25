@@ -13,3 +13,7 @@ export * from "./source-health";
 export * from "./source-health-aggregation";
 export * from "./source-health-read-model";
 export * from "./source-health-alerts";
+export * from "./read-first-intelligence.config";
+export * from "./read-first-intelligence.schemas";
+export { ReadFirstIntelligenceService } from "./read-first-intelligence.service";
+export type { ReadFirstDependencies, ReadFirstIntelligenceRepository, ReadFirstPersistedState, ReadFirstProductIntelligence, ReadFirstProductKey, ReadFirstRefreshEnqueuer } from "./read-first-intelligence.service";

@@ -11,9 +11,11 @@ import { ACTIVE_PRODUCT_COOKIE } from "@/server/modules/dashboard/dashboard.cont
 import { setSignalLifecycleCommand } from "@/server/modules/intelligence/commands";
 import { transitionActionCommand } from "@/server/modules/actions/commands";
 import { requestProductDemandScanCommand } from "@/server/modules/operations/product-demand-scan.command";
+import { readProductIntelligenceCommand } from "@/server/modules/operations/read-first-intelligence.command";
 import { getInitialScanState } from "@/server/modules/onboarding";
 import { scanResultSummarySchema, type ScanResultSummary } from "@/server/modules/operations/product-demand-scan.schemas";
 import type { ProductDemandScanHandle, ScanProgress } from "@/server/modules/operations/product-demand-scan.schemas";
+import type { ReadFirstProductIntelligence } from "@/server/modules/operations/read-first-intelligence.service";
 import { toPublicError } from "@/server/lib/errors";
 import { redactMessage } from "@/server/lib/http";
 import { getTraceId } from "@/server/lib/request-context";
@@ -191,6 +193,22 @@ export async function triggerRescanAction(input: unknown): Promise<RescanActionR
     }
     return { ok: false, error: publicError.message, ...(upgrade ? { upgrade } : {}), ...(traceId ? { traceId } : {}) };
   }
+}
+
+const productIntelligenceReadSchema = z.object({
+  workspaceId: workspaceIdSchema,
+  productId: productIdSchema,
+});
+
+/**
+ * Read-first product intelligence entry point. The read completes from
+ * persisted state; any due refresh is dispatched through the existing scan
+ * command and is never awaited for discovery or downstream processing.
+ */
+export async function getProductIntelligenceAction(input: unknown): Promise<ReadFirstProductIntelligence> {
+  const parsed = productIntelligenceReadSchema.safeParse(input);
+  if (!parsed.success) throw new Error("The product intelligence request is invalid.");
+  return readProductIntelligenceCommand(parsed.data.workspaceId, parsed.data.productId, { enqueueRefresh: true });
 }
 
 const scanProgressActionSchema = z.object({
