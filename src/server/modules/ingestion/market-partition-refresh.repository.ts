@@ -187,7 +187,16 @@ export class MarketPartitionRefreshRepository {
       p_lease_seconds: leaseSeconds,
     });
     if (error) throw persistenceError(error, "claim");
-    return (data as MarketPartitionRefreshStateRow | null) ?? null;
+    // The RPC returns a composite row. When nothing qualifies (not due,
+    // leased, disabled) PostgREST serializes the empty composite as an
+    // object whose fields are all null rather than as JSON null, so only a
+    // row carrying a partition_id is a real claim.
+    const claimedPartitionId = (data as Row | null | undefined)?.partition_id;
+    if (typeof claimedPartitionId !== "string" || !claimedPartitionId) return null;
+    if (claimedPartitionId !== partitionId) {
+      throw new Error(`Market partition refresh claim invariant violated: requested ${partitionId} but claimed ${claimedPartitionId}`);
+    }
+    return data as MarketPartitionRefreshStateRow;
   }
 
   private async update(partitionId: string, leaseToken: string, patch: Row): Promise<void> {
