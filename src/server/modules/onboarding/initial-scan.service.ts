@@ -9,11 +9,22 @@ import { AppError, toPublicError } from "@/server/lib/errors";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
 import { SourceControlService, SupabaseSourceControlStore } from "@/server/modules/operations/source-control.service";
 import { SupabaseIngestionRepository } from "@/server/modules/ingestion/ingestion.repository";
-import { IngestionService } from "@/server/modules/ingestion/ingestion.service";
 import { createSourceRegistry } from "@/server/providers/source/registry";
 import { getRedditRuntimeConfig } from "@/server/providers/source/reddit/reddit.auth";
 import { getXRuntimeConfig } from "@/server/providers/source/x/x.auth";
-import { getInternalXDiscoveryOverride, getInternalXQueryBudgetOverride, logInternalXDiscoveryOverride } from "@/server/providers/source/x/x.internal";
+import { getInternalXQueryBudgetOverride } from "@/server/providers/source/x/x.internal";
+import {
+  ingestPublicPartition,
+  objectValue,
+  persistG2Resolutions,
+  provenanceForReplay,
+  safeSummary,
+  uniqueProvenance,
+  type ScanDiscoveryProvenance,
+  type SourceExecutionBatchResult,
+  type SourceExecutionInput,
+  type SourceExecutionResult,
+} from "@/server/modules/ingestion/public-ingestion.service";
 import { SupabaseIntelligenceRepository } from "@/server/modules/intelligence/intelligence.repository";
 import { IntelligenceService } from "@/server/modules/intelligence/intelligence.service";
 import { qualificationFromEvidence, readBusinessClassification, readDemandProfileV2, readDemandProfileV2RoutingModel } from "@/server/modules/intelligence";
@@ -31,18 +42,17 @@ import { FixtureConversationAnalysisEngine, FixtureProductMatchingEngine } from 
 import { ensureEngineVersion } from "@/server/modules/observability/engine.repository";
 import { getTraceId } from "@/server/lib/request-context";
 import { buildSourceRoutingPlan, selectExecutableSourceRoutes, type SourceRoutingPlan, type SourceRoutingHealthStatus } from "@/server/modules/operations/source-routing.index";
-import { buildQueryPlan, githubPainCompilationFromMetadata, githubPainRetrievalDiagnostics, toSourceDiscoveryRequest, type GithubPainQueryCompilation, type QueryPlan } from "@/server/modules/operations/query-planning.index";
+import { buildQueryPlan, githubPainRetrievalDiagnostics, toSourceDiscoveryRequest, type GithubPainQueryCompilation, type QueryPlan } from "@/server/modules/operations/query-planning.index";
 import { getDiscoveryCoverageConfig } from "@/server/modules/operations/discovery-coverage.config";
-import { alignGithubFeatureEvidence, alignGithubJobEvidence, alignGithubPainEvidence, classifyGithubRetrievalQuality, emptyGithubJobEvidenceAlignmentDiagnostics, githubJobEvidenceMismatchReason, type GithubFeatureEvidenceAlignmentDiagnostics, type GithubJobEvidenceAlignmentDiagnostics, type GithubPainEvidenceAlignmentDiagnostics, type GithubPainEvidenceAlignmentQuery, type GithubRetrievalPrecisionDiagnostics } from "@/server/modules/operations/github-retrieval-quality";
+import { alignGithubFeatureEvidence, alignGithubJobEvidence, alignGithubPainEvidence, classifyGithubRetrievalQuality, emptyGithubJobEvidenceAlignmentDiagnostics, githubJobEvidenceMismatchReason, type GithubFeatureEvidenceAlignmentDiagnostics, type GithubJobEvidenceAlignmentDiagnostics, type GithubPainEvidenceAlignmentDiagnostics, type GithubRetrievalPrecisionDiagnostics } from "@/server/modules/operations/github-retrieval-quality";
 import { emptyHackerNewsPainLaunchFilterDiagnostics, hackerNewsPainLaunchMismatchReason, titleMatchesExplicitShowHnLaunch, type HackerNewsPainLaunchFilterDiagnostics } from "@/server/modules/operations/hacker-news-retrieval-quality";
-import { alignXCompetitorPainEvidence, emptyXCompetitorEvidenceAlignmentDiagnostics, xCompetitorMissingCompilerProvenanceReason, xCompetitorPainCompilationFromMetadata, type XCompetitorEvidenceAlignmentDiagnostics, type XCompetitorPainRetrievalProvenance } from "@/server/modules/operations/x-retrieval-quality";
-import type { QueryYieldExecutionStatus, QueryYieldStopReason, QueryYieldTelemetry } from "@/server/modules/operations/query-yield-telemetry";
-import { aggregateQueryYield, boundedCursorContinuationCount, finalizeQueryYieldTelemetry, reconcileQueryYieldTelemetry, sourceHealthStatus } from "@/server/modules/operations/query-yield-telemetry";
+import { alignXCompetitorPainEvidence, emptyXCompetitorEvidenceAlignmentDiagnostics, xCompetitorMissingCompilerProvenanceReason, type XCompetitorEvidenceAlignmentDiagnostics } from "@/server/modules/operations/x-retrieval-quality";
+import type { QueryYieldTelemetry } from "@/server/modules/operations/query-yield-telemetry";
+import { aggregateQueryYield, finalizeQueryYieldTelemetry, reconcileQueryYieldTelemetry, sourceHealthStatus } from "@/server/modules/operations/query-yield-telemetry";
 import { QueryYieldRepository } from "@/server/modules/operations/query-yield.repository";
 import { aggregateSourceHealthV1, sourceHealthV1Schema, type SourceHealthPlannedQuery, type SourceHealthPlannedSource, type SourceHealthQueryArtifact } from "@/server/modules/operations/source-health-aggregation";
 import { sourceDiscoveryRequestSchema, type SourceDiscoveryRequest } from "@/server/providers/source/contracts";
-import { prepareStackExchangeFeatureRequest } from "@/server/providers/source/stack-exchange";
-import { g2MappingsFromSourceFilters, g2SourceFiltersWithMappings, type G2ProductMapping, type G2ProductResolutionTarget } from "@/server/providers/source/g2/product-resolution";
+import { g2MappingsFromSourceFilters, type G2ProductMapping, type G2ProductResolutionTarget } from "@/server/providers/source/g2/product-resolution";
 import { getSourceRuntimeConfiguration } from "@/server/providers/source/runtime";
 import { rebuildDemandIntelligenceForScan, type DemandRebuildResult } from "@/server/modules/demand-intelligence/demand.orchestration";
 import { generateActionsForScan, type ActionGenerationForScanResult } from "@/server/modules/actions/action.orchestration";
@@ -184,6 +194,12 @@ const scanResultSchema = z.object({
 
 export type InitialScanResult = z.infer<typeof scanResultSchema>;
 
+// Re-exported for backward compatibility: these types and functions moved to the
+// Stage 2A shared public-ingestion boundary (Wanterest 1B) but existing external
+// imports from this module must keep working unchanged.
+export { provenanceForReplay, persistG2Resolutions };
+export type { ScanDiscoveryProvenance, SourceExecutionInput, SourceExecutionResult, SourceExecutionBatchResult };
+
 export type InitialScanJobState = {
   jobRunId: string;
   status: string;
@@ -195,118 +211,6 @@ export type InitialScanJobState = {
   completedAt: string | null;
 };
 
-export type SourceExecutionInput = {
-  sourceKey: string;
-  productId: string;
-  requests: SourceDiscoveryRequest[];
-  traceId: string;
-  workspaceId: string;
-  /**
-   * Keeps discovery idempotent within one durable scan while allowing a
-   * later manual rescan to execute the same semantic request again.
-   */
-  jobRunId: string;
-};
-
-export type SourceExecutionResult = {
-  sourceKey: string;
-  rawSourceItemIds: string[];
-  normalizedSourceItemIds: string[];
-  conversationIds: string[];
-  provenance: ScanDiscoveryProvenance[];
-  rawInserted: number;
-  itemsReturned: number;
-  queryCount: number;
-  diagnostics: string[];
-  rateLimitRemaining: number | null;
-  estimatedCost: number | null;
-  queryTelemetry: QueryYieldTelemetry[];
-  failedQueryCount?: number;
-  errorCode?: string | null;
-  providerMetrics?: Record<string, unknown>;
-  resolutions?: Array<{
-    status: "resolved" | "no_match" | "ambiguous_match";
-    targetKey: string;
-    targetFingerprint: string;
-    productId?: string;
-    matchedBy?: "domain" | "name" | "slug" | "vendor_product_metadata";
-    candidateProductIds: string[];
-    resolvedAt: string;
-    resolverVersion: string;
-  }>;
-};
-
-/** Discovery evidence for this scan, including rediscovery of canonical rows. */
-export type ScanDiscoveryProvenance = {
-  conversationId: string;
-  queryPlanId: string;
-  source: string;
-  queryFamily: string;
-  demandSurface: string;
-  semanticQuery?: string;
-  concepts: string[];
-  competitorSpecific: boolean;
-  githubPainRetrievalV1?: GithubPainEvidenceAlignmentQuery;
-  xCompetitorPainRetrievalV1?: XCompetitorPainRetrievalProvenance;
-};
-
-export function provenanceForReplay(request: SourceDiscoveryRequest, source: string, mappings: Array<{ conversationId: string }>): ScanDiscoveryProvenance[] {
-  const metadata = request.requestMetadata ?? {};
-  if (typeof metadata.queryPlanId !== "string" || typeof metadata.demandSurface !== "string") return [];
-  const intent = objectValue(metadata.discoveryIntent);
-  const concepts = Array.isArray(intent.concept_keys) ? intent.concept_keys.filter((value): value is string => typeof value === "string").slice(0, 20) : [];
-  const githubPainRetrievalV1 = source === "github" && metadata.demandSurface === "pain_first" ? githubPainCompilationFromMetadata(metadata) : null;
-  const xCompetitorPainRetrievalV1 = source === "x" && metadata.demandSurface === "competitor_pain" ? xCompetitorPainCompilationFromMetadata(metadata) : null;
-  const semanticQuery = typeof metadata.semanticQuery === "string"
-    ? metadata.semanticQuery
-    : source === "github" && metadata.demandSurface === "feature_demand" && typeof request.query === "string"
-      ? request.query
-      : undefined;
-  return mappings.map(({ conversationId }) => ({
-    conversationId, queryPlanId: metadata.queryPlanId as string, source,
-    queryFamily: typeof metadata.queryFamily === "string" ? metadata.queryFamily : "unknown",
-    demandSurface: metadata.demandSurface as string,
-    ...(semanticQuery ? { semanticQuery } : {}),
-    concepts, competitorSpecific: metadata.competitorSpecific === true,
-    ...(githubPainRetrievalV1 ? { githubPainRetrievalV1: { templateVersion: githubPainRetrievalV1.templateVersion, demandAnchors: githubPainRetrievalV1.demandAnchors, categoryAnchors: githubPainRetrievalV1.categoryAnchors } } : {}),
-    ...(xCompetitorPainRetrievalV1 ? { xCompetitorPainRetrievalV1 } : {}),
-  }));
-}
-
-function uniqueProvenance(entries: ScanDiscoveryProvenance[]): ScanDiscoveryProvenance[] {
-  return [...new Map(entries.map((entry) => [`${entry.conversationId}:${entry.source}:${entry.queryPlanId}`, entry])).values()]
-    .sort((a, b) => a.conversationId.localeCompare(b.conversationId) || a.source.localeCompare(b.source) || a.queryPlanId.localeCompare(b.queryPlanId));
-}
-
-export type SourceExecutionBatchResult = {
-  sourceKey: string;
-  execution?: SourceExecutionResult;
-  fallback?: boolean;
-  error?: string;
-};
-
-function requestScopedToScan(request: SourceDiscoveryRequest, jobRunId: string, sourceKey: string, workspaceId: string): SourceDiscoveryRequest {
-  return sourceDiscoveryRequestSchema.parse({
-    ...request,
-    requestMetadata: {
-      ...request.requestMetadata,
-      scanJobRunId: jobRunId,
-      ...(sourceKey === "x" ? { internalWorkspaceId: workspaceId } : {}),
-    },
-  });
-}
-
-function logXDiscoveryOverride(workspaceId: string, requests: SourceDiscoveryRequest[]): void {
-  const override = getInternalXDiscoveryOverride(workspaceId);
-  if (!override) return;
-  logInternalXDiscoveryOverride({
-    workspaceId,
-    queryCount: requests.length,
-    maxPosts: override.maxPostsPerScan,
-    postReadCostUsd: getXRuntimeConfig().postReadCostUsd,
-  });
-}
-
 function productDomain(product: ProductRow): string | undefined {
   if (!product.website_url) return undefined;
   try { return new URL(product.website_url).hostname.replace(/^www\./, ""); } catch { return undefined; }
@@ -314,69 +218,6 @@ function productDomain(product: ProductRow): string | undefined {
 
 function g2ProductTarget(product: ProductRow): G2ProductResolutionTarget {
   return { key: "product", kind: "product", name: product.name, slug: product.slug, domain: productDomain(product), metadata: { wanterestProductId: product.id } };
-}
-
-function objectValue(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function queryPlanIdForRequest(request: SourceDiscoveryRequest, source: string): string {
-  const metadata = objectValue(request.requestMetadata);
-  return typeof metadata.queryPlanId === "string" ? metadata.queryPlanId : `fallback:${source}:${request.query ?? "default"}`;
-}
-
-function queryTelemetryForRequest(input: {
-  request: SourceDiscoveryRequest;
-  source: string;
-  pagesRequested: number;
-  pagesCompleted: number;
-  cursorContinuationCount: number;
-  continuationStoppedReason: QueryYieldStopReason;
-  executionStatus: QueryYieldExecutionStatus;
-  rawItems: number;
-  normalizedItems: number;
-  conversationIds: string[];
-  estimatedCostUsd: number | null;
-}): QueryYieldTelemetry {
-  const metadata = objectValue(input.request.requestMetadata);
-  const intent = objectValue(metadata.discoveryIntent);
-  const uniqueConversations = new Set(input.conversationIds).size;
-  return {
-    queryPlanId: queryPlanIdForRequest(input.request, input.source),
-    source: input.source,
-    family: typeof metadata.queryFamily === "string" ? metadata.queryFamily : "fallback",
-    surface: typeof metadata.demandSurface === "string" ? metadata.demandSurface : "unknown",
-    concepts: Array.isArray(intent.concept_keys) ? (intent.concept_keys as unknown[]).filter((value): value is string => typeof value === "string") : [],
-    competitorSpecific: metadata.competitorSpecific === true,
-    pagesRequested: input.pagesRequested,
-    pagesCompleted: input.pagesCompleted,
-    cursorContinuationCount: input.cursorContinuationCount,
-    continuationStoppedReason: input.continuationStoppedReason,
-    executionStatus: input.executionStatus,
-    rawItems: input.rawItems,
-    normalizedItems: input.normalizedItems,
-    uniqueConversations,
-    duplicateCount: Math.max(0, input.normalizedItems - uniqueConversations),
-    estimatedCostUsd: input.estimatedCostUsd,
-  };
-}
-
-function queryFailureDiagnostic(error: unknown, request: SourceDiscoveryRequest, source: string): string {
-  const value = error && typeof error === "object" ? error as { code?: unknown; providerDetails?: { status?: unknown; message?: unknown } } : {};
-  const metadata = objectValue(request.requestMetadata);
-  const queryPlanId = queryPlanIdForRequest(request, source).slice(0, 180);
-  const code = typeof value.code === "string" ? value.code : "REQUEST_FAILED";
-  const status = typeof value.providerDetails?.status === "number" ? String(value.providerDetails.status) : "unknown";
-  const providerMessage = typeof value.providerDetails?.message === "string" ? value.providerDetails.message : safeSummary(error);
-  const requestType = source === "github"
-    ? metadata.contentType === "discussions" ? "github_discussion_search" : "github_issue_search"
-    : `${source}_search`;
-  return `query provider_error queryPlanId=${queryPlanId} requestType=${requestType} providerStatus=${status} providerCode=${code} message=${providerMessage.replace(/\s+/g, " ").slice(0, 200)}`;
-}
-
-function errorCodeOf(error: unknown): string | null {
-  const value = error && typeof error === "object" ? error as { code?: unknown } : {};
-  return typeof value.code === "string" ? value.code : null;
 }
 
 async function loadG2ProductMappings(client: Client, product: ProductRow): Promise<Record<string, G2ProductMapping>> {
@@ -406,25 +247,6 @@ function g2RequestForProduct(request: SourceDiscoveryRequest, product: ProductRo
     });
   }
   return sourceDiscoveryRequestSchema.parse({ ...request, requestMetadata: { g2Targets: [g2ProductTarget(product)], g2ProductMappings: mappings, g2ScanContext: { workspaceId: product.workspace_id, productId: product.id } } });
-}
-
-export async function persistG2Resolutions(client: Client, context: { workspaceId: string; productId: string }, resolutions: SourceExecutionResult["resolutions"]): Promise<void> {
-  if (!resolutions?.length) return;
-  const existing = await client.from("discovery_strategies").select("filters").eq("workspace_id", context.workspaceId).eq("product_id", context.productId).eq("source_key", "g2").eq("strategy_version", 1).maybeSingle();
-  if (existing.error) throw new AppError("INTERNAL_ERROR", "G2 source metadata could not be loaded.", 500, { providerMessage: existing.error.message });
-  const mappings = g2MappingsFromSourceFilters(existing.data?.filters);
-  for (const resolution of resolutions) mappings[resolution.targetKey] = resolution as G2ProductMapping;
-  const filters = g2SourceFiltersWithMappings(existing.data?.filters, mappings);
-  const saved = await client.from("discovery_strategies").upsert({ workspace_id: context.workspaceId, product_id: context.productId, source_key: "g2", strategy_version: 1, filters, is_active: true }, { onConflict: "workspace_id,product_id,source_key,strategy_version" }).select("id").single();
-  if (saved.error) throw new AppError("INTERNAL_ERROR", "G2 source metadata could not be stored.", 500, { providerMessage: saved.error.message });
-}
-
-function g2ContextFromRequests(requests: SourceDiscoveryRequest[]): { workspaceId: string; productId: string } | null {
-  for (const request of requests) {
-    const context = objectValue(request.requestMetadata.g2ScanContext);
-    if (typeof context.workspaceId === "string" && typeof context.productId === "string") return { workspaceId: context.workspaceId, productId: context.productId };
-  }
-  return null;
 }
 
 export type CandidateProcessingResult = {
@@ -763,11 +585,6 @@ function isSilentOptionalSource(sourceKey: string): boolean {
   return ["trustpilot", "youtube", "gitlab"].includes(sourceKey);
 }
 
-function safeSummary(error: unknown): string {
-  const message = error instanceof Error ? error.message : "Provider request failed.";
-  return message.replace(/(authorization|bearer|secret|token|api[_-]?key)\s*[:=]\s*[^\s,;]+/gi, "$1=[redacted]").slice(0, 240);
-}
-
 function jsonStrings(value: Json): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
@@ -957,111 +774,19 @@ async function loadRows(client: Client, sourceItemIds: string[], conversationIds
 }
 
 /**
- * Executes only provider discovery plus the existing raw -> normalized -> canonical replay.
- * Trigger child tasks call this function; it deliberately contains no Trigger.dev dependency.
+ * Executes only provider discovery plus the existing raw -> normalized -> canonical
+ * replay for one source. Stage 2A compatibility wrapper: the actual discovery loop
+ * now lives in the shared public-ingestion boundary (`ingestPublicPartition`),
+ * which never requires workspaceId/productId itself - this wrapper exists only so
+ * existing callers keyed to a job run keep their exact prior contract unchanged.
  */
 export async function executeSourceDiscovery(input: SourceExecutionInput): Promise<SourceExecutionResult> {
-  const client = createSupabaseServiceClient();
-  const ingestionRepository = new SupabaseIngestionRepository(client);
-  const ingestion = new IngestionService(ingestionRepository, undefined, new SourceControlService(new SupabaseSourceControlStore(client)));
-  const rawSourceItemIds: string[] = [];
-  const normalizedSourceItemIds: string[] = [];
-  const conversationIds: string[] = [];
-  const provenance: ScanDiscoveryProvenance[] = [];
-  const diagnostics: string[] = [];
-  const resolutions: NonNullable<SourceExecutionResult["resolutions"]> = [];
-  let rawInserted = 0;
-  let rateLimitRemaining: number | null = null;
-  let estimatedCost: number | null = null;
-  const providerMetrics: Record<string, unknown> = {};
-  const queryTelemetry: QueryYieldTelemetry[] = [];
-  let failedQueryCount = 0;
-  let firstQueryErrorCode: string | null = null;
-  if (input.sourceKey === "x") logXDiscoveryOverride(input.workspaceId, input.requests);
-  for (const rawRequest of input.requests) {
-    const parsedRequest = sourceDiscoveryRequestSchema.parse(rawRequest);
-    let request = parsedRequest;
-    let metadata = request.requestMetadata as Record<string, unknown>;
-    const maxPages = Math.min(3, Math.max(1, typeof metadata.maxPages === "number" ? Math.floor(metadata.maxPages) : 1));
-    let cursor = request.cursor;
-    let rawItems = 0;
-    let normalizedItems = 0;
-    const queryConversationIds: string[] = [];
-    let pagesCompleted = 0;
-    let continuations = 0;
-    let queryCost: number | null = null;
-    let queryError: unknown;
-    try {
-      request = input.sourceKey === "stack-exchange" ? prepareStackExchangeFeatureRequest(parsedRequest) : parsedRequest;
-      metadata = request.requestMetadata as Record<string, unknown>;
-      for (let page = 1; page <= maxPages; page += 1) {
-        const discovery = await ingestion.discoverSource(input.sourceKey, requestScopedToScan({ ...request, ...(cursor ? { cursor } : {}) }, input.jobRunId, input.sourceKey, input.workspaceId), input.traceId);
-        rawSourceItemIds.push(...discovery.rawSourceItemIds);
-        rawItems += discovery.rawSourceItemIds.length;
-        rawInserted += discovery.rawInserted;
-        diagnostics.push(...discovery.diagnostics);
-        if (discovery.resolutions) resolutions.push(...discovery.resolutions);
-        const replay = await ingestion.replayDetailed({ rawSourceItemIds: discovery.rawSourceItemIds, normalizationVersion: `${input.sourceKey}-v1`, canonicalizationVersion: "canonical-v1", limit: 100 });
-        normalizedSourceItemIds.push(...replay.normalizedSourceItemIds);
-        normalizedItems += replay.normalizedSourceItemIds.length;
-        pagesCompleted += 1;
-        conversationIds.push(...replay.canonicalizedConversationIds);
-        queryConversationIds.push(...replay.canonicalizedConversationIds);
-        provenance.push(...provenanceForReplay(request, input.sourceKey, replay.replayMappings));
-        if (typeof metadata.estimatedCost === "number") estimatedCost = (estimatedCost ?? 0) + metadata.estimatedCost;
-        if (typeof metadata.rateLimitRemaining === "number") rateLimitRemaining = metadata.rateLimitRemaining;
-        if (typeof discovery.estimatedCost === "number") { estimatedCost = (estimatedCost ?? 0) + discovery.estimatedCost; queryCost = (queryCost ?? 0) + discovery.estimatedCost; }
-        if (typeof discovery.rateLimit?.remaining === "number") rateLimitRemaining = discovery.rateLimit.remaining;
-        if (discovery.providerMetrics) for (const [key, value] of Object.entries(discovery.providerMetrics)) {
-          if (typeof value === "number" && typeof providerMetrics[key] === "number") providerMetrics[key] = (providerMetrics[key] as number) + value;
-          else providerMetrics[key] = value;
-        }
-        cursor = discovery.nextCursor;
-        if (!cursor) break;
-        continuations += 1;
-      }
-    } catch (error) {
-      queryError = error;
-      failedQueryCount += 1;
-      firstQueryErrorCode ??= errorCodeOf(error);
-      diagnostics.push(queryFailureDiagnostic(error, request, input.sourceKey));
-    }
-    const executionStatus: QueryYieldExecutionStatus = queryError ? errorCodeOf(queryError) === "RATE_LIMITED" ? "rate_limited" : "provider_error" : rawItems ? "completed_with_results" : "completed_zero_results";
-    queryTelemetry.push(queryTelemetryForRequest({
-      request,
-      source: input.sourceKey,
-      pagesRequested: maxPages,
-      pagesCompleted,
-      cursorContinuationCount: boundedCursorContinuationCount(continuations, maxPages),
-      continuationStoppedReason: queryError ? "error" : cursor ? "page_cap_reached" : rawItems ? "no_cursor" : "zero_results",
-      executionStatus,
-      rawItems,
-      normalizedItems,
-      conversationIds: queryConversationIds,
-      estimatedCostUsd: queryCost,
-    }));
-  }
-  if (input.sourceKey === "g2") {
-    const context = g2ContextFromRequests(input.requests);
-    if (context) await persistG2Resolutions(client, context, resolutions);
-  }
-  return {
+  return ingestPublicPartition({
     sourceKey: input.sourceKey,
-    rawSourceItemIds: [...new Set(rawSourceItemIds)],
-    normalizedSourceItemIds: [...new Set(normalizedSourceItemIds)],
-    conversationIds: [...new Set(conversationIds)],
-    provenance: uniqueProvenance(provenance),
-    rawInserted,
-    itemsReturned: rawSourceItemIds.length,
-    queryCount: input.requests.length,
-    diagnostics,
-    rateLimitRemaining,
-    estimatedCost,
-    queryTelemetry,
-    ...(failedQueryCount ? { failedQueryCount, errorCode: firstQueryErrorCode } : {}),
-    ...(Object.keys(providerMetrics).length ? { providerMetrics } : {}),
-    ...(resolutions.length ? { resolutions } : {}),
-  };
+    requests: input.requests,
+    traceId: input.traceId,
+    operationalContext: { jobRunId: input.jobRunId, workspaceId: input.workspaceId },
+  });
 }
 
 export async function processScanCandidates(input: { product: ProductRow; profileId: string; normalizedSourceItemIds: string[]; conversationIds: string[]; provenance?: ScanDiscoveryProvenance[]; traceId: string; maxLlmEvaluations?: number }): Promise<CandidateProcessingResult> {
@@ -1361,7 +1086,6 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
   }
 
   const ingestionRepository = new SupabaseIngestionRepository(client);
-  const ingestion = new IngestionService(ingestionRepository, undefined, new SourceControlService(new SupabaseSourceControlStore(client)));
   const controls = new SourceControlService(new SupabaseSourceControlStore(client));
   const registry = createSourceRegistry();
   const configuredReddit = getRedditRuntimeConfig();
@@ -1460,7 +1184,17 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
     await setScanJob(client, job.id, { status: "running", phase: "planning", scanMode, progress: { stage: "planning", percent: 25, currentLabel: "Choosing the best sources" } });
     await setScanJob(client, job.id, { status: "running", phase: "discovering", scanMode, progress: { stage: "discovering", percent: 40, currentLabel: "Finding conversations" } });
     const plannedSourceKeys = routingPlan ? routedSourceKeys : sourceKeys;
-    const sourceExecutor = options.sourceExecutor;
+    // Stage 2A: the direct-execution mode (no Trigger executor supplied) no longer
+    // has its own inline discovery-loop implementation. It defaults to calling the
+    // same shared public-ingestion boundary that the Trigger-backed executor calls,
+    // so there is exactly one discovery-loop implementation in the codebase.
+    const sourceExecutor = options.sourceExecutor
+      ?? ((execInput: SourceExecutionInput) => ingestPublicPartition({
+        sourceKey: execInput.sourceKey,
+        requests: execInput.requests,
+        traceId: execInput.traceId,
+        operationalContext: { jobRunId: execInput.jobRunId, workspaceId: execInput.workspaceId },
+      }));
     const sourceBatchExecutor = options.sourceBatchExecutor;
     if (sourceBatchExecutor || sourceExecutor) {
       const sourceInputs: Array<{ input: SourceExecutionInput; fallback: boolean; candidateBudget: number }> = [];
@@ -1525,122 +1259,6 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
         diagnostics.push({ sourceKey: result.sourceKey, state: "complete", message: `${result.execution.rawInserted} new raw item${result.execution.rawInserted === 1 ? "" : "s"}.` });
       }
       await setScanJob(client, job.id, { status: "running", phase: "discovering", scanMode, progress: { stage: "discovering", percent: 55, completedSources: results.length, totalSources: plannedSourceKeys.length, currentLabel: "Finding conversations" } });
-    } else {
-    for (const sourceKey of plannedSourceKeys) {
-      const control = await controls.get(sourceKey);
-      if (control.state !== "enabled") {
-        sourceResults.push({ sourceKey, planned: true, executed: false, status: "skipped", queryCount: 0, candidateBudget: 0, itemsReturned: 0, rawItems: 0, normalizedItems: 0, warnings: [`Source is ${control.state}.`], errorCode: null, rateLimitRemaining: null, estimatedCost: null });
-        diagnostics.push({ sourceKey, state: "skipped", message: `Source is ${control.state}.` });
-        continue;
-      }
-      const configuration = sourceConfigurationStatus(sourceKey, configuredReddit, configuredX);
-      if (!configuration.configured) {
-        sourceResults.push({ sourceKey, planned: true, executed: false, status: "skipped", queryCount: 0, candidateBudget: 0, itemsReturned: 0, rawItems: 0, normalizedItems: 0, warnings: isSilentOptionalSource(sourceKey) ? [] : [configuration.message], errorCode: isSilentOptionalSource(sourceKey) ? null : "CONFIGURATION_MISSING", rateLimitRemaining: null, estimatedCost: null });
-        if (!isSilentOptionalSource(sourceKey)) diagnostics.push({ sourceKey, state: "skipped", message: configuration.message });
-        continue;
-      }
-      sources.push(sourceKey);
-      let requests: SourceDiscoveryRequest[] = [];
-      try {
-        const route = routeBySource.get(sourceKey);
-        const query = sourceKey === "bluesky" || sourceKey === "reddit" || sourceKey === "x"
-          ? [product.name, ...queryTerms.slice(0, 5)].join(" ").slice(0, 180)
-          : undefined;
-        const sourcePlan = queryPlanBySource.get(sourceKey);
-        const plannedRequests = sourcePlan?.queries.length && route
-          ? sourcePlan.queries.map((plannedQuery) => toSourceDiscoveryRequest({ sourcePlan, query: plannedQuery, maxPages: route.max_pages }))
-          : [];
-        const fallbackLimit = Math.min(route?.max_candidates ?? 5, sourceKey === "x" ? configuredX.maxPostsPerScan : 100);
-        const fallbackRequest = sourceKey === "x"
-          ? {
-              limit: fallbackLimit,
-              query,
-              requestMetadata: {
-                maxResults: fallbackLimit,
-                maxPages: route?.max_pages ?? 1,
-                maxBillablePostsPerDiscovery: fallbackLimit,
-              },
-            }
-          : { limit: fallbackLimit, ...(query ? { query } : {}) };
-        requests = boundMonitoringRequests((plannedRequests.length ? plannedRequests : [fallbackRequest]).map((request) => sourceDiscoveryRequestSchema.parse(request)), sourceKey, scanMode, monitoringPolicy, capabilities, product.workspace_id)
-          .map((request) => sourceKey === "g2" ? g2RequestForProduct(request, product, g2ProductMappings) : request);
-        githubPainRetrievalV1.push(...githubPainRetrievalDiagnostics(requests));
-        let sourceItemsReturned = 0;
-        let sourceRawItems = 0;
-        let sourceNormalizedItems = 0;
-        let sourceWarnings: string[] = [];
-        const sourceMetrics: Record<string, unknown> = {};
-        const sourceResolutions: NonNullable<SourceExecutionResult["resolutions"]> = [];
-        let sourceFailedQueryCount = 0;
-        let sourceErrorCode: string | null = null;
-        if (!plannedRequests.length && queryPlan) diagnostics.push({ sourceKey, state: "fallback", message: "Query Planning produced no executable query; using the existing conservative request." });
-        if (sourceKey === "x") logXDiscoveryOverride(product.workspace_id, requests);
-        for (const discoveryRequest of requests) {
-          let effectiveDiscoveryRequest = discoveryRequest;
-          try {
-          effectiveDiscoveryRequest = sourceKey === "stack-exchange" ? prepareStackExchangeFeatureRequest(discoveryRequest) : discoveryRequest;
-          const discovery = await ingestion.discoverSource(sourceKey, requestScopedToScan(effectiveDiscoveryRequest, job.id, sourceKey, product.workspace_id));
-          sourceItemsReturned += discovery.rawSourceItemIds.length;
-          sourceRawItems += discovery.rawInserted;
-          sourceWarnings = [...sourceWarnings, ...discovery.diagnostics];
-          if (discovery.resolutions) sourceResolutions.push(...discovery.resolutions);
-          if (discovery.providerMetrics) {
-            for (const [key, value] of Object.entries(discovery.providerMetrics)) {
-              if (typeof value === "number" && typeof sourceMetrics[key] === "number") sourceMetrics[key] = (sourceMetrics[key] as number) + value;
-              else sourceMetrics[key] = value;
-            }
-          }
-          rawSourceItemIds.push(...discovery.rawSourceItemIds);
-          const replay = await ingestion.replayDetailed({ rawSourceItemIds: discovery.rawSourceItemIds, normalizationVersion: `${sourceKey}-v1`, canonicalizationVersion: "canonical-v1", limit: 100 });
-          sourceNormalizedItems += replay.normalizedSourceItemIds.length;
-          normalizedSourceItemIds.push(...replay.normalizedSourceItemIds);
-          conversationIds.push(...replay.canonicalizedConversationIds);
-          scanProvenance.push(...provenanceForReplay(effectiveDiscoveryRequest, sourceKey, replay.replayMappings));
-          const requestMetadata = effectiveDiscoveryRequest.requestMetadata;
-          const telemetryMetadata = objectValue(requestMetadata);
-          const intent = objectValue(telemetryMetadata.discoveryIntent);
-          const queryPlanId = typeof telemetryMetadata.queryPlanId === "string" ? telemetryMetadata.queryPlanId : `fallback:${sourceKey}:${discoveryRequest.query ?? "default"}`;
-          queryYieldTelemetry.push({
-            queryPlanId, source: sourceKey, family: typeof telemetryMetadata.queryFamily === "string" ? telemetryMetadata.queryFamily : "fallback", surface: typeof telemetryMetadata.demandSurface === "string" ? telemetryMetadata.demandSurface : "unknown",
-            concepts: Array.isArray(intent.concept_keys) ? (intent.concept_keys as unknown[]).filter((value): value is string => typeof value === "string") : [], competitorSpecific: telemetryMetadata.competitorSpecific === true,
-            pagesRequested: Math.min(3, Math.max(1, typeof telemetryMetadata.maxPages === "number" ? Math.floor(telemetryMetadata.maxPages) : 1)), pagesCompleted: 1, cursorContinuationCount: 0,
-            continuationStoppedReason: discovery.nextCursor ? "page_cap_reached" : discovery.rawSourceItemIds.length ? "no_cursor" : "zero_results", executionStatus: discovery.rawSourceItemIds.length ? "completed_with_results" : "completed_zero_results",
-            rawItems: discovery.rawSourceItemIds.length, normalizedItems: replay.normalizedSourceItemIds.length, uniqueConversations: replay.canonicalizedConversationIds.length, duplicateCount: Math.max(0, replay.normalizedSourceItemIds.length - replay.canonicalizedConversationIds.length), estimatedCostUsd: typeof discovery.estimatedCost === "number" ? discovery.estimatedCost : null,
-          });
-          const semanticQuery = requestMetadata && typeof requestMetadata === "object" && !Array.isArray(requestMetadata) && "semanticQuery" in requestMetadata && typeof requestMetadata.semanticQuery === "string" ? requestMetadata.semanticQuery : null;
-          const queryLabel = semanticQuery ? ` for “${semanticQuery}”` : "";
-          diagnostics.push({ sourceKey, state: "complete", message: `${discovery.rawInserted} new raw item${discovery.rawInserted === 1 ? "" : "s"}${queryLabel}.` });
-          } catch (error) {
-            sourceFailedQueryCount += 1;
-            sourceErrorCode ??= errorCodeOf(error);
-            const metadata = objectValue(discoveryRequest.requestMetadata);
-            const pagesRequested = Math.min(3, Math.max(1, typeof metadata.maxPages === "number" ? Math.floor(metadata.maxPages) : 1));
-            const failureMessage = queryFailureDiagnostic(error, effectiveDiscoveryRequest, sourceKey);
-            sourceWarnings = [...sourceWarnings, failureMessage];
-            diagnostics.push({ sourceKey, state: "failed", message: failureMessage });
-            queryYieldTelemetry.push(queryTelemetryForRequest({
-              request: effectiveDiscoveryRequest,
-              source: sourceKey,
-              pagesRequested,
-              pagesCompleted: 0,
-              cursorContinuationCount: 0,
-              continuationStoppedReason: "error",
-              executionStatus: errorCodeOf(error) === "RATE_LIMITED" ? "rate_limited" : "provider_error",
-              rawItems: 0,
-              normalizedItems: 0,
-              conversationIds: [],
-              estimatedCostUsd: null,
-            }));
-          }
-        }
-        if (sourceKey === "g2") await persistG2Resolutions(client, { workspaceId: product.workspace_id, productId: product.id }, sourceResolutions);
-        sourceResults.push({ sourceKey, planned: true, executed: true, status: sourceFailedQueryCount > 0 && sourceFailedQueryCount === requests.length ? "failed" : "completed", queryCount: requests.length, candidateBudget: requests.reduce((sum, request) => sum + request.limit, 0), itemsReturned: sourceItemsReturned, rawItems: sourceRawItems, normalizedItems: sourceNormalizedItems, warnings: sourceWarnings, errorCode: sourceErrorCode, rateLimitRemaining: null, estimatedCost: null, ...(Object.keys(sourceMetrics).length ? { providerMetrics: sourceMetrics } : {}), ...(sourceResolutions.length ? { resolutions: sourceResolutions } : {}) });
-      } catch (error) {
-        sourceResults.push({ sourceKey, planned: true, executed: true, status: "failed", queryCount: requests?.length ?? 0, candidateBudget: requests?.reduce((sum, request) => sum + request.limit, 0) ?? 0, itemsReturned: 0, rawItems: 0, normalizedItems: 0, warnings: [safeSummary(error)], errorCode: null, rateLimitRemaining: null, estimatedCost: null });
-        diagnostics.push({ sourceKey, state: "failed", message: safeSummary(error) });
-      }
-      await setScanJob(client, job.id, { status: "running", phase: "discovering", scanMode });
-    }
     }
     if (!sources.length || !conversationIds.length) throw new AppError("CONFLICT", "No usable source results were available for the first scan.");
 
