@@ -7,6 +7,10 @@ export type QueryYieldArtifact = {
   continuationStoppedReason: string; executionStatus: string; rawItems: number; normalizedItems: number; uniqueConversations: number;
   duplicateCount: number; sourceBudgetSuppressedCount: number; candidateBudgetSuppressedCount: number; evaluationCapSuppressedCount: number;
   selectedCount: number; evaluatedCount: number; qualifiedInfluencedCount: number; weakInfluencedCount: number; rejectedInfluencedCount: number; estimatedCostUsd: number | null;
+  /** Stage 2B (observational): null when the query never executed or its source is ineligible. */
+  marketPartitionKey?: string | null;
+  marketPartitionIneligibleReason?: string | null;
+  rawNewItems?: number | null;
 };
 
 type Row = Record<string, unknown>;
@@ -31,6 +35,7 @@ export class QueryYieldRepository {
       continuation_stopped_reason: input.continuationStoppedReason, execution_status: input.executionStatus, raw_items: input.rawItems, normalized_items: input.normalizedItems, unique_conversations: input.uniqueConversations,
       duplicate_count: input.duplicateCount, source_budget_suppressed_count: input.sourceBudgetSuppressedCount, candidate_budget_suppressed_count: input.candidateBudgetSuppressedCount, evaluation_cap_suppressed_count: input.evaluationCapSuppressedCount,
       selected_count: input.selectedCount, evaluated_count: input.evaluatedCount, qualified_influenced_count: input.qualifiedInfluencedCount, weak_influenced_count: input.weakInfluencedCount, rejected_influenced_count: input.rejectedInfluencedCount, estimated_cost_usd: input.estimatedCostUsd,
+      market_partition_key: input.marketPartitionKey ?? null, market_partition_ineligible_reason: input.marketPartitionIneligibleReason ?? null, raw_new_items: input.rawNewItems ?? null,
     };
     const { data, error } = await this.table().insert(row).select("*").maybeSingle();
     if (!error && data) return data;

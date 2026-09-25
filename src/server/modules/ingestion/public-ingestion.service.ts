@@ -17,6 +17,8 @@ import { boundedCursorContinuationCount, type QueryYieldExecutionStatus, type Qu
 import { sourceDiscoveryRequestSchema, type SourceDiscoveryRequest } from "@/server/providers/source/contracts";
 import { prepareStackExchangeFeatureRequest } from "@/server/providers/source/stack-exchange";
 import { g2MappingsFromSourceFilters, g2SourceFiltersWithMappings, type G2ProductMapping } from "@/server/providers/source/g2/product-resolution";
+import { deriveMarketPartitionIdentity } from "@/server/modules/ingestion/market-partition-identity";
+import { MarketPartitionRepository } from "@/server/modules/ingestion/market-partition.repository";
 
 type Client = SupabaseClient<Database>;
 
@@ -101,6 +103,9 @@ function queryTelemetryForRequest(input: {
   normalizedItems: number;
   conversationIds: string[];
   estimatedCostUsd: number | null;
+  marketPartitionKey?: string | null;
+  marketPartitionIneligibleReason?: string | null;
+  rawNewItems?: number | null;
 }): QueryYieldTelemetry {
   const metadata = objectValue(input.request.requestMetadata);
   const intent = objectValue(metadata.discoveryIntent);
@@ -122,6 +127,9 @@ function queryTelemetryForRequest(input: {
     uniqueConversations,
     duplicateCount: Math.max(0, input.normalizedItems - uniqueConversations),
     estimatedCostUsd: input.estimatedCostUsd,
+    marketPartitionKey: input.marketPartitionKey ?? null,
+    marketPartitionIneligibleReason: input.marketPartitionIneligibleReason ?? null,
+    rawNewItems: input.rawNewItems ?? null,
   };
 }
 
@@ -276,6 +284,7 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
   const client = createSupabaseServiceClient();
   const ingestionRepository = new SupabaseIngestionRepository(client);
   const ingestion = new IngestionService(ingestionRepository, undefined, new SourceControlService(new SupabaseSourceControlStore(client)));
+  const marketPartitionRepository = new MarketPartitionRepository(client);
   const rawSourceItemIds: string[] = [];
   const normalizedSourceItemIds: string[] = [];
   const conversationIds: string[] = [];
@@ -298,14 +307,39 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
     let cursor = request.cursor;
     let rawItems = 0;
     let normalizedItems = 0;
+    let queryRawInserted = 0;
     const queryConversationIds: string[] = [];
     let pagesCompleted = 0;
     let continuations = 0;
     let queryCost: number | null = null;
     let queryError: unknown;
+    let marketPartitionKey: string | null = null;
+    let marketPartitionIneligibleReason: string | null = null;
     try {
       request = input.sourceKey === "stack-exchange" ? prepareStackExchangeFeatureRequest(parsedRequest) : parsedRequest;
       metadata = request.requestMetadata as Record<string, unknown>;
+      // Stage 2B: identity is derived once per request (before per-page cursor
+      // assignment and operational scoping) so it can never depend on paging,
+      // the job run, or workspace context. Persistence failure is caught and
+      // downgraded to a diagnostic - it must never turn a successful provider
+      // retrieval into a failed scan.
+      const partitionIdentity = deriveMarketPartitionIdentity({ sourceKey: input.sourceKey, request });
+      if (partitionIdentity.eligible) {
+        marketPartitionKey = partitionIdentity.partitionKey;
+        try {
+          await marketPartitionRepository.ensure({
+            id: partitionIdentity.partitionId,
+            partitionKey: partitionIdentity.partitionKey,
+            identityVersion: partitionIdentity.identityVersion,
+            sourceKey: input.sourceKey,
+            retrievalSpec: partitionIdentity.retrievalSpec,
+          });
+        } catch (partitionError) {
+          diagnostics.push(`market partition persistence skipped: ${safeSummary(partitionError)}`);
+        }
+      } else {
+        marketPartitionIneligibleReason = partitionIdentity.reason;
+      }
       for (let page = 1; page <= maxPages; page += 1) {
         const pageRequest = { ...request, ...(cursor ? { cursor } : {}) };
         const scopedRequest = input.operationalContext
@@ -315,6 +349,7 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
         rawSourceItemIds.push(...discovery.rawSourceItemIds);
         rawItems += discovery.rawSourceItemIds.length;
         rawInserted += discovery.rawInserted;
+        queryRawInserted += discovery.rawInserted;
         diagnostics.push(...discovery.diagnostics);
         if (discovery.resolutions) resolutions.push(...discovery.resolutions);
         const replay = await ingestion.replayDetailed({ rawSourceItemIds: discovery.rawSourceItemIds, normalizationVersion: `${input.sourceKey}-v1`, canonicalizationVersion: "canonical-v1", limit: 100 });
@@ -355,6 +390,9 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
       normalizedItems,
       conversationIds: queryConversationIds,
       estimatedCostUsd: queryCost,
+      marketPartitionKey,
+      marketPartitionIneligibleReason,
+      rawNewItems: queryRawInserted,
     }));
   }
   if (input.sourceKey === "g2") {

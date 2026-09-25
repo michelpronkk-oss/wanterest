@@ -10,6 +10,8 @@ vi.mock("server-only", () => ({}));
 
 const discoverSourceMock = vi.fn();
 const replayDetailedMock = vi.fn();
+type PartitionEnsureInput = { id: string; partitionKey: string; identityVersion: string; sourceKey: string; retrievalSpec: Record<string, unknown> };
+const ensurePartitionMock = vi.fn(async (input: PartitionEnsureInput) => { void input; });
 
 vi.mock("@/server/modules/ingestion/ingestion.service", () => ({
   IngestionService: vi.fn().mockImplementation(() => ({
@@ -26,6 +28,12 @@ vi.mock("@/server/providers/supabase/service", () => ({ createSupabaseServiceCli
 vi.mock("@/server/providers/source/x/x.internal", () => ({
   getInternalXDiscoveryOverride: () => null,
   logInternalXDiscoveryOverride: vi.fn(),
+}));
+// Stage 2B: market-partition persistence is a real (mocked-away-by-default) side
+// effect of ingestPublicPartition now. Default to a clean no-op so the Stage 2A
+// behavior-preservation tests below stay exactly as they were.
+vi.mock("@/server/modules/ingestion/market-partition.repository", () => ({
+  MarketPartitionRepository: vi.fn().mockImplementation(() => ({ ensure: ensurePartitionMock })),
 }));
 
 const { ingestPublicPartition } = await import("../../src/server/modules/ingestion/public-ingestion.service");
@@ -57,6 +65,8 @@ describe("ingestPublicPartition (Stage 2A shared public-ingestion boundary)", ()
   beforeEach(() => {
     discoverSourceMock.mockReset();
     replayDetailedMock.mockReset();
+    ensurePartitionMock.mockReset();
+    ensurePartitionMock.mockResolvedValue(undefined);
   });
 
   it("does not require workspaceId or productId to execute discovery and replay", async () => {
@@ -172,5 +182,78 @@ describe("ingestPublicPartition (Stage 2A shared public-ingestion boundary)", ()
 
     expect(result.failedQueryCount).toBeUndefined();
     expect(result.queryTelemetry[0]?.executionStatus).toBe("completed_zero_results");
+  });
+});
+
+describe("ingestPublicPartition market-partition wiring (Stage 2B, observational)", () => {
+  beforeEach(() => {
+    discoverSourceMock.mockReset();
+    replayDetailedMock.mockReset();
+    ensurePartitionMock.mockReset();
+    ensurePartitionMock.mockResolvedValue(undefined);
+  });
+
+  it("attaches a partition key and persists the partition for an eligible source", async () => {
+    discoverSourceMock.mockResolvedValueOnce(discoveryPage({ rawSourceItemIds: ["raw-1"], rawInserted: 1 }));
+    replayDetailedMock.mockResolvedValueOnce(replayResult({ normalizedSourceItemIds: ["norm-1"], canonicalizedConversationIds: ["conv-1"] }));
+
+    const result = await ingestPublicPartition({ sourceKey: "github", requests: [req()], traceId: "trace-1" });
+
+    expect(ensurePartitionMock).toHaveBeenCalledTimes(1);
+    const [ensureArg] = ensurePartitionMock.mock.calls[0]!;
+    expect(ensureArg.sourceKey).toBe("github");
+    expect(typeof ensureArg.partitionKey).toBe("string");
+    expect(ensureArg.partitionKey.startsWith("market_partition_identity_v1:")).toBe(true);
+    expect(result.queryTelemetry[0]?.marketPartitionKey).toBe(ensureArg.partitionKey);
+    expect(result.queryTelemetry[0]?.marketPartitionIneligibleReason).toBeNull();
+  });
+
+  it("attaches an ineligible reason and never persists a partition for an ineligible source", async () => {
+    discoverSourceMock.mockResolvedValueOnce(discoveryPage({ rawSourceItemIds: ["raw-1"], rawInserted: 1 }));
+    replayDetailedMock.mockResolvedValueOnce(replayResult({ normalizedSourceItemIds: ["norm-1"], canonicalizedConversationIds: ["conv-1"] }));
+
+    const result = await ingestPublicPartition({ sourceKey: "hacker-news", requests: [req()], traceId: "trace-1" });
+
+    expect(ensurePartitionMock).not.toHaveBeenCalled();
+    expect(result.queryTelemetry[0]?.marketPartitionKey).toBeNull();
+    expect(result.queryTelemetry[0]?.marketPartitionIneligibleReason).toBe("adapter_side_product_filter");
+  });
+
+  it("does not fail discovery when partition persistence fails", async () => {
+    ensurePartitionMock.mockRejectedValueOnce(new Error("insert failed"));
+    discoverSourceMock.mockResolvedValueOnce(discoveryPage({ rawSourceItemIds: ["raw-1"], rawInserted: 1 }));
+    replayDetailedMock.mockResolvedValueOnce(replayResult({ normalizedSourceItemIds: ["norm-1"], canonicalizedConversationIds: ["conv-1"] }));
+
+    const result = await ingestPublicPartition({ sourceKey: "github", requests: [req()], traceId: "trace-1" });
+
+    expect(result.failedQueryCount).toBeUndefined();
+    expect(result.queryTelemetry[0]?.executionStatus).toBe("completed_with_results");
+    expect(result.rawSourceItemIds).toEqual(["raw-1"]);
+    expect(result.diagnostics.some((message) => message.includes("market partition persistence skipped"))).toBe(true);
+  });
+
+  it("computes rawNewItems as the exact sum of discovery.rawInserted across pages, distinct from rawItems", async () => {
+    discoverSourceMock
+      .mockResolvedValueOnce(discoveryPage({ rawSourceItemIds: ["raw-1", "raw-2"], rawInserted: 1, nextCursor: "cursor-2" }))
+      .mockResolvedValueOnce(discoveryPage({ rawSourceItemIds: ["raw-3"], rawInserted: 0 }));
+    replayDetailedMock
+      .mockResolvedValueOnce(replayResult({ normalizedSourceItemIds: ["norm-1", "norm-2"], canonicalizedConversationIds: ["conv-1", "conv-2"] }))
+      .mockResolvedValueOnce(replayResult({ normalizedSourceItemIds: ["norm-3"], canonicalizedConversationIds: ["conv-3"] }));
+
+    const result = await ingestPublicPartition({ sourceKey: "github", requests: [req({ requestMetadata: { maxPages: 2 } })], traceId: "trace-1" });
+
+    expect(result.queryTelemetry[0]?.rawItems).toBe(3);
+    expect(result.queryTelemetry[0]?.rawNewItems).toBe(1);
+  });
+
+  it("does not change the effective request sent to discoverSource", async () => {
+    discoverSourceMock.mockResolvedValueOnce(discoveryPage());
+    replayDetailedMock.mockResolvedValueOnce(replayResult());
+
+    await ingestPublicPartition({ sourceKey: "github", requests: [req()], traceId: "trace-1" });
+
+    const [, requestArg] = discoverSourceMock.mock.calls[0]!;
+    expect(Object.keys(requestArg).sort()).toEqual(["expandThreads", "limit", "query", "requestMetadata"]);
+    expect(requestArg.requestMetadata).not.toHaveProperty("marketPartitionKey");
   });
 });

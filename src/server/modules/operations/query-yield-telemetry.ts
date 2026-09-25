@@ -8,6 +8,21 @@ export type QueryYieldTelemetry = {
   pagesRequested: number; pagesCompleted: number; cursorContinuationCount: number; continuationStoppedReason: QueryYieldStopReason;
   executionStatus: QueryYieldExecutionStatus; rawItems: number; normalizedItems: number; uniqueConversations: number; duplicateCount: number;
   estimatedCostUsd: number | null;
+  /**
+   * Wanterest 1B Stage 2B (observational): the tenant-free market partition
+   * this query's executed retrieval spec maps to, if the source is eligible.
+   * Null for queries that never executed (reconciled fallback rows) and for
+   * queries against an ineligible source - see marketPartitionIneligibleReason.
+   */
+  marketPartitionKey?: string | null;
+  /** Set only when the source is not eligible for partition identity in v1. */
+  marketPartitionIneligibleReason?: string | null;
+  /**
+   * Exact count of raw items newly inserted (not already-existing duplicates)
+   * for this query, summed across its pages, taken directly from
+   * IngestionService.discoverSource's own rawInserted field - not inferred.
+   */
+  rawNewItems?: number | null;
 };
 
 export type QueryYieldOutcome = { conversationId: string; selected: boolean; evaluated: boolean; qualificationStatus: "qualified" | "weak_candidate" | "rejected" | null };
