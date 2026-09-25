@@ -2281,3 +2281,223 @@ Gate record (25 Sep 2026) — **LAYER 9B: PRODUCTION_PROVEN**
   the 90d-specific case. The separate 90d canonical-currentness-cap limitation (a 90d window's older
   leg exceeds the <=90-day currentness bound) is proven by `demand-drift-v2-policy.test.ts` but
   cannot yet be isolated live because the monitoring-history gate fails first for every window.
+
+## 18. Layer 9C — Persisted concept market state + Action basis (`concept_market_state_v1`)
+
+Architecture decision (approved 25 Sep 2026, revised twice before implementation for four
+corrections plus a final Action-basis guardrail — see below). Adds durable, append-only,
+lifecycle-verified concept history, and the persisted basis future Actions may reference. Layer
+9A/9B's read paths are unchanged: pages keep reading live via `DemandCurrentnessService`; 9C is a
+write-side addition that does not become the page source in this stage (Option A, confirmed).
+
+### Core principle
+
+9B answers "what is valid current demand right now?" (read-time, re-derived every time). 9C
+additionally answers "what did Wanterest validly believe at time T, based on what evidence?"
+(write-time, frozen forever). A state written at time T remains immutable even if the evidence
+behind it is later superseded, invalidated, retracted, or goes stale; a later lifecycle change can
+only produce a new state, never rewrite the old one.
+
+### Concept and state identity
+
+Concept identity is unchanged: `(workspace_id, product_id, clustering_version, anchor_concept_key)`.
+`clustering_version` is a first-class, persisted column on every 9C table (not implied through a
+join), so two clustering versions can never share one concept's history:
+
+- Concept market state: `(workspace_id, product_id, clustering_version, anchor_concept_key,
+  concept_market_state_policy_version, sequence)`.
+- Concept gap state: the same tuple plus `gap_state_policy_version`, with a composite FK to its
+  exact market-state row.
+- Concept drift state: the same tuple plus `drift_state_policy_version` and `window` (window is
+  part of this identity, never of concept identity).
+- Action basis: the specific `concept_market_states.id` (and, when gap/drift-triggered, the
+  specific `concept_gap_states.id` / `concept_drift_states.id`) recorded as `trigger_id` +
+  `trigger_evidence_node_id`, via the same generic evidence-node trigger mechanism every existing
+  Action trigger type already uses.
+
+### Append-only semantics
+
+Effective change = input-fingerprint change; identical recomputation appends nothing. Sequence +
+`previous_state_id` chain, identical to Stage 2G's `demand_cluster_states`. Immutability triggers
+reject `update`/`delete` on all three tables, same pattern. No lifecycle write ever appends a state
+directly — only a materialization run appends, and only if the fingerprint changed. A concept with
+zero current evidence still receives a state ("inactive"/"no current demand"); this is its
+tombstone, not a separate mechanism.
+
+### Persisted objects, statuses, and what is deliberately not semantic input
+
+Three tables, one materialization run per rebuild:
+
+- `concept_market_states` — one row per (concept, sequence): current evidence count, distinct
+  source count, source/intent-family/target-scope mix, strength level, first/last evidence time,
+  exclusion summary, `input_fingerprint`. Reuses the Layer 9A/9B roll-up
+  (`DemandCurrentnessService` + `buildDemandMap`) directly — 9C never re-derives currentness with
+  separate logic.
+- `concept_gap_states` — one row per (concept, sequence), FK to one market state and one
+  `product_snapshots` row (already immutable/versioned; reused as the frozen positioning basis, no
+  new positioning table). `status: "no_current_demand" | "directional" | "scored"` — all three are
+  persisted whenever materialization runs and a positioning basis exists (an immutable record of
+  "checked, found nothing executable" is itself valuable; absence of a row would be ambiguous with
+  "never checked"). If no positioning snapshot exists yet, gap materialization is skipped that
+  cycle with a warning, matching the existing precondition-skip pattern in
+  `rebuildDemandIntelligenceForScan`. Only `status = "scored"` may become an Action basis.
+- `concept_drift_states` — one row per (concept, window, sequence). Never "total market-state count
+  at T1 vs T2" (that would recreate the overlapping-window problem `drift_comparability_v1` already
+  fixed). Instead it freezes the exact comparison computed once at materialization time via the
+  frozen `driftAnchor`/`planDriftComparison`/window-bucketing logic Drift v2 already uses:
+  `previous_period_start/end`, `current_period_start/end`, `comparable`/`comparability_reason`,
+  `monitoring_started_at_basis`, frozen current/previous evidence and source counts, `direction`,
+  `significance`, `share_delta`, `growth_rate`. A non-comparable result is persisted too (symmetric
+  with Gap's "checked, found nothing"). The `market_state_id` FK on a drift row is lineage only
+  (which materialization run produced it) — never a semantic input to its frozen numbers, which
+  come directly from bucketing currently-valid membership evidence into the two frozen windows.
+
+### Provenance (evidence_nodes / evidence_provenance only, no JSON-only lineage)
+
+- `concept_market_states` -> `derived_from_cluster_state` -> every relevant Stage 2G
+  `demand_cluster_states` evidence node rolled into the concept; -> `strengthened_by` -> every
+  contributing membership's evidence node; -> `excluded_member` (`measurement: {reason}`) -> every
+  non-contributing but considered membership's evidence node. The `exclusions` jsonb column is a
+  fast-read summary, never a substitute for these edges — a zero-evidence state must remain fully
+  traceable to the real evidence that was considered and excluded (Stage 2G's own existing
+  `strengthened_by`/`excluded_membership` pattern, applied one level up at the concept roll-up).
+- `concept_gap_states` -> `derived_from_market_state` -> its market state's node; ->
+  `uses_positioning` -> the `product_snapshots` evidence node.
+- `concept_drift_states` -> `current_window_member` / `previous_window_member` -> every
+  membership's evidence node that fell in each frozen window at materialization time; ->
+  `derived_from_market_state` (lineage only); -> `supersedes_state` -> its own `previous_state_id`'s
+  evidence node.
+
+### Fingerprints (idempotency)
+
+- Market state: sha256 of `{policyVersion, clusteringVersion, anchorConceptKey, sorted
+  [(membershipId, clusterId, contributes, reason)]}` across every relevant cluster.
+- Gap state: sha256 of `{policyVersion, marketStateId, marketStateInputFingerprint,
+  productSnapshotId, productSnapshotContentHash}` — includes the market state's own fingerprint,
+  not just its id.
+- Drift state: sha256 of `{policyVersion, comparabilityVersion, clusteringVersion,
+  anchorConceptKey, window, all four period boundaries, monitoringStartedAtBasis, sorted
+  currentWindowMemberIds, sorted previousWindowMemberIds}` — full frozen membership sets, never
+  counts alone and never just the two state ids. Because `driftAnchor(now)` moves forward daily, a
+  new day naturally produces new boundaries and a new fingerprint even with unchanged evidence; a
+  same-day replay with unchanged evidence appends nothing.
+
+### Materialization triggers
+
+Added as one more step inside the existing rebuild path (`rebuildDemandIntelligenceForScan`),
+immediately after Stage 2G clustering — the same additive, non-fatal, flag-gated pattern Stage 2G
+itself uses. Not triggered by lifecycle writes directly (no new event infrastructure, per Layer
+9B's precedent) and not a separate scheduler. A lifecycle change becomes a new persisted state at
+the next rebuild that touches the product (manual scan or 2D-incremental dispatch) — the same
+cadence Stage 2G already relies on.
+
+### Action basis — live-validated at write time
+
+A persisted state being latest, recent, and above the evidence threshold is not sufficient by
+itself: lifecycle can change between materialization and the next rebuild. Immediately before any
+concept-based Action is written (plan gate first, always):
+
+Gap basis (two independently-changing inputs — demand and positioning):
+1. `actions_enabled` plan gate.
+2. The referenced `concept_market_states` row must be the latest for its concept.
+3. Run `DemandCurrentnessService` live for this concept; recompute the same market-state
+   fingerprint function materialization uses (one implementation, called twice).
+4. Require live fingerprint == persisted market-state fingerprint; otherwise stop with
+   `basis_currentness_mismatch`.
+5. Load the current positioning snapshot using the exact same semantics
+   `currentPositioningSnapshot` (Gap v2) already uses.
+6. Require `concept_gap_states.product_snapshot_id == current positioning snapshot id`;
+   otherwise stop with `basis_positioning_mismatch`.
+7. Only then: eligibility (latest sequence, `status = "scored"`, existing
+   `actionCandidateIsQualified` thresholds unchanged, staleness, idempotency) -> write.
+
+Drift basis:
+1. Plan gate first.
+2. The referenced `concept_drift_states` row must be the latest for `(workspace, product,
+   clustering_version, anchor_concept_key, drift_state_policy_version, window)` — an older
+   immutable drift belief remains valid history but can never become a new Action basis once a
+   newer drift state exists for the same window.
+3. Its `market_state_id` must resolve to the latest eligible concept market state.
+4. The same live currentness-fingerprint check as the gap path.
+5. Existing `actionCandidateIsQualified` drift thresholds (rising, notable/strong, unchanged) ->
+   write.
+
+On any mismatch: the persisted state is never mutated, and no replacement is materialized inline —
+materialization stays a single writer (the rebuild path only), so a mismatch just means this cycle
+skips; the next normal rebuild produces a state a later Action-generation pass can use. No new
+source-diversity threshold is introduced anywhere in this stage.
+
+### Action schema — smallest change, existing rows untouched
+
+Two new `actions.trigger_type` values, `concept_gap` and `concept_drift`, added to the existing
+check constraint (additive `drop constraint if exists` / `add constraint`, same pattern already
+used twice). Two new `evidence_nodes` node types (`concept_gap_state`, `concept_drift_state`, plus
+`concept_market_state` for the market state's own node) and entity tables (`concept_gap_states`,
+`concept_drift_states`, `concept_market_states`) added to those two existing check constraints,
+same additive pattern Stage 2G already used. `validate_action_trigger()` gets two more `case`
+branches (`concept_gap` -> `concept_gap_states`, `concept_drift` -> `concept_drift_states`) — no
+new column on `actions`, no bespoke per-type FK. Every existing Action row
+(`demand_gap`/`demand_drift`/`demand_snapshot`/`signal`) stays valid and untouched;
+`actionCandidateIsQualified` and `ActionTriggerType`'s existing thresholds are extended to also
+recognize `concept_gap`/`concept_drift` as equivalent to the `demand_gap`/`demand_drift`
+branches — the same numbers, not new ones.
+
+### Action generation flow
+
+DOWNSTREAM_INTELLIGENCE_V2_ENABLED=false -> legacy behaviour (rollback, unchanged).
+DOWNSTREAM_INTELLIGENCE_V2_ENABLED=true, CONCEPT_ACTIONS_ENABLED=false -> paused (Layer 9B's proven
+state, unchanged). DOWNSTREAM_INTELLIGENCE_V2_ENABLED=true, CONCEPT_ACTIONS_ENABLED=true -> legacy
+triggers remain prohibited; eligible, live-validated concept_gap / concept_drift bases may
+generate Actions. Legacy gap/drift/snapshot/geography triggers are never silently re-enabled.
+
+### Digests
+
+Deferred beyond noting the intended shape (not implemented in 9C): a concept newly becoming
+`scored`, newly `rising` with notable/strong significance, or transitioning into inactive — each
+only on the materialization that produced the transition, to avoid noise. No delivery/notification
+redesign.
+
+### Zero-current-demand production reality (honest, not manufactured)
+
+Production Linear's expected first 9C state: `concept_market_states` — 0 contributing, 11 excluded
+(10 `evaluation_superseded`, 1 `signal_invalidated`), with 1 `derived_from_cluster_state` edge and
+11 `excluded_member` edges (fully traceable, zero `strengthened_by` edges); `concept_gap_states` —
+`status: "no_current_demand"`, framed against Linear's real, existing `product_snapshots` row;
+`concept_drift_states` — `comparable: false, comparability_reason: "insufficient_history"` for all
+three windows (monitoring history since 2026-09-21 is not yet 14 days deep, matching Layer 9B's
+already-proven live result). None of this is manufactured; it is the honest, fully-provenanced
+record of what materialization actually found.
+
+### Feature flags
+
+`CONCEPT_MARKET_STATE_ENABLED` (gates materialization writes) and `CONCEPT_ACTIONS_ENABLED` (gates
+concept-based Action generation; requires `DOWNSTREAM_INTELLIGENCE_V2_ENABLED=true` to do
+anything). Both default `false`. No new read-side flag — pages do not read 9C state in this stage.
+Rollout order: migration -> deploy (flags off) -> `CONCEPT_MARKET_STATE_ENABLED=true`, prove
+materialization -> only then `CONCEPT_ACTIONS_ENABLED=true`.
+
+### Performance and tenancy
+
+Materialization reuses `DemandCurrentnessService`'s existing bounds (500 evaluations via Stage
+2G's cap, 5,000 states via `DEMAND_CLUSTER_STATE_READ_LIMIT`) — no new unbounded read. Prior-state
+lookups are always `order by sequence desc limit 1` (or a small bounded N for lookback), never a
+full history scan. No provider, discovery, or LLM calls. Every new table carries non-null
+`workspace_id`/`product_id`, composite `(workspace_id, product_id, id)` FKs throughout (including a
+new additive `product_snapshots_workspace_product_id_key unique (workspace_id, product_id, id)`,
+the same kind of additive key Stage 2G already added to `product_match_evaluations`), RLS enabled
+with `revoke ... from anon, authenticated` / `grant select to authenticated` / `grant all to
+service_role` and member-select via `is_workspace_member(workspace_id)` — identical to Stage 2G's
+proven migration pattern.
+
+### Legacy compatibility
+
+`demand_snapshots`, `demand_gaps`, `demand_drifts`, `demand_themes`, existing `actions` rows, and
+Stage 2G's own tables are never rewritten. 9C reads Stage 2G's states as input and writes new,
+separate tables; the legacy Gap/Drift pipeline and Layer 9A/9B's read paths keep running unchanged.
+
+### Explicitly out of scope for 9C
+
+Geography facets on concept state; a second independent reconciliation scheduler; frozen-history
+backfill for drift comparisons predating 9C; Digest delivery/notification redesign; any UI for
+concept history; source/provider/qualification/discovery/pricing changes; new LLM reasoning; Layer
+10 product expansion.
