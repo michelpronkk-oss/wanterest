@@ -8,8 +8,10 @@ import { getEmailProvider } from "@/server/providers/email";
 import { SupabaseActionRepository } from "@/server/modules/actions/action.repository";
 import { Phase4DigestSource, DigestService } from "@/server/modules/digests/digest.service";
 import { SupabaseDemandRepository } from "@/server/modules/demand-intelligence/demand.repository";
+import { SupabaseDemandClusteringRepository } from "@/server/modules/demand-intelligence/demand-clustering.repository";
 import { SupabaseIntelligenceRepository } from "@/server/modules/intelligence/intelligence.repository";
 import { resolveMonitoringPolicy } from "@/server/modules/entitlements/monitoring-policy";
+import { getServerEnv } from "@/server/lib/env";
 
 type Client = SupabaseClient<Database>;
 
@@ -35,9 +37,13 @@ export async function materializeMonitoringNotifications(input: { workspaceId: s
   if (!policy.digestEnabled && !policy.priorityAlertsEnabled) return;
 
   if (policy.digestEnabled) {
+    const clusteringRepository = new SupabaseDemandClusteringRepository(client);
     const digestService = new DigestService(
       new SupabaseActionRepository(client),
-      new Phase4DigestSource(new SupabaseIntelligenceRepository(client), new SupabaseDemandRepository(client)),
+      new Phase4DigestSource(new SupabaseIntelligenceRepository(client), new SupabaseDemandRepository(client), {
+        enabled: getServerEnv().DOWNSTREAM_INTELLIGENCE_V2_ENABLED === "true",
+        loadMatchLifecycle: (workspaceId, productId, productMatchIds) => clusteringRepository.loadMatchLifecycle(workspaceId, productId, productMatchIds),
+      }),
     );
     const digest = await digestService.buildDigest({
       workspaceId: input.workspaceId,

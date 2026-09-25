@@ -1,5 +1,5 @@
 import { getDashboardContext } from "@/server/modules/dashboard/dashboard.context";
-import { getGeographyQuery } from "@/server/modules/demand-intelligence/commands";
+import { getGeographyQuery, isDownstreamIntelligenceV2Enabled } from "@/server/modules/demand-intelligence/commands";
 import { GeographySurface } from "@/components/dashboard/geography-surface";
 import { InsightsDataEmptyState, InsightsScopeEmptyState } from "@/components/dashboard/insights-empty-states";
 import { geographyWindowSchema, parseGeographySelection, type GeographyWindow } from "@/server/modules/geography/geography.schemas";
@@ -32,6 +32,9 @@ export default async function GeographyPage({ searchParams }: { searchParams: Se
   }
   const data = await getGeographyQuery(workspace.id, product.id, window, parseGeographySelection(query)).catch(() => null);
   if (!data) return <InsightsDataEmptyState workspaceId={workspace.id} productId={product.id} fallbackTitle="Geography is not ready yet" fallbackBody="Complete a scan to build location-aware demand intelligence." />;
-  if (!data.totalQualifiedSignalCount) return <GeographySurface data={data} workspaceId={workspace.id} />;
-  return <div style={{ marginTop: 8 }}><GeographySurface data={data} workspaceId={workspace.id} /></div>;
+  // Layer 9B: Geography is not yet re-derived from lifecycle-verified current
+  // evidence (deferred; docs/architecture.md §17) — label only, no rework here.
+  const notice = isDownstreamIntelligenceV2Enabled() ? <p style={{ fontSize: 12, color: "var(--color-ink-faint)", marginBottom: 12 }}>Not lifecycle-filtered.</p> : null;
+  if (!data.totalQualifiedSignalCount) return <>{notice}<GeographySurface data={data} workspaceId={workspace.id} /></>;
+  return <div style={{ marginTop: 8 }}>{notice}<GeographySurface data={data} workspaceId={workspace.id} /></div>;
 }

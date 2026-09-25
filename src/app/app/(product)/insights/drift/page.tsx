@@ -1,8 +1,10 @@
 import { getDashboardContext } from "@/server/modules/dashboard/dashboard.context";
-import { getDemandDriftQuery } from "@/server/modules/demand-intelligence/commands";
+import { getDemandDriftQuery, getDemandDriftV2Query, isDownstreamIntelligenceV2Enabled } from "@/server/modules/demand-intelligence/commands";
 import { formatPercent, themeLabel } from "@/components/dashboard/dashboard-utils";
 import { InsightsDataEmptyState, InsightsScopeEmptyState } from "@/components/dashboard/insights-empty-states";
 import { DriftLists } from "@/components/dashboard/drift-lists";
+import { demandDriftV2Headline, DriftV2Lists } from "@/components/dashboard/downstream-v2-sections";
+import { HistoricalEvidenceSection } from "@/components/dashboard/demand-map-concepts";
 import { CapabilityGate } from "@/components/dashboard/upgrade-surface";
 import { resolveWorkspaceCapabilities } from "@/server/modules/entitlements/plan-capabilities";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
@@ -22,6 +24,35 @@ export default async function DemandDriftPage() {
         title="Demand Drift is a paid insight"
         body="Compare changing themes and emerging language across scans with 30 days of history."
       />
+    );
+  }
+
+  if (isDownstreamIntelligenceV2Enabled()) {
+    const driftV2 = await getDemandDriftV2Query(workspace.id, product.id).catch(() => null);
+    const legacy = await getDemandDriftQuery(workspace.id, product.id).catch(() => null);
+    if (!driftV2 && !legacy) {
+      return <InsightsDataEmptyState workspaceId={workspace.id} productId={product.id} fallbackTitle="Drift is temporarily unavailable" fallbackBody="Your saved intelligence is unchanged; try again shortly." />;
+    }
+    const headline = driftV2 ? demandDriftV2Headline(driftV2) : { title: "No comparable current movement", body: "Drift could not be loaded." };
+    const rising = driftV2?.comparable ? driftV2.rising : [];
+    const cooling = driftV2?.comparable ? driftV2.cooling : [];
+    return (
+      <div style={{ marginTop: 20 }}>
+        <div className="ui-card ui-card-pad-lg" style={{ marginBottom: 16 }}>
+          <div className="ui-section-label" style={{ marginBottom: 2 }}>{headline.title}</div>
+          <p style={{ fontSize: 12.5, color: "var(--color-ink-muted)" }}>{headline.body}</p>
+        </div>
+        <DriftV2Lists rising={rising} cooling={cooling} />
+        {legacy && legacy.drifts.length > 0 ? (
+          <HistoricalEvidenceSection caption={`${legacy.drifts.length} legacy drift row${legacy.drifts.length === 1 ? "" : "s"} from the snapshot pipeline.`}>
+            {(() => {
+              const legacyRising = [...legacy.drifts].filter((row) => row.drift_direction === "rising").sort((a, b) => b.share_delta - a.share_delta);
+              const legacyCooling = [...legacy.drifts].filter((row) => row.drift_direction === "cooling").sort((a, b) => a.share_delta - b.share_delta);
+              return <DriftLists rising={legacyRising} cooling={legacyCooling} />;
+            })()}
+          </HistoricalEvidenceSection>
+        ) : null}
+      </div>
     );
   }
 

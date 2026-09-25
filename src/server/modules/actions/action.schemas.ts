@@ -10,6 +10,33 @@ export type ActionType = z.infer<typeof actionTypeSchema>;
 
 export const actionTriggerTypeSchema = z.enum(["demand_gap", "demand_drift", "demand_snapshot", "signal"]);
 export type ActionTriggerType = z.infer<typeof actionTriggerTypeSchema>;
+
+/**
+ * Layer 9B read-only label (never persisted, never changes the stored Action):
+ * with DOWNSTREAM_INTELLIGENCE_V2_ENABLED off, currentness isn't evaluated at
+ * all. With it on, none of 9B's existing trigger types (demand_gap, demand_drift,
+ * demand_snapshot, signal) carry a lifecycle-verified Stage 2G concept basis —
+ * that arrives with Layer 9C's concept-based trigger type — so every existing
+ * Action reads as "not_verified" until then. See docs/architecture.md §17.
+ */
+export type ActionBasisLifecycleStatus = "not_applicable" | "not_verified";
+
+export function actionBasisLifecycleStatus(downstreamIntelligenceV2Enabled: boolean): ActionBasisLifecycleStatus {
+  return downstreamIntelligenceV2Enabled ? "not_verified" : "not_applicable";
+}
+
+/**
+ * Layer 9B: with the flag on, generateActionsForScan must not generate from any
+ * legacy trigger (gap, drift, snapshot fallback, geography) — none carries a
+ * lifecycle-verified concept basis. Pure so the gate itself is directly testable
+ * without mocking Supabase; action.orchestration.ts returns immediately when this
+ * is non-null, before any gap/drift/snapshot/geography read.
+ */
+export const NO_LIFECYCLE_VERIFIED_BASIS_WARNING = "no_lifecycle_verified_basis" as const;
+
+export function legacyActionGenerationPauseReason(downstreamIntelligenceV2Enabled: boolean): typeof NO_LIFECYCLE_VERIFIED_BASIS_WARNING | null {
+  return downstreamIntelligenceV2Enabled ? NO_LIFECYCLE_VERIFIED_BASIS_WARNING : null;
+}
 export const actionStatusSchema = z.enum(["proposed", "approved", "in_progress", "completed", "dismissed", "superseded"]);
 export type ActionStatus = z.infer<typeof actionStatusSchema>;
 export const actionVariantStatusSchema = z.enum(["generated", "selected", "rejected", "archived"]);

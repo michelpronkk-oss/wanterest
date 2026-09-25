@@ -2,7 +2,7 @@ import { AppError } from "../../lib/errors";
 import { deterministicUuid, sha256Json } from "../ingestion/hash";
 import { jsonValueSchema, type Json } from "../../db/database.helpers";
 import type { ActionEventRow, ActionFeedbackRow, ActionRow, ActionVariantRow } from "../../db/database.helpers";
-import { actionFeedbackInputSchema, actionFeedbackTypeSchema, actionGenerationInputSchema, actionListFiltersSchema, actionStatusSchema, actionTypeSchema, businessHypothesisSchema, parseVariantContent, type ActionFeedbackType, type ActionGenerationInput, type ActionListFilters, type ActionStatus } from "./action.schemas";
+import { actionBasisLifecycleStatus, actionFeedbackInputSchema, actionFeedbackTypeSchema, actionGenerationInputSchema, actionListFiltersSchema, actionStatusSchema, actionTypeSchema, businessHypothesisSchema, parseVariantContent, type ActionBasisLifecycleStatus, type ActionFeedbackType, type ActionGenerationInput, type ActionListFilters, type ActionStatus } from "./action.schemas";
 import { ACTION_PRIORITY_FORMULA_VERSION, FixtureDemandActionEngine, FixtureDemandActionVariantEngine, type DemandActionEngine, type DemandActionVariantEngine } from "./action.engines";
 import type { ActionClient, ActionRepository } from "./action.repository";
 
@@ -34,6 +34,8 @@ export type ActionReadModel = {
   evidenceContext: Json;
   feedbackState: { latest: ActionFeedbackType | null; useful: boolean | null; saved: boolean | null; dismissed: boolean | null };
   provenance: { actionEvidenceNodeId: string; triggerEvidenceNodeId: string; supportingEvidenceNodeIds: string[] };
+  /** Layer 9B, read-only (see action.schemas.ts). Never rewrites the stored Action. */
+  basisLifecycleStatus: ActionBasisLifecycleStatus;
 };
 
 export type ActionGenerationOutput = { actions: ActionRow[]; suppressed: string[] };
@@ -56,6 +58,7 @@ export class DemandActionService {
     private readonly repository: ActionRepository,
     private readonly entitlements?: ActionEntitlementPort,
     private readonly audit?: ActionAuditPort,
+    private readonly options?: { downstreamIntelligenceV2Enabled?: boolean },
   ) {}
 
   async generateActions(input: ActionGenerationInput, engine: DemandActionEngine = new FixtureDemandActionEngine()): Promise<ActionGenerationOutput> {
@@ -257,7 +260,7 @@ export class DemandActionService {
     const supportingEvidenceNodeIds = evidenceContext && typeof evidenceContext === "object" && !Array.isArray(evidenceContext) && Array.isArray(evidenceContext.supportingEvidenceNodeIds)
       ? evidenceContext.supportingEvidenceNodeIds.filter((value): value is string => typeof value === "string")
       : [];
-    return { action, variants, feedback, events, evidenceContext, feedbackState, provenance: { actionEvidenceNodeId: action.evidence_node_id, triggerEvidenceNodeId: action.trigger_evidence_node_id, supportingEvidenceNodeIds } };
+    return { action, variants, feedback, events, evidenceContext, feedbackState, provenance: { actionEvidenceNodeId: action.evidence_node_id, triggerEvidenceNodeId: action.trigger_evidence_node_id, supportingEvidenceNodeIds }, basisLifecycleStatus: actionBasisLifecycleStatus(this.options?.downstreamIntelligenceV2Enabled ?? false) };
   }
 
   static inputFingerprint(input: ActionGenerationInput, engineVersion: string): string {

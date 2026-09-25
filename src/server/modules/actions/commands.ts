@@ -1,6 +1,7 @@
 import { requireUser } from "../auth";
 import { getProductQuery } from "../products";
 import { createSupabaseServiceClient } from "../../providers/supabase/service";
+import { getServerEnv } from "../../lib/env";
 import type { ActionGenerationInput, ActionListFilters, ActionStatus } from "./action.schemas";
 import type { DemandActionEngine, DemandActionVariantEngine } from "./action.engines";
 import { DemandActionService, type ActionReadModel } from "./action.service";
@@ -10,7 +11,7 @@ export const ACTION_JOB_TYPES = ["generate-actions", "build-digest"] as const;
 export type ActionJobType = (typeof ACTION_JOB_TYPES)[number];
 
 function readService() {
-  return new DemandActionService(new SupabaseActionRepository(createSupabaseServiceClient()), { can: async () => true });
+  return new DemandActionService(new SupabaseActionRepository(createSupabaseServiceClient()), { can: async () => true }, undefined, { downstreamIntelligenceV2Enabled: getServerEnv().DOWNSTREAM_INTELLIGENCE_V2_ENABLED === "true" });
 }
 
 /** Thin read wrapper over DemandActionService.listActions — no priority/scoring logic here. */

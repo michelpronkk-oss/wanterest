@@ -5,6 +5,8 @@ import { selectComparableDrifts } from "@/server/modules/demand-intelligence/dri
 import { capabilityAllows } from "@/server/modules/entitlements/entitlement-policy";
 import { getWorkspaceEntitlement } from "@/server/modules/entitlements/entitlement.repository";
 import { ensureEngineVersion } from "@/server/modules/observability/engine.repository";
+import { getServerEnv } from "@/server/lib/env";
+import { legacyActionGenerationPauseReason } from "./action.schemas";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
 import { SupabaseDemandRepository } from "../demand-intelligence/demand.repository";
 import { actionInputFromDrift, actionInputFromGap, actionInputFromGeoMarket, actionInputFromSnapshot } from "./action.candidates";
@@ -23,6 +25,14 @@ export async function generateActionsForScan(input: { product: ProductRow; trace
   const client = createSupabaseServiceClient();
   const entitlement = await getWorkspaceEntitlement(client, input.product.workspace_id, "actions_enabled");
   if (!capabilityAllows(entitlement.value)) return { actionsUpdated: 0, warnings: ["Actions are not enabled for this workspace plan."] };
+
+  // Layer 9B: none of the legacy triggers below (gap, drift, snapshot fallback,
+  // geography) carry a lifecycle-verified Stage 2G concept basis. Rather than
+  // generate an Action that could rest on superseded/invalidated/stale evidence,
+  // generation is paused until Layer 9C adds a verified concept trigger. Existing
+  // persisted Actions are never touched here. See docs/architecture.md §17.
+  const pauseReason = legacyActionGenerationPauseReason(getServerEnv().DOWNSTREAM_INTELLIGENCE_V2_ENABLED === "true");
+  if (pauseReason) return { actionsUpdated: 0, warnings: [pauseReason] };
 
   const demand = new SupabaseDemandRepository(client);
   const snapshots = await demand.listSnapshots(input.product.workspace_id, input.product.id);

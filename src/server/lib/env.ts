@@ -59,6 +59,9 @@ const serverEnvSchema = publicEnvSchema.extend({
   // Layer 9A: cluster-led Demand Map / Overview market state (read-only).
   // Defaults to the legacy view unless exactly "true".
   DEMAND_MAP_V2_ENABLED: z.enum(["true", "false"]).optional(),
+  // Layer 9B: lifecycle-aware Gap/Drift v2, paused legacy Action generation,
+  // lifecycle-filtered Digests. Read in both Vercel and Trigger. Defaults off.
+  DOWNSTREAM_INTELLIGENCE_V2_ENABLED: z.enum(["true", "false"]).optional(),
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
@@ -124,6 +127,7 @@ export function getServerEnv(): ServerEnv {
     INCREMENTAL_PRODUCT_MATCHING_ENABLED: process.env.INCREMENTAL_PRODUCT_MATCHING_ENABLED,
     DEMAND_CLUSTERING_ENABLED: process.env.DEMAND_CLUSTERING_ENABLED,
     DEMAND_MAP_V2_ENABLED: process.env.DEMAND_MAP_V2_ENABLED,
+    DOWNSTREAM_INTELLIGENCE_V2_ENABLED: process.env.DOWNSTREAM_INTELLIGENCE_V2_ENABLED,
   });
 }
 

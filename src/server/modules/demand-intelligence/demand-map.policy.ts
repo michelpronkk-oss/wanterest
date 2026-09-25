@@ -131,17 +131,30 @@ export function demandMapLevel(activeEvidenceCount: number, activeSourceCount: n
 }
 
 /**
+ * Wanterest's single canonical definition of CURRENT (Layer 9A + 9B): checked live,
+ * at read time, never trusting only what was last persisted. Every subsystem that
+ * needs to know whether one piece of evidence is currently valid (the Map, Gap v2,
+ * Drift v2, Digests) calls this same function — see docs/architecture.md §16/§17.
+ * Returns null when the evidence is currently valid.
+ */
+export type DemandLifecycleExclusionReason = "evidence_unavailable" | "evaluation_superseded" | "signal_invalidated" | "signal_retracted" | "stale";
+
+export function lifecycleExclusionReason(input: { found: boolean; matchEvaluationId: string; currentEvaluationId: string | null; signalLifecycleStatus: string | null; evidenceAt: string; staleBeforeIso: string }): DemandLifecycleExclusionReason | null {
+  if (!input.found) return "evidence_unavailable";
+  if (input.currentEvaluationId !== input.matchEvaluationId) return "evaluation_superseded";
+  if (input.signalLifecycleStatus === "invalidated") return "signal_invalidated";
+  if (input.signalLifecycleStatus === "retracted") return "signal_retracted";
+  if (time(input.evidenceAt) < time(input.staleBeforeIso)) return "stale";
+  return null;
+}
+
+/**
  * A membership counts only if the persisted state lists it as contributing AND it
  * is still valid now. Persisted exclusions are never revived.
  */
 export function resolveDemandMapMember(member: DemandMapMemberInput, staleBeforeIso: string): DemandMapResolvedMember {
   const { persisted, live, ...rest } = member;
-  const liveReason = !live.found ? "evidence_unavailable"
-    : live.currentEvaluationId !== member.matchEvaluationId ? "evaluation_superseded"
-      : live.signalLifecycleStatus === "invalidated" ? "signal_invalidated"
-        : live.signalLifecycleStatus === "retracted" ? "signal_retracted"
-          : time(member.evidenceAt) < time(staleBeforeIso) ? "stale"
-            : null;
+  const liveReason = lifecycleExclusionReason({ found: live.found, matchEvaluationId: member.matchEvaluationId, currentEvaluationId: live.currentEvaluationId, signalLifecycleStatus: live.signalLifecycleStatus, evidenceAt: member.evidenceAt, staleBeforeIso });
   if (!persisted.inLatestState) return { ...rest, contributes: false, reason: liveReason ?? "not_in_latest_state", pendingRecompute: true };
   if (!persisted.contributes) return { ...rest, contributes: false, reason: persisted.reason ?? "excluded", pendingRecompute: liveReason === null && persisted.reason !== "duplicate_conversation" && persisted.reason !== "duplicate_content" };
   if (liveReason) return { ...rest, contributes: false, reason: liveReason, pendingRecompute: true };

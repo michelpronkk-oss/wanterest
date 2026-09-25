@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { getDashboardContext } from "@/server/modules/dashboard/dashboard.context";
-import { getDemandDriftQuery, getDemandGapQuery, getDemandMapQuery, getDemandMapV2Query, isDemandMapV2Enabled } from "@/server/modules/demand-intelligence/commands";
+import { getDemandDriftQuery, getDemandGapQuery, getDemandMapQuery, getDemandMapV2Query, getDownstreamIntelligenceV2Query, isDemandMapV2Enabled, isDownstreamIntelligenceV2Enabled } from "@/server/modules/demand-intelligence/commands";
 import { formatPercent, themeLabel } from "@/components/dashboard/dashboard-utils";
 import { marketStateCopy } from "@/components/dashboard/demand-map-concepts";
 import { InsightsDataEmptyState, InsightsScopeEmptyState } from "@/components/dashboard/insights-empty-states";
@@ -13,11 +13,13 @@ export default async function InsightsOverviewPage() {
   }
 
   const v2Enabled = isDemandMapV2Enabled();
-  const [v2Map, legacyMap, gapResult, driftResult] = await Promise.all([
+  const downstreamV2Enabled = isDownstreamIntelligenceV2Enabled();
+  const [v2Map, legacyMap, gapResult, driftResult, downstream] = await Promise.all([
     v2Enabled ? getDemandMapV2Query(workspace.id, product.id).catch(() => null) : Promise.resolve(null),
     v2Enabled ? Promise.resolve(null) : getDemandMapQuery(workspace.id, product.id).catch(() => null),
-    getDemandGapQuery(workspace.id, product.id).catch(() => null),
-    getDemandDriftQuery(workspace.id, product.id).catch(() => null),
+    downstreamV2Enabled ? Promise.resolve(null) : getDemandGapQuery(workspace.id, product.id).catch(() => null),
+    downstreamV2Enabled ? Promise.resolve(null) : getDemandDriftQuery(workspace.id, product.id).catch(() => null),
+    downstreamV2Enabled ? getDownstreamIntelligenceV2Query(workspace.id, product.id).catch(() => null) : Promise.resolve(null),
   ]);
   const mapResult = v2Enabled ? v2Map?.historical.legacy ?? null : legacyMap;
   const hasClusterContent = Boolean(v2Map && (v2Map.current.length || v2Map.previouslyObserved.length));
@@ -44,6 +46,9 @@ export default async function InsightsOverviewPage() {
   const topDrift = driftResult ? [...driftResult.drifts].sort((a, b) => Math.abs(b.share_delta) - Math.abs(a.share_delta))[0] ?? null : null;
   const topOutcome = phrases.filter((phrase) => phrase.phrase_type === "desired_outcome").sort((a, b) => b.share_of_demand - a.share_of_demand)[0] ?? null;
   const historical = v2Enabled ? " (historical, not lifecycle-filtered)" : "";
+  // Layer 9B: these two cards use current, lifecycle-verified evidence only — never legacy fallback.
+  const topGapV2 = downstream ? [...downstream.gap.items].sort((a, b) => (b.gapScore ?? b.shareOfCurrentDemand) - (a.gapScore ?? a.shareOfCurrentDemand))[0] ?? null : null;
+  const topDriftV2 = downstream?.drift.comparable ? [...downstream.drift.items].sort((a, b) => Math.abs(b.shareDelta) - Math.abs(a.shareDelta))[0] ?? null : null;
 
   return (
     <div style={{ marginTop: 20 }}>
@@ -109,8 +114,15 @@ export default async function InsightsOverviewPage() {
 
           <div className="insights-highlight-grid">
             <div className="insights-highlight-card">
-              <div className="metric-card-label">Biggest change{historical}</div>
-              {topDrift ? (
+              <div className="metric-card-label">Biggest change{downstreamV2Enabled ? "" : historical}</div>
+              {downstreamV2Enabled ? (
+                topDriftV2 ? (
+                  <>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 6 }}>{topDriftV2.label} current demand {topDriftV2.direction} {formatPercent(Math.abs(topDriftV2.shareDelta))}</div>
+                    <div style={{ fontSize: 11, color: "var(--color-ink-faint)" }}>{topDriftV2.significance} significance</div>
+                  </>
+                ) : <div style={{ fontSize: 13, color: "var(--color-ink-muted)" }}>No comparable current movement.</div>
+              ) : topDrift ? (
                 <>
                   <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 6 }}>{themeLabel(topDrift.concept_key)} demand {topDrift.drift_direction} {formatPercent(Math.abs(topDrift.share_delta))}</div>
                   <div style={{ fontSize: 11, color: "var(--color-ink-faint)" }}>{topDrift.significance} significance</div>
@@ -118,8 +130,15 @@ export default async function InsightsOverviewPage() {
               ) : <div style={{ fontSize: 13, color: "var(--color-ink-muted)" }}>Needs a second scan to compare.</div>}
             </div>
             <div className="insights-highlight-card">
-              <div className="metric-card-label">Largest positioning gap{historical}</div>
-              {topGap ? (
+              <div className="metric-card-label">Largest positioning gap{downstreamV2Enabled ? "" : historical}</div>
+              {downstreamV2Enabled ? (
+                topGapV2 ? (
+                  <>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 6 }}>{topGapV2.label}{topGapV2.scored ? ` (+${Math.round((topGapV2.gapScore ?? 0) * 100)} gap)` : " (directional)"}</div>
+                    <div style={{ fontSize: 11, color: "var(--color-ink-faint)" }}>{topGapV2.activeEvidenceCount} current evidence</div>
+                  </>
+                ) : <div style={{ fontSize: 13, color: "var(--color-ink-muted)" }}>No current gap evidence.</div>
+              ) : topGap ? (
                 <>
                   <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 6 }}>{themeLabel(topGap.concept_key)} (+{Math.round(topGap.gap_score * 100)} gap)</div>
                   <div style={{ fontSize: 11, color: "var(--color-ink-faint)" }}>{topGap.market_mentions} signals</div>

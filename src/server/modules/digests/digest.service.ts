@@ -3,6 +3,9 @@ import { jsonValueSchema, type DigestItemRow, type DigestRow, type Json } from "
 import { deterministicUuid, sha256Json } from "../ingestion/hash";
 import type { ActionRepository } from "../actions";
 import { isComparableDriftRow } from "../demand-intelligence/drift-comparability";
+import { lifecycleExclusionReason } from "../demand-intelligence/demand-map.policy";
+import { staleBefore } from "../demand-intelligence/demand-clustering.policy";
+import type { DemandClusterMatchLifecycle } from "../demand-intelligence/demand-clustering.repository";
 import type { DemandRepository } from "../demand-intelligence";
 import type { IntelligenceRepository } from "../intelligence";
 import type { DigestItemType, DigestType } from "../actions/action.schemas";
@@ -151,19 +154,45 @@ export class InMemoryDigestSource implements DigestSource {
   async listWarnings(): Promise<string[]> { return [...this.warnings]; }
 }
 
+/**
+ * Layer 9B: gates Phase4DigestSource on the same canonical currentness check as
+ * the Map/Gap v2/Drift v2 (lifecycleExclusionReason — never a second lifecycle
+ * definition). Optional so existing callers/tests are unaffected when omitted.
+ */
+export type DigestCurrentnessPort = {
+  enabled: boolean;
+  loadMatchLifecycle(workspaceId: string, productId: string, productMatchIds: string[]): Promise<DemandClusterMatchLifecycle[]>;
+};
+
 /** Provider-neutral bridge from the Phase 3/4 read repositories into digest selection. */
 export class Phase4DigestSource implements DigestSource {
-  constructor(private readonly intelligence: IntelligenceRepository, private readonly demand: DemandRepository) {}
+  constructor(private readonly intelligence: IntelligenceRepository, private readonly demand: DemandRepository, private readonly currentness?: DigestCurrentnessPort) {}
+
+  private async currentSignals<T extends { product_match_id: string; product_match_evaluation_id: string; lifecycle_status: string; published_at: string | null; created_at: string }>(workspaceId: string, productId: string, signals: T[]): Promise<T[]> {
+    if (!this.currentness?.enabled || !signals.length) return signals;
+    const lifecycle = await this.currentness.loadMatchLifecycle(workspaceId, productId, signals.map((signal) => signal.product_match_id));
+    const byMatch = new Map(lifecycle.map((row) => [row.productMatchId, row]));
+    const cutoff = staleBefore(new Date());
+    return signals.filter((signal) => {
+      const live = byMatch.get(signal.product_match_id);
+      return lifecycleExclusionReason({ found: Boolean(live?.found), matchEvaluationId: signal.product_match_evaluation_id, currentEvaluationId: live?.currentEvaluationId ?? null, signalLifecycleStatus: signal.lifecycle_status, evidenceAt: signal.published_at ?? signal.created_at, staleBeforeIso: cutoff }) === null;
+    });
+  }
 
   async listCandidates(input: { workspaceId: string; productId?: string | null; periodStart: string; periodEnd: string }): Promise<DigestCandidate[]> {
     if (!input.productId) return [];
     const candidates: DigestCandidate[] = [];
-    const signals = await this.intelligence.listSignals(input.workspaceId, input.productId);
-    for (const signal of signals.slice(0, 50)) {
+    const allSignals = await this.intelligence.listSignals(input.workspaceId, input.productId);
+    const signals = await this.currentSignals(input.workspaceId, input.productId, allSignals.slice(0, 50));
+    for (const signal of signals) {
       const ranking = await this.intelligence.getRankingById(signal.match_ranking_id);
       const date = signal.published_at ?? signal.created_at;
       if (date >= input.periodStart && date < input.periodEnd) candidates.push({ itemType: "signal", itemId: signal.id, sourceEvidenceNodeId: signal.evidence_node_id, score: ranking?.opportunity_score ?? 0, reason: signal.why_it_matters, createdAt: date });
     }
+    // Layer 9B: legacy themes/gaps/drifts have no lifecycle-verified concept
+    // basis (docs/architecture.md §17), so they are excluded while the shared
+    // currentness resolver is enabled; no concept-based item replaces them yet.
+    if (this.currentness?.enabled) return candidates;
     const snapshots = (await this.demand.listSnapshots(input.workspaceId, input.productId)).filter((snapshot) => snapshot.period_end >= input.periodStart && snapshot.period_end < input.periodEnd).slice(0, 5);
     for (const snapshot of snapshots) {
       const themes = await this.demand.listSnapshotThemes(snapshot.id);

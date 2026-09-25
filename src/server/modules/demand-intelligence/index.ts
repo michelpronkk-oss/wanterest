@@ -7,3 +7,7 @@ export * from "./demand-clustering.repository";
 export * from "./demand-clustering.service";
 export * from "./demand-map.policy";
 export * from "./demand-map.service";
+export * from "./demand-currentness.service";
+export * from "./demand-gap-v2.policy";
+export * from "./demand-drift-v2.policy";
+export * from "./downstream-intelligence.service";

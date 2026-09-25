@@ -16,6 +16,9 @@ import { getServerEnv } from "../../lib/env";
 import { SupabaseDemandClusteringRepository } from "./demand-clustering.repository";
 import { demandMapV2Enabled, type DemandMapV2ReadModel } from "./demand-map.policy";
 import { DemandMapService } from "./demand-map.service";
+import { DownstreamIntelligenceService } from "./downstream-intelligence.service";
+import type { DemandGapV2ReadModel } from "./demand-gap-v2.policy";
+import type { DemandDriftV2ReadModel } from "./demand-drift-v2.policy";
 
 export const DEMAND_JOB_TYPES = ["aggregate-demand", "calculate-demand-gap", "calculate-demand-drift", "backfill-demand-snapshots"] as const;
 export type DemandJobType = (typeof DEMAND_JOB_TYPES)[number];
@@ -75,6 +78,41 @@ export async function getDemandMapQuery(workspaceId: unknown, productId: unknown
 
 export function isDemandMapV2Enabled(): boolean {
   return demandMapV2Enabled(getServerEnv().DEMAND_MAP_V2_ENABLED);
+}
+
+export function isDownstreamIntelligenceV2Enabled(): boolean {
+  return getServerEnv().DOWNSTREAM_INTELLIGENCE_V2_ENABLED === "true";
+}
+
+async function currentPositioningSnapshot(product: ProductRow): Promise<ProductSnapshotRow | null> {
+  const snapshots = await new SupabaseIntelligenceRepository(createSupabaseServiceClient()).getProductSnapshots(product.id);
+  return snapshots.find((row) => row.id === product.current_snapshot_id) ?? snapshots.at(-1) ?? null;
+}
+
+function downstreamService() {
+  const client = createSupabaseServiceClient();
+  return new DownstreamIntelligenceService(new SupabaseDemandClusteringRepository(client), new SupabaseDemandRepository(client));
+}
+
+/** Layer 9B: lifecycle-aware Gap. Current concepts only; see docs/architecture.md §17. Read-only. */
+export async function getDemandGapV2Query(workspaceId: unknown, productId: unknown): Promise<DemandGapV2ReadModel> {
+  const product = await getProductQuery(workspaceId, productId);
+  await requireUser();
+  return downstreamService().getDemandGapV2({ workspaceId: product.workspace_id, productId: product.id, positioning: await currentPositioningSnapshot(product) });
+}
+
+/** Layer 9B: lifecycle-aware Drift. Read-only. */
+export async function getDemandDriftV2Query(workspaceId: unknown, productId: unknown, window: DemandWindow = "30d"): Promise<DemandDriftV2ReadModel> {
+  const product = await getProductQuery(workspaceId, productId);
+  await requireUser();
+  return downstreamService().getDemandDriftV2({ workspaceId: product.workspace_id, productId: product.id, window });
+}
+
+/** Layer 9B: Gap v2 + Drift v2 from one shared currentness read — for pages (the Overview) that need both. */
+export async function getDownstreamIntelligenceV2Query(workspaceId: unknown, productId: unknown, window: DemandWindow = "30d"): Promise<{ gap: DemandGapV2ReadModel; drift: DemandDriftV2ReadModel }> {
+  const product = await getProductQuery(workspaceId, productId);
+  await requireUser();
+  return downstreamService().getDownstreamIntelligence({ workspaceId: product.workspace_id, productId: product.id, window, positioning: await currentPositioningSnapshot(product) });
 }
 
 /**

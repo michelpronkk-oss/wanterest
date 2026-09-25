@@ -3,7 +3,7 @@ import Link from "next/link";
 import { getDashboardContext } from "@/server/modules/dashboard/dashboard.context";
 import { listSignalsQuery } from "@/server/modules/intelligence/commands";
 import { listActionsQuery } from "@/server/modules/actions/commands";
-import { getDemandDriftQuery } from "@/server/modules/demand-intelligence/commands";
+import { getDemandDriftQuery, getDemandDriftV2Query, isDownstreamIntelligenceV2Enabled } from "@/server/modules/demand-intelligence/commands";
 import { listDigestsQuery } from "@/server/modules/digests/commands";
 import { MetricCard } from "@/components/ui/card";
 import { ZeroState } from "@/components/ui/zero-state";
@@ -58,10 +58,12 @@ export default async function HomePage() {
     );
   }
 
-  const [readFirst, actionsResult, driftResult, digestsResult, monitoring] = await Promise.all([
+  const downstreamV2 = isDownstreamIntelligenceV2Enabled();
+  const [readFirst, actionsResult, driftResult, driftV2Result, digestsResult, monitoring] = await Promise.all([
     readProductIntelligenceCommand(workspace.id, product.id).catch(() => null),
     listActionsQuery(workspace.id, product.id, { status: "proposed" }).catch(() => []),
-    getDemandDriftQuery(workspace.id, product.id).catch(() => null),
+    downstreamV2 ? Promise.resolve(null) : getDemandDriftQuery(workspace.id, product.id).catch(() => null),
+    downstreamV2 ? getDemandDriftV2Query(workspace.id, product.id).catch(() => null) : Promise.resolve(null),
     listDigestsQuery(workspace.id, product.id).catch(() => []),
     getMonitoringOverview(workspace.id, product.id).catch(() => null),
   ]);
@@ -90,9 +92,24 @@ export default async function HomePage() {
   const topSignals = signals.slice(0, 3);
   const topAction = [...actionsResult].sort((a, b) => b.action.priority_score - a.action.priority_score)[0] ?? null;
   const latestDigest = digestsResult[0] ?? null;
-  const drifts = driftResult?.drifts ?? [];
-  const topRising = [...drifts].filter((row) => row.drift_direction === "rising").sort((a, b) => b.share_delta - a.share_delta)[0] ?? null;
-  const topCooling = [...drifts].filter((row) => row.drift_direction === "cooling").sort((a, b) => a.share_delta - b.share_delta)[0] ?? null;
+  // Layer 9B: Home's Rising/Cooling uses Drift v2 only when enabled — no legacy
+  // fallback, since a lifecycle-blind "trend" is exactly what 9B corrects.
+  let topRising: { label: string; delta: number } | null = null;
+  let topCooling: { label: string; delta: number } | null = null;
+  if (downstreamV2) {
+    if (driftV2Result?.comparable) {
+      const rising = [...driftV2Result.rising].sort((a, b) => b.shareDelta - a.shareDelta)[0];
+      const cooling = [...driftV2Result.cooling].sort((a, b) => a.shareDelta - b.shareDelta)[0];
+      if (rising) topRising = { label: rising.label, delta: rising.shareDelta };
+      if (cooling) topCooling = { label: cooling.label, delta: cooling.shareDelta };
+    }
+  } else {
+    const drifts = driftResult?.drifts ?? [];
+    const rising = [...drifts].filter((row) => row.drift_direction === "rising").sort((a, b) => b.share_delta - a.share_delta)[0];
+    const cooling = [...drifts].filter((row) => row.drift_direction === "cooling").sort((a, b) => a.share_delta - b.share_delta)[0];
+    if (rising) topRising = { label: themeLabel(rising.concept_key), delta: rising.share_delta };
+    if (cooling) topCooling = { label: themeLabel(cooling.concept_key), delta: cooling.share_delta };
+  }
 
   return (
     <section className="dashboard-page">
@@ -198,8 +215,8 @@ export default async function HomePage() {
               <div className="metric-card">
                 <div className="metric-card-label">Rising</div>
                 <div className="home-movement-card">
-                  <span style={{ fontSize: 14, fontWeight: 600 }}>{themeLabel(topRising.concept_key)}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--color-positive)" }}>+{formatPercent(topRising.share_delta)}</span>
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>{topRising.label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--color-positive)" }}>+{formatPercent(topRising.delta)}</span>
                 </div>
               </div>
             ) : null}
@@ -207,8 +224,8 @@ export default async function HomePage() {
               <div className="metric-card">
                 <div className="metric-card-label">Cooling</div>
                 <div className="home-movement-card">
-                  <span style={{ fontSize: 14, fontWeight: 600 }}>{themeLabel(topCooling.concept_key)}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--color-negative)" }}>{formatPercent(topCooling.share_delta)}</span>
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>{topCooling.label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--color-negative)" }}>{formatPercent(topCooling.delta)}</span>
                 </div>
               </div>
             ) : null}
