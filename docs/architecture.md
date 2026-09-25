@@ -2123,3 +2123,93 @@ Gate record (25 Sep 2026) — **LAYER 9A: PRODUCTION_PROVEN**
 - Known legacy debt for 9B: 30d snapshots have had 0 snapshot themes since at least
   24 Sep 22:29 UTC (predates 9A), so the historical theme table is empty; the app home page still
   reads legacy drift.
+
+### Layer 9B — Lifecycle-aware downstream intelligence (`downstream_intelligence_v2`)
+
+Architecture decision (approved 25 Sep 2026). Read-side correctness change, plus one write-side
+change (pausing legacy Action generation). No migration.
+
+Problem: qualified-evaluation lifecycle (superseded, invalidated, retracted) leaks into
+`demand_observations` at scan time and is never re-checked. Themes, snapshots, Gap, Drift and
+Actions all inherit this. Production's legacy Gap page shows a `switching_intent` gap (score 0.05,
+1 mention) built entirely from the same 10 superseded / 1 invalidated evaluations Stage 2G and
+Layer 9A already proved invalid. Theme identity is also not durable (`switching_intent` is an
+intent, not a concept; legacy 30d snapshots have had 0 themes since before 9A).
+
+**Decision: option D, a staged hybrid.**
+- **9B (this stage, no migration):** one shared currentness resolver (extracted from the 9A Map
+  service, not duplicated), lifecycle-aware Gap v2 and Drift v2 derived from it at read time,
+  automatic Action generation from legacy (non-lifecycle-verified) bases paused, Digests filtered
+  through the same resolver. Legacy data is kept, never rewritten, and shown only as labelled
+  history.
+- **9C (deferred):** persisted, append-only concept market state and a new Action trigger type with
+  a lifecycle-verified concept basis, which is what allows Actions to be generated again. Frozen
+  "what we believed then" drift history is also 9C.
+- Rejected: (A) making the legacy snapshot/theme pipeline itself lifecycle-aware — the theme
+  identity is independently broken and wouldn't produce meaningful concepts. (B) switching
+  everything straight to clusters — Drift needs windowed comparison and Actions need a persisted,
+  database-accepted basis; neither exists yet without 9C's migration.
+
+**Canonical identity** (shared with Layer 9A, not reinvented): `(workspace_id, product_id,
+clustering_version, anchor_concept_key)`.
+
+**Canonical currentness** (one definition, reused everywhere via `lifecycleExclusionReason`, not
+duplicated): a Stage 2G membership counts as current only if the latest persisted state lists it as
+contributing, **and**, re-checked at read time: it is still the match's current evaluation, its
+signal is not invalidated or retracted, and its evidence is <=90 days old (relative to now). Counted
+once per conversation. Historical is everything else, plus all legacy snapshot/theme/gap/drift
+data. No subsystem may define "current" independently.
+
+**Gap v2** (`demand_gap_v2`, not persisted): computed only for current concepts. 0 current evidence
+=> "No current gap evidence". 1-4 current evidence => directional only, no score. >=5 => a score
+using the existing frozen `calculateGapScore` formula fed live inputs (share of current evidence
+across current concepts, the existing frozen `calculatePositioningWeight`, high-intent share from
+switch/evaluate intent families, and the existing sample-quality bucketing thresholds). Legacy gap
+rows remain visible only as labelled, collapsed history.
+
+**Drift v2** (`demand_drift_v2`, not persisted): per concept, buckets currently-valid (canonical
+currentness) evidence into adjacent, day-anchored windows using the existing frozen
+`driftAnchor`/`planDriftComparison`/`isComparableSnapshotPair`, and the existing frozen
+`calculateDriftDirection`/`calculateSignificance`/`calculateGrowthRate`. Both windows need >=5 valid
+items before a direction is assigned; otherwise "insufficient" / "No comparable current movement".
+`monitoringStartedAt` comes from one new bounded read (`getEarliestSnapshotTimestamp`, a single
+`limit(1)` query), preserving the existing monitoring-history requirement without an unbounded
+history scan. Accepted trade-off: a historical window's count can shrink if its evidence is later
+invalidated (frozen "what we believed then" history is 9C); and because currentness caps evidence
+at <=90 days old, a 90d-window comparison's older leg will typically show "insufficient" once both
+legs must be current — this is an honest consequence of one shared currentness definition, not a
+bug. Legacy drift is never presented as current.
+
+**Actions:** with the flag on, `generateActionsForScan` does not generate from legacy gap, drift,
+snapshot-fallback or geography triggers (none of them have a lifecycle-verified concept basis, and
+legacy theme keys cannot be reliably mapped to Stage 2G concept identity). It records the explicit
+warning `no_lifecycle_verified_basis` and creates no substitute. No Action schema change. Existing
+persisted Actions are never deleted, rewritten, dismissed or mutated; on read, with the flag on,
+every existing Action (none of whose trigger types carry a verified concept basis in 9B) is labelled
+`basisLifecycleStatus: "not_verified"` in the read model only. With the flag off, the label is
+`"not_applicable"` and generation is unchanged.
+
+**Digests:** with the flag on, `Phase4DigestSource` excludes legacy theme/gap/drift candidates
+entirely and excludes signal candidates that are not current per the same shared
+`lifecycleExclusionReason` (invalidated, retracted, superseded, or the signal's own evidence stale).
+No new concept-based digest items are added yet. With the flag off, behaviour is unchanged.
+
+**Surfaces:** Gap and Drift pages show a v2 current section plus legacy collapsed under "Historical
+evidence (not lifecycle-filtered)". Home's Rising/Cooling uses Drift v2 only (no current movement =>
+nothing shown, no legacy fallback). The Overview's "Biggest change" and "Largest positioning gap"
+cards switch to v2 content; its other legacy-derived cards keep the Layer 9A historical labelling.
+Geography is labelled "not lifecycle-filtered" only; no rework. No UI redesign.
+
+**Flag:** `DOWNSTREAM_INTELLIGENCE_V2_ENABLED`, read in both Vercel (pages) and Trigger
+(`generateActionsForScan`, digest builds), default `false`. Off => byte-for-byte existing behaviour.
+On => 9B semantics active and legacy Action generation paused.
+
+**Performance:** reuses the 9A batched currentness read (500-evaluation and 5,000-state bounds
+preserved). No new N+1. The only new read is the single bounded `getEarliestSnapshotTimestamp`. No
+provider or LLM calls. Legacy-history display continues to reuse the existing, unmodified legacy Gap
+and Drift services (same precedent as the 9A Map's legacy section) rather than rewriting them.
+
+**Frozen and unchanged:** Stage 2G identity and strengthening, `calculatePositioningWeight`,
+`calculateGapScore`, `calculateDriftDirection`, `calculateSignificance`, `calculateGrowthRate`,
+`drift_comparability_v1`'s window/anchor rules, the Action schema and engine, qualification,
+candidate selection, provider adapters, source budgets, and lifecycle write semantics.
