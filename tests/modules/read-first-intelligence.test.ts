@@ -201,6 +201,15 @@ describe("read-first product intelligence", () => {
     expect(result.intelligence.signals).toEqual(current);
   });
 
+  it("never returns invalidated or retracted signals through the read-first contract", async () => {
+    const repository = new FakeRepository(new Map([[`${workspaceA}:${productA}`, emptyState({ signals: [signal("invalidated", "2026-09-25T10:00:00.000Z"), { ...signal("retracted", "2026-09-25T10:00:00.000Z"), lifecycleStatus: "retracted" }] })]]));
+    const state = await repository.loadPersistedState({ workspaceId: workspaceA, productId: productA });
+    state.signals[0] = { ...state.signals[0]!, lifecycleStatus: "invalidated" };
+    const result = await service({ loadPersistedState: async () => state }).read({ workspaceId: workspaceA, productId: productA });
+    expect(result.intelligence.signals).toEqual([]);
+    expect(result.freshness.state).toBe("empty");
+  });
+
   it("returns the refresh job handle and status", async () => {
     const repository = new FakeRepository(new Map([[`${workspaceA}:${productA}`, emptyState()]]));
     const result = await service(repository, { enqueueRefresh: async () => handle() }).read({ workspaceId: workspaceA, productId: productA });

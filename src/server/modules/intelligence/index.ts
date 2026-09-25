@@ -1,4 +1,5 @@
 export { IntelligenceService } from "./intelligence.service";
+export { SIGNAL_LIFECYCLE_VERSION, signalLifecycleReasonSchema, signalLifecycleStatusSchema, transitionSignalLifecycle } from "./signal-lifecycle.service";
 export { InMemoryIntelligenceRepository } from "./intelligence.repository";
 export { FixtureConversationAnalysisEngine, FixtureDemandProfileEngine, FixtureProductMatchingEngine } from "./engines";
 export { FixtureDemandProfileV2Engine, StructuredLlmDemandProfileV2Engine } from "./demand-profile-v2.engines";
@@ -34,6 +35,7 @@ export type { MarketContext, MarketRelationship, MarketRelationshipSource, Marke
 export { CONVERSATION_MARKET_REASONING_VERSION, buildConversationMarketReasoning } from "./conversation-market-reasoning";
 export type { ProductMatchResult } from "./intelligence.schemas";
 export type { SignalFilters, SignalReadModel } from "./intelligence.service";
+export type { SignalLifecycleReason, SignalLifecycleRepository, SignalLifecycleStatus, SignalLifecycleTransition } from "./signal-lifecycle.service";
 export type { DemandDirection, DemandTargetType, MarketResonance, SignalQualification, SignalQualificationDimensions, SignalQualificationEvidenceSpan, SignalQualificationPrimaryIntent, SignalQualificationReasonCode, SignalQualificationStatus, SpeakerRole } from "./signal-qualification.schemas";
 export type { SignalQualificationInput, SignalQualificationProfile } from "./signal-qualification.service";
 export type { SignalQualificationFixture } from "./signal-qualification.fixtures";

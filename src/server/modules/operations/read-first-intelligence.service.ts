@@ -97,6 +97,10 @@ function hasPersistedIntelligence(state: ReadFirstPersistedState): boolean {
   return state.signals.length > 0 || Boolean(state.snapshot) || state.gaps.length > 0 || state.drifts.length > 0;
 }
 
+function currentSignals(signals: SignalReadModel[]): SignalReadModel[] {
+  return signals.filter((signal) => signal.lifecycleStatus !== "invalidated" && signal.lifecycleStatus !== "retracted");
+}
+
 function freshnessState(
   state: ReadFirstPersistedState,
   freshestEvidenceAt: string | null,
@@ -123,25 +127,26 @@ export class ReadFirstIntelligenceService {
     const totalStart = performance.now();
     const readStart = performance.now();
     const persisted = await this.dependencies.repository.loadPersistedState(key);
+    const currentPersisted = { ...persisted, signals: currentSignals(persisted.signals) };
     const intelligenceReadMs = elapsed(readStart);
 
     const freshnessStart = performance.now();
     const now = (this.dependencies.now ?? (() => new Date()))();
     const freshestEvidenceAt = latestTimestamp([
-      ...persisted.signals.map((signal) => signal.publishedAt ?? signal.createdAt),
-      persisted.snapshot?.period_end,
-      ...persisted.gaps.map((gap) => gap.created_at),
-      ...persisted.drifts.map((drift) => drift.created_at),
+      ...currentPersisted.signals.map((signal) => signal.publishedAt ?? signal.createdAt),
+      currentPersisted.snapshot?.period_end,
+      ...currentPersisted.gaps.map((gap) => gap.created_at),
+      ...currentPersisted.drifts.map((drift) => drift.created_at),
     ]);
     const freshnessConfig = this.dependencies.freshness ?? getReadFirstFreshnessConfig();
-    const state = freshnessState(persisted, freshestEvidenceAt, now, freshnessConfig);
+    const state = freshnessState(currentPersisted, freshestEvidenceAt, now, freshnessConfig);
     const refreshDue = state !== "fresh";
     const freshnessEvaluationMs = elapsed(freshnessStart);
 
-    let refreshStatus = activeRefreshStatus(persisted.activeRefresh) ?? (persisted.lastSuccessfulRefreshAt ? "complete" : "idle");
-    let jobRunId = persisted.activeRefresh?.jobRunId ?? null;
+    let refreshStatus = activeRefreshStatus(currentPersisted.activeRefresh) ?? (currentPersisted.lastSuccessfulRefreshAt ? "complete" : "idle");
+    let jobRunId = currentPersisted.activeRefresh?.jobRunId ?? null;
     let refreshEnqueueMs = 0;
-    if (refreshDue && !persisted.activeRefresh && this.dependencies.enqueueRefresh) {
+    if (refreshDue && !currentPersisted.activeRefresh && this.dependencies.enqueueRefresh) {
       const enqueueStart = performance.now();
       try {
         const handle = await this.dependencies.enqueueRefresh(key);
@@ -170,15 +175,15 @@ export class ReadFirstIntelligenceService {
       productId: key.productId,
       workspaceId: key.workspaceId,
       intelligence: {
-        signals: persisted.signals,
-        demandSummary: demandSummary(persisted.snapshot, persisted.gaps, persisted.drifts),
-        demandSnapshot: demandSnapshotReadModel(persisted.snapshot),
-        lastSuccessfulRefreshAt: persisted.lastSuccessfulRefreshAt,
+        signals: currentPersisted.signals,
+        demandSummary: demandSummary(currentPersisted.snapshot, currentPersisted.gaps, currentPersisted.drifts),
+        demandSnapshot: demandSnapshotReadModel(currentPersisted.snapshot),
+        lastSuccessfulRefreshAt: currentPersisted.lastSuccessfulRefreshAt,
       },
       freshness: {
         state,
         freshestEvidenceAt,
-        lastSuccessfulRefreshAt: persisted.lastSuccessfulRefreshAt,
+        lastSuccessfulRefreshAt: currentPersisted.lastSuccessfulRefreshAt,
         refreshDue,
       },
       refresh: { status: refreshStatus, jobRunId },

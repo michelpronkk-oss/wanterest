@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { sha256Json, sha256Text } from "../../src/server/modules/ingestion/hash";
-import { FixtureConversationAnalysisEngine, FixtureDemandProfileEngine, FixtureProductMatchingEngine, InMemoryIntelligenceRepository, IntelligenceService, SIGNAL_QUALIFICATION_THRESHOLD_VERSION, SIGNAL_QUALIFICATION_VERSION, calculateOpportunityScore, freshnessScore, RANKING_WEIGHTS } from "../../src/server/modules/intelligence";
+import { FixtureConversationAnalysisEngine, FixtureDemandProfileEngine, FixtureProductMatchingEngine, InMemoryIntelligenceRepository, IntelligenceService, SIGNAL_QUALIFICATION_THRESHOLD_VERSION, SIGNAL_QUALIFICATION_VERSION, calculateOpportunityScore, freshnessScore, RANKING_WEIGHTS, transitionSignalLifecycle } from "../../src/server/modules/intelligence";
 import type { ConversationRow, ProductRow, SourceItemRow } from "../../src/server/db/database.helpers";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -121,6 +121,49 @@ describe("Signal lifecycle (dismiss/save)", () => {
 
     const activeView = await service.listSignals(product.workspace_id, product.id);
     expect(activeView).toHaveLength(0);
+  });
+
+  it("excludes invalidated and retracted signals from current reads while preserving audit reads and evidence", async () => {
+    const { service, product, repository, evaluation, signal } = await qualifiedSignal();
+    const unrelatedSignal = { ...signal, id: "99999999-9999-4999-8999-999999999999", conversation_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" };
+    repository.signals.set(unrelatedSignal.id, unrelatedSignal);
+    const originalEvaluation = await repository.getEvaluationById(evaluation.id);
+    const originalEvidence = originalEvaluation?.evidence;
+    const invalidated = await transitionSignalLifecycle(repository, {
+      workspaceId: product.workspace_id,
+      signalId: signal.id,
+      to: "invalidated",
+      reason: "historical_clause_binding_false_positive",
+      actor: "signal-lifecycle-test",
+    }, new Date("2026-09-25T12:00:00.000Z"));
+
+    expect(invalidated.lifecycle_status).toBe("invalidated");
+    expect((invalidated as unknown as { invalidated_reason: string }).invalidated_reason).toBe("historical_clause_binding_false_positive");
+    expect((invalidated as unknown as { invalidated_at: string }).invalidated_at).toBe("2026-09-25T12:00:00.000Z");
+    expect((await service.listSignals(product.workspace_id, product.id)).find((row) => row.signalId === signal.id)).toBeUndefined();
+    expect((await service.listSignals(product.workspace_id, product.id, { lifecycleStatus: "invalidated" })).map((row) => row.signalId)).toEqual([signal.id]);
+    expect((await repository.getEvaluationById(evaluation.id))?.evidence).toEqual(originalEvidence);
+    expect((await repository.getSignal(unrelatedSignal.id))?.lifecycle_status).toBe("active");
+
+    const repeated = await transitionSignalLifecycle(repository, {
+      workspaceId: product.workspace_id,
+      signalId: signal.id,
+      to: "invalidated",
+      reason: "historical_clause_binding_false_positive",
+      actor: "signal-lifecycle-test",
+    }, new Date("2026-09-26T12:00:00.000Z"));
+    expect(repeated).toBe(invalidated);
+
+    const retracted = await transitionSignalLifecycle(repository, {
+      workspaceId: product.workspace_id,
+      signalId: signal.id,
+      to: "retracted",
+      reason: "source_withdrawn",
+      actor: "signal-lifecycle-test",
+    }, new Date("2026-09-25T13:00:00.000Z"));
+    expect(retracted.lifecycle_status).toBe("retracted");
+    expect((await service.listSignals(product.workspace_id, product.id)).find((row) => row.signalId === signal.id)).toBeUndefined();
+    await expect(transitionSignalLifecycle(repository, { workspaceId: product.workspace_id, signalId: signal.id, to: "active" })).rejects.toMatchObject({ code: "CONFLICT" });
   });
 
   it("never auto-archives a user-dismissed (or saved) signal when re-qualification later fails", async () => {
