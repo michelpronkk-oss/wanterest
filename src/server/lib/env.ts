@@ -47,6 +47,9 @@ const serverEnvSchema = publicEnvSchema.extend({
   DISCOVERY_COVERAGE_V1_MAX_CANDIDATES: optionalServerPositiveInt,
   READ_FIRST_FRESH_HOURS: optionalServerPositiveInt,
   READ_FIRST_RECENT_HOURS: optionalServerPositiveInt,
+  // Stage 2C kill switch for the autonomous market-partition refresh scheduler.
+  // Defaults to disabled (treated as "false" unless exactly "true").
+  MARKET_PARTITION_REFRESH_ENABLED: z.enum(["true", "false"]).optional(),
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
@@ -108,6 +111,7 @@ export function getServerEnv(): ServerEnv {
     DISCOVERY_COVERAGE_V1_MAX_CANDIDATES: process.env.DISCOVERY_COVERAGE_V1_MAX_CANDIDATES,
     READ_FIRST_FRESH_HOURS: process.env.READ_FIRST_FRESH_HOURS,
     READ_FIRST_RECENT_HOURS: process.env.READ_FIRST_RECENT_HOURS,
+    MARKET_PARTITION_REFRESH_ENABLED: process.env.MARKET_PARTITION_REFRESH_ENABLED,
   });
 }
 
