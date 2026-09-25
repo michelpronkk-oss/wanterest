@@ -17,7 +17,12 @@ export type ReadFirstPersistedState = {
   gaps: DemandGapRow[];
   drifts: DemandDriftRow[];
   activeRefresh: ReadFirstActiveRefresh | null;
+  /** Latest completed full product scan. */
   lastSuccessfulRefreshAt: string | null;
+  /** Stage 2E: latest completed continuous incremental match for this product. */
+  lastIncrementalMatchAt?: string | null;
+  /** Stage 2E: latest continuous public-evidence retrieval for this product's partitions. */
+  lastEvidenceRetrievedAt?: string | null;
 };
 
 export interface ReadFirstIntelligenceRepository {
@@ -34,6 +39,29 @@ export type ReadFirstDependencies = {
   onTiming?: (timing: ReadFirstPerformanceTiming) => void;
 };
 
+export const READ_FIRST_FRESHNESS_POLICY_VERSION = "read_first_freshness_v2" as const;
+export type ReadFirstInterpretationState = "fresh" | "recent" | "stale" | "never";
+
+function ageState(timestamp: string | null, now: Date, config: ReadFirstFreshnessConfig): ReadFirstInterpretationState {
+  if (!timestamp) return "never";
+  const age = Math.max(0, now.getTime() - Date.parse(timestamp));
+  if (age <= config.freshMs) return "fresh";
+  if (age <= config.recentMs) return "recent";
+  return "stale";
+}
+
+/**
+ * Stage 2E: the product interpretation was last checked by whichever came
+ * later - a full product scan or a continuous incremental match. Pure.
+ */
+export function interpretationCheck(state: Pick<ReadFirstPersistedState, "lastSuccessfulRefreshAt" | "lastIncrementalMatchAt">): { lastCheckedAt: string | null; lastCheckSource: "scan" | "incremental" | null } {
+  const scan = state.lastSuccessfulRefreshAt ?? null;
+  const incremental = state.lastIncrementalMatchAt ?? null;
+  if (!scan && !incremental) return { lastCheckedAt: null, lastCheckSource: null };
+  if (!incremental || (scan && Date.parse(scan) >= Date.parse(incremental))) return { lastCheckedAt: scan, lastCheckSource: "scan" };
+  return { lastCheckedAt: incremental, lastCheckSource: "incremental" };
+}
+
 export type ReadFirstProductIntelligence = {
   version: typeof READ_FIRST_INTELLIGENCE_VERSION;
   productId: string;
@@ -45,10 +73,20 @@ export type ReadFirstProductIntelligence = {
     lastSuccessfulRefreshAt: string | null;
   };
   freshness: {
+    /** v1 semantics, unchanged: age of the newest persisted intelligence evidence. */
     state: ReadFirstFreshnessState;
     freshestEvidenceAt: string | null;
     lastSuccessfulRefreshAt: string | null;
+    /** Stage 2E: true only when the product's interpretation (not its evidence) is out of date. */
     refreshDue: boolean;
+    policyVersion: typeof READ_FIRST_FRESHNESS_POLICY_VERSION;
+    /** How recently public market evidence for this product was retrieved. */
+    evidence: { lastRetrievedAt: string | null; newestPublishedAt: string | null };
+    /** How recently Wanterest re-evaluated the market for this product (scan or incremental match). */
+    interpretation: { state: ReadFirstInterpretationState; lastCheckedAt: string | null; lastCheckSource: "scan" | "incremental" | null };
+    /** When persisted product intelligence objects last changed. */
+    signalsUpdatedAt: string | null;
+    demandViewUpdatedAt: string | null;
   };
   refresh: {
     status: ReadFirstRefreshStatus;
@@ -140,7 +178,17 @@ export class ReadFirstIntelligenceService {
     ]);
     const freshnessConfig = this.dependencies.freshness ?? getReadFirstFreshnessConfig();
     const state = freshnessState(currentPersisted, freshestEvidenceAt, now, freshnessConfig);
-    const refreshDue = state !== "fresh";
+    const interpretation = interpretationCheck(currentPersisted);
+    const interpretationState = ageState(interpretation.lastCheckedAt, now, freshnessConfig);
+    // Stage 2E: strictly narrower than v1 (state !== "fresh"). A refresh is
+    // not due when the market was re-checked for this product inside the
+    // fresh window, even if that check found no new qualifying demand - old
+    // evidence alone must not trigger another paid provider scan.
+    const refreshDue = state !== "fresh" && interpretationState !== "fresh";
+    const evidenceLastRetrievedAt = latestTimestamp([currentPersisted.lastSuccessfulRefreshAt, currentPersisted.lastEvidenceRetrievedAt]);
+    const newestPublishedAt = latestTimestamp(currentPersisted.signals.map((signal) => signal.publishedAt));
+    const signalsUpdatedAt = latestTimestamp(currentPersisted.signals.map((signal) => signal.createdAt));
+    const demandViewUpdatedAt = latestTimestamp([currentPersisted.snapshot?.created_at, ...currentPersisted.gaps.map((gap) => gap.created_at), ...currentPersisted.drifts.map((drift) => drift.created_at)]);
     const freshnessEvaluationMs = elapsed(freshnessStart);
 
     let refreshStatus = activeRefreshStatus(currentPersisted.activeRefresh) ?? (currentPersisted.lastSuccessfulRefreshAt ? "complete" : "idle");
@@ -185,6 +233,11 @@ export class ReadFirstIntelligenceService {
         freshestEvidenceAt,
         lastSuccessfulRefreshAt: currentPersisted.lastSuccessfulRefreshAt,
         refreshDue,
+        policyVersion: READ_FIRST_FRESHNESS_POLICY_VERSION,
+        evidence: { lastRetrievedAt: evidenceLastRetrievedAt, newestPublishedAt },
+        interpretation: { state: interpretationState, ...interpretation },
+        signalsUpdatedAt,
+        demandViewUpdatedAt,
       },
       refresh: { status: refreshStatus, jobRunId },
       timings,

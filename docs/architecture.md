@@ -1699,6 +1699,7 @@ reused unchanged by every stage below.
 | 2B | `market_partitions`: immutable, tenant-free identity per literal retrieval spec; `query_yield_artifacts.market_partition_key` records which product queries map to which partition. | PRODUCTION_PROVEN |
 | 2C | `market_partition_refresh_state` + `refresh-market-partition` / `market-partition-refresh-scheduler` (flag `MARKET_PARTITION_REFRESH_ENABLED`); GitHub + Stack Exchange only, 24h + deterministic jitter, lease/claim RPC, job-run idempotency per due slot. | PRODUCTION_PROVEN |
 | 2D | Incremental product matching (below). | PRODUCTION_PROVEN (flag on) |
+| 2E | Read-first freshness v2: evidence vs interpretation freshness (below). | see 2E gate |
 
 ### Stage 2D — Incremental product matching
 
@@ -1761,3 +1762,28 @@ migration 20261014000000 applied; `INCREMENTAL_PRODUCT_MATCHING_ENABLED=true` in
   writes (job attempt counts stay 1).
 - Not observed in production: a qualifying incremental candidate. Materialization is the
   unchanged product-scan path and is covered by tests; read-first reads `signals` directly.
+
+### Stage 2E — Evidence freshness vs interpretation freshness (`read_first_freshness_v2`)
+
+Problem found in the post-2D product read pass: read-first freshness was one number - the age of
+the newest persisted signal - and "last updated" counted only full product scans. After 2D a product
+whose market was re-checked minutes ago but produced no new qualifying demand read as "stale /
+refresh due", and the refresh action would start another paid provider scan for nothing.
+
+Seam: read model only; no migration, every timestamp already exists. `ReadFirstIntelligenceService`
+returns, additively:
+
+- `freshness.evidence.lastRetrievedAt`: latest of the last product scan and the last successful
+  Stage 2C refresh of any partition this product has interest in (partition set taken from the
+  product's own RLS-scoped `query_yield_artifacts`; only a timestamp crosses from global state).
+- `freshness.evidence.newestPublishedAt`: newest current signal publication time.
+- `freshness.interpretation {state, lastCheckedAt, lastCheckSource}`: latest of the last product scan
+  and the last succeeded `match-product-incremental` job for this product.
+- `freshness.signalsUpdatedAt`, `freshness.demandViewUpdatedAt` (snapshot/gap/drift creation).
+- `freshness.state` keeps its v1 meaning (evidence age).
+- `freshness.refreshDue = state != fresh AND interpretation.state != fresh` - strictly narrower than
+  v1, so v2 can only remove refresh enqueues, never add them.
+
+UI copy distinguishes "Up to date - no new qualifying demand since the last signal" and "Market
+checked - no qualifying demand yet" from genuinely stale intelligence. Rollback: revert the commit;
+nothing persisted changes.

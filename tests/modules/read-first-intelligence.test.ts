@@ -260,3 +260,52 @@ describe("read-first product intelligence", () => {
     expect(result.refresh.status).toBe("queued");
   });
 });
+
+describe("read-first freshness v2 (Stage 2E)", () => {
+  const key = { workspaceId: workspaceA, productId: productA };
+  const repo = (state: ReadFirstPersistedState) => new FakeRepository(new Map([[`${workspaceA}:${productA}`, state]]));
+
+  it("separates evidence freshness from product interpretation freshness", async () => {
+    const result = await service(repo(emptyState({
+      signals: [signal("s1", "2026-09-20T00:00:00.000Z")],
+      lastSuccessfulRefreshAt: "2026-09-21T00:00:00.000Z",
+      lastIncrementalMatchAt: "2026-09-25T11:00:00.000Z",
+      lastEvidenceRetrievedAt: "2026-09-25T10:59:00.000Z",
+    }))).read(key);
+    expect(result.freshness.policyVersion).toBe("read_first_freshness_v2");
+    expect(result.freshness.state).toBe("stale");
+    expect(result.freshness.evidence).toEqual({ lastRetrievedAt: "2026-09-25T10:59:00.000Z", newestPublishedAt: "2026-09-20T00:00:00.000Z" });
+    expect(result.freshness.interpretation).toEqual({ state: "fresh", lastCheckedAt: "2026-09-25T11:00:00.000Z", lastCheckSource: "incremental" });
+    expect(result.freshness.signalsUpdatedAt).toBe("2026-09-20T00:00:00.000Z");
+  });
+
+  it("does not enqueue a paid scan when the market was just re-checked but produced no new demand", async () => {
+    let calls = 0;
+    const result = await service(repo(emptyState({
+      signals: [signal("s1", "2026-09-20T00:00:00.000Z")],
+      lastIncrementalMatchAt: "2026-09-25T11:30:00.000Z",
+    })), { enqueueRefresh: async () => { calls += 1; return handle(); } }).read(key);
+    expect(result.freshness.refreshDue).toBe(false);
+    expect(calls).toBe(0);
+  });
+
+  it("still requests a refresh when both evidence and interpretation are out of date", async () => {
+    let calls = 0;
+    const result = await service(repo(emptyState({
+      signals: [signal("s1", "2026-09-20T00:00:00.000Z")],
+      lastSuccessfulRefreshAt: "2026-09-21T00:00:00.000Z",
+      lastIncrementalMatchAt: "2026-09-22T00:00:00.000Z",
+    })), { enqueueRefresh: async () => { calls += 1; return handle(); } }).read(key);
+    expect(result.freshness.interpretation.state).toBe("stale");
+    expect(result.freshness.refreshDue).toBe(true);
+    expect(calls).toBe(1);
+  });
+
+  it("prefers the later of scan and incremental checks, and reports never when neither exists", async () => {
+    const scanLater = await service(repo(emptyState({ lastSuccessfulRefreshAt: "2026-09-25T11:00:00.000Z", lastIncrementalMatchAt: "2026-09-25T10:00:00.000Z" }))).read(key);
+    expect(scanLater.freshness.interpretation).toMatchObject({ lastCheckSource: "scan", lastCheckedAt: "2026-09-25T11:00:00.000Z" });
+    const never = await service(repo(emptyState())).read(key);
+    expect(never.freshness.interpretation).toEqual({ state: "never", lastCheckedAt: null, lastCheckSource: null });
+    expect(never.freshness.refreshDue).toBe(true);
+  });
+});
