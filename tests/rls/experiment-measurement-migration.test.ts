@@ -18,7 +18,7 @@ const RPCS = [
   "create_experiment(jsonb, uuid, jsonb)", "update_experiment_draft(uuid, uuid, uuid, jsonb)", "add_experiment_variant(uuid, uuid, uuid, jsonb)",
   "mark_experiment_ready(uuid, uuid, uuid)", "cancel_experiment(uuid, uuid, uuid, text)", "record_experiment_observation(jsonb, text, uuid)",
   "issue_experiment_token(uuid, uuid, uuid, uuid, text, text)", "revoke_experiment_token(uuid, uuid, uuid)", "experiment_arm_counts(uuid, uuid)",
-  "experiments_due_for_measurement(timestamptz, integer)", "finalize_experiment_outcome(uuid, uuid, jsonb, boolean, uuid[])",
+  "experiments_due_for_measurement(timestamptz, integer)", "finalize_experiment_outcome(uuid, uuid, jsonb, boolean, uuid[], timestamptz)",
   "transition_action(uuid, uuid, text, text, text, uuid, jsonb, jsonb, text, boolean)",
 ];
 
@@ -98,6 +98,17 @@ describe("Layer 11 migration contract", () => {
     expect(fn("experiments_due_for_measurement")).toContain("limit least(greatest(coalesce(p_limit, 50), 1), 50)");
     expect(migration).toContain("create unique index if not exists experiment_results_input_fingerprint_key");
     expect(fn("revoke_experiment_token")).toMatch(/update public\.experiment_public_tokens set status = 'revoked'[\s\S]*where workspace_id = p_workspace_id and id = p_token_id/);
+  });
+
+  it("late treatment confirmation and corrections mark a bounded, transactional recompute; finalize compare-and-clears", () => {
+    expect(migration).toContain("add column if not exists outcome_recompute_requested_at timestamptz");
+    expect(migration).toContain("create index if not exists experiments_outcome_recompute_idx\n  on public.experiments (outcome_recompute_requested_at) where outcome_recompute_requested_at is not null;");
+    const reconcile = fn("reconcile_action_experiments");
+    expect(reconcile).toMatch(/old\.status = 'in_progress' and new\.status = 'completed'[\s\S]*outcome_recompute_requested_at = v_now[\s\S]*current_result_id is not null/);
+    expect(fn("record_experiment_observation")).toMatch(/v_new\.source = 'manual' and v_exp\.current_result_id is not null[\s\S]*outcome_recompute_requested_at = v_now/);
+    expect(fn("experiments_due_for_measurement")).toContain("e.outcome_recompute_requested_at is not null and e.status in ('completed', 'canceled') and e.current_result_id is not null");
+    expect(fn("finalize_experiment_outcome")).toContain("v_exp.outcome_recompute_requested_at = p_recompute_seen");
+    expect(fn("transition_action")).toContain("(status = 'running' or (status = 'completed' and closed_reason = 'window_elapsed'))");
   });
 
   it("the architecture decision is recorded before the code", () => {

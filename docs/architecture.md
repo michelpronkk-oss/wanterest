@@ -3508,7 +3508,7 @@ automatic changes). Creation is atomic with usage (`experiment_created`), eviden
 `derived_from_action` provenance, audit and the creation transition (idempotency key
 `experiment:{action_id}:{measurement_plan_fingerprint}`; no compensating delete). Observations are
 append-only with `supersedes_observation_id` corrections; results are append-only revisions keyed
-by `input_fingerprint` with a `current_result_id` pointer. Provenance: result → `measures_experiment`
+by `input_fingerprint` with a `current_result_id` pointer. A revision is a historical reading of the inputs available at the time: when an outcome-relevant input changes after a result (late Action completion with a valid `liveSince`, a manual observation correction), the same transaction sets `experiments.outcome_recompute_requested_at`; the measurement pass picks up only marked rows (partial index, ≤ 50), appends a new revision when the fingerprint differs (never reopening the frozen window), and compare-and-clears the marker it read. Provenance: result → `measures_experiment`
 → experiment; result → `uses_observation` → observation; context observation → `context_from` →
 concept state.
 

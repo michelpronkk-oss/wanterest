@@ -144,13 +144,14 @@ select l11t.action('70000000-0000-4000-8000-000000000004', 'c_flag_off');
 select l11t.action('70000000-0000-4000-8000-000000000005', 'c_closed_before');
 select l11t.action('70000000-0000-4000-8000-000000000006', 'c_abandoned');
 select l11t.action('70000000-0000-4000-8000-000000000007', 'c_recreate');
+select l11t.action('70000000-0000-4000-8000-000000000008', 'c_late_completion');
 
 -- ------------------------------------------------------ privileges (grants)
 select l11t.ok(
   not has_function_privilege('authenticated', 'public.create_experiment(jsonb, uuid, jsonb)', 'execute')
   and not has_function_privilege('anon', 'public.create_experiment(jsonb, uuid, jsonb)', 'execute')
   and not has_function_privilege('authenticated', 'public.record_experiment_observation(jsonb, text, uuid)', 'execute')
-  and not has_function_privilege('authenticated', 'public.finalize_experiment_outcome(uuid, uuid, jsonb, boolean, uuid[])', 'execute')
+  and not has_function_privilege('authenticated', 'public.finalize_experiment_outcome(uuid, uuid, jsonb, boolean, uuid[], timestamptz)', 'execute')
   and not has_function_privilege('authenticated', 'public.revoke_experiment_token(uuid, uuid, uuid)', 'execute')
   and not has_function_privilege('authenticated', 'public.experiment_arm_counts(uuid, uuid)', 'execute')
   and not has_function_privilege('authenticated', 'public.transition_action(uuid, uuid, text, text, text, uuid, jsonb, jsonb, text, boolean)', 'execute')
@@ -167,7 +168,7 @@ select l11t.ok((select relrowsecurity from pg_class where oid = 'public.experime
 
 -- -------------------------------------------------------------- creation
 select l11t.expect_error($q$ select public.create_experiment(l11t.exp(gen_random_uuid(), '70000000-0000-4000-8000-000000000001', 'before_after'), '10000000-0000-4000-8000-000000000001', (select guard from l11t.guards where action_id = '70000000-0000-4000-8000-000000000001')) $q$, 'experiment_action_not_approved', 'create_requires_approved_action');
-select (l11t.tx(id, 'proposed', 'approved')).status from unnest(array['70000000-0000-4000-8000-000000000001', '70000000-0000-4000-8000-000000000002', '70000000-0000-4000-8000-000000000003', '70000000-0000-4000-8000-000000000004', '70000000-0000-4000-8000-000000000005', '70000000-0000-4000-8000-000000000006', '70000000-0000-4000-8000-000000000007']::uuid[]) as id;
+select (l11t.tx(id, 'proposed', 'approved')).status from unnest(array['70000000-0000-4000-8000-000000000001', '70000000-0000-4000-8000-000000000002', '70000000-0000-4000-8000-000000000003', '70000000-0000-4000-8000-000000000004', '70000000-0000-4000-8000-000000000005', '70000000-0000-4000-8000-000000000006', '70000000-0000-4000-8000-000000000007', '70000000-0000-4000-8000-000000000008']::uuid[]) as id;
 select l11t.expect_error($q$ select public.create_experiment(l11t.exp(gen_random_uuid(), '70000000-0000-4000-8000-000000000001', 'before_after'), '10000000-0000-4000-8000-000000000002', (select guard from l11t.guards where action_id = '70000000-0000-4000-8000-000000000001')) $q$, 'experiment_actor_forbidden', 'viewer_cannot_create');
 select l11t.expect_error($q$ select public.create_experiment(l11t.exp(gen_random_uuid(), '70000000-0000-4000-8000-000000000001', 'before_after'), '10000000-0000-4000-8000-000000000003', (select guard from l11t.guards where action_id = '70000000-0000-4000-8000-000000000001')) $q$, 'experiment_actor_forbidden', 'outsider_cannot_create');
 select l11t.expect_error($q$ select public.create_experiment(l11t.exp(gen_random_uuid(), '70000000-0000-4000-8000-000000000001', 'before_after') || '{"workspace_id":"20000000-0000-4000-8000-000000000002","product_id":"30000000-0000-4000-8000-000000000002"}', '10000000-0000-4000-8000-000000000003', null) $q$, 'action_not_found', 'cross_workspace_action_rejected');
@@ -387,6 +388,58 @@ select l11t.ok((select actor_kind = 'user' and actor_user_id = '10000000-0000-40
 select l11t.ok((public.revoke_experiment_token('20000000-0000-4000-8000-000000000001', '84000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001')).status = 'revoked', 'revoke_token');
 select l11t.ok((public.revoke_experiment_token('20000000-0000-4000-8000-000000000001', '84000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001')).status = 'revoked'
   and (select count(*) = 1 from public.audit_log where action = 'experiment.public_token_revoked'), 'revoke_replay_no_second_audit');
+
+-- -------------------------------------------------------------- late treatment confirmation → new revision
+select (public.create_experiment(l11t.exp('80000000-0000-4000-8000-000000000009', '70000000-0000-4000-8000-000000000008', 'before_after'), '10000000-0000-4000-8000-000000000001', (select guard from l11t.guards where action_id = '70000000-0000-4000-8000-000000000008'))).status;
+select (public.record_experiment_observation(l11t.obs('81000000-0000-4000-8000-000000000090', '80000000-0000-4000-8000-000000000009', 'baseline', 10, 'late-bl', l11t.bl_end() - interval '7 days', l11t.bl_end()), 'user', '10000000-0000-4000-8000-000000000001')).id is not null;
+select (public.mark_experiment_ready('20000000-0000-4000-8000-000000000001', '80000000-0000-4000-8000-000000000009', '10000000-0000-4000-8000-000000000001')).status;
+select (l11t.tx('70000000-0000-4000-8000-000000000008', 'approved', 'in_progress', '{}'::jsonb, true)).status;
+select l11t.age('80000000-0000-4000-8000-000000000009', 8);
+select (public.record_experiment_observation(l11t.obs('81000000-0000-4000-8000-000000000091', e.id, 'measurement', 18, 'late-m1', e.measurement_start, e.measurement_end), 'user', '10000000-0000-4000-8000-000000000001')).id is not null
+  from public.experiments e where e.id = '80000000-0000-4000-8000-000000000009';
+-- T4: the pass writes inconclusive(treatment_unconfirmed) while the Action is still in progress
+select l11t.ok((public.finalize_experiment_outcome('20000000-0000-4000-8000-000000000001', '80000000-0000-4000-8000-000000000009',
+  l11t.result('82000000-0000-4000-8000-000000000091', repeat('1', 64), 'inconclusive') || '{"treatment_integrity":"unconfirmed","attribution_class":"descriptive","inconclusive_reasons":["treatment_unconfirmed"]}', true, '{}')).revision = 1, 'late_r1_inconclusive_written');
+select l11t.ok((select status = 'completed' and outcome_recompute_requested_at is null from public.experiments where id = '80000000-0000-4000-8000-000000000009')
+  and not exists (select 1 from public.experiments_due_for_measurement(now(), 50) where id = '80000000-0000-4000-8000-000000000009'), 'late_not_due_without_new_input');
+-- T5: completing the Action still requires a valid go-live date for the (now completed) measured experiment
+select l11t.expect_error($q$ select l11t.tx('70000000-0000-4000-8000-000000000008', 'in_progress', 'completed', '{}'::jsonb) $q$, 'treatment_live_since_required', 'late_completion_requires_live_since');
+select l11t.expect_error($q$ select l11t.tx('70000000-0000-4000-8000-000000000008', 'in_progress', 'completed', jsonb_build_object('liveSince', now())) $q$, 'treatment_live_since_invalid', 'late_live_since_after_window_rejected');
+select l11t.ok((select (l11t.tx('70000000-0000-4000-8000-000000000008', 'in_progress', 'completed', jsonb_build_object('liveSince', e.treatment_started_at))).status = 'completed'
+  from public.experiments e where e.id = '80000000-0000-4000-8000-000000000009'), 'late_completion_with_valid_live_since');
+select l11t.ok((select count(*) = 1 from public.action_events where action_id = '70000000-0000-4000-8000-000000000008' and event_type = 'completed')
+  and (select count(*) = 1 from public.audit_log where target_id = '70000000-0000-4000-8000-000000000008' and action = 'action.completed'), 'layer10_completion_event_and_audit_unchanged');
+-- T6/T7: marker set in the same transaction; the experiment is a bounded revision candidate
+select l11t.ok((select outcome_recompute_requested_at is not null and status = 'completed' and measurement_end < now() from public.experiments where id = '80000000-0000-4000-8000-000000000009'), 'late_completion_marks_recompute');
+select l11t.ok(exists (select 1 from public.experiments_due_for_measurement(now(), 50) where id = '80000000-0000-4000-8000-000000000009'), 'late_completion_is_revision_candidate');
+create temp table l11_seen as select outcome_recompute_requested_at as seen from public.experiments where id = '80000000-0000-4000-8000-000000000009';
+select l11t.ok((public.finalize_experiment_outcome('20000000-0000-4000-8000-000000000001', '80000000-0000-4000-8000-000000000009',
+  l11t.result('82000000-0000-4000-8000-000000000092', repeat('2', 64), 'positive'), false, '{}', (select seen from l11_seen))).revision = 2, 'late_r2_appended');
+select l11t.ok((select current_result_id = '82000000-0000-4000-8000-000000000092' and outcome_recompute_requested_at is null and status = 'completed' and closed_reason = 'window_elapsed' from public.experiments where id = '80000000-0000-4000-8000-000000000009')
+  and (select outcome = 'inconclusive' and treatment_integrity = 'unconfirmed' and revision = 1 from public.experiment_results where id = '82000000-0000-4000-8000-000000000091')
+  and (select outcome = 'positive' and treatment_integrity = 'confirmed' from public.experiment_results where id = '82000000-0000-4000-8000-000000000092'), 'late_r1_preserved_pointer_to_r2_marker_cleared');
+select l11t.ok((select count(*) = 1 from public.experiment_transitions where experiment_id = '80000000-0000-4000-8000-000000000009' and to_status = 'completed'), 'revision_does_not_reopen_experiment');
+-- replay: same inputs, same fingerprint → no new row
+select l11t.ok((public.finalize_experiment_outcome('20000000-0000-4000-8000-000000000001', '80000000-0000-4000-8000-000000000009', l11t.result(gen_random_uuid(), repeat('2', 64), 'positive'), false, '{}', null)).id = '82000000-0000-4000-8000-000000000092'
+  and (select count(*) = 2 from public.experiment_results where experiment_id = '80000000-0000-4000-8000-000000000009'), 'replay_same_fingerprint_zero_rows');
+-- observation correction within the grace period after completion → marker → R3
+select l11t.ok((select (public.record_experiment_observation(l11t.obs('81000000-0000-4000-8000-000000000092', e.id, 'measurement', 12, 'late-m2', e.measurement_start, e.measurement_end, '81000000-0000-4000-8000-000000000091'), 'user', '10000000-0000-4000-8000-000000000001')).supersedes_observation_id = '81000000-0000-4000-8000-000000000091'
+  from public.experiments e where e.id = '80000000-0000-4000-8000-000000000009'), 'correction_after_completed_result_allowed_in_grace');
+select l11t.ok((select outcome_recompute_requested_at is not null from public.experiments where id = '80000000-0000-4000-8000-000000000009'), 'correction_marks_recompute');
+-- a stale seen value never clears a newer marker (compare-and-clear)
+select (public.finalize_experiment_outcome('20000000-0000-4000-8000-000000000001', '80000000-0000-4000-8000-000000000009', l11t.result(gen_random_uuid(), repeat('2', 64), 'positive'), false, '{}', now() - interval '1 hour')).revision;
+select l11t.ok((select outcome_recompute_requested_at is not null from public.experiments where id = '80000000-0000-4000-8000-000000000009'), 'stale_seen_keeps_marker');
+select l11t.ok((select (public.finalize_experiment_outcome('20000000-0000-4000-8000-000000000001', '80000000-0000-4000-8000-000000000009',
+  l11t.result('82000000-0000-4000-8000-000000000093', repeat('3', 64), 'neutral') || '{"effect":2,"observed_value":12}', false, '{}', e.outcome_recompute_requested_at)).revision = 3
+  from public.experiments e where e.id = '80000000-0000-4000-8000-000000000009'), 'correction_r3_appended');
+select l11t.ok((select count(*) = 3 from public.experiment_results where experiment_id = '80000000-0000-4000-8000-000000000009')
+  and (select current_result_id = '82000000-0000-4000-8000-000000000093' and outcome_recompute_requested_at is null from public.experiments where id = '80000000-0000-4000-8000-000000000009'), 'r1_r2_preserved_pointer_r3');
+select l11t.expect_error($q$ update public.experiments set measurement_end = measurement_end + interval '1 day' where id = '80000000-0000-4000-8000-000000000009' $q$, 'experiment_plan_frozen', 'revision_never_reopens_window');
+-- baseline stays frozen after registration even when revising
+select l11t.expect_error($q$ select public.record_experiment_observation(l11t.obs(gen_random_uuid(), '80000000-0000-4000-8000-000000000009', 'baseline', 5, 'late-bl2', l11t.bl_end() - interval '7 days', l11t.bl_end(), '81000000-0000-4000-8000-000000000090'), 'user', '10000000-0000-4000-8000-000000000001') $q$, 'observation_window_invalid', 'baseline_correction_after_registration_rejected');
+-- bounded candidate discovery: marker-only partial index, capped due list
+select l11t.ok((select count(*) = 1 from pg_indexes where indexname = 'experiments_outcome_recompute_idx' and indexdef like '%WHERE (outcome_recompute_requested_at IS NOT NULL)%'), 'recompute_partial_index');
+select l11t.ok(not exists (select 1 from public.experiments_due_for_measurement(now(), 50) d join public.experiments e on e.id = d.id where e.status = 'completed' and e.outcome_recompute_requested_at is null), 'completed_without_marker_never_rescanned');
 
 -- -------------------------------------------------------------- bounds
 do $$ begin

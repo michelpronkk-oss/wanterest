@@ -254,3 +254,71 @@ describe("measurement pass", () => {
     expect(currentObservation(rows, "baseline", null, null)).toBeNull();
   });
 });
+
+describe("late treatment confirmation and corrections produce new append-only revisions", () => {
+  const completedAt = "2026-09-18T09:00:00.000Z";
+  const observations = (measurementValue: number | null, corrected = false) => {
+    const exp = measurementExperimentRow();
+    const rows = [
+      { id: "b1", source: "manual", window_role: "baseline", period_start: exp.baseline_start, period_end: exp.baseline_end, value: 10, denominator: null, supersedes_observation_id: null, recorded_at: "2026-09-05T09:00:00.000Z" },
+    ] as unknown[];
+    if (measurementValue !== null) rows.push({ id: "m1", source: "manual", window_role: "measurement", period_start: exp.measurement_start, period_end: exp.measurement_end, value: measurementValue, denominator: null, supersedes_observation_id: null, recorded_at: "2026-09-17T09:00:00.000Z" });
+    if (corrected) rows.push({ id: "m2", source: "manual", window_role: "measurement", period_start: exp.measurement_start, period_end: exp.measurement_end, value: 12, denominator: null, supersedes_observation_id: "m1", recorded_at: "2026-09-18T10:00:00.000Z" });
+    return rows as ExperimentObservationRow[];
+  };
+  function withAction(status: string, repo: MeasurementRepository) {
+    repo.getAction = async () => ({ ...action, status } as ActionRow);
+    return repo;
+  }
+
+  it("T4 inconclusive(treatment_unconfirmed) → Action completed with liveSince → T7 new revision, confirmed, deterministic outcome", async () => {
+    const running = measurementExperimentRow();
+    const first = fakeRepository({ due: [running], observations: observations(18) });
+    withAction("in_progress", first.repo);
+    const r1 = await service(first.repo, false).measureOne(running, NOW);
+    expect(r1).toMatchObject({ outcome: "inconclusive", treatmentIntegrity: "unconfirmed", inconclusiveReasons: ["treatment_unconfirmed"] });
+    expect(first.calls.find((call) => call.fn === "finalize")!.args.slice(3)).toEqual([true, ["b1", "m1"], null]);
+
+    // Completed experiment, marker set by the Action trigger in the completion transaction.
+    const marked = measurementExperimentRow({ status: "completed", closed_reason: "window_elapsed", current_result_id: "r1", outcome_recompute_requested_at: completedAt } as never);
+    const second = fakeRepository({ due: [marked], observations: observations(18), liveSince: marked.treatment_started_at });
+    const r2 = await service(second.repo, false).measureOne(marked, NOW);
+    expect(r2).toMatchObject({ outcome: "positive", treatmentIntegrity: "confirmed", attributionClass: "before_after_association", effect: 8 });
+    expect(r2.inputFingerprint).not.toBe(r1.inputFingerprint);
+    const [, , payload, close, ids, seen] = second.calls.find((call) => call.fn === "finalize")!.args as [string, string, Record<string, unknown>, boolean, string[], string | null];
+    expect(close).toBe(false); // revision, never re-registration or reopening
+    expect(ids).toEqual(["b1", "m1"]);
+    expect(seen).toBe(completedAt); // compare-and-clear of exactly the marker that was read
+    expect(payload).toMatchObject({ treatment_integrity: "confirmed", outcome: "positive" });
+    // No context snapshot on a revision pass (the window is closed).
+    expect(second.calls.some((call) => call.fn === "recordObservation")).toBe(false);
+  });
+
+  it("late completion does not overstate: missing measurement stays inconclusive", async () => {
+    const marked = measurementExperimentRow({ status: "completed", closed_reason: "window_elapsed", current_result_id: "r1", outcome_recompute_requested_at: completedAt } as never);
+    const { repo } = fakeRepository({ observations: observations(null), liveSince: marked.treatment_started_at });
+    const revised = await service(repo, false).measureOne(marked, NOW);
+    expect(revised).toMatchObject({ outcome: "inconclusive", treatmentIntegrity: "confirmed", inconclusiveReasons: ["missing_observation"] });
+  });
+
+  it("an observation correction after a completed result changes the fingerprint (new revision); unchanged inputs do not", async () => {
+    const marked = measurementExperimentRow({ status: "completed", closed_reason: "window_elapsed", current_result_id: "r1", outcome_recompute_requested_at: completedAt } as never);
+    const before = await service(fakeRepository({ observations: observations(18), liveSince: marked.treatment_started_at }).repo, false).measureOne(marked, NOW);
+    const corrected = fakeRepository({ observations: observations(18, true), liveSince: marked.treatment_started_at });
+    const after = await service(corrected.repo, false).measureOne(marked, NOW);
+    expect(after).toMatchObject({ outcome: "neutral", observedValue: 12 });
+    expect(after.observationIds).toEqual(["b1", "m2"]);
+    expect(after.inputFingerprint).not.toBe(before.inputFingerprint);
+    // Replay with nothing changed (e.g. marker replay, second pass): identical fingerprint → finalize resolves the existing row.
+    const replay = await service(fakeRepository({ observations: observations(18, true), liveSince: marked.treatment_started_at }).repo, false).measureOne(marked, new Date("2026-10-30T00:00:00.000Z"));
+    expect(replay.inputFingerprint).toBe(after.inputFingerprint);
+  });
+
+  it("the running→completed lifecycle step alone never changes the fingerprint", async () => {
+    const running = measurementExperimentRow();
+    const completed = measurementExperimentRow({ status: "completed", closed_reason: "window_elapsed", current_result_id: "r1" });
+    const a = await service(fakeRepository({ observations: observations(18), liveSince: running.treatment_started_at }).repo, false).measureOne(running, NOW);
+    const b = await service(fakeRepository({ observations: observations(18), liveSince: running.treatment_started_at }).repo, false).measureOne(completed, NOW);
+    expect(b.inputFingerprint).toBe(a.inputFingerprint);
+  });
+});

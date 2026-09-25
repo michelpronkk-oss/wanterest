@@ -107,7 +107,15 @@ describe("experiment_outcome_v1 — determinism and wording", () => {
     expect(computeExperimentOutcome(beforeAfter()).inputFingerprint).toBe(a.inputFingerprint);
     expect(a.inputFingerprint).toMatch(/^[0-9a-f]{64}$/);
     expect(computeExperimentOutcome(beforeAfter({ measurement: { id: "m2", value: 18, denominator: null } })).inputFingerprint).not.toBe(a.inputFingerprint);
-    expect(computeExperimentOutcome(beforeAfter({ graceExpired: true })).inputFingerprint).not.toBe(a.inputFingerprint);
+    // Only outcome-determining inputs: lifecycle close and the grace clock alone never create a revision.
+    expect(computeExperimentOutcome(beforeAfter({ graceExpired: true })).inputFingerprint).toBe(a.inputFingerprint);
+    expect(computeExperimentOutcome(beforeAfter({ status: "completed", closedReason: "window_elapsed" })).inputFingerprint).toBe(a.inputFingerprint);
+    // Late treatment confirmation and corrections do.
+    const unconfirmed = computeExperimentOutcome(beforeAfter({ treatment: { actionStatus: "in_progress", liveSince: null, measurementStart: START, measurementEnd: END } }));
+    expect(unconfirmed.inputFingerprint).not.toBe(a.inputFingerprint);
+    expect(computeExperimentOutcome(beforeAfter({ treatment: { actionStatus: "dismissed", liveSince: null, measurementStart: START, measurementEnd: END } })).inputFingerprint).toBe(unconfirmed.inputFingerprint);
+    expect(computeExperimentOutcome(beforeAfter({ treatment: { actionStatus: "completed", liveSince: "2026-09-10T06:00:00.000Z", measurementStart: START, measurementEnd: END } })).inputFingerprint).not.toBe(a.inputFingerprint);
+    expect(computeExperimentOutcome(beforeAfter({ status: "canceled", closedReason: "stopped_early" })).inputFingerprint).not.toBe(a.inputFingerprint);
     expect(computeExperimentOutcome(controlled()).inputFingerprint).toBe(computeExperimentOutcome(controlled({ arms: [...arms([200, 20], [200, 40])].reverse() })).inputFingerprint);
   });
 

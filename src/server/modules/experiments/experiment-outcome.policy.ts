@@ -102,10 +102,14 @@ export function computeExperimentOutcome(input: OutcomeInput): OutcomeResult {
   const treatmentIntegrity = integrityOf(input, treatmentArm);
   const armResults = input.design === "controlled_split" ? input.arms.map((arm) => ({ ...arm, rate: rateOf(arm) })) : null;
   const observationIds = input.design === "before_after" ? [input.baseline?.id, input.measurement?.id].filter((id): id is string => Boolean(id)) : [];
+  // Only outcome-determining inputs: a running→completed lifecycle step or the
+  // clock crossing the grace boundary alone never yields a new revision; late
+  // treatment confirmation or an observation correction does.
   const inputFingerprint = sha256Json({
     outcomeVersion: EXPERIMENT_OUTCOME_VERSION, experimentId: input.experimentId, planFingerprint: input.planFingerprint,
-    status: input.status, closedReason: input.closedReason, actionStatus: input.treatment.actionStatus, liveSince: input.treatment.liveSince,
-    graceExpired: input.graceExpired, baseline: input.baseline, measurement: input.measurement,
+    interruption: input.status === "canceled" ? input.closedReason : null,
+    treatmentConfirmed: treatmentIntegrity, liveSince: treatmentIntegrity === "confirmed" ? input.treatment.liveSince : null,
+    baseline: input.baseline, measurement: input.measurement,
     arms: input.arms.map((arm) => ({ ...arm })).sort((a, b) => a.variantId.localeCompare(b.variantId)),
     windowDays: input.windowDays, daysWithExposure: input.daysWithExposure,
   });

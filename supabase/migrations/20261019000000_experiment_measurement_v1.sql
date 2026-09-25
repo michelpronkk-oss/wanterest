@@ -58,6 +58,10 @@ alter table public.experiments add column if not exists measurement_start timest
 alter table public.experiments add column if not exists measurement_end timestamptz;
 alter table public.experiments add column if not exists closed_reason text;
 alter table public.experiments add column if not exists invalidation_reason text;
+-- Outcome-relevant input changed after the current result (late treatment
+-- confirmation, observation correction); set transactionally, consumed by
+-- finalize_experiment_outcome with compare-and-clear.
+alter table public.experiments add column if not exists outcome_recompute_requested_at timestamptz;
 
 alter table public.experiments drop constraint if exists experiments_measurement_v1_check;
 alter table public.experiments add constraint experiments_measurement_v1_check check (
@@ -104,6 +108,8 @@ create unique index if not exists experiments_one_non_terminal_per_action
   on public.experiments (workspace_id, action_id) where status in ('draft', 'ready', 'running', 'paused');
 create index if not exists experiments_measurement_due_idx
   on public.experiments (measurement_end) where measurement_policy_version = 'experiment_measurement_v1' and status = 'running';
+create index if not exists experiments_outcome_recompute_idx
+  on public.experiments (outcome_recompute_requested_at) where outcome_recompute_requested_at is not null;
 
 -- ------------------------------------------------- experiment transitions (append-only)
 create table if not exists public.experiment_transitions (
@@ -394,6 +400,14 @@ begin
   if new.status is not distinct from old.status then
     return new;
   end if;
+  -- Late treatment confirmation: an experiment that already has a result gets
+  -- its outcome recomputed (new append-only revision) by the measurement pass.
+  if old.status = 'in_progress' and new.status = 'completed' then
+    update public.experiments set outcome_recompute_requested_at = v_now
+     where workspace_id = new.workspace_id and action_id = new.id
+       and measurement_policy_version = 'experiment_measurement_v1'
+       and treatment_started_at is not null and current_result_id is not null;
+  end if;
   select * into v_exp from public.experiments
    where workspace_id = new.workspace_id and action_id = new.id
      and measurement_policy_version = 'experiment_measurement_v1'
@@ -510,12 +524,14 @@ begin
     perform public.assert_concept_action_basis_guard(v_action.workspace_id, v_action.product_id, v_action.trigger_clustering_version, v_action.trigger_concept_key, p_basis_guard);
   end if;
 
-  -- Layer 11 treatment integrity: completing an Action measured by a running
-  -- experiment requires the date the change went live, inside the frozen window.
+  -- Layer 11 treatment integrity: completing an Action measured by a running (or
+  -- window-elapsed, possibly already measured) experiment requires the date the
+  -- change went live, inside the frozen window.
   if p_to = 'completed' then
     select * into v_exp from public.experiments
      where workspace_id = p_workspace_id and action_id = p_action_id
-       and measurement_policy_version = 'experiment_measurement_v1' and status = 'running'
+       and measurement_policy_version = 'experiment_measurement_v1' and treatment_started_at is not null
+       and (status = 'running' or (status = 'completed' and closed_reason = 'window_elapsed'))
      limit 1;
     if v_exp.id is not null then
       begin
@@ -858,7 +874,8 @@ begin
         raise exception using errcode = '22023', message = 'observation_window_invalid';
       end if;
     else
-      if v_exp.status <> 'running' or v_now < v_exp.measurement_end or v_now >= v_exp.measurement_end + interval '7 days'
+      if not (v_exp.status = 'running' or (v_exp.status = 'completed' and v_exp.closed_reason = 'window_elapsed'))
+         or v_now < v_exp.measurement_end or v_now >= v_exp.measurement_end + interval '7 days'
          or v_in.period_start <> v_exp.measurement_start or v_in.period_end <> v_exp.measurement_end then
         raise exception using errcode = '22023', message = 'observation_window_invalid';
       end if;
@@ -904,6 +921,11 @@ begin
     insert into public.evidence_provenance (derived_evidence_node_id, source_evidence_node_id, relation_type, weight, ordinal)
     values (v_new.evidence_node_id, (v_new.source_ref->>'evidenceNodeId')::uuid, 'context_from', 1, 0)
     on conflict (derived_evidence_node_id, source_evidence_node_id, relation_type, ordinal) do nothing;
+  end if;
+  -- A manual value (e.g. a correction) arriving after a result makes the outcome recomputable.
+  if v_new.source = 'manual' and v_exp.current_result_id is not null then
+    update public.experiments set outcome_recompute_requested_at = v_now
+     where workspace_id = v_exp.workspace_id and id = v_exp.id;
   end if;
   if p_actor_kind = 'user' then
     perform public.record_audit_event(v_new.workspace_id, p_actor_user_id, 'user',
@@ -1039,13 +1061,16 @@ language sql stable security invoker set search_path = public as $$
                     where o.experiment_id = e.id and o.window_role = 'measurement' and o.source = 'manual')))
           )
        or (e.status = 'canceled' and e.treatment_started_at is not null and e.current_result_id is null)
+       -- revision candidates: only rows carrying the transactional marker (partial index), never a historical rescan
+       or (e.outcome_recompute_requested_at is not null and e.status in ('completed', 'canceled') and e.current_result_id is not null)
      )
    order by coalesce(e.measurement_end, e.ended_at), e.id
    limit least(greatest(coalesce(p_limit, 50), 1), 50);
 $$;
 
 -- ---------------------------------------------- outcome revision + finalization
-create or replace function public.finalize_experiment_outcome(p_workspace_id uuid, p_experiment_id uuid, p_result jsonb, p_close boolean, p_observation_ids uuid[] default '{}')
+drop function if exists public.finalize_experiment_outcome(uuid, uuid, jsonb, boolean, uuid[]);
+create or replace function public.finalize_experiment_outcome(p_workspace_id uuid, p_experiment_id uuid, p_result jsonb, p_close boolean, p_observation_ids uuid[] default '{}', p_recompute_seen timestamptz default null)
 returns public.experiment_results
 language plpgsql volatile security invoker set search_path = public as $$
 declare
@@ -1101,6 +1126,11 @@ begin
     update public.experiments set status = 'completed', closed_reason = 'window_elapsed', ended_at = timezone('utc', now())
      where workspace_id = p_workspace_id and id = p_experiment_id;
   end if;
+  -- Compare-and-clear: a marker set after the caller read its inputs survives for the next pass.
+  if v_exp.outcome_recompute_requested_at is not null and v_exp.outcome_recompute_requested_at = p_recompute_seen then
+    update public.experiments set outcome_recompute_requested_at = null
+     where workspace_id = p_workspace_id and id = p_experiment_id;
+  end if;
   return v_row;
 end;
 $$;
@@ -1143,7 +1173,7 @@ revoke all on function public.issue_experiment_token(uuid, uuid, uuid, uuid, tex
 revoke all on function public.revoke_experiment_token(uuid, uuid, uuid) from public, anon, authenticated;
 revoke all on function public.experiment_arm_counts(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.experiments_due_for_measurement(timestamptz, integer) from public, anon, authenticated;
-revoke all on function public.finalize_experiment_outcome(uuid, uuid, jsonb, boolean, uuid[]) from public, anon, authenticated;
+revoke all on function public.finalize_experiment_outcome(uuid, uuid, jsonb, boolean, uuid[], timestamptz) from public, anon, authenticated;
 grant execute on function public.experiment_window_interval(text) to service_role;
 grant execute on function public.transition_action(uuid, uuid, text, text, text, uuid, jsonb, jsonb, text, boolean) to service_role;
 grant execute on function public.assert_experiment_actor(uuid, uuid) to service_role;
@@ -1158,7 +1188,7 @@ grant execute on function public.issue_experiment_token(uuid, uuid, uuid, uuid, 
 grant execute on function public.revoke_experiment_token(uuid, uuid, uuid) to service_role;
 grant execute on function public.experiment_arm_counts(uuid, uuid) to service_role;
 grant execute on function public.experiments_due_for_measurement(timestamptz, integer) to service_role;
-grant execute on function public.finalize_experiment_outcome(uuid, uuid, jsonb, boolean, uuid[]) to service_role;
+grant execute on function public.finalize_experiment_outcome(uuid, uuid, jsonb, boolean, uuid[], timestamptz) to service_role;
 
 comment on table public.experiment_observations is 'Layer 11: append-only before/after, manual and internal-context observations; corrections supersede, never update.';
 comment on table public.experiment_transitions is 'Layer 11: one append-only row per experiment status change (user or system actor).';

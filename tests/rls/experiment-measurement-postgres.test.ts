@@ -59,7 +59,7 @@ describe.skipIf(!host)("Layer 11 experiment_measurement_v1 on real PostgreSQL", 
 
       const output = psql(database, ["-f", path.join(root, "tests/rls/sql/experiment_measurement_postgres.sql")]);
       const checks = output.split("\n").filter((line) => line.startsWith("OK "));
-      expect(checks.length).toBeGreaterThanOrEqual(90);
+      expect(checks.length).toBeGreaterThanOrEqual(140);
       expect(output).toContain("ALL_CHECKS_PASSED");
 
       // Concurrency fixtures: four approved Actions.
@@ -135,6 +135,19 @@ describe.skipIf(!host)("Layer 11 experiment_measurement_v1 on real PostgreSQL", 
       expect(f2.stdout).toContain("REV:1");
       expect(scalar(`select count(*) from public.experiment_results where experiment_id = '90000000-0000-4000-8000-000000000001'`)).toBe("1");
       expect(scalar(`select count(*) from public.experiment_transitions where experiment_id = '90000000-0000-4000-8000-000000000001' and to_status = 'completed'`)).toBe("1");
+
+      // 6) Late treatment confirmation: two passes recompute the marked experiment at once → one new revision, marker cleared.
+      scalar(`set request.jwt.claim.role = 'service_role'; select (l11t.tx('${A1}', 'in_progress', 'completed', jsonb_build_object('liveSince', (select treatment_started_at from public.experiments where id = '90000000-0000-4000-8000-000000000001')))).status`);
+      expect(scalar(`select outcome_recompute_requested_at is not null from public.experiments where id = '90000000-0000-4000-8000-000000000001'`)).toBe("t");
+      const recompute = (id: string, sleep: number) => tx(`select 'REV:' || (public.finalize_experiment_outcome('${WS}', '90000000-0000-4000-8000-000000000001', l11t.result('${id}', repeat('4', 64), 'inconclusive') || '{"evidence_completeness":"missing","effect":null}', false, '{}', (select outcome_recompute_requested_at from public.experiments where id = '90000000-0000-4000-8000-000000000001'))).revision`, sleep);
+      const [r1, r2] = await race(recompute("91000000-0000-4000-8000-000000000003", 1.5), recompute("91000000-0000-4000-8000-000000000004", 0));
+      expect(r1.code).toBe(0);
+      expect(r2.code).toBe(0);
+      expect(r1.stdout).toContain("REV:2");
+      expect(r2.stdout).toContain("REV:2");
+      expect(scalar(`select count(*) from public.experiment_results where experiment_id = '90000000-0000-4000-8000-000000000001'`)).toBe("2");
+      expect(scalar(`select (current_result_id = '91000000-0000-4000-8000-000000000003')::text || ':' || (outcome_recompute_requested_at is null)::text from public.experiments where id = '90000000-0000-4000-8000-000000000001'`)).toBe("true:true");
+      expect(scalar(`select count(*) from public.experiment_transitions where experiment_id = '90000000-0000-4000-8000-000000000001'`)).toBe(scalar(`select count(*) from public.experiment_transitions where experiment_id = '90000000-0000-4000-8000-000000000001' and to_status in ('draft','ready','running','completed')`));
     } finally {
       psql("postgres", ["-c", `drop database if exists ${database} with (force)`]);
     }

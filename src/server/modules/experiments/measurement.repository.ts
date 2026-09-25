@@ -27,7 +27,8 @@ export type MeasurementRepository = {
   revokeToken(workspaceId: string, tokenId: string, actorUserId: string): Promise<ExperimentPublicTokenRow>;
   armCounts(workspaceId: string, experimentId: string): Promise<ArmCountRow[]>;
   dueForMeasurement(now: Date, limit: number): Promise<ExperimentRow[]>;
-  finalize(workspaceId: string, experimentId: string, result: Record<string, Json>, close: boolean, observationIds: string[]): Promise<ExperimentResultRow>;
+  /** Appends a revision unless the input fingerprint exists; compare-and-clears the recompute marker seen by the caller. */
+  finalize(workspaceId: string, experimentId: string, result: Record<string, Json>, close: boolean, observationIds: string[], recomputeSeen: string | null): Promise<ExperimentResultRow>;
   getExperiment(workspaceId: string, experimentId: string): Promise<ExperimentRow | null>;
   getAction(workspaceId: string, actionId: string): Promise<ActionRow | null>;
   /** Bounded (≤ 200) observations for one experiment, oldest first. */
@@ -109,8 +110,8 @@ export class SupabaseMeasurementRepository implements MeasurementRepository {
     if (error) throw experimentRpcError(error, "Due experiments could not be loaded.");
     return (data ?? []) as unknown as ExperimentRow[];
   }
-  finalize(workspaceId: string, experimentId: string, result: Record<string, Json>, close: boolean, observationIds: string[]) {
-    return this.rpc<ExperimentResultRow>("finalize_experiment_outcome", { p_workspace_id: workspaceId, p_experiment_id: experimentId, p_result: result, p_close: close, p_observation_ids: observationIds }, "Experiment outcome could not be stored.");
+  finalize(workspaceId: string, experimentId: string, result: Record<string, Json>, close: boolean, observationIds: string[], recomputeSeen: string | null) {
+    return this.rpc<ExperimentResultRow>("finalize_experiment_outcome", { p_workspace_id: workspaceId, p_experiment_id: experimentId, p_result: result, p_close: close, p_observation_ids: observationIds, p_recompute_seen: recomputeSeen }, "Experiment outcome could not be stored.");
   }
   async getExperiment(workspaceId: string, experimentId: string) {
     const { data, error } = await this.client.from("experiments").select("*").eq("workspace_id", workspaceId).eq("id", experimentId).maybeSingle();

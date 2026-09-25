@@ -311,7 +311,7 @@ export class ExperimentMeasurementService {
       arm_results: outcome.armResults as unknown as Json, summary: outcome.summary, min_sample_size: experiment.min_sample_size,
       total_assignments: arms.reduce((sum, arm) => sum + arm.exposed, 0), total_exposed_subjects: arms.reduce((sum, arm) => sum + arm.exposed, 0),
       variant_results: (outcome.armResults ?? []) as unknown as Json,
-    }, closing, outcome.observationIds);
+    }, closing, outcome.observationIds, experiment.outcome_recompute_requested_at ?? null);
     return outcome;
   }
 }
