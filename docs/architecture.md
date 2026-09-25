@@ -2898,3 +2898,233 @@ adapters, or lifecycle writes. No migration, new LLM work, or source change was 
 
 Deferred Geographic Drift, Geographic Gap segmentation, Geography Actions, city precision, concept
 selector UI, and premium UI/UX remain non-blocking future enhancements. No Layer 10 is started.
+
+## 21. Layer 10 — Actions (`actions_lifecycle_v1`)
+
+Architecture decision (approved 25 Sep 2026 after one review and two amendments). Layer 10 moves
+Wanterest from "understand the market" to "take controlled action on verified market
+intelligence" without letting Actions outrun the evidence behind them. It builds only on the
+Layer 9C persisted, lifecycle-verified basis; Layer 9 itself is not reopened.
+
+### What an Action is
+
+An Action is a workspace/product-owned **proposal**: a concrete, deterministic response to exactly
+one persisted 9C basis (`concept_gap` or `concept_drift`), plus the human decision on it and the
+human's own execution record. Recommendation fields are immutable (database-enforced); lifecycle
+fields are mutable only through audited transitions. Wanterest **proposes**; in Layer 10 a human
+**approves, starts and completes** the work (`executionMode = "manual"`). Wanterest never claims it
+executed anything. There is no connector, executor abstraction, or autonomy in Layer 10; approval
+policy is the constant `human_required_v1`.
+
+### Canonical concept Action identity
+
+- A concept Action belongs to `(workspace_id, product_id, trigger_clustering_version,
+  trigger_concept_key)`, where `trigger_concept_key` is the opaque 9C `anchor_concept_key` and
+  `trigger_clustering_version` is the basis row's `clustering_version` — Layer 9's canonical concept
+  identity, preserved. A concept under a later clustering version is never blocked by an open Action
+  of an earlier version that happens to share the anchor key.
+- `actions.trigger_clustering_version` and `actions.proposal_fingerprint` are additive nullable
+  columns. `actions_concept_identity_check` requires both (plus a valid sha256 fingerprint) for
+  `concept_gap`/`concept_drift` and requires them to be null for legacy trigger types.
+  `validate_action_trigger()` additionally verifies that the referenced basis row belongs to the
+  same workspace/product and carries the same `clustering_version` and `anchor_concept_key`
+  (`action_concept_identity_mismatch`). Both new columns are immutable generated fields.
+- **One open Action per concept:** partial unique index `actions_one_open_concept_action` on
+  `(workspace_id, product_id, trigger_clustering_version, trigger_concept_key)` where
+  `trigger_type in ('concept_gap','concept_drift') and status in ('proposed','approved',
+  'in_progress')`. `trigger_type` is deliberately not part of the slot: Gap and Drift compete for
+  one semantic Action per concept.
+- Creation idempotency is unchanged: `action:{product}:{trigger_type}:{trigger_id}:{engine}`.
+
+### Safe bases
+
+Only `concept_gap` (scored) and `concept_drift` (comparable, rising, notable/strong) may create
+Actions. `concept_market_states` is supporting provenance and the currentness anchor only. Legacy
+`demand_gap`/`demand_drift`/`demand_snapshot`/`signal`/geography bases stay paused while
+`DOWNSTREAM_INTELLIGENCE_V2_ENABLED=true`. Eligibility thresholds are the existing, frozen
+`actionCandidateIsQualified` numbers; no source-diversity threshold is introduced.
+
+### Canonical cross-type selector
+
+One pure function, `selectCanonicalConceptCandidate(identity, inputs, now)`, returns
+`{ state: "pending", reason }` or `{ state: "settled", candidate | null }`. It is the only priority
+implementation and is used by generation, write-side reconciliation, the list and detail read
+models, approve and start. Inputs are batched: latest market state, latest gap state, latest drift
+state per supported window (7d/30d/90d), the live `DemandCurrentnessService` roll-up, the current
+positioning snapshot (`current_snapshot_id`, else latest version) and the product. Order:
+
+1. No market state, or market state older than the existing 90-day `staleBefore` → settled, null.
+2. Live currentness fingerprint ≠ persisted market-state fingerprint → `pending("currentness")`.
+3. **Materialization-lag guardrail.** Incomplete 9C materialization is never read as "no
+   candidate":
+   - a positioning snapshot exists but no gap state is linked to the latest market state →
+     `pending("gap_materialization")`;
+   - a supported drift window has no state, or its latest state is linked to an older market
+     state and does not reproduce from the live roll-up (same pure drift-fingerprint function 9C
+     materialization uses; a legitimately unchanged drift window is recognised, not treated as
+     lag) → `pending("drift_materialization")`.
+4. The latest gap state references an older positioning snapshot than the current one →
+   `pending("positioning")`.
+5. Eligible scored Gap (linked, positioning current, qualified) wins.
+6. Otherwise the best eligible Drift: strong before notable, then 7d, 30d, 90d, then state id.
+7. Nothing eligible → settled, null.
+
+Pending never writes: no expiry, no Gap→Drift fallback, no supersession. A candidate carries its
+basis type/row, window, generation input, `proposal_fingerprint` and a **basis guard** (the latest
+market, gap and per-window drift state ids the decision used). An open Action whose clustering
+version differs from the active one is reported `pending("clustering_version_unsupported")`.
+
+### Proposal continuity fingerprint (`action_proposal_continuity_v1`)
+
+The existing `input_fingerprint` hashes state ids and continuous scores, so it changes with every
+new state and cannot express "same proposal". `proposal_fingerprint` hashes only what changes the
+deterministic recommendation: continuity version, action engine version, basis policy version,
+trigger type, clustering version, concept key, product name, action type, target key, and the
+sample-quality bucket, plus — Gap — product snapshot id and content hash, or — Drift — direction and
+significance. State ids, drift period boundaries, drift window and raw scores are excluded, so a
+daily drift state or a window switch with the same meaning keeps the same fingerprint; a new
+positioning snapshot or a sample-bucket change produces a new one. Gap and Drift fingerprints never
+collide (trigger type is included).
+
+### Continuity (write-side reconciliation)
+
+Per concept, against the selector result:
+
+| Selector | Open Action | Result |
+| --- | --- | --- |
+| pending | any | no write |
+| settled, no candidate | proposed / approved | **expired** (`stale_at` set) |
+| settled, no candidate | in_progress | unchanged (read model: `invalid`) |
+| candidate, same fingerprint | any open | keep; `revalidated_by` provenance to the new basis; one idempotent `revalidated` event per new basis |
+| candidate, different fingerprint | proposed / approved | atomically **superseded** by a replacement built from the candidate |
+| candidate, different fingerprint | in_progress | unchanged, `proposalCurrent=false`; replacement waits until it closes |
+| candidate | none open | create, subject to re-proposal rules |
+
+Superseded means a replacement committed in the same transaction; expired means the settled
+selector found nothing eligible. `in_progress` is never auto-expired or auto-superseded. Cross-type
+cases follow directly: Drift→Gap and Gap→Drift supersede (different fingerprints), Gap→Gap and
+Drift→Drift carry forward unless the semantic proposal changed.
+
+**Re-proposal after a human close.** After a *user* dismissal or a completion, a new Action for the
+same concept is created only if the candidate fingerprint differs from the closed Action's or a
+persisted non-qualifying state (same trigger type, same window for drift) exists with a sequence
+after the closed Action's basis (bounded ascending lookup, limit 100; hitting the cap counts as no
+break and is reported as a warning). System expiry, supersession and usage rejection never
+suppress.
+
+### Atomic writes (service-role-only RPCs)
+
+- `create_concept_action(p_action, p_supersede_action_id, p_expected_status, p_basis_guard, ...)`:
+  one transaction. It locks the old Action (`FOR UPDATE`), takes a transaction advisory lock on
+  `(workspace_id, idempotency_key)`, and resolves any existing Action by that key **first** — the
+  replay identity is `(workspace_id, idempotency_key)`, never a caller UUID, so a retry after a lost
+  response, network uncertainty or a concurrent call returns the stored row. Otherwise it checks the
+  basis guard, compare-and-sets the old status, supersedes it, inserts the evidence node and the
+  new Action together, sets `superseded_by_action_id`, writes `triggered_by`/`supersedes_action`
+  provenance and events, and consumes `action_generated` usage exactly once. Any failure (including
+  usage refusal or the one-open index) rolls back everything: no orphan evidence node, and never a
+  superseded Action without a resolvable replacement.
+- `transition_action(...)`: locks the row, compare-and-sets the expected status, enforces the
+  lifecycle matrix, re-checks the basis guard for approve/start of concept Actions
+  (`action_basis_changed`), re-checks active non-viewer membership for user actors, writes the
+  `action_events` row and, for users, the `audit_log` row in the same transaction.
+
+### Lifecycle
+
+`proposed → approved | dismissed | expired` (and legacy-only `superseded`); `approved →
+in_progress | dismissed | expired` (legacy-only `superseded`); `in_progress → completed |
+dismissed`. Terminal: `completed`, `dismissed`, `superseded`, `expired`. Concept supersession only
+happens through `create_concept_action`. `expired` is system-only and sets `stale_at`.
+
+### Authorization (fixes the service-role IDOR)
+
+The browser sends only `actionId`, `toStatus` and an optional note (≤1000 chars, event metadata
+only). The server requires a user, loads the Action through the user's RLS-scoped client (absent →
+`NOT_FOUND`, identical for non-existent and cross-tenant ids), derives `workspace_id`/`product_id`
+from the row, verifies active membership through RLS and the role (viewer: read only;
+member/admin/owner: approve/start/complete/dismiss), performs plan/revalidation checks, and only
+then calls the service-role RPC. A browser-supplied `workspaceId` authorizes nothing. System
+expiry/supersession is server-owned.
+
+### Approve / start revalidation
+
+Immediately before approve or start: authorize, require `actions_enabled`, run the selector, require
+a settled candidate whose `proposal_fingerprint` equals the Action's, then call `transition_action`
+with the candidate's basis guard. Pending → reject without a write. Settled with no candidate →
+system expiry (if still proposed/approved), then reject. Different fingerprint → reject ("a newer
+recommendation replaces this one"). Legacy-basis Actions cannot be approved or started while
+`DOWNSTREAM_INTELLIGENCE_V2_ENABLED=true` (read and dismiss only). Complete and dismiss require
+auth, membership and role only — no plan gate, no basis check — because they record what the human
+already did or chose.
+
+### Live read model
+
+Every open concept Action on the list and on the detail view carries a derived `basisStatus`
+(`valid` | `update_pending` | `invalid`), `proposalCurrent` and `allowedTransitions`, computed by the
+same selector over one batched, read-only, bounded load per product (no writes, no provider or LLM
+calls, no per-Action N+1). Pending → `update_pending`; settled null → `invalid`; candidate → `valid`
+with `proposalCurrent = fingerprint equality`. An old Drift Action with a newer canonical Gap reads
+`valid` / `proposalCurrent=false` and cannot be approved or started until reconciliation replaces
+it. Page reads never expire Actions. Persisted `status` remains historical workflow state.
+
+### Bounded reads
+
+`concept_latest_market_states`, `concept_latest_gap_states` and `concept_latest_drift_states` are
+service-role-only SQL functions (`DISTINCT ON (anchor_concept_key) … ORDER BY sequence DESC`,
+capped at 500 concepts = `DEMAND_CLUSTERING_MAX_EVALUATIONS`); they replace the uncapped 9C batch
+lookups flagged in the 9C gate. Open concept Actions: limit 500. Episode history: limit 100.
+Positioning: one row. Monitoring start: one row. New proposals (creations + supersession
+replacements): at most 5 per pass, ordered by opportunity (gap score / |share delta|) then concept
+key; deferred work is picked up by the next pass.
+
+### Generation triggers, plan and flags
+
+One writer, `generateActionsForScan`: plan gate (`actions_enabled`) first, then — only with
+`DOWNSTREAM_INTELLIGENCE_V2_ENABLED=true` and `CONCEPT_ACTIONS_ENABLED=true` — the concept
+reconciliation/generation pass. It runs after the existing full-scan rebuild and, new in Layer 10,
+after a 2D incremental rebuild that materialized new signals. No provider or LLM calls; retries are
+safe through the RPC idempotency. `CONCEPT_ACTIONS_ENABLED` remains the only generation flag;
+approve/start revalidation is always on (safety, not a feature). `actions_enabled` gates
+generation, approve and start only. No plan or pricing change.
+
+### Provenance, digests, LLM, Layer 11
+
+Action → `triggered_by` → gap/drift state → `derived_from_market_state` → market state →
+cluster states / memberships → evaluations → conversations → source items; Gap adds
+`uses_positioning`, Drift adds window-member edges. Layer 10 adds `revalidated_by` (carried-forward
+basis) and `supersedes_action` edges. Digests exclude expired Actions. No LLM is used; Action
+variants (and the CRM-copy fixture variant engine) remain deferred debt. Layer 10 records only
+proposal/approval/start/completion/dismissal/expiry/supersession facts, actors, timestamps,
+`executionMode = "manual"` and an optional note; experiments, measurement and outcome
+intelligence are Layer 11.
+
+### Migration
+
+`20261018000000_actions_lifecycle_v1.sql`, additive only: `expired` status; `expired`/`revalidated`
+event types; the two columns and identity check; the extended `validate_action_trigger()` and
+immutability trigger; the one-open partial unique index; `create_concept_action`,
+`transition_action`, `assert_concept_action_basis_guard` and the three latest-state functions, all
+revoked from `public`/`anon`/`authenticated` and granted to `service_role` only. Existing rows and
+legacy trigger types are preserved.
+
+### Production proof limitations
+
+Production has one Free-plan workspace (`actions_enabled=false`), zero Actions, zero current
+contributing evidence and `CONCEPT_ACTIONS_ENABLED` off. Layer 10 is therefore proven structurally:
+schema/constraint/function/grant verification, authorization rejection, Free-plan safe
+non-generation with zero Action writes, read-only selector evaluation of the real 9C basis, deployed
+code/flag verification, plus deterministic and real-Postgres tests. A paid preview E2E is desirable
+only if an approved environment already exists; no paid branch is created, no entitlement changed,
+no plan gate bypassed. Recorded as pending, not fabricated: LIVE PAID CONCEPT ACTION CREATION —
+UNREACHABLE_BEHIND_PLAN_GATE; LIVE APPROVE / START / COMPLETE — AWAITING ELIGIBLE PAID REAL CASE;
+live expiry/continuity/supersession, natural scored Gap, comparable Drift, live `basisStatus=valid`
+— AWAITING_NATURAL_EVIDENCE; cross-workspace live case — UNAVAILABLE.
+
+### LAYER 10 COMPLETE means
+
+Security defect fixed; generic concept Action proposal pipeline; bounded generation; one-open
+semantic proposal continuity; atomic supersession; live read-model basis status; human
+approve/start/complete lifecycle with revalidation at approve and start; expiry; audit;
+idempotency; incremental matching path included; legacy v2 safety preserved; migration, code and
+tests green; structural production proof recorded — without fabricating a paid entitlement,
+natural evidence or a live production Action.
