@@ -1701,6 +1701,7 @@ reused unchanged by every stage below.
 | 2D | Incremental product matching (below). | PRODUCTION_PROVEN (flag on) |
 | 2E | Read-first freshness v2: evidence vs interpretation freshness (below). | PRODUCTION_PROVEN (read-model values; UI render pending a signed-in view) |
 | 2F | Adaptive cadence `market_partition_cadence_v2` with hard per-source daily caps (below). | PRODUCTION_PROVEN |
+| 2G | Demand clustering / strengthening `demand_clustering_v1` + `demand_cluster_strength_v1` (below, flag `DEMAND_CLUSTERING_ENABLED`). | IMPLEMENTED_NOT_PROVEN (local only) |
 
 ### Stage 2D — Incremental product matching
 
@@ -1854,3 +1855,94 @@ Gate records (25 Sep 2026):
   success 06:45:59 (completion), zero-new streak 1, cadence 48h (24h x 2), next due 27 Sep 06:50:59
   (5 min jitter), job tagged `stack-exchange` at creation, decision stored on the job, lease cleared,
   no incremental dispatch (0 conversations). Rolling 24h use: GitHub 5/120, Stack Exchange 1/60.
+
+### Stage 2G — Demand clustering and strengthening (`demand_clustering_v1`)
+
+Architecture decision (approved for local implementation, 25 Sep 2026). Goal: repeated, real,
+qualified evidence for the same underlying demand strengthens one durable, product-private demand
+object instead of producing disconnected signals or being silently dropped as a duplicate.
+
+Review findings that shaped the design:
+- `demand_themes` are produced by `FixtureDemandThemeEngine` (a fixed CRM/workflow keyword
+  taxonomy) and are only materialized when a product has no themes yet, so later observations never
+  receive memberships. Themes are therefore not a safe durable identity and are left unchanged.
+- `demand_observations` are one row per extracted phrase (pain, outcome, buyer language, ...). They
+  are free-text facets, so grouping on them would either fragment (exact text) or merge fuzzily.
+- `signals` are one per `product_matches` row; `findDuplicateSignal` suppresses near-duplicate
+  content without recording it. Signals remain the per-evidence surface and are not changed.
+- The frozen qualification (`signal_qualification_v1_7`) already persists, per evaluation,
+  `matched_profile_concepts` (stable Demand Profile v2 keys, ordered by profile confidence then key),
+  `primary_intent` and `demand_target_type`. These are deterministic, versioned, product-scoped
+  primitives and are reused as-is (no embeddings, no LLM, no threshold change).
+
+Durable demand object: `demand_clusters`, one row per (workspace, product, clustering version,
+cluster key). A cluster is immutable identity only; strength lives in append-only state rows.
+
+Identity (`demand_clustering_v1`, pure, `demand-clustering.policy.ts`). Only evaluations with
+`decision = qualified` whose stored qualification passes `canMaterializeQualifiedSignal` are
+eligible. Cluster key = `concept:<anchor>|intent:<family>|target:<scope>` where
+- anchor = the first `matched_profile_concepts` key as persisted on the evaluation (normalized to
+  `[a-z0-9_]`). Evidence with no matched profile concept is not clustered (`no_profile_concept`).
+- family = primary intent grouped as `switch` (switching_intent, alternative_search,
+  renewal_reconsideration), `evaluate` (comparison_intent, vendor_evaluation, purchase_research,
+  recommendation_request), `capability` (feature_requirement), `pain` (explicit_pain, unmet_need,
+  problem_solution_search), `unspecified` (unknown).
+- scope = `product` (demand_target_type scanned_product), `implementation`, or `market`
+  (category, third_party_product, unknown).
+
+Identity vs metadata: concept, intent family and target scope are identity. Pain/outcome phrases,
+alternatives (source products), exact intent, secondary concepts, source, geography and time are
+metadata only; source drives corroboration, time drives staleness. Geography is not an input in v1.
+One evaluation joins exactly one cluster per version (anchor only), so an item that matches several
+concepts is never double counted. False merges are avoided because two items merge only when they
+match the same product-profile concept key with the same intent family and target scope; different
+products can never share a cluster (key and FKs are product-scoped).
+
+Memberships (`demand_cluster_memberships`): immutable, one per (workspace, product, version,
+match evaluation), recording the assignment rationale (anchor, all matched concepts, primary intent,
+family, target type/scope, qualification and threshold versions). Evidence provenance edges link
+each membership to its evaluation, conversation, source item, signal (if any) and cluster.
+
+Strength (`demand_cluster_strength_v1`) is computed from distinct evidence, never processing count.
+A membership contributes unless it is `evaluation_superseded` (the match's current evaluation is a
+newer one: re-evaluation or loss of relevance), `signal_invalidated` / `signal_retracted`,
+`stale` (evidence time older than 90 days), `duplicate_conversation`, or `duplicate_content`
+(same source content hash as an earlier contributing member). Dismissed, saved and archived signals
+still count: they are inbox states, not evidence validity, and the read model reports the mix.
+Components persisted on every state: distinct evidence count n, distinct source count s, average
+qualification demand quality q, evidence factor `1 - 0.5^n`, source factor (1 when s >= 2, else
+0.85), score `q x evidence factor x source factor`, and level `inactive | single | repeated |
+corroborated` (corroborated requires n >= 2 from >= 2 sources).
+
+History: `demand_cluster_states` is append-only with a per-cluster `sequence`, `previous_state_id`
+and an input fingerprint over the contributing/excluded membership sets. A recompute with the same
+sets appends nothing; any change (new evidence, invalidation, supersession, staleness) appends a new
+state linked to its predecessor and to every contributing (`strengthened_by`) and excluded
+(`excluded_membership`, with reason) membership through evidence provenance. Nothing is updated or
+deleted (immutability triggers on all three tables).
+
+Execution: `rebuildDemandIntelligenceForScan` (scan and 2D incremental paths) runs
+`clusterProductDemand` after observations when `DEMAND_CLUSTERING_ENABLED=true`. It reads the
+product's qualified evaluations (bounded to the newest 500), creates missing clusters/memberships,
+then recomputes one state per cluster. No provider or LLM calls. Failures are warnings and never
+fail the scan. Lifecycle changes take effect on the next rebuild. Idempotency: deterministic IDs
+plus unique keys `(workspace, product, version, cluster_key)`, `(workspace, product, version,
+match_evaluation_id)` and `(workspace, cluster, strength_version, sequence)`.
+
+Tenancy: all tables are workspace-owned with non-null `workspace_id`, composite FKs
+`(workspace_id, product_id, cluster_id)` and `(workspace_id, product_id, match_evaluation_id)` (an
+additive unique key on `product_match_evaluations (workspace_id, product_id, id)` backs the latter),
+RLS enabled with member-only select, and writes through the service role only. Public
+conversations stay global and are referenced, never copied.
+
+Read model: `DemandClusteringService.getDemandClusters` returns each cluster's identity, label,
+latest state (level, score, components, source/intent/alternative/lifecycle mixes, exclusions,
+first/last evidence) and member evidence with contribution status, and a plain-language "why grouped"
+explanation. It is not yet wired into read-first or the dashboard (Layer 9).
+
+Minimum honest production proof: with the flag on, a real rebuild for an active product clusters
+its existing qualified evaluations; SQL shows memberships = eligible evaluations, one state per
+cluster, provenance edges to real evaluations/conversations; replay appends zero rows; an
+evaluation superseded or invalidated produces a new state with the member excluded; no rows for
+other products. Strengthening (n >= 2) can only be proven once real repeated evidence exists;
+until then the stage is IMPLEMENTED_NOT_PROVEN for strengthening.

@@ -2,12 +2,16 @@ import "server-only";
 
 import type { ProductRow } from "@/server/db/database.helpers";
 import { planDriftComparison } from "./drift-comparability";
+import { getServerEnv } from "@/server/lib/env";
 import { ensureEngineVersion } from "@/server/modules/observability/engine.repository";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
 import { SupabaseIntelligenceRepository } from "../intelligence/intelligence.repository";
 import { DemandIntelligenceService } from "./demand.service";
 import { SupabaseDemandRepository } from "./demand.repository";
 import { FixtureDemandThemeEngine } from "./demand.engines";
+import { DEMAND_CLUSTERING_VERSION } from "./demand-clustering.policy";
+import { SupabaseDemandClusteringRepository } from "./demand-clustering.repository";
+import { DemandClusteringService, type DemandClusteringRunResult } from "./demand-clustering.service";
 import type { DemandWindow } from "./demand.schemas";
 
 export type DemandRebuildInput = {
@@ -23,6 +27,8 @@ export type DemandRebuildResult = {
   mapUpdated: number;
   gapUpdated: number;
   driftUpdated: number;
+  /** Stage 2G; absent when DEMAND_CLUSTERING_ENABLED is not "true" or the step failed. */
+  clustering?: DemandClusteringRunResult;
   warnings: string[];
 };
 
@@ -100,6 +106,29 @@ export async function rebuildDemandIntelligenceForScan(input: DemandRebuildInput
     }
   }
 
+  // Stage 2G: product-private clustering of qualified evidence. Additive and
+  // non-fatal; it never changes observations, signals, or map/gap/drift inputs.
+  let clustering: DemandClusteringRunResult | undefined;
+  if (getServerEnv().DEMAND_CLUSTERING_ENABLED === "true") {
+    try {
+      const clusteringEngine = await ensureEngineVersion(client, {
+        engine_type: "map",
+        version: DEMAND_CLUSTERING_VERSION,
+        model: "deterministic",
+        prompt_version: DEMAND_CLUSTERING_VERSION,
+        config_hash: null,
+        metadata: { workflow: "product-demand-scan", stage: "clustering", traceId: input.traceId ?? null },
+      });
+      clustering = await new DemandClusteringService(new SupabaseDemandClusteringRepository(client)).clusterProduct({
+        workspaceId: input.product.workspace_id,
+        productId: input.product.id,
+        engineVersionId: clusteringEngine.id,
+      });
+    } catch (error) {
+      warnings.push(error instanceof Error ? `Demand clustering skipped: ${error.message.slice(0, 180)}` : "Demand clustering skipped.");
+    }
+  }
+
   const snapshotsByWindow = new Map<DemandWindow, Awaited<ReturnType<typeof service.aggregateDemand>>[]>();
   let mapUpdated = 0;
   let gapUpdated = 0;
@@ -141,6 +170,7 @@ export async function rebuildDemandIntelligenceForScan(input: DemandRebuildInput
     mapUpdated,
     gapUpdated,
     driftUpdated,
+    ...(clustering ? { clustering } : {}),
     warnings,
   };
 }
