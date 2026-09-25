@@ -2795,3 +2795,106 @@ A successfully production-proven 9D closes Layer 9: every user-facing current-de
 Gap/Drift, Actions, Geography) now traces back to the one canonical `DemandCurrentnessService`
 definition. Geographic Drift/Gap segmentation remain deliberately-scoped future enhancements on top
 of an already-correct foundation, not outstanding Layer-9 correctness gaps.
+
+## 20. Layer 9D — Production proof and Layer 9 closeout
+
+Production validation completed 25 Sep 2026.
+
+### Release records
+
+- Architecture commit: `f98b8e1e7e86fd98fa89a3b108d00dac402cda33`
+- Implementation commit: `81772c6f390ceb6450f1de71537bb1d87b3b0b71`
+- Flag-off Vercel deployment: `dpl_2hJZ4xvVNwxVQKYFQaEHLe4YneBc`, READY.
+- Flag-on Vercel deployment: `dpl_8YwwujRmDiFxozhqjqprEk9uMn9A`, READY, built from
+  implementation commit `81772c6f390ceb6450f1de71537bb1d87b3b0b71`.
+- `GEOGRAPHY_V2_ENABLED=true` in Vercel Production only. Trigger was not redeployed and does not
+  consume Geography v2.
+- Both deployments passed `/api/health` with `status=ok`, `liveness=ok`, and `readiness=ok`.
+
+### Production validation result
+
+The deployed-equivalent server/read path was executed against production Supabase for Linear
+(`product_id = c5946172-6bef-45c0-a5da-08aedc9294cd`). Product-wide and concept-scoped reads both
+returned:
+
+- `currentEvidenceCount = 0`
+- `knownLocationCount = 0`
+- `unknownLocationCount = 0`
+- `countries = []`
+
+The current section therefore truthfully reports **No current geographic demand confirmed**. The
+legacy Geography section remains explicitly labelled historical / not lifecycle-filtered and does
+not fill the empty current section. Manual signed-in production UI validation confirmed the same
+result: no current country, historical separation is visible, and no current Rising, Cooling,
+trend, or growth claim is shown.
+
+### Canonical currentness reconciliation
+
+Linear's canonical Stage 2G truth was re-read from production:
+
+- 1 cluster
+- 11 memberships considered
+- 10 `evaluation_superseded`
+- 1 `signal_invalidated`
+- 0 current contributing evidence
+
+Geography v2 uses the same `DemandCurrentnessService` and `buildDemandMap` currentness as Map,
+Gap v2, Drift v2, and 9C market state. No Geography-specific lifecycle definition was introduced.
+
+### Dedupe, scope, evidence, and denominators
+
+- Product-wide dedupe keys current members by `conversation_id` before geographic aggregation;
+  the deterministic generic multi-concept test passes. **PRODUCT-WIDE MULTI-CONCEPT LIVE CASE:
+  UNAVAILABLE.**
+- Concept-scoped reads support optional `anchorConceptKey` inside the requested workspace/product;
+  deterministic positive scope tests pass. No selector UI was required for 9D.
+- Location evidence remains explicit-only through the existing extractor and resolver. Language-only
+  evidence is not reliable country evidence; provider identity does not define geography; unknown
+  remains unknown; city precision is not invented; region output retains the existing reliability
+  and five-signal sample gate.
+- The read model exposes `currentEvidenceCount`, `knownLocationCount`, `unknownLocationCount`,
+  `reliableCoveragePercent`, `percentageOfAllCurrentEvidence`, and
+  `percentageOfKnownLocationEvidence`. Unknown evidence remains in the all-current denominator;
+  deterministic positive denominator tests pass.
+- Current Geography is point-in-time only. It contains no current trend, rising, cooling, growth,
+  or percentage-change contract. Legacy trend remains confined to historical Geography.
+
+### Zero-write and side-effect proof
+
+Repeated Geography v2 reads left all relevant production counts unchanged. The before/after counts
+were: `demand_clusters=1`, `demand_cluster_memberships=11`, `demand_cluster_states=1`,
+`concept_market_states=1`, `concept_gap_states=1`, `concept_drift_states=3`,
+`demand_observations=85`, `signals=10`, `product_match_evaluations=180`, `evidence_nodes=7120`,
+`evidence_provenance=14494`, `actions=0`, `raw_source_items=230`, and
+`query_yield_artifacts=359`.
+
+The Geography v2 path is read-time only: no provider retrieval, discovery, product scan, candidate
+selection, qualification, LLM call, demand rebuild, Trigger task, migration, persistence write, or
+new provenance edge was observed or introduced. The source path contains no Geography v2 Trigger
+consumer.
+
+### Tenancy, performance, genericity, and rollback
+
+- Every read is workspace/product scoped; the concept filter cannot escape that scope. **CROSS-
+  WORKSPACE LIVE CASE: UNAVAILABLE.** Deterministic tenancy tests pass.
+- Currentness reads are bounded; conversations and source items are loaded in bulk; no N+1 or
+  unlimited historical scan occurs in the current path; no provider or LLM cost is incurred.
+- The 9D production code contains zero Linear, Jira, production UUID, or workspace UUID logic and
+  remains generic across workspace, product, concept, source, and country.
+- The observed flag-off deployment and deterministic flag tests prove rollback to legacy Geography
+  with no schema change, data change, or Trigger change. Production remains on
+  `GEOGRAPHY_V2_ENABLED=true` after successful validation.
+
+### Frozen-system verification
+
+Layer 9D changed none of Stage 2G identity or strengthening, 9A Map semantics, 9B Gap/Drift
+semantics, 9C persisted state semantics, Action generation, plan/pricing, query planning, retrieval
+precision, source health, candidate selection, qualification thresholds, reasoning, provider
+adapters, or lifecycle writes. No migration, new LLM work, or source change was made.
+
+**LAYER 9D: PRODUCTION PROVEN.**
+
+**LAYER 9: COMPLETE.**
+
+Deferred Geographic Drift, Geographic Gap segmentation, Geography Actions, city precision, concept
+selector UI, and premium UI/UX remain non-blocking future enhancements. No Layer 10 is started.
