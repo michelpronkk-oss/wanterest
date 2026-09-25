@@ -6,6 +6,7 @@ import type { Database } from "@/server/db/database.types";
 import type { DemandDriftRow, DemandGapRow } from "@/server/db/database.helpers";
 import { AppError } from "@/server/lib/errors";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
+import { selectComparableDrifts } from "@/server/modules/demand-intelligence/drift-comparability";
 import { SupabaseDemandRepository } from "@/server/modules/demand-intelligence/demand.repository";
 import { IntelligenceService } from "@/server/modules/intelligence";
 import { SupabaseIntelligenceRepository } from "@/server/modules/intelligence/intelligence.repository";
@@ -40,7 +41,9 @@ export class SupabaseReadFirstIntelligenceRepository implements ReadFirstIntelli
     const [gaps, drifts]: [DemandGapRow[], DemandDriftRow[]] = snapshot
       ? await Promise.all([
         demandRepository.listGaps(key.workspaceId, key.productId, snapshot.id),
-        demandRepository.listDrifts(key.workspaceId, key.productId, snapshot.id),
+        // Drift comparability v1: only surface drift from adjacent windows.
+        Promise.all([demandRepository.listSnapshots(key.workspaceId, key.productId), demandRepository.listDrifts(key.workspaceId, key.productId)])
+          .then(([allSnapshots, allDrifts]) => selectComparableDrifts(allSnapshots, allDrifts)?.drifts ?? []),
       ])
       : [[], []];
 

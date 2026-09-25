@@ -1,3 +1,4 @@
+import { selectComparableDrifts } from "./drift-comparability";
 import { AppError } from "../../lib/errors";
 import { jsonValueSchema, type Json } from "../../db/database.helpers";
 import type {
@@ -311,9 +312,11 @@ export class DemandIntelligenceService {
   }
 
   async getDemandDrift(workspaceId: string, productId: string, window: DemandWindow): Promise<DemandDriftReadModel> {
-    const snapshots = await this.repository.listSnapshots(workspaceId, productId, window); const current = snapshots[0]; const previous = snapshots[1];
-    if (!current || !previous) throw new AppError("NOT_FOUND", "Two comparable demand snapshots are required for drift.");
-    return { drifts: await this.repository.listDrifts(workspaceId, productId, current.id), phraseDrifts: await this.repository.listDriftPhrases(current.id, previous.id), alternativeDrifts: await this.repository.listDriftAlternatives(current.id, previous.id), currentSnapshotId: current.id, previousSnapshotId: previous.id };
+    // Drift comparability v1: only adjacent, equal-length windows are a trend.
+    const comparable = selectComparableDrifts(await this.repository.listSnapshots(workspaceId, productId, window), await this.repository.listDrifts(workspaceId, productId), window);
+    if (!comparable) throw new AppError("NOT_FOUND", "Two comparable demand snapshots are required for drift.");
+    const { current, previous } = comparable;
+    return { drifts: [...comparable.drifts].sort((a, b) => b.share_delta - a.share_delta), phraseDrifts: await this.repository.listDriftPhrases(current.id, previous.id), alternativeDrifts: await this.repository.listDriftAlternatives(current.id, previous.id), currentSnapshotId: current.id, previousSnapshotId: previous.id };
   }
 
   async replayDemandSnapshots(input: { product: ProductRow; profile: DemandProfileRow; periods: Array<{ window: DemandWindow; periodEnd: string }>; mapEngineVersionId: string; themeEngineVersionId?: string }): Promise<DemandSnapshotRow[]> {

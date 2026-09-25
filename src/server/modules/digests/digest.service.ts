@@ -2,6 +2,7 @@ import { AppError } from "../../lib/errors";
 import { jsonValueSchema, type DigestItemRow, type DigestRow, type Json } from "../../db/database.helpers";
 import { deterministicUuid, sha256Json } from "../ingestion/hash";
 import type { ActionRepository } from "../actions";
+import { isComparableDriftRow } from "../demand-intelligence/drift-comparability";
 import type { DemandRepository } from "../demand-intelligence";
 import type { IntelligenceRepository } from "../intelligence";
 import type { DigestItemType, DigestType } from "../actions/action.schemas";
@@ -170,7 +171,8 @@ export class Phase4DigestSource implements DigestSource {
     }
     const gaps = await this.demand.listGaps(input.workspaceId, input.productId);
     for (const gap of gaps.filter((row) => row.created_at >= input.periodStart && row.created_at < input.periodEnd).slice(0, 10)) candidates.push({ itemType: "gap", itemId: gap.id, sourceEvidenceNodeId: gap.evidence_node_id, score: gap.gap_score, reason: gap.interpretation, createdAt: gap.created_at });
-    const drifts = await this.demand.listDrifts(input.workspaceId, input.productId);
+    const snapshotsById = new Map((await this.demand.listSnapshots(input.workspaceId, input.productId)).map((snapshot) => [snapshot.id, snapshot]));
+    const drifts = (await this.demand.listDrifts(input.workspaceId, input.productId)).filter((row) => isComparableDriftRow(row, snapshotsById));
     for (const drift of drifts.filter((row) => row.created_at >= input.periodStart && row.created_at < input.periodEnd).slice(0, 10)) candidates.push({ itemType: "drift", itemId: drift.id, sourceEvidenceNodeId: drift.evidence_node_id, score: Math.abs(drift.share_delta) * drift.confidence, reason: `${drift.concept_key} is ${drift.drift_direction} with ${drift.significance} significance.`, createdAt: drift.created_at });
     return candidates;
   }

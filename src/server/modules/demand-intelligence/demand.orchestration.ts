@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { ProductRow } from "@/server/db/database.helpers";
+import { planDriftComparison } from "./drift-comparability";
 import { ensureEngineVersion } from "@/server/modules/observability/engine.repository";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
 import { SupabaseIntelligenceRepository } from "../intelligence/intelligence.repository";
@@ -117,10 +118,21 @@ export async function rebuildDemandIntelligenceForScan(input: DemandRebuildInput
     gapUpdated += (await service.calculateDemandGap(input.product, productSnapshot, snapshot, gapEngine.id)).length;
   }
 
+  // Drift comparability v1: compare day-anchored adjacent windows only, and
+  // only once Wanterest has observed this market for the whole previous
+  // window. Never "latest two snapshots", which overlap almost entirely.
   let driftUpdated = 0;
-  for (const snapshotsForWindow of snapshotsByWindow.values()) {
-    const [current, previous] = snapshotsForWindow;
-    if (!current || !previous) continue;
+  const allSnapshots = [...snapshotsByWindow.values()].flat();
+  const monitoringStartedAt = allSnapshots.length ? allSnapshots.map((row) => row.created_at).sort()[0] : null;
+  for (const window of windows) {
+    const plan = planDriftComparison({ window, now: new Date(), monitoringStartedAt });
+    if (!plan.comparable) {
+      warnings.push(`Drift ${window} skipped: ${plan.reason}.`);
+      continue;
+    }
+    const aggregateInput = { product: input.product, profile, window, mapEngineVersionId: mapEngine.id, themeEngineVersionId: themeEngine.id, themeEngine: new FixtureDemandThemeEngine() };
+    const current = await service.aggregateDemand({ ...aggregateInput, periodEnd: plan.currentPeriodEnd });
+    const previous = await service.aggregateDemand({ ...aggregateInput, periodEnd: plan.previousPeriodEnd });
     driftUpdated += (await service.calculateDemandDrift(current, previous, driftEngine.id)).length;
   }
 

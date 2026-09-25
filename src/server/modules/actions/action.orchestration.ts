@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { ProductRow } from "@/server/db/database.helpers";
+import { selectComparableDrifts } from "@/server/modules/demand-intelligence/drift-comparability";
 import { capabilityAllows } from "@/server/modules/entitlements/entitlement-policy";
 import { getWorkspaceEntitlement } from "@/server/modules/entitlements/entitlement.repository";
 import { ensureEngineVersion } from "@/server/modules/observability/engine.repository";
@@ -47,7 +48,8 @@ export async function generateActionsForScan(input: { product: ProductRow; trace
       warnings.push(error instanceof Error ? `Gap action skipped: ${error.message.slice(0, 180)}` : "Gap action skipped.");
     }
   }
-  const drifts = await demand.listDrifts(input.product.workspace_id, input.product.id, latestSnapshot.id);
+  // Actions only originate from comparable (adjacent-window) drift.
+  const drifts = selectComparableDrifts(await demand.listSnapshots(input.product.workspace_id, input.product.id), await demand.listDrifts(input.product.workspace_id, input.product.id))?.drifts ?? [];
   for (const drift of drifts.slice(0, 5)) {
     try {
       actionsUpdated += (await service.generateActions(actionInputFromDrift(input.product, drift, { actionEngineVersionId: engineVersion.id }))).actions.length;

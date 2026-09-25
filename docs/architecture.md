@@ -1787,3 +1787,26 @@ returns, additively:
 UI copy distinguishes "Up to date - no new qualifying demand since the last signal" and "Market
 checked - no qualifying demand yet" from genuinely stale intelligence. Rollback: revert the commit;
 nothing persisted changes.
+
+### Demand Drift foundation — drift comparability v1 (`drift_comparability_v1`)
+
+Defect (production evidence, 25 Sep 2026): every one of the 50 persisted drift pairs compared two
+90d snapshots created ~1.6h apart with 99.9% window overlap, because drift used "the latest two
+snapshots" and every rebuild mints a snapshot ending now. Those rows only read stable/insufficient
+because samples were small; with volume they would have produced cosmetic "rising" trends.
+
+Fix (`src/server/modules/demand-intelligence/drift-comparability.ts`):
+- Writes: drift is computed only between day-anchored (UTC midnight) adjacent windows of equal
+  length - current `[anchor - W, anchor)` vs previous `[anchor - 2W, anchor - W)` - and only when
+  Wanterest was already persisting demand intelligence for the product before the previous window
+  started (`monitoringStartedAt` = first snapshot). Otherwise the rebuild records
+  `Drift <window> skipped: insufficient_history` and writes nothing. Evidence is assigned to windows
+  by publication time (`observed_at`), snapshots are fingerprint-idempotent, so at most one drift
+  pair per window per day.
+- Reads: `getDemandDrift`, read-first, Action generation and digests only use drift rows whose
+  snapshots are adjacent and equal-length (`selectComparableDrifts` / `isComparableDriftRow`).
+  Legacy overlapping rows remain as history and are never surfaced.
+- Engine formulas (`demand-drift-v1`, minimum sample 5, significance) are unchanged.
+
+Expected production state: no drift is shown until a product has two full windows of observed
+history (7d: ~14 days after first intelligence). That is correct - no fabricated trends.
