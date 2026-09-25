@@ -1698,7 +1698,7 @@ reused unchanged by every stage below.
 | 2A | `ingestPublicPartition` is the only provider -> raw -> normalized -> canonical loop; tenant context is operational only. | PRODUCTION_PROVEN |
 | 2B | `market_partitions`: immutable, tenant-free identity per literal retrieval spec; `query_yield_artifacts.market_partition_key` records which product queries map to which partition. | PRODUCTION_PROVEN |
 | 2C | `market_partition_refresh_state` + `refresh-market-partition` / `market-partition-refresh-scheduler` (flag `MARKET_PARTITION_REFRESH_ENABLED`); GitHub + Stack Exchange only, 24h + deterministic jitter, lease/claim RPC, job-run idempotency per due slot. | PRODUCTION_PROVEN |
-| 2D | Incremental product matching (below). | see gate record |
+| 2D | Incremental product matching (below). | IMPLEMENTED_NOT_PROVEN (deployed, flag off) |
 
 ### Stage 2D — Incremental product matching
 
@@ -1742,3 +1742,10 @@ types); leaving it in place is safe.
 Deferred to 2E/2F: read-first `lastSuccessfulRefreshAt` still reflects product scans only;
 interest is not yet plan-weighted; Free products are matched because matching makes no provider
 calls (deterministic engines; shadow reasoning keeps its own gate).
+
+Gate record (25 Sep 2026): commit d2c2c1a; Trigger 20260925.5; Vercel dpl_6vuKZHkWLoAFdM4eGevq7Mc3g5Rj;
+migration 20261014000000 applied. Proven in production: flag-off refresh (job bf6d8e42) stored 17
+conversation ids on a workspace/product-null job and dispatched nothing; evaluations, matches,
+signals, rankings, snapshots, artifacts and usage unchanged. Not yet proven: flag-on fanout,
+because enabling `INCREMENTAL_PRODUCT_MATCHING_ENABLED` needs operator approval and the only
+interested product's interest rows predate provenance capture (one new product scan records it).
