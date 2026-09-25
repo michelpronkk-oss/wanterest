@@ -1701,7 +1701,7 @@ reused unchanged by every stage below.
 | 2D | Incremental product matching (below). | PRODUCTION_PROVEN (flag on) |
 | 2E | Read-first freshness v2: evidence vs interpretation freshness (below). | PRODUCTION_PROVEN (read-model values; UI render pending a signed-in view) |
 | 2F | Adaptive cadence `market_partition_cadence_v2` with hard per-source daily caps (below). | PRODUCTION_PROVEN |
-| 2G | Demand clustering / strengthening `demand_clustering_v1` + `demand_cluster_strength_v1` (below, flag `DEMAND_CLUSTERING_ENABLED`). | IMPLEMENTED_NOT_PROVEN (local only) |
+| 2G | Demand clustering / strengthening `demand_clustering_v1` + `demand_cluster_strength_v1` (below, flag `DEMAND_CLUSTERING_ENABLED`). | PRODUCTION_PROVEN (identity, lifecycle exclusion, provenance, tenancy, idempotency; corroboration awaiting natural evidence) |
 
 ### Stage 2D — Incremental product matching
 
@@ -1946,3 +1946,72 @@ cluster, provenance edges to real evaluations/conversations; replay appends zero
 evaluation superseded or invalidated produces a new state with the member excluded; no rows for
 other products. Strengthening (n >= 2) can only be proven once real repeated evidence exists;
 until then the stage is IMPLEMENTED_NOT_PROVEN for strengthening.
+
+Gate record (25 Sep 2026):
+
+- **Deploy.** Production SHA `0e87958017a1978c01c0cd0d123d5d9b9f66589e` (pushed to `origin/main`
+  after local typecheck/lint/full-suite pass, 896 passed / 9 skipped / 0 failed). Supabase
+  migration `20261016000000_demand_clustering_v1.sql` applied (only pending migration; dry-run
+  matched). Trigger.dev prod version `20260925.8`, worker `worker_cmugzrskmcwmk0voceg81jx1g`,
+  deployed with `--external-id 0e87958017a1978c01c0cd0d123d5d9b9f66589e`. Vercel production
+  `dpl_4VD49RXrSNF2dadFGNaoQdbnpvWJ` built from the same commit (build log: `Cloning
+  github.com/michelpronkk-oss/wanterest (Branch: main, Commit: 0e87958)`), aliased to
+  `app.wanterest.com`, READY. `/api/health` returned `status=ok, liveness=ok, readiness=ok`.
+- **Schema/RLS proof.** All three tables reachable by the service role (baseline 0/0/0 before
+  enablement); `anon` denied with Postgres `42501 permission denied`, matching the migration's
+  `revoke all ... from anon, authenticated; grant select ... to authenticated` plus
+  `is_workspace_member` RLS policy. Flag read back from Trigger prod as absent before enablement
+  (equivalent to default `false`), then `DEMAND_CLUSTERING_ENABLED=true` after `env set`.
+- **Controlled rebuild.** Task `rebuild-product-demand-intelligence` (no scan, no provider calls,
+  `evaluationIds: []`) run for Linear (`8b7a4189-...-1502dc2be82a` / `c5946172-...-08aedc9294cd`):
+  run `run_06gdhh9jk5dcgpr1j66n7kq201`, 13:33:17-13:34:56 UTC. Result: 11 evaluations considered,
+  1 cluster created, 11 memberships created, 1 state appended, 0 unclustered.
+- **Deterministic identity.** All 11 of the workspace's qualified evaluations share
+  `matched_profile_concepts: ["jira"]` and a `primary_intent` of `switching_intent` or
+  `alternative_search` (both map to family `switch`) with `demand_target_type` absent/`unknown`
+  (schema default, maps to scope `market`) — so all 11 independently compute the same key. Stored
+  cluster: `concept:jira|intent:switch|target:market`, `label = "Jira - switching demand"`. Every
+  membership's persisted `assignment` JSON recomputes to that identical key; hand-verified against
+  the policy before the rebuild ran, then confirmed against the actual stored rows afterward.
+- **Lifecycle proof (live, not synthetic).** Cross-referencing each evaluation against its match's
+  `current_match_evaluation_id` showed only 1 of 11 is still the current evaluation for its match;
+  the other 10 were superseded by later re-evaluations that all resolved `decision: "weak"` (the
+  existing "a non-qualifying re-evaluation archives the active signal" lifecycle behavior). The one
+  current evaluation's signal has `lifecycle_status: "invalidated"`. Resulting state:
+  `strength_level: "inactive"`, `distinct_evidence_count: 0`,
+  `exclusions: {"evaluation_superseded": 10, "signal_invalidated": 1}`,
+  `lifecycle_mix: {"archived": 8, "dismissed": 2, "invalidated": 1}` (11 memberships' signal
+  states). `evaluation_superseded` and `signal_invalidated` are proven live; `stale` and
+  `duplicate_conversation`/`duplicate_content` have no live case today — see
+  `tests/modules/demand-clustering-service.test.ts` for those paths (`LIVE_CASE_UNAVAILABLE`).
+- **Negative merge.** No live counter-example exists: every qualified evaluation in the workspace
+  (Checkoutleak is archived and has none) shares the same concept/intent-family/target-scope, so
+  production cannot show two real evaluations landing in different clusters today. Covered by
+  `tests/modules/demand-clustering-policy.test.ts` (different concept, intent family and target
+  scope each produce a different key) — `LIVE_CASE_UNAVAILABLE` for a live two-cluster split.
+- **Strengthening.** 11 real memberships landed in one cluster (multi-evidence grouping is proven),
+  but every membership is excluded (superseded or invalidated), so `distinct_evidence_count = 0`
+  and corroboration (`n >= 2` contributing, `>= 2` sources) is not observed.
+  `MULTI_EVIDENCE_STRENGTHENING: AWAITING_NATURAL_EVIDENCE` — specifically, awaiting either new
+  qualified evidence or a currently-valid (non-superseded, non-invalidated) qualified evaluation,
+  not merely repeated evidence in general.
+- **Replay/idempotency.** Same task re-triggered without reusing the idempotency key (a fresh
+  Trigger-level execution, not a dedup short-circuit): run `run_06gdhi3ar1rikh0drq99n1qg01`,
+  result `clustersCreated: 0, membershipsCreated: 0, statesAppended: 0` on the same 11
+  evaluations. Row counts unchanged (clusters 1, memberships 11, states 1, provenance edges 67
+  before and after); cluster id, state id, sequence (1) and input fingerprint all identical.
+- **Tenancy.** All rows carry Linear's workspace/product; 0 rows for Checkoutleak; total rows
+  across the whole database (1 / 11 / 1) equal Linear's rows exactly, so no other
+  workspace/product has any Stage 2G row.
+- **Side effects.** 0 `job_runs`, 0 new `query_yield_artifacts`, 0 new
+  `product_match_evaluations`, 0 new `raw_source_items` created during either rebuild — no
+  provider calls, no candidate selection, no qualification, no product-demand-scan.
+- **Performance.** 11 evaluations considered, 1 cluster processed, bounded well within
+  `DEMAND_CLUSTERING_MAX_EVALUATIONS = 500` and the task's `maxDuration = 1800`.
+- **Frozen systems.** `git diff origin/main..0e87958 --stat` (pre-push) touched only
+  `.env.example`, `env.ts`, the new `demand-intelligence/demand-clustering.*` module,
+  `demand.orchestration.ts` (additive clustering call), `demand-intelligence/index.ts`, the
+  migration, tests, and this doc. No frozen file (`query_planning_v7`, Retrieval Precision V1,
+  Source Health V1, `candidate_selection_v3`, `signal_qualification_v1_7`/thresholds,
+  `semantic_reasoning_router_v1`, provider adapters, product-scan budgets) was touched. No
+  embeddings, no new LLM calls, no threshold change.
