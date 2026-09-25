@@ -105,6 +105,56 @@ describe("Layer 9C ConceptMarketStateService — market state", () => {
     expect(rows.find((row) => row.product_id === productB)?.workspace_id).toBe(workspaceB);
   });
 
+  it("never merges the same anchor concept key across different products or workspaces", async () => {
+    const { clusteringRepository, stateRepository, service, cluster } = setup();
+    seedEvidence(clusteringRepository, { key: "a", productId: productA, concepts: ["pricing"] });
+    seedEvidence(clusteringRepository, { key: "a2", productId: productA2, concepts: ["pricing"] });
+    seedEvidence(clusteringRepository, { key: "b", workspaceId: workspaceB, productId: productB, concepts: ["pricing"] });
+    await cluster(productA); await cluster(productA2); await cluster(productB, workspaceB);
+    await service.materializeForProduct({ workspaceId: workspaceA, productId: productA, now, engineVersions, positioning: null, monitoringStartedAt: null });
+    await service.materializeForProduct({ workspaceId: workspaceA, productId: productA2, now, engineVersions, positioning: null, monitoringStartedAt: null });
+    await service.materializeForProduct({ workspaceId: workspaceB, productId: productB, now, engineVersions, positioning: null, monitoringStartedAt: null });
+
+    // Three products, one identical anchor_concept_key ("pricing") — three separate rows, never merged.
+    const rows = [...stateRepository.marketStates.values()].filter((row) => row.anchor_concept_key === "pricing");
+    expect(rows).toHaveLength(3);
+    expect(new Set(rows.map((row) => row.id)).size).toBe(3);
+    expect(rows.every((row) => row.sequence === 1)).toBe(true);
+
+    // Each product's latest lookup for "pricing" resolves only to its own row.
+    const forA = await stateRepository.latestMarketState(workspaceA, productA, DEMAND_CLUSTERING_VERSION, "pricing", "concept_market_state_v1");
+    const forA2 = await stateRepository.latestMarketState(workspaceA, productA2, DEMAND_CLUSTERING_VERSION, "pricing", "concept_market_state_v1");
+    const forB = await stateRepository.latestMarketState(workspaceB, productB, DEMAND_CLUSTERING_VERSION, "pricing", "concept_market_state_v1");
+    expect(forA!.id).not.toBe(forA2!.id);
+    expect(forA!.id).not.toBe(forB!.id);
+    expect(forA2!.id).not.toBe(forB!.id);
+    expect(forA!.product_id).toBe(productA);
+    expect(forA2!.product_id).toBe(productA2);
+    expect(forB!.workspace_id).toBe(workspaceB);
+  });
+
+  it("rolls multiple Stage 2G clusters sharing one anchor concept (different intent/target) into one market concept state, while unrelated anchors stay separate", async () => {
+    const { clusteringRepository, stateRepository, service, cluster } = setup();
+    seedEvidence(clusteringRepository, { key: "p1", concepts: ["pricing"], intent: "switching_intent", target: "unknown" });
+    seedEvidence(clusteringRepository, { key: "p2", concepts: ["pricing"], intent: "alternative_search", target: "category" });
+    seedEvidence(clusteringRepository, { key: "api1", concepts: ["api_access"], intent: "switching_intent", target: "unknown" });
+    seedEvidence(clusteringRepository, { key: "rep1", concepts: ["reporting"], intent: "switching_intent", target: "unknown" });
+    await cluster();
+
+    const result = await service.materializeForProduct({ workspaceId: workspaceA, productId: productA, now, engineVersions, positioning: null, monitoringStartedAt: null });
+    expect(result.conceptsConsidered).toBe(3);
+
+    const pricing = [...stateRepository.marketStates.values()].find((row) => row.anchor_concept_key === "pricing")!;
+    const apiAccess = [...stateRepository.marketStates.values()].find((row) => row.anchor_concept_key === "api_access")!;
+    const reporting = [...stateRepository.marketStates.values()].find((row) => row.anchor_concept_key === "reporting")!;
+    // The two differently-intended/targeted "pricing" clusters rolled into one concept state.
+    expect(pricing.contributing_membership_count).toBe(2);
+    // Unrelated anchor concepts never merge into "pricing" or each other.
+    expect(apiAccess.contributing_membership_count).toBe(1);
+    expect(reporting.contributing_membership_count).toBe(1);
+    expect(new Set([pricing.id, apiAccess.id, reporting.id]).size).toBe(3);
+  });
+
   it("rejects a gap/drift state forged to reference another product's market state (composite-FK tenancy)", async () => {
     const { stateRepository } = setup();
     const marketState = await stateRepository.createMarketState(marketStateInsert({}));
