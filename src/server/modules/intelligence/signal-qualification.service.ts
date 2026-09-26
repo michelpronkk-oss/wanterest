@@ -1,6 +1,7 @@
 import { sha256Text } from "../ingestion/hash";
 import { inspectSignalContent } from "./signal-quality";
 import { freshnessScore, sourceQuality } from "./ranking";
+import { canonicalTimestamp } from "./timestamp";
 import {
   SIGNAL_QUALIFICATION_PENALTIES,
   SIGNAL_QUALIFICATION_THRESHOLDS,
@@ -585,7 +586,11 @@ function buildQualification(input: SignalQualificationInput, reasoningOverride?:
     evidence_spans: evidence,
     reason_codes: uniqueReasonCodes,
     qualification_reason: reasonText(status, primaryIntent, intentTarget, concepts, evidence, demand, { publishedAt: groundingEnabled ? publishedAt : null, now }),
-    evidence_published_at: publishedAt,
+    // Representation normalization only (P0 hotfix): source_items.published_at/captured_at
+    // arrive from PostgREST as e.g. "2026-09-21T16:15:53+00:00", which is valid RFC3339 but
+    // fails z.string().datetime() below (no {offset:true}). reasonText above still receives
+    // the raw publishedAt unchanged - its date-only wording is unaffected by offset shape.
+    evidence_published_at: canonicalTimestamp(publishedAt),
     resonance,
     diagnostics: {
       qualification_version: SIGNAL_QUALIFICATION_VERSION,

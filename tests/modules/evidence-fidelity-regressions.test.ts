@@ -346,6 +346,64 @@ describe("Evidence fidelity golden fixture (12A.3A.1, 19 cases)", () => {
   });
 });
 
+/**
+ * P0 hotfix regression (timestamp_canonicalization_v1): sanitized reproductions
+ * of the three real production candidates from canary scan
+ * 6b3b0e02-d844-40ba-950b-ccd0d9fed99a, using the exact raw PostgREST
+ * timestamptz shape ("...+00:00", not "...Z") that source_items.published_at
+ * actually carries in production. Pre-fix, signalQualificationSchema.parse()
+ * threw a ZodError on evidence_published_at for all three, and the caller's
+ * generic failClosedQualification() masked the real qualification outcome
+ * (diagnostics.failed=true, materialization_gate_version="unknown"). Post-fix,
+ * qualifySignal must not throw and must reach the real diagnostics stamps -
+ * the expected semantic outcome is whatever the evidence actually supports
+ * (these are not forced to qualify), never a schema exception.
+ */
+describe("P0 hotfix: real production timestamp shapes no longer crash qualification", () => {
+  const productionCases: Array<{ id: string; body: string; sourceKey: string; publishedAt: string; title?: string }> = [
+    {
+      id: "candidate-1-youtube-86e13b9e",
+      sourceKey: "youtube",
+      publishedAt: "2024-03-21T05:17:04+00:00",
+      body: "I think you are the only one project manager in YouTube who have practical industry experience.",
+    },
+    {
+      id: "candidate-2-github-c8fe4aaf",
+      sourceKey: "github",
+      publishedAt: "2026-09-03T05:37:14+00:00",
+      title: "Project Management in Zed",
+      body: "What are you proposing? Can we add project manage feature like PyCharm all open project in one horizontal tab and we can change it using key shortcuts.",
+    },
+    {
+      id: "candidate-3-x-a19804df",
+      sourceKey: "x",
+      publishedAt: "2026-09-26T14:51:03+00:00",
+      body: "https://t.co/yu95h0MVTY",
+    },
+  ];
+
+  it.each(productionCases)("$id ($sourceKey, publishedAt=$publishedAt): reaches normal qualification, no schema exception", ({ body, sourceKey, publishedAt, title }) => {
+    const input = inputFor(body, { sourceKey, publishedAt, now: "2026-09-26T16:26:26.565Z", title });
+
+    // The important assertion: calling qualifySignal must not throw at all.
+    let result: SignalQualification | undefined;
+    expect(() => { result = qualifySignal(input); }).not.toThrow();
+
+    // And it must be the REAL qualification result, not the generic
+    // failClosedQualification() fallback that production observed
+    // (failed=true, failure_code set, materialization_gate_version="unknown").
+    expect(result!.diagnostics.failed).toBe(false);
+    expect(result!.diagnostics.failure_code).toBeNull();
+    expect(result!.diagnostics.materialization_gate_version).not.toBe("unknown");
+    expect(result!.evidence_published_at).toBe(new Date(publishedAt).toISOString());
+
+    // Semantic outcome is whatever the evidence supports - all three are
+    // genuinely off-target/contentless, so a normal reject is expected, but
+    // this test never forces that; it only forbids a schema-exception path.
+    expect(["rejected", "weak_candidate"]).toContain(result!.status);
+  });
+});
+
 function verifiedSwitchingReasoning(): ConversationMarketReasoning {
   return {
     version: "conversation_market_reasoning_v2",
