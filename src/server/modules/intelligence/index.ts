@@ -1,4 +1,5 @@
-export { IntelligenceService } from "./intelligence.service";
+export { IntelligenceService, PRODUCT_MATCH_EVALUATION_FINGERPRINT_VERSION, productMatchEvaluationFingerprint } from "./intelligence.service";
+export type { ProductMatchEvaluationFingerprintInput } from "./intelligence.service";
 export { SIGNAL_LIFECYCLE_VERSION, signalLifecycleReasonSchema, signalLifecycleStatusSchema, transitionSignalLifecycle } from "./signal-lifecycle.service";
 export { InMemoryIntelligenceRepository } from "./intelligence.repository";
 export { FixtureConversationAnalysisEngine, FixtureDemandProfileEngine, FixtureProductMatchingEngine } from "./engines";

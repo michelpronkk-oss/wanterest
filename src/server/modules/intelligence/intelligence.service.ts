@@ -17,6 +17,65 @@ import type { ConversationMarketReasoning, SignalQualification } from "./signal-
 import { classifyConversationIntent } from "./intent-semantics";
 import { buildMarketContext } from "./market-context";
 
+/**
+ * evaluation_semantic_cache_v2 (P0 fix): a persisted product-match evaluation
+ * is only ever reused when the CURRENT computed qualification result is
+ * semantically identical to it - not merely when a handful of identity/version
+ * fields match. Hashing the full (already-deterministic, already-pure)
+ * SignalQualification result means status, dimensions, reason codes, the final
+ * reasonText, evidence_published_at, and every grounding/materialization
+ * diagnostic all participate in cache identity automatically, with no
+ * hand-maintained field list to fall out of sync. A failed generic fallback
+ * (failClosedQualification) can never collide with a genuinely successful
+ * result - they differ in diagnostics.failed (and virtually every other
+ * field) by construction, so this invariant needs no separate special case.
+ * Two equivalent instants that merely arrived in different string
+ * representations still hash identically, because canonicalTimestamp() (the
+ * P0 timestamp hotfix) already normalizes evidence_published_at to one
+ * canonical form before it ever reaches this qualification object. Purely
+ * operational metadata (job id, trigger run id, scan id, evaluation row id,
+ * created_at, retry count, latency) is never part of the qualification result
+ * itself, so it can never affect this fingerprint.
+ *
+ * Two fields are deliberately excluded: dimensions.freshness and
+ * demand_quality_score (which blends freshness in - see scoreDemandQuality in
+ * signal-qualification.service.ts). Both are continuous functions of the
+ * evaluation's own wall-clock "now", by design (freshness is meant to decay
+ * over time) - including them would make even an instant replay of the exact
+ * same content miss the cache, since two calls microseconds apart already
+ * compute measurably different ages. This is the same "current wall-clock
+ * timestamp" exclusion category as job/scan/trigger metadata, just expressed
+ * as a derived score rather than a raw timestamp; freshness scoring itself is
+ * untouched; this only narrows what participates in cache identity.
+ */
+export const PRODUCT_MATCH_EVALUATION_FINGERPRINT_VERSION = "product_match_evaluation_fingerprint_v2" as const;
+
+export type ProductMatchEvaluationFingerprintInput = {
+  matchId: string;
+  profileId: string;
+  analysisId: string;
+  engineVersionId: string;
+  groundingEnabled: boolean;
+  reasoningOverride?: ConversationMarketReasoning | null;
+  qualification: SignalQualification;
+};
+
+export function productMatchEvaluationFingerprint(input: ProductMatchEvaluationFingerprintInput): string {
+  const { demand_quality_score: _demandQualityScore, dimensions, ...stableQualification } = input.qualification;
+  const { freshness: _freshness, ...stableDimensions } = dimensions;
+  void _demandQualityScore; void _freshness; // deliberately excluded from cache identity - see doc comment above
+  return sha256Json({
+    fingerprintVersion: PRODUCT_MATCH_EVALUATION_FINGERPRINT_VERSION,
+    matchId: input.matchId,
+    profileId: input.profileId,
+    analysisId: input.analysisId,
+    engineVersionId: input.engineVersionId,
+    groundingEnabled: input.groundingEnabled,
+    reasoningOverrideFingerprint: input.reasoningOverride ? sha256Json(input.reasoningOverride) : null,
+    qualification: { ...stableQualification, dimensions: stableDimensions },
+  });
+}
+
 function json(value: unknown): Json { return jsonValueSchema.parse(value); }
 function asStrings(value: Json): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; }
 function normalizeText(value: string): string { return value.replace(/\s+/g, " ").trim(); }
@@ -174,11 +233,13 @@ export class IntelligenceService {
     } catch (error) {
       qualification = failClosedQualification({ candidateId: conversation.id, productId: product.id, profile: qualificationProfile, analysis }, error instanceof Error ? error.message.slice(0, 120) : "QUALIFICATION_FAILED");
     }
-    // 12A.3A.1: groundingEnabled and any reasoning-override fingerprint are hashed
-    // in so flipping the flag, or a fresh verified upgrade, always recomputes
-    // instead of silently reusing a cached evaluation computed under different
-    // qualification/grounding semantics.
-    const inputFingerprint = sha256Json({ matchId: match.id, profileId, analysisId, engineVersionId, qualificationVersion: qualification.version, thresholdVersion: qualification.diagnostics.threshold_version, demandProfileVersion: qualification.diagnostics.demand_profile_version, groundingEnabled: options.groundingEnabled ?? false, reasoningOverrideFingerprint: options.reasoningOverride ? sha256Json(options.reasoningOverride) : null });
+    // evaluation_semantic_cache_v2: the fingerprint is derived from the CURRENT
+    // computed qualification result itself (see the doc comment on
+    // PRODUCT_MATCH_EVALUATION_FINGERPRINT_VERSION above), not just identity/
+    // version strings - a correctness-only change to qualification semantics
+    // therefore always produces a new fingerprint without anyone needing to
+    // remember to bump a version constant.
+    const inputFingerprint = productMatchEvaluationFingerprint({ matchId: match.id, profileId, analysisId, engineVersionId, groundingEnabled: options.groundingEnabled ?? false, reasoningOverride: options.reasoningOverride, qualification });
     const existing = await this.repository.getEvaluation(match.id, engineVersionId, inputFingerprint);
     if (existing) return existing;
     const evaluation = await this.repository.createEvaluation({ workspace_id: product.workspace_id, product_match_id: match.id, product_id: product.id, conversation_id: conversation.id, demand_profile_id: profile.id, conversation_analysis_id: analysis.id, match_engine_version_id: engineVersionId, evidence_node_id: deterministicUuid(`evidence:evaluation:${match.id}:${engineVersionId}:${inputFingerprint}`), input_fingerprint: inputFingerprint, match_confidence: result.matchConfidence, rationale: `${result.rationale} ${qualification.qualification_reason}`.trim(), evidence: json({ ...result.evidence, qualification: serializeQualification(qualification) }), decision: canMaterializeQualifiedSignal(qualification) ? "qualified" : qualification.status === "weak_candidate" ? "weak" : "rejected" });

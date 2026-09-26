@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { sha256Json, sha256Text } from "../../src/server/modules/ingestion/hash";
-import { FixtureConversationAnalysisEngine, FixtureDemandProfileEngine, FixtureProductMatchingEngine, InMemoryIntelligenceRepository, IntelligenceService, SIGNAL_QUALIFICATION_THRESHOLD_VERSION, SIGNAL_QUALIFICATION_VERSION, calculateOpportunityScore, freshnessScore, RANKING_WEIGHTS, transitionSignalLifecycle } from "../../src/server/modules/intelligence";
+import { FixtureConversationAnalysisEngine, FixtureDemandProfileEngine, FixtureProductMatchingEngine, InMemoryIntelligenceRepository, IntelligenceService, PRODUCT_MATCH_EVALUATION_FINGERPRINT_VERSION, SIGNAL_QUALIFICATION_THRESHOLD_VERSION, SIGNAL_QUALIFICATION_VERSION, calculateOpportunityScore, failClosedQualification, freshnessScore, productMatchEvaluationFingerprint, RANKING_WEIGHTS, transitionSignalLifecycle } from "../../src/server/modules/intelligence";
+import type { ConversationMarketReasoning, SignalQualification } from "../../src/server/modules/intelligence/signal-qualification.schemas";
 import type { ConversationRow, ProductRow, SourceItemRow } from "../../src/server/db/database.helpers";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -348,5 +349,159 @@ describe("Qualification version-aware evaluation cache (signal_qualification ver
 
     const activeView = await service.listSignals(product.workspace_id, product.id);
     expect(activeView).toHaveLength(0);
+  });
+
+  it("reproduces the exact real production case: an old pre-hotfix failed-fallback evaluation is NOT reused once qualification succeeds under the SAME version constants, history is preserved, and the current pointer moves", async () => {
+    const { service, product, source, conversation, repository } = fixtures();
+    const snapshot = await service.createSnapshot(product, { pageType: "manual", rawText: "Workflow automation for teams that need faster reporting." });
+    const profile = await service.generateDemandProfile({ ...product, current_snapshot_id: snapshot.id }, "88888888-8888-4888-8888-888888888888", new FixtureDemandProfileEngine());
+    const analysis = await service.analyzeConversation(conversation, source, "99999999-9999-4999-8999-999999999999", new FixtureConversationAnalysisEngine());
+
+    // Seed the match and an OLD evaluation using the actual failClosedQualification() fallback -
+    // the exact shape production had (diagnostics.failed=true, materialization/grounding
+    // "unknown"), stamped with TODAY's real version constants (not an older, different version -
+    // that is the whole point: a version bump is not what should invalidate this cache).
+    const match = await repository.createMatch({ workspace_id: product.workspace_id, product_id: product.id, conversation_id: conversation.id, evidence_node_id: "evidence:match:old-failed" });
+    const qualificationProfile = { relevant_pains: [], relevant_outcomes: [], relevant_intents: [], relevant_jtbd: [], relevant_features: [], buyer_roles: [], competitors: [], alternatives: [], geography: { market_scope: "global" as const, primary_country_code: null, primary_region: null, primary_city: null, location_dependency: 0, demand_geography_terms: [] }, profile_confidence: 0.9, primary_category: "workflow software", profile_version: "demand_profile_v2" };
+    const oldFailedQualification = failClosedQualification({ candidateId: conversation.id, productId: product.id, profile: qualificationProfile, analysis }, "QUALIFICATION_FAILED");
+    expect(oldFailedQualification.diagnostics.failed).toBe(true);
+    expect(oldFailedQualification.diagnostics.materialization_gate_version).toBe("unknown");
+    const matcherEngineVersionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const oldFingerprint = sha256Json({ matchId: match.id, profileId: profile.id, analysisId: analysis.id, engineVersionId: matcherEngineVersionId, qualificationVersion: oldFailedQualification.version, thresholdVersion: oldFailedQualification.diagnostics.threshold_version, demandProfileVersion: oldFailedQualification.diagnostics.demand_profile_version, groundingEnabled: false, reasoningOverrideFingerprint: null });
+    const oldEvaluation = await repository.createEvaluation({ workspace_id: product.workspace_id, product_match_id: match.id, product_id: product.id, conversation_id: conversation.id, demand_profile_id: profile.id, conversation_analysis_id: analysis.id, match_engine_version_id: matcherEngineVersionId, evidence_node_id: "evidence:evaluation:old-failed", input_fingerprint: oldFingerprint, match_confidence: 0, rationale: "Old crashed evaluation.", evidence: { qualification: oldFailedQualification }, decision: "rejected" });
+    await repository.setCurrentEvaluation(match.id, oldEvaluation.id);
+
+    // The current code path (post timestamp hotfix) run exactly as a fresh scan would run it today.
+    const recomputed = await service.matchProduct(product, profile.id, analysis.id, matcherEngineVersionId, new FixtureProductMatchingEngine());
+
+    expect(recomputed.id).not.toBe(oldEvaluation.id);
+    expect(recomputed.product_match_id).toBe(match.id);
+    const recomputedQualification = (recomputed.evidence as Record<string, unknown>).qualification as SignalQualification;
+    expect(recomputedQualification.diagnostics.failed).toBe(false);
+    expect(recomputedQualification.diagnostics.failure_code).toBeNull();
+    expect(recomputedQualification.diagnostics.materialization_gate_version).not.toBe("unknown");
+    expect(recomputedQualification.version).toBe(oldFailedQualification.version); // same version constants both times - the point of this test
+
+    // Old row preserved verbatim as historical/audit evidence; not deleted, not mutated.
+    const preserved = await repository.getEvaluationById(oldEvaluation.id);
+    expect(preserved).toEqual(oldEvaluation);
+    expect(repository.evaluations.size).toBe(2);
+
+    // Current pointer moved to the new, correct evaluation.
+    const updatedMatch = await repository.getMatchById(match.id);
+    expect(updatedMatch?.current_match_evaluation_id).toBe(recomputed.id);
+  });
+});
+
+describe("productMatchEvaluationFingerprint (evaluation_semantic_cache_v2)", () => {
+  const matchId = "aaaaaaaa-0000-4000-8000-000000000001";
+  const profileId = "bbbbbbbb-0000-4000-8000-000000000001";
+  const analysisId = "cccccccc-0000-4000-8000-000000000001";
+  const engineVersionId = "dddddddd-0000-4000-8000-000000000001";
+
+  function baseQualification(overrides: Partial<SignalQualification> = {}): SignalQualification {
+    return {
+      version: SIGNAL_QUALIFICATION_VERSION,
+      candidate_id: conversationId,
+      product_id: productId,
+      status: "rejected",
+      demand_quality_score: 0.4,
+      confidence: 0.6,
+      dimensions: { product_relevance: 0.5, demand_intent: 0.5, specificity: 0.5, pain_clarity: 0.5, buyer_plausibility: 0.5, commercial_relevance: 0.5, evidence_quality: 0.5, freshness: 0.9, source_quality: 0.5, noise_risk: 0.1, spam_probability: 0, promotional_probability: 0 },
+      primary_intent: "explicit_pain",
+      intent_target: "unknown",
+      market_context: { version: "unknown", product_name: "unknown", categories: [], capabilities: [], jobs_to_be_done: [], pains_solved: [], buyer_roles: [], relationships: [] },
+      conversation_reasoning: { version: "unknown", actor_type: "unknown", actor_confidence: 0, buyer_context: false, buyer_context_confidence: 0, current_solution: null, pain_summary: null, requested_outcome: null, demand_target_type: "unknown", demand_target: null, source_products: [], destination_products: [], mentioned_products: [], direction_relative_to_scanned_product: "unknown", category_or_job_demand: false, commercial_intent: false, first_party_experience: false, implementation_only: false, promotional_content: false, confidence: 0, evidence_spans: [], short_user_facing_summary: "Conversation context is unknown.", short_user_facing_why: "No supported market interpretation is available.", relationship_candidates: [], authorial_stance: "unknown" },
+      demand_direction: "unknown",
+      demand_target_type: "unknown",
+      demand_target_name: null,
+      source_products: [],
+      speaker_role: "unknown",
+      matched_profile_concepts: ["workflow"],
+      evidence_spans: [],
+      reason_codes: ["LOW_RELEVANCE"],
+      qualification_reason: "Retained as a weak candidate.",
+      evidence_published_at: "2026-09-03T05:37:14.000Z",
+      resonance: { available: false, score: 0, likes: null, replies: null, reposts: null, upvotes: null, reactions: null, comments: null, source_normalized_metrics: {}, reason: "Not evaluated." },
+      diagnostics: { qualification_version: SIGNAL_QUALIFICATION_VERSION, threshold_version: SIGNAL_QUALIFICATION_THRESHOLD_VERSION, market_context_version: "unknown", conversation_reasoning_version: "unknown", analysis_version: null, demand_profile_version: "demand_profile_v2", profile_confidence: 0.9, evidence_validated: false, gate_failures: ["product_relevance"], failed: false, failure_code: null, grounding_version: "evidence_grounding_v1", grounding_verification_required: false, grounding_downgraded_claims: [], materialization_gate_version: "materialization_safety_gate_v1", materialization_verification_required: false, materialization_risk_reasons: [], materialization_verified: false },
+      ...overrides,
+    };
+  }
+
+  function fingerprintFor(qualification: SignalQualification, reasoningOverride: ConversationMarketReasoning | null = null): string {
+    return productMatchEvaluationFingerprint({ matchId, profileId, analysisId, engineVersionId, groundingEnabled: true, reasoningOverride, qualification });
+  }
+
+  it("has the expected version tag", () => {
+    expect(PRODUCT_MATCH_EVALUATION_FINGERPRINT_VERSION).toBe("product_match_evaluation_fingerprint_v2");
+  });
+
+  it("B/D: reuses (identical fingerprint) when the exact same qualification is replayed, including irrelevant JSON key-order differences", () => {
+    const q1 = baseQualification();
+    const q2 = JSON.parse(JSON.stringify({ ...q1 })); // same content, and object construction order is irrelevant given canonical key sorting
+    expect(fingerprintFor(q1)).toBe(fingerprintFor(q2));
+  });
+
+  it("D/G: is insensitive to wall-clock-only drift (dimensions.freshness / demand_quality_score) so an instant replay never misses the cache", () => {
+    const fresh = baseQualification({ dimensions: { ...baseQualification().dimensions, freshness: 0.95 }, demand_quality_score: 0.41 });
+    const stale = baseQualification({ dimensions: { ...baseQualification().dimensions, freshness: 0.12 }, demand_quality_score: 0.33 });
+    expect(fingerprintFor(fresh)).toBe(fingerprintFor(stale));
+  });
+
+  it("C: a material status/reason-code change without any version bump produces a different fingerprint", () => {
+    const rejected = baseQualification({ status: "rejected", reason_codes: ["LOW_RELEVANCE"] });
+    const qualified = baseQualification({ status: "qualified", reason_codes: [] });
+    expect(fingerprintFor(rejected)).not.toBe(fingerprintFor(qualified));
+  });
+
+  it("reasonText (qualification_reason) change alone produces a different fingerprint", () => {
+    const a = baseQualification({ qualification_reason: "Retained as a weak candidate." });
+    const b = baseQualification({ qualification_reason: "Rejected: no genuine buyer intent found." });
+    expect(fingerprintFor(a)).not.toBe(fingerprintFor(b));
+  });
+
+  it("F: a grounding/materialization diagnostics change alone produces a different fingerprint", () => {
+    const capped = baseQualification({ reason_codes: ["HIGH_RISK_VERIFICATION_REQUIRED"], diagnostics: { ...baseQualification().diagnostics, materialization_verification_required: true, materialization_risk_reasons: ["high_risk_switching_claim"] } });
+    const verified = baseQualification({ status: "qualified", reason_codes: ["HIGH_RISK_VERIFICATION_CONFIRMED"], diagnostics: { ...baseQualification().diagnostics, materialization_verified: true } });
+    expect(fingerprintFor(capped)).not.toBe(fingerprintFor(verified));
+  });
+
+  it("A: a failed generic fallback can never share a fingerprint with a genuinely successful result under the SAME identity/version fields (the exact production bug)", () => {
+    const failed = baseQualification({ status: "rejected", demand_quality_score: 0, confidence: 0, matched_profile_concepts: [], evidence_spans: [], reason_codes: ["QUALIFICATION_FAILED", "INSUFFICIENT_EVIDENCE"], qualification_reason: "Rejected because Signal Qualification failed closed and did not produce a trustworthy result.", evidence_published_at: null, diagnostics: { qualification_version: SIGNAL_QUALIFICATION_VERSION, threshold_version: SIGNAL_QUALIFICATION_THRESHOLD_VERSION, market_context_version: "unknown", conversation_reasoning_version: "unknown", analysis_version: null, demand_profile_version: "demand_profile_v2", profile_confidence: 0.9, evidence_validated: false, gate_failures: ["QUALIFICATION_FAILED"], failed: true, failure_code: "QUALIFICATION_FAILED", grounding_version: "unknown", grounding_verification_required: false, grounding_downgraded_claims: [], materialization_gate_version: "unknown", materialization_verification_required: false, materialization_risk_reasons: [], materialization_verified: false } });
+    const succeeded = baseQualification({ status: "qualified" });
+    // Same version constants on both sides - this is exactly what production hit.
+    expect(failed.version).toBe(succeeded.version);
+    expect(failed.diagnostics.threshold_version).toBe(succeeded.diagnostics.threshold_version);
+    expect(failed.diagnostics.demand_profile_version).toBe(succeeded.diagnostics.demand_profile_version);
+    expect(fingerprintFor(failed)).not.toBe(fingerprintFor(succeeded));
+  });
+
+  it("G: equivalent ISO representations of the identical instant reuse (canonicalTimestamp already normalized evidence_published_at before this point)", () => {
+    const a = baseQualification({ evidence_published_at: "2026-09-03T05:37:14.000Z" });
+    const b = baseQualification({ evidence_published_at: new Date("2026-09-03T05:37:14+00:00").toISOString() });
+    expect(a.evidence_published_at).toBe(b.evidence_published_at); // canonicalTimestamp's own guarantee
+    expect(fingerprintFor(a)).toBe(fingerprintFor(b));
+  });
+
+  it("H: a materially different evidence_published_at instant produces a different fingerprint", () => {
+    const a = baseQualification({ evidence_published_at: "2026-09-03T05:37:14.000Z" });
+    const b = baseQualification({ evidence_published_at: "2024-03-21T05:17:04.000Z" });
+    expect(fingerprintFor(a)).not.toBe(fingerprintFor(b));
+  });
+
+  it("E: a materially different reasoningOverride produces a different fingerprint even with an identical qualification snapshot", () => {
+    const qualification = baseQualification({ status: "qualified" });
+    const overrideA: ConversationMarketReasoning = { version: "conversation_market_reasoning_v2", actor_type: "buyer", actor_confidence: 0.9, buyer_context: true, buyer_context_confidence: 0.9, current_solution: "Jira", pain_summary: "needs faster issue tracking", requested_outcome: "faster issue tracking", demand_target_type: "scanned_product", demand_target: "Linear", source_products: ["Jira"], destination_products: ["Linear"], mentioned_products: [{ name: "Jira", role: "source", confidence: 0.95 }], direction_relative_to_scanned_product: "toward_product", category_or_job_demand: false, commercial_intent: true, first_party_experience: true, implementation_only: false, promotional_content: false, confidence: 0.9, evidence_spans: [{ text: "we are leaving Jira for Linear", confidence: 0.9 }], short_user_facing_summary: "Switching from Jira to Linear.", short_user_facing_why: "Explicit switching intent.", relationship_candidates: [], authorial_stance: "buyer" };
+    const overrideB: ConversationMarketReasoning = { ...overrideA, demand_target: "Asana", destination_products: ["Asana"] };
+    expect(fingerprintFor(qualification, overrideA)).not.toBe(fingerprintFor(qualification, overrideB));
+  });
+
+  it("volatile operational metadata (a hypothetical job/scan/trigger id) is never part of the qualification object and therefore cannot affect the fingerprint", () => {
+    // productMatchEvaluationFingerprint only ever sees matchId/profileId/analysisId/engineVersionId/
+    // groundingEnabled/reasoningOverride/qualification - none of which carry job/scan/trigger/created_at
+    // metadata, so two calls with identical semantic content but computed at different wall-clock moments
+    // (simulated here by two independently-constructed but content-identical qualification objects)
+    // always match.
+    expect(fingerprintFor(baseQualification())).toBe(fingerprintFor(baseQualification()));
   });
 });
