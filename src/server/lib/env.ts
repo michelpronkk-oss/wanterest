@@ -101,7 +101,13 @@ const serverEnvSchema = publicEnvSchema.extend({
   // ambiguous entity or author stance) cannot materialize as a qualified/
   // high-confidence signal without either a low-risk deterministic contract or
   // bounded, reused semantic verification. Read wherever a scan qualifies or
-  // revalidates signals (Vercel and Trigger). Defaults off.
+  // revalidates signals (Vercel and Trigger). Defaults off. This flag alone is
+  // NOT sufficient to activate anything: it also requires the scan's workspace
+  // to be present in EVIDENCE_FIDELITY_GROUNDING_WORKSPACE_IDS (comma-separated
+  // allowlist, same parsing convention as SEMANTIC_REASONING_SHADOW_WORKSPACE_IDS,
+  // read directly from process.env like that variable - not part of this Zod
+  // schema). enabled=true with an absent/empty allowlist fails closed as
+  // disabled for every workspace; an empty allowlist is never global enablement.
   EVIDENCE_FIDELITY_GROUNDING_ENABLED: z.enum(["true", "false"]).optional(),
 });
 

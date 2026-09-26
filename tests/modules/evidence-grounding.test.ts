@@ -182,11 +182,64 @@ describe("materialization risk assessment (materialization_safety_gate_v1)", () 
   });
 });
 
-describe("evidenceFidelityGroundingEnabled (EVIDENCE_FIDELITY_GROUNDING_ENABLED)", () => {
+describe("evidenceFidelityGroundingEnabled (evidence_fidelity_canary_scope_v1)", () => {
+  const WORKSPACE_A = "8b7a4189-54b7-4cc0-a4a3-1502dc2be82a";
+  const WORKSPACE_B = "9c8b5290-65c8-5dd1-b5b4-2613ed3df93b";
+
   it("defaults to false, and is explicit-string-gated (not merely truthy)", () => {
-    expect(evidenceFidelityGroundingEnabled({})).toBe(false);
-    expect(evidenceFidelityGroundingEnabled({ EVIDENCE_FIDELITY_GROUNDING_ENABLED: "false" })).toBe(false);
-    expect(evidenceFidelityGroundingEnabled({ EVIDENCE_FIDELITY_GROUNDING_ENABLED: "1" })).toBe(false);
-    expect(evidenceFidelityGroundingEnabled({ EVIDENCE_FIDELITY_GROUNDING_ENABLED: "true" })).toBe(true);
+    expect(evidenceFidelityGroundingEnabled({ env: {}, workspaceId: WORKSPACE_A })).toBe(false);
+    expect(evidenceFidelityGroundingEnabled({ env: { EVIDENCE_FIDELITY_GROUNDING_ENABLED: "false", EVIDENCE_FIDELITY_GROUNDING_WORKSPACE_IDS: WORKSPACE_A }, workspaceId: WORKSPACE_A })).toBe(false);
+    expect(evidenceFidelityGroundingEnabled({ env: { EVIDENCE_FIDELITY_GROUNDING_ENABLED: "1", EVIDENCE_FIDELITY_GROUNDING_WORKSPACE_IDS: WORKSPACE_A }, workspaceId: WORKSPACE_A })).toBe(false);
+  });
+
+  // A: enabled=false, workspace A -> legacy
+  it("A: enabled=false with a matching workspace is still disabled", () => {
+    expect(evidenceFidelityGroundingEnabled({ env: { EVIDENCE_FIDELITY_GROUNDING_ENABLED: "false", EVIDENCE_FIDELITY_GROUNDING_WORKSPACE_IDS: WORKSPACE_A }, workspaceId: WORKSPACE_A })).toBe(false);
+  });
+
+  // B: enabled=true, allowlist missing, workspace A -> legacy (fail closed, never global)
+  it("B: enabled=true with an absent allowlist fails closed as disabled for every workspace", () => {
+    expect(evidenceFidelityGroundingEnabled({ env: { EVIDENCE_FIDELITY_GROUNDING_ENABLED: "true" }, workspaceId: WORKSPACE_A })).toBe(false);
+    expect(evidenceFidelityGroundingEnabled({ env: { EVIDENCE_FIDELITY_GROUNDING_ENABLED: "true", EVIDENCE_FIDELITY_GROUNDING_WORKSPACE_IDS: "" }, workspaceId: WORKSPACE_A })).toBe(false);
+    expect(evidenceFidelityGroundingEnabled({ env: { EVIDENCE_FIDELITY_GROUNDING_ENABLED: "true" }, workspaceId: undefined })).toBe(false);
+  });
+
+  // C: enabled=true, allowlist=A, workspace A -> fidelity active
+  it("C: enabled=true with workspace A allowlisted activates fidelity for workspace A", () => {
+    expect(evidenceFidelityGroundingEnabled({ env: { EVIDENCE_FIDELITY_GROUNDING_ENABLED: "true", EVIDENCE_FIDELITY_GROUNDING_WORKSPACE_IDS: WORKSPACE_A }, workspaceId: WORKSPACE_A })).toBe(true);
+  });
+
+  // D: enabled=true, allowlist=A, workspace B -> legacy
+  it("D: enabled=true with only workspace A allowlisted leaves workspace B on legacy behavior", () => {
+    expect(evidenceFidelityGroundingEnabled({ env: { EVIDENCE_FIDELITY_GROUNDING_ENABLED: "true", EVIDENCE_FIDELITY_GROUNDING_WORKSPACE_IDS: WORKSPACE_A }, workspaceId: WORKSPACE_B })).toBe(false);
+  });
+
+  // E: enabled=true, allowlist=A,B, workspace B -> fidelity active
+  it("E: enabled=true with both workspaces allowlisted activates fidelity for workspace B too", () => {
+    expect(evidenceFidelityGroundingEnabled({ env: { EVIDENCE_FIDELITY_GROUNDING_ENABLED: "true", EVIDENCE_FIDELITY_GROUNDING_WORKSPACE_IDS: `${WORKSPACE_A},${WORKSPACE_B}` }, workspaceId: WORKSPACE_B })).toBe(true);
+  });
+
+  // F: whitespace/duplicate IDs normalized safely
+  it("F: whitespace and duplicate IDs in the allowlist are normalized safely", () => {
+    const env = { EVIDENCE_FIDELITY_GROUNDING_ENABLED: "true", EVIDENCE_FIDELITY_GROUNDING_WORKSPACE_IDS: `  ${WORKSPACE_A} ,, ${WORKSPACE_A},${WORKSPACE_B}  ` };
+    expect(evidenceFidelityGroundingEnabled({ env, workspaceId: WORKSPACE_A })).toBe(true);
+    expect(evidenceFidelityGroundingEnabled({ env, workspaceId: WORKSPACE_B })).toBe(true);
+    expect(evidenceFidelityGroundingEnabled({ env, workspaceId: "unrelated-workspace" })).toBe(false);
+  });
+
+  // H: semantic shadow allowlist does NOT implicitly activate fidelity
+  it("H: setting only the semantic-shadow workspace allowlist does not activate evidence fidelity", () => {
+    const env = { EVIDENCE_FIDELITY_GROUNDING_ENABLED: "true", SEMANTIC_REASONING_SHADOW_ENABLED: "true", SEMANTIC_REASONING_SHADOW_WORKSPACE_IDS: WORKSPACE_A };
+    expect(evidenceFidelityGroundingEnabled({ env, workspaceId: WORKSPACE_A })).toBe(false);
+  });
+});
+
+// I: fidelity allowlist does NOT implicitly activate semantic shadow
+describe("getSemanticReasoningShadowConfig is independent of the evidence-fidelity allowlist", () => {
+  it("setting only EVIDENCE_FIDELITY_GROUNDING_WORKSPACE_IDS does not activate or scope semantic shadow", async () => {
+    const { getSemanticReasoningShadowConfig } = await import("../../src/server/modules/intelligence/semantic-reasoning-shadow.config");
+    const workspaceId = "8b7a4189-54b7-4cc0-a4a3-1502dc2be82a";
+    const env = { SEMANTIC_REASONING_SHADOW_ENABLED: "true", EVIDENCE_FIDELITY_GROUNDING_ENABLED: "true", EVIDENCE_FIDELITY_GROUNDING_WORKSPACE_IDS: workspaceId };
+    expect(getSemanticReasoningShadowConfig(env, workspaceId)).toMatchObject({ enabled: false });
   });
 });

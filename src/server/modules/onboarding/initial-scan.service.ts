@@ -816,7 +816,7 @@ export async function processScanCandidates(input: { product: ProductRow; profil
       diagnostics.push({ sourceKey: sourceItem.source_key, state: "failed", message: `Analysis skipped: ${safeSummary(error)}` });
     }
   }
-  const groundingEnabled = evidenceFidelityGroundingEnabled(process.env);
+  const groundingEnabled = evidenceFidelityGroundingEnabled({ env: process.env, workspaceId: input.product.workspace_id });
   const evaluations: Awaited<ReturnType<IntelligenceService["matchProduct"]>>[] = [];
   for (const analysis of analyses.slice(0, Math.max(0, input.maxLlmEvaluations ?? analyses.length))) {
     try {
@@ -1322,7 +1322,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
     const evaluations = [];
     for (const analysis of analyses.slice(0, scanBudget.maxLlmEvaluationsPerScan)) {
       try {
-        evaluations.push(await intelligence.matchProduct(product, profile.id, analysis.id, matcherVersion.id, matcher, { groundingEnabled: evidenceFidelityGroundingEnabled(process.env) }));
+        evaluations.push(await intelligence.matchProduct(product, profile.id, analysis.id, matcherVersion.id, matcher, { groundingEnabled: evidenceFidelityGroundingEnabled({ env: process.env, workspaceId: product.workspace_id }) }));
       } catch (error) {
         diagnostics.push({ sourceKey: "matching", state: "failed", message: safeSummary(error) });
       }

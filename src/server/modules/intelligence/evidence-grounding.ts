@@ -7,8 +7,25 @@ export const EVIDENCE_GROUNDING_VERSION = "evidence_grounding_v1" as const;
 /** 12A.3A.1 amendment: the materialization safety gate, distinct from (and layered on top of) the v1 downgrade gate above. */
 export const MATERIALIZATION_SAFETY_GATE_VERSION = "materialization_safety_gate_v1" as const;
 
-export function evidenceFidelityGroundingEnabled(env: Record<string, string | undefined> = process.env): boolean {
-  return env.EVIDENCE_FIDELITY_GROUNDING_ENABLED === "true";
+/**
+ * 12A.3A.1 Amendment II (evidence_fidelity_canary_scope_v1): reuses the exact
+ * allowlist design semantic_reasoning_router_v1's own shadow config already
+ * uses (SEMANTIC_REASONING_SHADOW_WORKSPACE_IDS), kept as an independently
+ * explicit second allowlist - never merged with or inferred from it. Fails
+ * closed: EVIDENCE_FIDELITY_GROUNDING_ENABLED=true with an absent or empty
+ * EVIDENCE_FIDELITY_GROUNDING_WORKSPACE_IDS is disabled for every workspace,
+ * never read as global enablement. The workspaceId parameter is required (not
+ * optional) so no call site can silently fall back to the old global-only
+ * check that the previous rollout shipped.
+ */
+function workspaceAllowed(value: string | undefined, workspaceId: string | undefined): boolean {
+  if (!workspaceId) return false;
+  return new Set((value ?? "").split(",").map((item) => item.trim()).filter(Boolean)).has(workspaceId);
+}
+
+export function evidenceFidelityGroundingEnabled(input: { env?: Record<string, string | undefined>; workspaceId: string | undefined }): boolean {
+  const env = input.env ?? process.env;
+  return env.EVIDENCE_FIDELITY_GROUNDING_ENABLED === "true" && workspaceAllowed(env.EVIDENCE_FIDELITY_GROUNDING_WORKSPACE_IDS, input.workspaceId);
 }
 
 /** Minimum-safe temporal fix: past this age, wording must not imply current/ongoing demand. */

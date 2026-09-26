@@ -3,6 +3,7 @@ import "server-only";
 import { canMaterializeQualifiedSignal, failClosedQualification, qualifySignal, type SignalQualificationInput } from "./signal-qualification.service";
 import type { SignalQualification } from "./signal-qualification.schemas";
 import { transitionSignalLifecycle, type SignalLifecycleRepository } from "./signal-lifecycle.service";
+import { evidenceFidelityGroundingEnabled } from "./evidence-grounding";
 
 export const SIGNAL_REVALIDATION_VERSION = "signal_revalidation_v1" as const;
 
@@ -70,17 +71,21 @@ export type SignalRevalidationOutcome = {
  * already-stored inputs, so re-running the same candidate twice is a no-op the
  * second time.
  */
-export async function revalidateSignal(repository: SignalRevalidationRepository, candidate: SignalRevalidationCandidate, now = new Date()): Promise<SignalRevalidationOutcome> {
-  // 12A.3A.1 amendment: a flag-off revalidation pass is a deliberate no-op, not
-  // a silent behavior change - recomputing under the pre-12A.3A.1 legacy path
-  // would never invalidate anything meaningfully different from what already
-  // materialized, and would defeat the point of gating the flag at all.
-  if (!candidate.freshInput.groundingEnabled) return { signalId: candidate.signalId, action: "skipped", reason: "evidence_fidelity_grounding_disabled" };
+export async function revalidateSignal(repository: SignalRevalidationRepository, candidate: SignalRevalidationCandidate, now = new Date(), env: Record<string, string | undefined> = process.env): Promise<SignalRevalidationOutcome> {
+  // 12A.3A.1 Amendment II: revalidation is authoritatively gated by the same
+  // workspace-scoped check new signals use, computed here (not trusted from
+  // whatever the caller happened to set on freshInput.groundingEnabled) so a
+  // workspace outside the fidelity allowlist - or the flag being off entirely -
+  // always produces a safe, deliberate no-op skip, never a silent legacy
+  // recomputation and never a global fallback.
+  const groundingEnabled = evidenceFidelityGroundingEnabled({ env, workspaceId: candidate.workspaceId });
+  if (!groundingEnabled) return { signalId: candidate.signalId, action: "skipped", reason: "evidence_fidelity_grounding_disabled" };
+  const freshInput: SignalQualificationInput = { ...candidate.freshInput, groundingEnabled };
   let fresh: SignalQualification;
   try {
-    fresh = qualifySignal(candidate.freshInput);
+    fresh = qualifySignal(freshInput);
   } catch (error) {
-    fresh = failClosedQualification(candidate.freshInput, error instanceof Error ? error.message.slice(0, 120) : "QUALIFICATION_FAILED");
+    fresh = failClosedQualification(freshInput, error instanceof Error ? error.message.slice(0, 120) : "QUALIFICATION_FAILED");
   }
   const decision = decideRevalidationAction({ previous: candidate.previousQualification, fresh });
   if (decision.action !== "invalidated") return { signalId: candidate.signalId, action: decision.action, reason: decision.reason };
@@ -95,12 +100,12 @@ export async function revalidateSignal(repository: SignalRevalidationRepository,
 }
 
 /** Bounded batch: never processes more than SIGNAL_REVALIDATION_MAX_PER_TICK candidates per call. */
-export async function revalidateSignalBatch(repository: SignalRevalidationRepository, candidates: SignalRevalidationCandidate[], now = new Date()): Promise<SignalRevalidationOutcome[]> {
+export async function revalidateSignalBatch(repository: SignalRevalidationRepository, candidates: SignalRevalidationCandidate[], now = new Date(), env: Record<string, string | undefined> = process.env): Promise<SignalRevalidationOutcome[]> {
   const bounded = candidates.slice(0, SIGNAL_REVALIDATION_MAX_PER_TICK);
   const outcomes: SignalRevalidationOutcome[] = [];
   for (const candidate of bounded) {
     try {
-      outcomes.push(await revalidateSignal(repository, candidate, now));
+      outcomes.push(await revalidateSignal(repository, candidate, now, env));
     } catch (error) {
       outcomes.push({ signalId: candidate.signalId, action: "skipped", reason: error instanceof Error ? error.message.slice(0, 200) : "revalidation_failed" });
     }

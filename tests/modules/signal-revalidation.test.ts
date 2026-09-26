@@ -10,6 +10,9 @@ import type { SignalQualificationInput } from "../../src/server/modules/intellig
 
 const workspaceId = deterministicUuid("revalidation-workspace");
 const productId = deterministicUuid("revalidation-product");
+const otherWorkspaceId = deterministicUuid("revalidation-other-workspace");
+/** Evidence fidelity enabled and scoped to exactly `workspaceId` - mirrors the production canary shape. */
+const SCOPED_ENV = { EVIDENCE_FIDELITY_GROUNDING_ENABLED: "true", EVIDENCE_FIDELITY_GROUNDING_WORKSPACE_IDS: workspaceId };
 
 function qualification(overrides: Partial<SignalQualification> = {}): SignalQualification {
   return {
@@ -156,7 +159,7 @@ describe("signal revalidation orchestration", () => {
     const signal = signalRow();
     const repository = repositoryFixture(signal);
     const candidate: SignalRevalidationCandidate = { signalId: signal.id, workspaceId, previousQualification: qualification({ status: "qualified" }), freshInput: freshInputFixture() };
-    const outcome = await revalidateSignal(repository, candidate, new Date("2026-09-26T00:00:00.000Z"));
+    const outcome = await revalidateSignal(repository, candidate, new Date("2026-09-26T00:00:00.000Z"), SCOPED_ENV);
     expect(outcome.action).toBe("invalidated");
     expect(repository.updateSignal).toHaveBeenCalledWith(signal.id, expect.objectContaining({ lifecycle_status: "invalidated", invalidated_reason: "evidence_fidelity_revalidation" }));
   });
@@ -165,7 +168,7 @@ describe("signal revalidation orchestration", () => {
     const signal = signalRow();
     const repository = repositoryFixture(signal);
     const candidate: SignalRevalidationCandidate = { signalId: signal.id, workspaceId, previousQualification: qualification({ status: "qualified" }), freshInput: freshInputFixture() };
-    await revalidateSignal(repository, candidate, new Date("2026-09-26T00:00:00.000Z"));
+    await revalidateSignal(repository, candidate, new Date("2026-09-26T00:00:00.000Z"), SCOPED_ENV);
     expect(repository.getSignal).toHaveBeenCalled();
     const stored = await repository.getSignal(signal.id);
     expect(stored).not.toBeNull();
@@ -176,8 +179,8 @@ describe("signal revalidation orchestration", () => {
     const signal = signalRow({ lifecycle_status: "invalidated", invalidated_at: "2026-09-01T00:00:00.000Z", invalidated_reason: "evidence_fidelity_revalidation", invalidated_by: "system:signal_revalidation_v1" });
     const repository = repositoryFixture(signal);
     const candidate: SignalRevalidationCandidate = { signalId: signal.id, workspaceId, previousQualification: qualification({ status: "qualified" }), freshInput: freshInputFixture() };
-    const first = await revalidateSignal(repository, candidate, new Date("2026-09-26T00:00:00.000Z"));
-    const second = await revalidateSignal(repository, candidate, new Date("2026-09-26T00:00:00.000Z"));
+    const first = await revalidateSignal(repository, candidate, new Date("2026-09-26T00:00:00.000Z"), SCOPED_ENV);
+    const second = await revalidateSignal(repository, candidate, new Date("2026-09-26T00:00:00.000Z"), SCOPED_ENV);
     expect(first.action).toBe("invalidated");
     expect(second.action).toBe("invalidated");
     expect(repository.updateSignal).not.toHaveBeenCalled();
@@ -194,24 +197,48 @@ describe("signal revalidation orchestration", () => {
       }),
     };
     const candidates: SignalRevalidationCandidate[] = signals.map((row) => ({ signalId: row.id, workspaceId, previousQualification: qualification({ status: "qualified" }), freshInput: freshInputFixture() }));
-    const outcomes = await revalidateSignalBatch(repository, candidates, new Date("2026-09-26T00:00:00.000Z"));
+    const outcomes = await revalidateSignalBatch(repository, candidates, new Date("2026-09-26T00:00:00.000Z"), SCOPED_ENV);
     expect(outcomes).toHaveLength(SIGNAL_REVALIDATION_MAX_PER_TICK);
   });
 
   it("fails closed (skips, never invalidates) when the signal cannot be found rather than throwing the whole batch", async () => {
     const repository: SignalRevalidationRepository = { getSignal: vi.fn(async () => null), updateSignal: vi.fn() };
     const candidate: SignalRevalidationCandidate = { signalId: deterministicUuid("missing-signal"), workspaceId, previousQualification: qualification({ status: "qualified" }), freshInput: freshInputFixture() };
-    const outcomes = await revalidateSignalBatch(repository, [candidate], new Date("2026-09-26T00:00:00.000Z"));
+    const outcomes = await revalidateSignalBatch(repository, [candidate], new Date("2026-09-26T00:00:00.000Z"), SCOPED_ENV);
     expect(outcomes[0]?.action).toBe("skipped");
   });
 
-  it("12A.3A.1 amendment: a flag-off revalidation pass is a deliberate no-op - it never invalidates, even a signal that would fail closed under the new gate", async () => {
+  it("a flag-off revalidation pass is a deliberate no-op - it never invalidates, even a signal that would fail closed under the new gate", async () => {
     const signal = signalRow();
     const repository = repositoryFixture(signal);
-    const candidate: SignalRevalidationCandidate = { signalId: signal.id, workspaceId, previousQualification: qualification({ status: "qualified" }), freshInput: { ...freshInputFixture(), groundingEnabled: false } };
-    const outcome = await revalidateSignal(repository, candidate, new Date("2026-09-26T00:00:00.000Z"));
+    const candidate: SignalRevalidationCandidate = { signalId: signal.id, workspaceId, previousQualification: qualification({ status: "qualified" }), freshInput: freshInputFixture() };
+    const outcome = await revalidateSignal(repository, candidate, new Date("2026-09-26T00:00:00.000Z"), {});
     expect(outcome.action).toBe("skipped");
     expect(outcome.reason).toBe("evidence_fidelity_grounding_disabled");
+    expect(repository.updateSignal).not.toHaveBeenCalled();
+  });
+
+  // G: revalidation for a workspace outside the fidelity allowlist -> skipped,
+  // even though the flag is globally on and this exact signal would otherwise
+  // invalidate - the workspace scope is authoritative, not merely advisory.
+  it("G: a signal belonging to a workspace outside the fidelity allowlist is skipped, not invalidated, even though the flag is globally enabled", async () => {
+    const signal = signalRow({ workspace_id: otherWorkspaceId });
+    const repository = repositoryFixture(signal);
+    const candidate: SignalRevalidationCandidate = { signalId: signal.id, workspaceId: otherWorkspaceId, previousQualification: qualification({ status: "qualified" }), freshInput: freshInputFixture() };
+    const outcome = await revalidateSignal(repository, candidate, new Date("2026-09-26T00:00:00.000Z"), SCOPED_ENV);
+    expect(outcome.action).toBe("skipped");
+    expect(outcome.reason).toBe("evidence_fidelity_grounding_disabled");
+    expect(repository.updateSignal).not.toHaveBeenCalled();
+  });
+
+  it("ignores any groundingEnabled value the caller pre-set on freshInput - the workspace scope check is authoritative", async () => {
+    const signal = signalRow();
+    const repository = repositoryFixture(signal);
+    // Caller mistakenly sets groundingEnabled: true directly, but the workspace
+    // is not allowlisted in env - the service must still skip.
+    const candidate: SignalRevalidationCandidate = { signalId: signal.id, workspaceId: otherWorkspaceId, previousQualification: qualification({ status: "qualified" }), freshInput: { ...freshInputFixture(), groundingEnabled: true } };
+    const outcome = await revalidateSignal(repository, candidate, new Date("2026-09-26T00:00:00.000Z"), SCOPED_ENV);
+    expect(outcome.action).toBe("skipped");
     expect(repository.updateSignal).not.toHaveBeenCalled();
   });
 });
