@@ -3,6 +3,7 @@ import "server-only";
 import { deriveMarketPartitionIdentity, MARKET_PARTITION_IDENTITY_VERSION, type MarketPartitionRetrievalSpec } from "@/server/modules/ingestion/market-partition-identity";
 import {
   buildMarketPartitionRefreshRequest,
+  hnAlgoliaSearchEnabled,
   isMarketPartitionRefreshSource,
   MARKET_PARTITION_REFRESH_INTEREST_WINDOW_MS,
   type MarketPartitionRefreshSourceKey,
@@ -39,6 +40,7 @@ export const SEED_MAX_PER_PRODUCT_PER_SOURCE = 6;
 export const SEED_MAX_PARTITIONS_PER_SOURCE: Readonly<Record<MarketPartitionRefreshSourceKey, number>> = {
   github: 60,
   "stack-exchange": 60,
+  "hacker-news": 60,
 };
 /** Interest lifetime; equals the existing 14-day interest window, renewed by each scan of an active product. */
 export const MARKET_PARTITION_INTEREST_TTL_MS = MARKET_PARTITION_REFRESH_INTEREST_WINDOW_MS;
@@ -117,7 +119,7 @@ export function selectPartitionSeeds(input: {
     const sourceKey = query.source_key;
     if (!isMarketPartitionRefreshSource(sourceKey)) { skip("source_not_refreshable"); continue; }
     if (input.executedQueryPlanIds.has(query.query_id)) { skip("executed_by_scan"); continue; }
-    const planned = toSourceDiscoveryRequest({ sourcePlan: sourcePlanFor(query), query, maxPages: 1 });
+    const planned = toSourceDiscoveryRequest({ sourcePlan: sourcePlanFor(query), query, maxPages: 1, hnAlgoliaSearchEnabled: hnAlgoliaSearchEnabled() });
     const request = sourceKey === "stack-exchange" ? prepareStackExchangeFeatureRequest(planned, input.now) : planned;
     const identity = deriveMarketPartitionIdentity({ sourceKey, request });
     if (!identity.eligible) { skip("identity_ineligible"); continue; }

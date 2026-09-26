@@ -9,8 +9,8 @@ const H = 3600_000;
 describe("adaptive market-partition cadence v2 (Stage 2F)", () => {
   it("is versioned and keeps X and YouTube out of automatic refresh", () => {
     expect(policy.MARKET_PARTITION_CADENCE_POLICY_VERSION).toBe("market_partition_cadence_v2");
-    expect(Object.keys(MARKET_PARTITION_CADENCE_BY_SOURCE).sort()).toEqual(["github", "stack-exchange"]);
-    expect(Object.keys(MARKET_PARTITION_REFRESH_DAILY_CAP).sort()).toEqual(["github", "stack-exchange"]);
+    expect(Object.keys(MARKET_PARTITION_CADENCE_BY_SOURCE).sort()).toEqual(["github", "hacker-news", "stack-exchange"]);
+    expect(Object.keys(MARKET_PARTITION_REFRESH_DAILY_CAP).sort()).toEqual(["github", "hacker-news", "stack-exchange"]);
     expect(policy.isMarketPartitionRefreshSource("x")).toBe(false);
     expect(policy.isMarketPartitionRefreshSource("youtube")).toBe(false);
   });
@@ -37,6 +37,6 @@ describe("adaptive market-partition cadence v2 (Stage 2F)", () => {
   });
 
   it("computes the remaining rolling daily budget per source, never negative", () => {
-    expect(remainingDailyRefreshBudget({ github: 5, "stack-exchange": 999, x: 50 })).toEqual({ github: MARKET_PARTITION_REFRESH_DAILY_CAP.github - 5, "stack-exchange": 0 });
+    expect(remainingDailyRefreshBudget({ github: 5, "stack-exchange": 999, x: 50 })).toEqual({ github: MARKET_PARTITION_REFRESH_DAILY_CAP.github - 5, "stack-exchange": 0, "hacker-news": MARKET_PARTITION_REFRESH_DAILY_CAP["hacker-news"] });
   });
 });

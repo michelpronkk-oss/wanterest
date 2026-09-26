@@ -1,6 +1,7 @@
 import { sourceDiscoveryRequestSchema, type SourceDiscoveryRequest } from "../../providers/source/contracts";
 import { X_PROVIDER_MIN_RESULTS } from "../../providers/source/x/x.cost";
 import { compileXQuery } from "../../providers/source/x/x.query";
+import { HACKER_NEWS_SEARCH_V2_VERSION } from "../../providers/source/hacker-news";
 import { queryPlanningVersion, type QueryPlanQuery, type QueryPlanSource } from "./query-planning.schemas";
 import { compileGithubPainQuery } from "./github-query-compilation";
 
@@ -8,6 +9,13 @@ export type SourceQueryExecutionInput = {
   sourcePlan: QueryPlanSource;
   query: QueryPlanQuery;
   maxPages: number;
+  /**
+   * Layer 12A.3A kill switch, threaded explicitly (never read from process.env
+   * here) so this function stays a pure, deterministic function of its inputs
+   * - the same property the query_planning_v7 golden-digest tests rely on.
+   * Omitted/false reproduces the exact pre-12A.3A Hacker News request.
+   */
+  hnAlgoliaSearchEnabled?: boolean;
 };
 
 /**
@@ -81,21 +89,32 @@ export function toSourceDiscoveryRequest(input: SourceQueryExecutionInput): Sour
       });
     }
   } else if (sourcePlan.source_key === "hacker-news") {
-    // HN has no search endpoint. The adapter applies a bounded lexical filter
-    // to the recent feed using these anchors, while retaining the semantic
-    // query for diagnostics.
-    metadata.executionMode = "filtered_newstories_feed";
-    metadata.searchUnsupported = true;
-    metadata.maxPages = Math.min(3, Math.max(1, input.maxPages));
-    const providerContext = query.metadata.provider_context;
-    if (providerContext && typeof providerContext === "object" && !Array.isArray(providerContext)) {
-      const context = providerContext as Record<string, unknown>;
-      metadata.lexicalAnchors = [
-        ...(Array.isArray(context.competitors) ? context.competitors : []),
-        ...(Array.isArray(context.product_name) ? context.product_name : typeof context.product_name === "string" ? [context.product_name] : []),
-        ...(Array.isArray(context.category) ? context.category : typeof context.category === "string" ? [context.category] : []),
-        ...(Array.isArray(context.alternatives) ? context.alternatives : []),
-      ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+    if (input.hnAlgoliaSearchEnabled) {
+      // Layer 12A.3A: HN Search v2 - Algolia is a real search endpoint, so
+      // the planner's own semantic query is sent as a literal provider query
+      // (round-trips through market_partition_identity_v1), unlike the
+      // legacy filtered-feed mode below which has no literal query at all.
+      metadata.executionMode = "algolia_search_v2";
+      metadata.retrievalImplementationVersion = HACKER_NEWS_SEARCH_V2_VERSION;
+      metadata.maxPages = Math.min(3, Math.max(1, input.maxPages));
+      metadata.providerQuery = query.query_text.trim().slice(0, 200);
+    } else {
+      // HN has no search endpoint. The adapter applies a bounded lexical
+      // filter to the recent feed using these anchors, while retaining the
+      // semantic query for diagnostics.
+      metadata.executionMode = "filtered_newstories_feed";
+      metadata.searchUnsupported = true;
+      metadata.maxPages = Math.min(3, Math.max(1, input.maxPages));
+      const providerContext = query.metadata.provider_context;
+      if (providerContext && typeof providerContext === "object" && !Array.isArray(providerContext)) {
+        const context = providerContext as Record<string, unknown>;
+        metadata.lexicalAnchors = [
+          ...(Array.isArray(context.competitors) ? context.competitors : []),
+          ...(Array.isArray(context.product_name) ? context.product_name : typeof context.product_name === "string" ? [context.product_name] : []),
+          ...(Array.isArray(context.category) ? context.category : typeof context.category === "string" ? [context.category] : []),
+          ...(Array.isArray(context.alternatives) ? context.alternatives : []),
+        ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+      }
     }
   } else if (sourcePlan.source_key === "product-hunt") {
     metadata.includeComments = true;

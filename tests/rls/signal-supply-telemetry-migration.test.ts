@@ -63,7 +63,7 @@ describe("Layer 12A.1 frozen-system isolation", () => {
     const policy = readFileSync("src/server/modules/operations/incremental-product-matching.policy.ts", "utf8");
     expect(policy).toContain("export const INCREMENTAL_MATCH_MAX_EVALUATIONS_PER_PRODUCT = 15;");
     const refreshPolicy = readFileSync("src/server/modules/ingestion/market-partition-refresh.policy.ts", "utf8");
-    expect(refreshPolicy).toContain('export const MARKET_PARTITION_REFRESH_SOURCE_KEYS = ["github", "stack-exchange"] as const;');
+    expect(refreshPolicy).toContain('export const MARKET_PARTITION_REFRESH_SOURCE_KEYS = ["github", "stack-exchange", "hacker-news"] as const;');
     expect(refreshPolicy).toContain("export const MARKET_PARTITION_REFRESH_LIMIT = 10;");
   });
 

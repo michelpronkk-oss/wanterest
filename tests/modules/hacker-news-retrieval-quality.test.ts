@@ -144,6 +144,47 @@ describe("Hacker News pain_first launch filter", () => {
     expect(request).toMatchObject({ limit: 8, query: query.query_text, expandThreads: false, requestMetadata: { maxPages: 3, executionMode: "filtered_newstories_feed", searchUnsupported: true, lexicalAnchors: ["Jira", "Linear", "project management software", "Jira"] } });
   });
 
+  it("Layer 12A.3A: flag off (default/omitted) reproduces the exact legacy request; flag on sends HN Search v2", () => {
+    const query = {
+      query_id: "qp-hn-pain",
+      query_family: "pain",
+      demand_surface: "pain_first",
+      competitor_specific: false,
+      intent_type: "problem_solution_search",
+      query_text: "project management software Inefficient software development workflows",
+      normalized_query: "project management software inefficient software development workflows",
+      source_key: "hacker-news",
+      priority: "high",
+      confidence: 0.9,
+      candidate_budget: 8,
+      reason_codes: ["HIGH_CONFIDENCE_PAIN"],
+      reason_summary: "pain",
+      concept_keys: ["category", "inefficient_software_development_workflows"],
+      competitor_refs: [],
+      alternative_refs: [],
+      geo_context: null,
+      language_context: null,
+      cost_hint: "free",
+      metadata: { provider_context: {}, discovery_intent: {} },
+    } as unknown as QueryPlanQuery;
+    const sourcePlan = { source_key: "hacker-news", priority: "high", candidate_budget: 8, query_budget: 1, queries: [query], excluded_query_families: [], reason_codes: [], confidence: 0.9 } as unknown as QueryPlanSource;
+
+    const off = toSourceDiscoveryRequest({ sourcePlan, query, maxPages: 3 });
+    const offExplicit = toSourceDiscoveryRequest({ sourcePlan, query, maxPages: 3, hnAlgoliaSearchEnabled: false });
+    expect(off).toEqual(offExplicit);
+    expect(off.requestMetadata).toMatchObject({ executionMode: "filtered_newstories_feed", searchUnsupported: true });
+    expect(off.requestMetadata.providerQuery).toBeUndefined();
+
+    const on = toSourceDiscoveryRequest({ sourcePlan, query, maxPages: 3, hnAlgoliaSearchEnabled: true });
+    expect(on).toMatchObject({
+      limit: 8,
+      query: query.query_text,
+      requestMetadata: { executionMode: "algolia_search_v2", providerQuery: query.query_text, retrievalImplementationVersion: "hacker_news_search_v2_1" },
+    });
+    expect(on.requestMetadata.searchUnsupported).toBeUndefined();
+    expect(on.requestMetadata.lexicalAnchors).toBeUndefined();
+  });
+
   it("keeps qualification versions unchanged", () => {
     expect(SIGNAL_QUALIFICATION_VERSION).toBe("signal_qualification_v1_7");
     expect(SIGNAL_QUALIFICATION_THRESHOLD_VERSION).toBe("signal_qualification_thresholds_v1");

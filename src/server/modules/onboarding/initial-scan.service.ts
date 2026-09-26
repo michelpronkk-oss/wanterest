@@ -43,6 +43,7 @@ import { ensureEngineVersion } from "@/server/modules/observability/engine.repos
 import { getTraceId } from "@/server/lib/request-context";
 import { buildSourceRoutingPlan, selectExecutableSourceRoutes, type SourceRoutingPlan, type SourceRoutingHealthStatus } from "@/server/modules/operations/source-routing.index";
 import { buildQueryPlan, githubPainRetrievalDiagnostics, toSourceDiscoveryRequest, type GithubPainQueryCompilation, type QueryPlan, type QueryPlanningInput } from "@/server/modules/operations/query-planning.index";
+import { hnAlgoliaSearchEnabled } from "@/server/modules/ingestion/market-partition-refresh.policy";
 import { supplyPartitionSeedingEnabled } from "@/server/modules/operations/supply-partition-seeding.policy";
 import { seedSupplyPartitionsForScan } from "@/server/modules/operations/supply-partition-seeding.service";
 import { getDiscoveryCoverageConfig } from "@/server/modules/operations/discovery-coverage.config";
@@ -1218,7 +1219,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
         const route = routeBySource.get(sourceKey);
         const query = sourceKey === "bluesky" || sourceKey === "reddit" || sourceKey === "x" ? [product.name, ...queryTerms.slice(0, 5)].join(" ").slice(0, 180) : undefined;
         const sourcePlan = queryPlanBySource.get(sourceKey);
-        const plannedRequests = sourcePlan?.queries.length && route ? sourcePlan.queries.map((plannedQuery) => toSourceDiscoveryRequest({ sourcePlan, query: plannedQuery, maxPages: route.max_pages })) : [];
+        const plannedRequests = sourcePlan?.queries.length && route ? sourcePlan.queries.map((plannedQuery) => toSourceDiscoveryRequest({ sourcePlan, query: plannedQuery, maxPages: route.max_pages, hnAlgoliaSearchEnabled: hnAlgoliaSearchEnabled() })) : [];
         const fallbackLimit = Math.min(route?.max_candidates ?? 5, sourceKey === "x" ? configuredX.maxPostsPerScan : 100);
         const fallbackRequest = sourceKey === "x"
           ? { limit: fallbackLimit, query, requestMetadata: { maxResults: fallbackLimit, maxPages: route?.max_pages ?? 1, maxBillablePostsPerDiscovery: fallbackLimit } }

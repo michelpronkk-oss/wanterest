@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -26,9 +26,11 @@ function spec(overrides: Partial<{ source_key: string; expression: string; param
   };
 }
 
-describe("market-partition refresh source allowlist (Stage 2C v1)", () => {
-  it("accepts only github and stack-exchange", () => {
-    expect(MARKET_PARTITION_REFRESH_SOURCE_KEYS).toEqual(["github", "stack-exchange"]);
+describe("market-partition refresh source allowlist (Stage 2C v1 + Layer 12A.3A)", () => {
+  afterEach(() => { delete process.env.HN_ALGOLIA_SEARCH_ENABLED; });
+
+  it("accepts github and stack-exchange unconditionally", () => {
+    expect(MARKET_PARTITION_REFRESH_SOURCE_KEYS).toEqual(["github", "stack-exchange", "hacker-news"]);
     expect(isMarketPartitionRefreshSource("github")).toBe(true);
     expect(isMarketPartitionRefreshSource("stack-exchange")).toBe(true);
   });
@@ -36,9 +38,18 @@ describe("market-partition refresh source allowlist (Stage 2C v1)", () => {
   it("rejects x", () => expect(isMarketPartitionRefreshSource("x")).toBe(false));
   it("rejects youtube", () => expect(isMarketPartitionRefreshSource("youtube")).toBe(false));
   it("rejects every other known source", () => {
-    for (const sourceKey of ["g2", "hacker-news", "trustpilot", "public-web", "fixture", "reddit", "bluesky", "gitlab", "product-hunt"]) {
+    for (const sourceKey of ["g2", "trustpilot", "public-web", "fixture", "reddit", "bluesky", "gitlab", "product-hunt"]) {
       expect(isMarketPartitionRefreshSource(sourceKey), sourceKey).toBe(false);
     }
+  });
+
+  it("Layer 12A.3A: hacker-news is refreshable only while HN_ALGOLIA_SEARCH_ENABLED=true", () => {
+    delete process.env.HN_ALGOLIA_SEARCH_ENABLED;
+    expect(isMarketPartitionRefreshSource("hacker-news")).toBe(false);
+    expect(isMarketPartitionRefreshSource("hacker-news", { HN_ALGOLIA_SEARCH_ENABLED: "false" })).toBe(false);
+    expect(isMarketPartitionRefreshSource("hacker-news", { HN_ALGOLIA_SEARCH_ENABLED: "true" })).toBe(true);
+    process.env.HN_ALGOLIA_SEARCH_ENABLED = "true";
+    expect(isMarketPartitionRefreshSource("hacker-news")).toBe(true);
   });
 });
 
@@ -54,14 +65,20 @@ describe("buildMarketPartitionRefreshRequest", () => {
   });
 
   it("builds a request whose derived partition key round-trips to the stored key for every refreshable source", () => {
-    for (const sourceKey of MARKET_PARTITION_REFRESH_SOURCE_KEYS) {
-      const retrievalSpec = spec({ source_key: sourceKey, params: sourceKey === "github" ? { repository: "acme/product", contentType: "issues" } : { site: "stackoverflow" } });
-      const built = buildMarketPartitionRefreshRequest({ sourceKey, retrievalSpec });
-      expect(built.ok, sourceKey).toBe(true);
-      if (!built.ok) continue;
-      const originalIdentity = deriveMarketPartitionIdentity({ sourceKey, request: sourceDiscoveryRequestSchema.parse({ query: retrievalSpec.expression, expandThreads: retrievalSpec.expandThreads, limit: 25, requestMetadata: retrievalSpec.params }) });
-      const rebuiltIdentity = deriveMarketPartitionIdentity({ sourceKey, request: built.request });
-      expect(originalIdentity.eligible && rebuiltIdentity.eligible && originalIdentity.partitionKey === rebuiltIdentity.partitionKey, sourceKey).toBe(true);
+    process.env.HN_ALGOLIA_SEARCH_ENABLED = "true";
+    try {
+      for (const sourceKey of MARKET_PARTITION_REFRESH_SOURCE_KEYS) {
+        const params = sourceKey === "github" ? { repository: "acme/product", contentType: "issues" } : sourceKey === "hacker-news" ? { executionMode: "algolia_search_v2" } : { site: "stackoverflow" };
+        const retrievalSpec = spec({ source_key: sourceKey, params });
+        const built = buildMarketPartitionRefreshRequest({ sourceKey, retrievalSpec });
+        expect(built.ok, sourceKey).toBe(true);
+        if (!built.ok) continue;
+        const originalIdentity = deriveMarketPartitionIdentity({ sourceKey, request: sourceDiscoveryRequestSchema.parse({ query: retrievalSpec.expression, expandThreads: retrievalSpec.expandThreads, limit: 25, requestMetadata: retrievalSpec.params }) });
+        const rebuiltIdentity = deriveMarketPartitionIdentity({ sourceKey, request: built.request });
+        expect(originalIdentity.eligible && rebuiltIdentity.eligible && originalIdentity.partitionKey === rebuiltIdentity.partitionKey, sourceKey).toBe(true);
+      }
+    } finally {
+      delete process.env.HN_ALGOLIA_SEARCH_ENABLED;
     }
   });
 

@@ -168,6 +168,28 @@ describe("deriveMarketPartitionIdentity", () => {
     }
   });
 
+  it("Layer 12A.3A: Hacker News is eligible only for a Search v2 (Algolia) request, never the legacy filtered-feed shape", () => {
+    const legacy = deriveMarketPartitionIdentity({
+      sourceKey: "hacker-news",
+      request: xRequest({ executionMode: "filtered_newstories_feed", searchUnsupported: true, lexicalAnchors: ["Jira"] }),
+    });
+    expect(legacy).toEqual({ eligible: false, reason: "adapter_side_product_filter" });
+
+    const searchV2 = deriveMarketPartitionIdentity({
+      sourceKey: "hacker-news",
+      request: xRequest({ executionMode: "algolia_search_v2", retrievalImplementationVersion: "hacker_news_search_v2_1" }),
+    });
+    expect(searchV2.eligible).toBe(true);
+    if (!searchV2.eligible) return;
+    expect(searchV2.retrievalSpec).toEqual({
+      v: "market_partition_identity_v1",
+      source_key: "hacker-news",
+      expression: "Jira alternative -is:retweet",
+      params: { executionMode: "algolia_search_v2" },
+      expandThreads: false,
+    });
+  });
+
   it("trims and collapses whitespace in the expression without lowercasing or reordering", () => {
     const identity = deriveMarketPartitionIdentity({
       sourceKey: "x",

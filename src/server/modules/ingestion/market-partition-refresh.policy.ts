@@ -15,18 +15,38 @@ export const MARKET_PARTITION_REFRESH_POLICY_VERSION = "market_partition_refresh
 /**
  * v1 automatic-refresh allowlist. Deliberately narrower than every source
  * Stage 2B can derive a partition identity for: this proves the autonomous
- * refresh seam on two production-proven, quota-safe sources before widening
- * it. X is excluded so continuous refresh adds zero spend beyond the frozen
+ * refresh seam on production-proven, quota-safe sources before widening it.
+ * X is excluded so continuous refresh adds zero spend beyond the frozen
  * product-scan X experiment. YouTube is excluded because one refresh can
  * consume ~103 API quota units and there is no global YouTube quota ledger
  * yet. This does not change what any of these sources do inside a product
  * scan - only what the Stage 2C scheduler may refresh on its own.
+ *
+ * Layer 12A.3A adds `hacker-news`, gated separately (see
+ * `hnAlgoliaSearchEnabled`/`isMarketPartitionRefreshSource` below): only HN
+ * Search v2 (Algolia) requests are identity-eligible at all (see
+ * market-partition-identity.ts), and the flag additionally keeps Hacker News
+ * out of the live refreshable set until explicitly enabled, so a flag-off
+ * environment is unaffected even though the type-level allowlist already
+ * names it.
  */
-export const MARKET_PARTITION_REFRESH_SOURCE_KEYS = ["github", "stack-exchange"] as const;
+export const MARKET_PARTITION_REFRESH_SOURCE_KEYS = ["github", "stack-exchange", "hacker-news"] as const;
 export type MarketPartitionRefreshSourceKey = (typeof MARKET_PARTITION_REFRESH_SOURCE_KEYS)[number];
 
-export function isMarketPartitionRefreshSource(sourceKey: string): sourceKey is MarketPartitionRefreshSourceKey {
-  return (MARKET_PARTITION_REFRESH_SOURCE_KEYS as readonly string[]).includes(sourceKey);
+/** Layer 12A.3A kill switch. Defaults to disabled unless exactly "true". */
+export function hnAlgoliaSearchEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return env.HN_ALGOLIA_SEARCH_ENABLED === "true";
+}
+
+export function isMarketPartitionRefreshSource(sourceKey: string, env: Record<string, string | undefined> = process.env): sourceKey is MarketPartitionRefreshSourceKey {
+  if (!(MARKET_PARTITION_REFRESH_SOURCE_KEYS as readonly string[]).includes(sourceKey)) return false;
+  if (sourceKey === "hacker-news") return hnAlgoliaSearchEnabled(env);
+  return true;
+}
+
+/** The subset of the type-level allowlist that is actually live right now (flag-aware). */
+export function liveMarketPartitionRefreshSourceKeys(env: Record<string, string | undefined> = process.env): MarketPartitionRefreshSourceKey[] {
+  return MARKET_PARTITION_REFRESH_SOURCE_KEYS.filter((key) => isMarketPartitionRefreshSource(key, env));
 }
 
 /** Refresh execution settings. These never participate in partition identity (Stage 2B params allowlist). */
@@ -113,12 +133,17 @@ const HOUR_MS = 60 * 60 * 1000;
 export const MARKET_PARTITION_CADENCE_BY_SOURCE: Readonly<Record<MarketPartitionRefreshSourceKey, { baseMs: number; minMs: number; maxMs: number }>> = {
   github: { baseMs: 12 * HOUR_MS, minMs: 6 * HOUR_MS, maxMs: 7 * 24 * HOUR_MS },
   "stack-exchange": { baseMs: 24 * HOUR_MS, minMs: 12 * HOUR_MS, maxMs: 7 * 24 * HOUR_MS },
+  // Layer 12A.3A: as conservative as Stack Exchange even though the public
+  // Algolia HN Search API is keyless/unmetered - a shared free resource still
+  // gets a respectful, bounded cadence, not the GitHub authenticated rate.
+  "hacker-news": { baseMs: 24 * HOUR_MS, minMs: 12 * HOUR_MS, maxMs: 7 * 24 * HOUR_MS },
 };
 
 /** Hard global ceilings: refresh jobs per source per rolling 24h, regardless of how many partitions are due. */
 export const MARKET_PARTITION_REFRESH_DAILY_CAP: Readonly<Record<MarketPartitionRefreshSourceKey, number>> = {
   github: 120,
   "stack-exchange": 60,
+  "hacker-news": 60,
 };
 
 const MAX_ZERO_NEW_BACKOFF_STEPS = 4;

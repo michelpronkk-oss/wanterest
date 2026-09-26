@@ -3,7 +3,7 @@ import "server-only";
 import {
   MARKET_PARTITION_REFRESH_INTEREST_WINDOW_MS,
   MARKET_PARTITION_REFRESH_RECENT_SCAN_WINDOW_MS,
-  MARKET_PARTITION_REFRESH_SOURCE_KEYS,
+  liveMarketPartitionRefreshSourceKeys,
 } from "@/server/modules/ingestion/market-partition-refresh.policy";
 
 /**
@@ -97,9 +97,11 @@ export class MarketPartitionRefreshRepository {
     return (data as MarketPartitionRow | null) ?? null;
   }
 
-  /** Lists every immutable Stage 2B partition for a Stage-2C-v1-refreshable source. */
+  /** Lists every immutable Stage 2B partition for a currently-live (flag-aware) refreshable source. */
   async listRefreshableMarketPartitions(): Promise<MarketPartitionRow[]> {
-    const { data, error } = await this.table("market_partitions").select("id, partition_key, identity_version, source_key, retrieval_spec").in("source_key", [...MARKET_PARTITION_REFRESH_SOURCE_KEYS]).limit(10_000);
+    const sourceKeys = liveMarketPartitionRefreshSourceKeys();
+    if (!sourceKeys.length) return [];
+    const { data, error } = await this.table("market_partitions").select("id, partition_key, identity_version, source_key, retrieval_spec").in("source_key", sourceKeys).limit(10_000);
     if (error) throw persistenceError(error, "market_partitions listing");
     return (data as MarketPartitionRow[] | null) ?? [];
   }

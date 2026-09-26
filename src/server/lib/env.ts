@@ -84,6 +84,14 @@ const serverEnvSchema = publicEnvSchema.extend({
   // interests (persistence only; no extra foreground provider/model calls).
   // Read in Vercel and Trigger (scans run in both). Defaults off.
   SUPPLY_PARTITION_SEEDING_ENABLED: z.enum(["true", "false"]).optional(),
+  // Layer 12A.3A: Hacker News Search v2 (Algolia). Off = the existing
+  // Firebase newest-stories/lexical-filter path is unchanged and Hacker News
+  // stays outside the background-refreshable/seeding source set. On = the
+  // planner-driven request carries a literal Algolia search query, which
+  // makes Hacker News market-partition-identity-eligible and refreshable
+  // through the existing 12A.2/2C pipeline. Read in Vercel and Trigger
+  // (scans run in both). Defaults off.
+  HN_ALGOLIA_SEARCH_ENABLED: z.enum(["true", "false"]).optional(),
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;

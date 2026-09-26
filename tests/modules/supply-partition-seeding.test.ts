@@ -241,6 +241,45 @@ describe("Layer 12A.2 feature flag", () => {
   });
 });
 
+describe("Layer 12A.3A: Hacker News seeding is flag-gated end to end", () => {
+  afterEach(() => { delete process.env.HN_ALGOLIA_SEARCH_ENABLED; });
+
+  async function hackerNewsCandidate() {
+    const [{ candidates }] = await inputsWithSeeds();
+    const template = candidates.find((candidate) => candidate.source_key === "github") ?? candidates[0]!;
+    return { ...template, source_key: "hacker-news", query_id: `${template.query_id}-hn` };
+  }
+
+  it("is never seeded while the flag is off, even when the planner produced a candidate for it", async () => {
+    delete process.env.HN_ALGOLIA_SEARCH_ENABLED;
+    const candidate = await hackerNewsCandidate();
+    const selection = policy.selectPartitionSeeds({ candidates: [candidate], executedQueryPlanIds: new Set(), executedPartitionKeys: new Set(), now: NOW });
+    expect(selection.seeds).toHaveLength(0);
+    expect(selection.skipped).toEqual([{ queryPlanId: candidate.query_id, sourceKey: "hacker-news", reason: "source_not_refreshable" }]);
+  });
+
+  it("is seeded with a round-tripped identity and valid provenance once the flag is on", async () => {
+    process.env.HN_ALGOLIA_SEARCH_ENABLED = "true";
+    const candidate = await hackerNewsCandidate();
+    const selection = policy.selectPartitionSeeds({ candidates: [candidate], executedQueryPlanIds: new Set(), executedPartitionKeys: new Set(), now: NOW });
+    expect(selection.seeds).toHaveLength(1);
+    const [seed] = selection.seeds;
+    expect(seed!.sourceKey).toBe("hacker-news");
+    expect(seed!.identityVersion).toBe("market_partition_identity_v1");
+    expect(seed!.retrievalSpec.expression.length).toBeGreaterThan(0);
+    // Round-trips: rebuilding the refresh request from the stored spec derives the exact same key.
+    const rebuilt = buildMarketPartitionRefreshRequest({ sourceKey: "hacker-news", retrievalSpec: seed!.retrievalSpec });
+    expect(rebuilt.ok).toBe(true);
+    if (rebuilt.ok) {
+      const rebuiltIdentity = deriveMarketPartitionIdentity({ sourceKey: "hacker-news", request: rebuilt.request });
+      expect(rebuiltIdentity.eligible && rebuiltIdentity.partitionKey).toBe(seed!.partitionKey);
+    }
+    // Provenance is valid and cannot be provenance_missing.
+    expect(parseDiscoveryProvenanceTemplate({ discoveryProvenance: seed!.provenance, queryPlanId: seed!.queryPlanId, sourceKey: "hacker-news" })).not.toBeNull();
+    expect(seed!.provenance.source).toBe("hacker-news");
+  });
+});
+
 describe("Layer 12A.2 frozen systems", () => {
   it("qualification, reasoning, selection caps and refresh allowlist are unchanged", async () => {
     const { SIGNAL_QUALIFICATION_VERSION } = await import("../../src/server/modules/intelligence/signal-qualification.config");
@@ -254,8 +293,10 @@ describe("Layer 12A.2 frozen systems", () => {
     expect(INCREMENTAL_MATCH_MAX_EVALUATIONS_PER_PRODUCT).toBe(15);
     expect(INCREMENTAL_MATCH_MAX_PRODUCTS_PER_REFRESH).toBe(20);
     expect(INCREMENTAL_MATCH_INTEREST_WINDOW_MS).toBe(policy.MARKET_PARTITION_INTEREST_TTL_MS);
-    expect([...MARKET_PARTITION_REFRESH_SOURCE_KEYS]).toEqual(["github", "stack-exchange"]);
-    expect(MARKET_PARTITION_REFRESH_DAILY_CAP).toEqual({ github: 120, "stack-exchange": 60 });
+    // Layer 12A.3A adds hacker-news to the type-level allowlist (flag-gated separately - see
+    // market-partition-refresh-policy.test.ts); every other frozen value here is unchanged.
+    expect([...MARKET_PARTITION_REFRESH_SOURCE_KEYS]).toEqual(["github", "stack-exchange", "hacker-news"]);
+    expect(MARKET_PARTITION_REFRESH_DAILY_CAP).toEqual({ github: 120, "stack-exchange": 60, "hacker-news": 60 });
     expect(MARKET_PARTITION_REFRESH_LIMIT).toBe(10);
     expect(MARKET_PARTITION_IDENTITY_VERSION).toBe("market_partition_identity_v1");
     expect(queryPlanningVersion).toBe("query_planning_v7");
