@@ -3772,3 +3772,130 @@ interest/provenance semantics, and the GitHub/Stack Exchange adapters are all un
   routing through the explicit interest with valid provenance and no cross-workspace leakage → 12A.1
   facts for the new Hacker News refresh/matching jobs → compare qualified evidence yield against the
   pre-12A.3A Hacker News baseline (evidence yield is the success measure, not raw hit count).
+
+### 12A.3A.1 — Evidence Fidelity and Grounding Hardening (`evidence_grounding_v1`) — IMPLEMENTED_LOCALLY
+
+**Invariant** (product-level, not a phase-specific rule): a Wanterest signal MUST NEVER claim more
+than its source evidence supports. The Signal Fidelity / Evidence Grounding Audit traced every
+overstated/misattributed production signal to one of three deterministic-classifier defects, not to a
+missing LLM: (1) `directional-demand.ts` carried its own inline implementation/technical-discussion
+regex, independently drifted from `intent-semantics.ts`'s `detectIntentTarget()` (the intended single
+source of truth), so a technical/protocol discussion (X.509, TLS, SSO, ...) that didn't happen to match
+the narrower inline pattern fell through into a genuine "product demand" branch; (2) entity name
+matching was a bare word-boundary substring test, so a common-word product name (e.g. "Linear") matched
+inside an unrelated technical phrase ("linear regression") with no way to tell the two apart; (3) the
+only per-conversation "who is speaking" model was `speaker_role` (`buyer`/`maintainer`/`unknown`),
+which had no representation for "the author is the vendor pitching their own product" - a first-person
+launch post ("we just built X, an alternative to Jira") satisfied the buyer-language regex and was
+scored and worded exactly like a third-party buyer's switching intent, a genuine MISATTRIBUTED case,
+not merely an OVERSTATED one. Frozen unless proven otherwise by this section: `query_planning_v7`,
+Retrieval Precision V1, Source Health V1, `candidate_selection_v3`, `maxEvaluations = 15`,
+`signal_qualification_v1_7`'s scoring weights/thresholds, `ranking.ts`'s formula/freshness decay,
+`market_partition_identity_v1`, 12A.1 telemetry, 12A.2 seeding/refresh, 12A.3A Hacker News retrieval.
+`semantic_reasoning_router_v1` and its shadow-verification primitives (`validateShadowReasoningEvidence`,
+`mergeValidatedShadowReasoning`, `planSemanticShadowReasoning`, `executeScheduledSemanticShadowReasoning`)
+are reused as-is - not replaced, not forked - per the sections below.
+
+- **Deterministic guard unification (no LLM, no new regex family).** `directional-demand.ts`'s
+  `implementation` detection now delegates to `detectIntentTarget()` (`intent-semantics.ts`) instead of
+  its own inline pattern pair, so there is exactly one place that decides "is this text about
+  authentication/implementation, not a product-relationship claim" and the two modules can no longer
+  drift apart. `AUTHENTICATION_TERMS` is broadened (still one shared regex, not per-caller copies) to
+  cover the protocol/standard vocabulary the audit's X.509 case exposed (`x.509`, `tls`, `ssl`, `jwt`,
+  `saml`, `ldap`, `sso`, `mfa`/`2fa`, `client certificates`), and `IMPLEMENTATION_TERMS` gains
+  `config(uration)`, `deployment`, `self-host(ed/ing)`, `maintenance` for the technical-config/
+  integration-maintenance false-positive class.
+- **Entity disambiguation (`entity-disambiguation.ts`, new, `entity_disambiguation_v1`).** A small,
+  extensible, per-entity collocation table (`NON_ENTITY_COLLOCATIONS: Record<string, RegExp>`, keyed by
+  lowercased entity name, not hardcoded to a single name) that a mention must NOT satisfy in its
+  immediate context to count as a real product reference; ships with the audited `linear` case
+  (`linear regression|algebra|model|equation|scale|time|fashion|programming|search|interpolation|...`)
+  and is designed for any future name to be added the same way, not a Linear-specific branch.
+  `directional-demand.ts`'s `namesIn()` runs every candidate match through
+  `isLikelyEntityMention(name, text, matchIndex)` before counting it, so "linear regression" no longer
+  makes a competitor/source-product claim while "Linear" in a genuine switching sentence still does.
+- **Authorial stance (`authorial-stance.ts`, new, `authorial_stance_v1`; additive field on
+  `DirectionalDemand` and `ConversationMarketReasoning`, default `"unknown"` for every historical row).**
+  A deterministic classifier distinct from `speaker_role`: `buyer` | `vendor_marketing` |
+  `third_party_technical_discussion` | `unknown`, from first-person launch/pitch patterns ("we just
+  built/launched/shipped", "introducing", "Show HN", "check it out") versus first-person
+  evaluating/switching patterns versus the complete absence of first-person language. `speakerRole()`
+  no longer classifies a vendor-pitch author as `buyer` just because it matches the generic
+  I/we/our-team regex; `qualifySignal`'s `buyerPlausibilityCap` and `commercialRelevance` are capped for
+  `vendor_marketing` the same way they already are for `speaker_role === "maintainer"`, a new
+  `VENDOR_PITCH_NOT_BUYER_DEMAND` reason code is emitted, and `reasonText()` states the vendor-pitch case
+  in its own precise sentence ("This is vendor positioning ... it is not an independent buyer's
+  switching intent.") instead of routing it through the buyer-actor sentence templates.
+- **Grounding gate promotes `semantic_reasoning_router_v1` from shadow-only to enforcing, with zero new
+  LLM calls in the primary path (`evidence-grounding.ts`, new, `evidence_grounding_v1`).**
+  `groundDeterministicReasoning()` calls the existing, unmodified `routeSemanticReasoning()` with the
+  same inputs the shadow pipeline already computes (deterministic reasoning, source text, provisional
+  `product_relevance`/`noise_risk`). A route of `deterministic_only`/`reject_without_llm` is unchanged
+  (the vast majority of candidates, per production telemetry - zero added cost). A route of
+  `llm_reasoning` is exactly `semantic_reasoning_router_v1`'s own enumeration of high-risk claim types
+  (`ambiguous_direction`, `unclear_buyer_context`, `unknown_product_entity`) requiring verification; the
+  *deterministic-only* qualification path (`qualifySignal`, no `reasoningOverride`) has no LLM result to
+  verify against, so it fails closed by construction: the flagged field(s) are downgraded to their safe/
+  unknown default (`direction_relative_to_scanned_product → "unknown"`, `buyer_context → false` +
+  `commercial_intent → false`, low-confidence `mentioned_products` dropped) *before* `dimensionsFor()`/
+  `reasonText()` ever see them, via the existing `directionalDemandFromReasoning()` conversion (the same
+  function the shadow-verified path already uses to turn a `ConversationMarketReasoning` back into a
+  `DirectionalDemand`) - one code path handles both a verified LLM result and a fail-closed deterministic
+  default. A `EVIDENCE_GROUNDING_DOWNGRADED` reason code and `diagnostics.grounding_verification_required`/
+  `grounding_downgraded_claims` record exactly what was withheld and why, so the effect is auditable, not
+  silent. This never fails the scan: a candidate that needed grounding still qualifies or rejects on its
+  remaining (ungrounded) dimensions - pain, specificity, evidence quality - exactly as before; it simply
+  cannot assert the specific claim the router itself flagged as unverified. The *existing* shadow
+  comparison pipeline (unchanged: same budget, same `maxEvaluations = 15` bound it always ran within, same
+  persistence) now compares the fail-closed default against a verified LLM upgrade for the same
+  candidates it always evaluated, which is the exact telemetry needed to decide whether promoting a
+  verified upgrade into a new, additional (never overwritten) evaluation row is warranted - that
+  materialization step is intentionally deferred, not built here (see Scope boundary below).
+- **Scope boundary (explicitly deferred, not 12A.3B).** `product_match_evaluations` rows are immutable
+  per this document's own tenancy/idempotency rules ("current pointers may optimize reads but must never
+  overwrite historical matching/ranking results"); `IntelligenceService.matchProduct` therefore stays
+  LLM-free and unchanged, and the grounding gate above operates purely on data already available at
+  qualification time. Wiring a verified shadow upgrade into a *new* evaluation row with `setCurrentEvaluation`
+  pointed at it is a natural next step but is out of scope for this hardening pass.
+- **Temporal presentation (minimum-safe fix, no velocity/trend scoring).** `signalQualificationSchema`
+  gains `evidence_published_at` (nullable, additive default `null`), sourced from the same
+  `published_at ?? captured_at` precedence `freshnessScore`/`resonanceFor` already use - scoring is
+  untouched. `reasonText()` appends the literal published date and, past a documented
+  `EVIDENCE_HISTORICAL_THRESHOLD_DAYS = 90` age, an explicit "may not reflect current demand" qualifier,
+  so wording never implies an old conversation is current without inventing a recency/trend score.
+- **Bounded, idempotent, non-destructive revalidation (`signal-revalidation.service.ts`, new,
+  `signal_revalidation_v1`).** Reuses `signal_lifecycle_v1`'s existing `transitionSignalLifecycle`
+  exactly as-is (adds one new `SignalLifecycleReason` value, `evidence_fidelity_revalidation`, to the
+  Zod enum only - the `invalidated_reason`/`retracted_reason` columns are free-text-with-length-check at
+  the database layer, so no migration is needed). `decideRevalidationAction()` is a pure function
+  comparing a previously-stored `SignalQualification` against a freshly recomputed one (from the same
+  stored raw/canonical conversation/source/analysis - no re-crawl); when the fresh qualification no
+  longer materializes (`canMaterializeQualifiedSignal` flips true → false) the signal transitions to
+  `invalidated` with the new reason; a signal that still qualifies is left untouched (`unchanged`) or
+  reported (`reconfirmed`) - the underlying evaluation row is never rewritten and no signal is deleted.
+  Idempotent by construction: `transitionSignalLifecycle` already no-ops when the target status matches
+  the current one and rejects reactivating a terminal signal, and recomputation is a pure function of
+  already-stored inputs, so re-running the same batch twice changes nothing the second time. Bounded by
+  `SIGNAL_REVALIDATION_MAX_PER_TICK = 50` per invocation, mirroring 12A.2's own retirement-pass bound.
+- **Cluster/membership reconciliation needs no new code.** `demand-clustering.policy.ts`'s
+  `computeDemandClusterStrength()` already reads each membership's `signalLifecycleStatus` and already
+  defines `"signal_invalidated"`/`"signal_retracted"` exclusion reasons; `DemandClusteringService`
+  recomputes cluster strength from current evidence validity on every `clusterProduct()` run
+  (`demand-clustering.service.ts`). Transitioning a signal to `invalidated` via the revalidation service
+  above is therefore automatically reflected - excluded from `lifecycleMix`/strength - on the next
+  cluster recompute, with no membership-row change and no deletion. This section adds one regression
+  test proving that path end-to-end; it does not add reconciliation logic that already exists.
+- **Tests**: `entity-disambiguation.test.ts`, `authorial-stance.test.ts`, `evidence-grounding.test.ts`,
+  `signal-revalidation.test.ts`, plus regression cases added to the signal-qualification test suite for
+  each named production failure class (X.509/protocol technical discussion, "alternative method"
+  phrasing, `linear`-the-adjective, technical-config-only mention, integration/maintenance-only mention,
+  vendor-pitch launch post, third-party tutorial/guide mention) and cross-cutting proofs (query/product/
+  competitor context can never become evidence; `published_at` is preserved and never silently dropped;
+  a required-but-unavailable verification fails closed without throwing; no additional LLM call is made
+  for a safe deterministic reject or for a candidate whose router route is not `llm_reasoning`; the
+  grounding gate is a pure function of its inputs, so replay is idempotent).
+- **Rollout**: this is a scoring/wording/lifecycle-only change with no new environment flag, no schema
+  migration, and no new provider dependency - safe to run in production immediately behind the existing
+  deterministic qualification path once merged; revalidation is implemented but not scheduled by this
+  section (invoking it against existing production signals is a separate, explicit operational decision,
+  not automatic on deploy).
