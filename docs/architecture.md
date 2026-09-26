@@ -4210,3 +4210,114 @@ change. Old v1-fingerprint rows remain valid historical rows under their origina
 `maxEvaluations=15`, qualification numeric thresholds, HN Search v2, 12A.1 telemetry, 12A.2 partition
 semantics, 12A.3A retrieval, the fidelity workspace allowlist, and the semantic call budget are all
 untouched by this amendment - it is evaluation persistence/cache correctness only.
+
+### 12A.3A.1 Amendment IV — Signal Revalidation Preview (`signal_revalidation_preview_v1`) — IMPLEMENTED_LOCALLY
+
+**Why this exists.** `timestamp_canonicalization_v1` and `product_match_evaluation_fingerprint_v2` are now
+production-proven (canary scan `e7f5ce47-…`). The pre-existing production signal set (19 signals) predates
+both fixes and a manual audit found real fidelity problems in it: unsupported switching claims, Jira/Linear
+common-word collisions, vendor marketing read as buyer demand, technical "alternative" wording read as
+switching, historical evidence overstated as current, and third-party explanatory content read as
+purchase/switch intent. `signal-revalidation.service.ts` (`signal_revalidation_v1`) already exists and can
+recompute+invalidate, but it has **zero invocation paths anywhere in the codebase** (confirmed:
+`grep -rln "revalidateSignal" src/` matches only its own file and its own test) and it **mutates on decision**
+(`transitionSignalLifecycle` → `updateSignal`). Running it against production today, for the first time,
+with no prior visibility into what it would do to real signals, is not an acceptable next step. This
+amendment adds a separate, structurally non-mutating preview so the owner can see the corrected fidelity
+stack's effect on every real signal before any production mutation is authorized.
+
+**Core invariant.** *A revalidation preview may evaluate real production signals using the current fidelity
+logic, but it cannot mutate production state.* This is enforced at the type level, not by convention: the
+preview never receives a repository capable of writing.
+
+**Read-only repository contracts.** `SignalRevalidationPreviewIntelligenceRepository` and
+`SignalRevalidationPreviewClusterRepository` (`signal-revalidation-preview.service.ts`) are `Pick<...>`
+projections of the existing `IntelligenceRepository` / `DemandClusteringRepository` interfaces, containing
+**only** read methods (`getProduct`, `getProductSnapshots`, `getDemandProfileById`, `getConversation`,
+`getSourceItem`, `getConversationAnalysisById`, `getMatchById`, `getEvaluationById`, `listSignals` /
+`listClusters`, `listMemberships`, plus `SemanticShadowReasoningRepository`'s pre-existing read-only
+`loadForReplay`). None of `updateSignal`, `createEvaluation`, `setCurrentEvaluation`,
+`transitionSignalLifecycle`, membership/cluster writers, or shadow-reasoning persistence appear anywhere in
+these types - calling any of them on a preview-scoped variable is a compile error, and the accompanying
+tests construct real objects that simply omit those methods entirely, so an accidental call fails at
+runtime too (immediately test-detectable, not just type-hidden). The preview function signatures accept
+only these narrow types; nothing in `signal-revalidation-preview.service.ts` imports or references a
+mutating repository method.
+
+**Reuse, not duplication.** The preview does not reimplement qualification, grounding, or the
+materialization gate. It calls the exact same `qualifySignal` / `qualifySignalWithReasoning` (unchanged),
+the exact same `decideRevalidationAction` already defined in `signal-revalidation.service.ts` (imported, not
+copied), the exact same `evidenceFidelityGroundingEnabled` scope check, and the newly-extracted
+`buildQualificationProfile` (pulled out of `IntelligenceService.qualificationProfile` as a pure function of
+`(product, profile, snapshots)` so both the real matching path and this read-only preview path project a
+demand profile identically - a behavior-preserving extraction, not a new profile model).
+
+**Decision vocabulary** (`SignalRevalidationPreviewDecision`): `KEEP`, `KEEP_WITH_GROUNDED_WORDING_CHANGE`,
+`WOULD_INVALIDATE`, `ALREADY_NON_CONTRIBUTING`, `REQUIRES_SEMANTIC_VERIFICATION`, `CANNOT_ASSESS`. These map
+directly onto `decideRevalidationAction`'s existing four outcomes plus two preview-only additions:
+- `unchanged` → `KEEP`
+- `reconfirmed` (still materializes, but status/qualification_reason/reason_codes changed) → `KEEP_WITH_GROUNDED_WORDING_CHANGE`
+- `invalidated` → `WOULD_INVALIDATE`
+- `skipped` (never materialized in the first place) → `ALREADY_NON_CONTRIBUTING`
+- a candidate whose fresh qualification has `diagnostics.materialization_verification_required=true` and
+  `materialization_verified=false`, with no reusable persisted semantic artifact → `REQUIRES_SEMANTIC_VERIFICATION`
+  (never guessed; never silently treated as either KEEP or WOULD_INVALIDATE)
+- missing/unloadable provenance (conversation, source item, analysis, profile, or match cannot be read) →
+  `CANNOT_ASSESS`, with the reason stated - never invented evidence to force a decision
+
+**High-risk handling stays read-only.** If a candidate is high-risk and unverified, the preview looks up
+`SemanticShadowReasoningRepository.loadForReplay(workspaceId, productId, conversationId)` - an existing,
+already read-only method - and reuses the most recent `execution_status in (success, cache_hit)` row's
+already-computed `merged_shadow_reasoning` (a previously-validated `ConversationMarketReasoning`) via
+`qualifySignalWithReasoning`, exactly as a verified upgrade already works in the real scan path. **No new
+`semantic_shadow_reasoning` row is ever created, no provider/model call is ever made, and no new budget is
+introduced.** Since production currently has zero rows in `semantic_shadow_reasoning`, this reuse path is
+real and tested but will not fire against today's data - every high-risk candidate in the current signal set
+resolves to `REQUIRES_SEMANTIC_VERIFICATION` rather than a guessed answer. **This preview is not a
+substitute for the still-pending natural production high-risk scan proof** - it observes existing signals
+under current logic; it does not exercise the live scan/materialization path.
+
+**Temporal classification** reuses `EVIDENCE_HISTORICAL_THRESHOLD_DAYS` (unchanged) to classify each
+signal's evidence as `historical` / `recent`, and separately flags when the *currently stored* signal
+wording (`excerpt`/`why_it_matters`/`qualification_reason`) implies present-tense demand while the evidence
+predates the threshold - the same overstatement `temporalGroundingClause` already exists to prevent going
+forward. This preview does not implement a new temporal model; it is a read comparison using the existing
+one.
+
+**Support/entailment classification** (per signal) compares the *currently stored* claim (signal
+`intent_type`/`tags`/`excerpt`) against the *freshly computed* qualification's `reason_codes`,
+`evidence_spans`, `primary_intent`, and `conversation_reasoning`, flagging categories such as unsupported
+switching/competitor/purchase/WTP/migration/urgency claims, wrong actor stance, wrong target, common-word
+entity collision, and vendor/promotional content misread as buyer demand. Evidence spans are always literal
+source excerpts (existing schema invariant); planner query text, the product profile, configured competitor
+names, and retrieval metadata are never treated as evidence, mirroring the existing
+`verifiedEvidence`/evidence-span contract.
+
+**Cluster impact simulation.** For every `demand_clusters` row in scope, the preview reads
+`demand_cluster_memberships` (via `match_evaluation_id`, matching a signal's `product_match_evaluation_id`)
+and reports, without writing anything: current contributing count, which signal ids would stop contributing
+under `WOULD_INVALIDATE`, and the projected contributing count. It does not recompute cluster strength/state
+(that remains `demand_clustering_v1`'s own durable, unmodified pipeline) - it reports membership-count
+impact only, explicitly stated as such.
+
+**Bounded, workspace-scoped, deterministic.** `listSignals(workspaceId)` results are sorted by
+`(created_at, id)` ascending and capped at `SIGNAL_REVALIDATION_PREVIEW_MAX_SIGNALS = 50`; the preview never
+accepts an unbounded or cross-workspace query, and workspace ownership is re-verified server-side (never
+trusted from a caller-supplied claim) exactly like every other workspace-scoped read in this codebase.
+
+**Repeatability.** Given the same production state, same code, and same persisted semantic artifacts (if
+any), the preview's categorical decision for each signal is reproducible. The only values that can vary
+between two runs a moment apart are the same wall-clock-continuous fields `product_match_evaluation_fingerprint_v2`
+already excludes for the identical reason (`dimensions.freshness`, `demand_quality_score`) - these never
+change which decision bucket a signal falls into, only cosmetic score magnitudes reported alongside it.
+
+**No migration, no new writes, no new mutation surface.** No schema, RLS, or table change. No new
+`job_runs`/task/API endpoint is added by this amendment - the preview is invoked only via an internal
+command (`npm run` / direct function call in a trusted server context), never a customer-facing route, and
+is not executed in production by this amendment.
+
+**Frozen**: `query_planning_v7`, Retrieval Precision V1, Source Health V1, `candidate_selection_v3`,
+`maxEvaluations=15`, qualification numeric thresholds, `timestamp_canonicalization_v1`,
+`product_match_evaluation_fingerprint_v2`, HN Search v2, 12A.1 telemetry, 12A.2 partitions, source adapters,
+signal lifecycle semantics, durable clustering semantics, the semantic scan budget, and the fidelity
+workspace allowlist are all untouched - this amendment adds preview infrastructure only.
