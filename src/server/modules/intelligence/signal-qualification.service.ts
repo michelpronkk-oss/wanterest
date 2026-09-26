@@ -455,6 +455,7 @@ function directionalDemandFromReasoning(reasoning: ConversationMarketReasoning):
     demand_direction: reasoning.direction_relative_to_scanned_product,
     demand_target_type: reasoning.demand_target_type,
     demand_target_name: target,
+    scanned_product_entity_evidence: "absent",
     source_products: reasoning.source_products,
     speaker_role: reasoning.actor_type,
     positive_for_product: reasoning.direction_relative_to_scanned_product === "toward_product" ? true : reasoning.direction_relative_to_scanned_product === "away_from_product" ? false : null,
@@ -518,7 +519,9 @@ function buildQualification(input: SignalQualificationInput, reasoningOverride?:
   }
   const confidence = confidenceFor(input, dimensions, evidence) * (input.profile.profile_confidence < 0.55 ? 0.9 : 1);
   const strongIntent = STRONG_COMMERCIAL_INTENTS.includes(primaryIntent);
-  const qualified = demand.positive_for_product !== false && dimensions.product_relevance >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.productRelevance && (dimensions.demand_intent >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.demandIntent || dimensions.pain_clarity >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.painClarity || strongIntent) && dimensions.specificity >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.specificity && dimensions.evidence_quality >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.evidenceQuality && dimensions.noise_risk < 0.5 && dimensions.spam_probability < SIGNAL_QUALIFICATION_THRESHOLDS.qualified.spamProbabilityMaxExclusive && dimensions.promotional_probability < SIGNAL_QUALIFICATION_THRESHOLDS.qualified.promotionalProbabilityMaxExclusive && evidence.length > 0;
+  const namedProductEvidenceBlocked = groundingEnabled && derivedDemand.scanned_product_entity_evidence === "invalidated" && demand.demand_target_type !== "category";
+  if (namedProductEvidenceBlocked) reasonCodes.push("COMMON_WORD_ENTITY_COLLISION");
+  const qualified = !namedProductEvidenceBlocked && demand.positive_for_product !== false && dimensions.product_relevance >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.productRelevance && (dimensions.demand_intent >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.demandIntent || dimensions.pain_clarity >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.painClarity || strongIntent) && dimensions.specificity >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.specificity && dimensions.evidence_quality >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.evidenceQuality && dimensions.noise_risk < 0.5 && dimensions.spam_probability < SIGNAL_QUALIFICATION_THRESHOLDS.qualified.spamProbabilityMaxExclusive && dimensions.promotional_probability < SIGNAL_QUALIFICATION_THRESHOLDS.qualified.promotionalProbabilityMaxExclusive && evidence.length > 0;
   const highConfidence = qualified && dimensions.product_relevance >= SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.productRelevance && dimensions.demand_intent >= SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.demandIntent && dimensions.specificity >= SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.specificity && dimensions.evidence_quality >= SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.evidenceQuality && dimensions.commercial_relevance >= SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.commercialRelevance && confidence >= SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.confidence && dimensions.noise_risk < SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.noiseRiskMaxExclusive && strongIntent;
   const provisionalStatus: SignalQualificationStatus = highConfidence ? "high_confidence_signal" : qualified ? "qualified" : dimensions.product_relevance >= 0.4 || dimensions.demand_intent >= 0.35 || dimensions.pain_clarity >= 0.4 ? "weak_candidate" : "rejected";
 
@@ -564,6 +567,7 @@ function buildQualification(input: SignalQualificationInput, reasoningOverride?:
     ...(dimensions.evidence_quality < SIGNAL_QUALIFICATION_THRESHOLDS.qualified.evidenceQuality || evidence.length === 0 ? ["evidence_quality"] : []),
     ...(dimensions.spam_probability >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.spamProbabilityMaxExclusive ? ["spam_probability"] : []),
     ...(dimensions.promotional_probability >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.promotionalProbabilityMaxExclusive ? ["promotional_probability"] : []),
+    ...(namedProductEvidenceBlocked ? ["named_product_entity_evidence"] : []),
   ];
   return signalQualificationSchema.parse({
     version: SIGNAL_QUALIFICATION_VERSION,

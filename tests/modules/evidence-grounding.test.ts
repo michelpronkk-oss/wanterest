@@ -115,6 +115,7 @@ function demand(overrides: Partial<DirectionalDemand> = {}): DirectionalDemand {
     demand_direction: "unknown",
     demand_target_type: "unknown",
     demand_target_name: null,
+    scanned_product_entity_evidence: "absent",
     source_products: [],
     speaker_role: "unknown",
     positive_for_product: null,

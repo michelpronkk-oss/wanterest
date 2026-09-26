@@ -6,7 +6,7 @@ import { qualifySignal, type SignalQualificationInput } from "../../src/server/m
 
 const productId = deterministicUuid("directional-demand-product");
 
-function inputFor(body: string, options: { productName?: string; repository?: string; authorAssociation?: string } = {}): SignalQualificationInput {
+function inputFor(body: string, options: { productName?: string; repository?: string; authorAssociation?: string; sourceKey?: string } = {}): SignalQualificationInput {
   const productName = options.productName ?? "Linear";
   const conversationId = deterministicUuid(`directional-demand-conversation:${body}:${productName}`);
   const sourceId = deterministicUuid(`directional-demand-source:${body}:${productName}`);
@@ -17,7 +17,7 @@ function inputFor(body: string, options: { productName?: string; repository?: st
   const source: SourceItemRow = {
     id: sourceId,
     evidence_node_id: deterministicUuid(`directional-demand-source-evidence:${sourceId}`),
-    source_key: "github",
+    source_key: options.sourceKey ?? "github",
     external_id: `directional-demand:${sourceId}`,
     external_conversation_id: conversationId,
     canonical_url: "https://github.com/example/project/discussions/1",
@@ -228,6 +228,54 @@ describe("directional demand semantics", () => {
 
     expect(result.speaker_role).toBe("maintainer");
     expect(result.demand_target_type).toBe("third_party_product");
+    expect(result.status).not.toBe("qualified");
+    expect(result.status).not.toBe("high_confidence_signal");
+  });
+
+  it("fails closed when every Linear occurrence is a linear-regression collocation", () => {
+    const result = qualifySignal({
+      ...inputFor("Does it make sense to write a UDAF to perform a rolling regression on a spark dataframe? I need to perform multiple linear regression. Pyspark does not support the UDAF ability (see the linked jira)."),
+      groundingEnabled: true,
+    });
+
+    expect(result.demand_target_type).not.toBe("scanned_product");
+    expect(result.demand_target_name).not.toBe("Linear");
+    expect(result.reason_codes).toContain("COMMON_WORD_ENTITY_COLLISION");
+    expect(result.diagnostics.gate_failures).toContain("named_product_entity_evidence");
+    expect(result.status).not.toBe("qualified");
+    expect(result.status).not.toBe("high_confidence_signal");
+  });
+
+  it("keeps explicit Linear app/software evidence eligible", () => {
+    const result = qualifySignal({
+      ...inputFor("We are evaluating the Linear app as a Jira alternative for our engineering team."),
+      groundingEnabled: true,
+    });
+
+    expect(result.demand_target_type).toBe("scanned_product");
+    expect(result.demand_target_name).toBe("Linear");
+  });
+
+  it("binds an unrelated evaluation phrase to Beads, not Linear", () => {
+    const result = qualifySignal({
+      ...inputFor("Spent the past 1,5 years building a tool that might be relevant. It is much more lightweight than Jira/Linear. Might be worth a look if you're evaluating alternatives to Beads.", { sourceKey: "hacker-news" }),
+      groundingEnabled: true,
+    });
+
+    expect(result.demand_target_type).toBe("third_party_product");
+    expect(result.demand_target_name).toBe("Beads");
+    expect(result.demand_target_name).not.toBe("Linear");
+    expect(result.status).not.toBe("qualified");
+    expect(result.status).not.toBe("high_confidence_signal");
+  });
+
+  it("does not turn a comparison mention into demand without bound intent", () => {
+    const result = qualifySignal({
+      ...inputFor("The Linear app is lighter than Jira."),
+      groundingEnabled: true,
+    });
+
+    expect(result.demand_target_type).not.toBe("scanned_product");
     expect(result.status).not.toBe("qualified");
     expect(result.status).not.toBe("high_confidence_signal");
   });

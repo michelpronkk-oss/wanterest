@@ -330,9 +330,46 @@ const cases: Case[] = [
       expect(result.status).not.toBe("high_confidence_signal");
     },
   },
+  {
+    id: "20-production-linear-regression-collision",
+    description: "Production-derived 87fb0e75 reproduction: multiple linear-regression language and a linked Jira issue must not qualify a Linear software signal after entity disambiguation removes the common-word occurrence.",
+    body: "I'll try my best to describe my situation and then I'm hoping another user on this site can tell me if the course I'm taking makes sense or if I need to reevaluate my approach/options. Background: I use pyspark since I am most familiar with python vs scala, java or R. I have a spark dataframe that was constructed from a hive table using pyspark.sql to query the table. In this dataframe I have many different 'files'. Each file is consists of timeseries data. I need to perform a rolling regression on a subset of the data, across the entire time values for each 'file'. After doing a good bit of research I was planning on creating a window object, making a UDF that specified how I wanted my linear regression to occur (using the spark ml linear regression inside the function), then returning the data to the dataframe. What I discovered is that currently pyspark does not support the ability to create UDAF (see the linked jira). I'm considering a UDAF in scala for multiple linear regression.",
+    options: { sourceKey: "stack-exchange", publishedAt: "2017-10-17T20:09:43+00:00", now: "2026-09-26T00:00:00.000Z" },
+    assert: (result) => {
+      expect(result.reason_codes).toContain("COMMON_WORD_ENTITY_COLLISION");
+      expect(result.demand_target_type).not.toBe("scanned_product");
+      expect(result.status).not.toBe("qualified");
+      expect(result.status).not.toBe("high_confidence_signal");
+    },
+  },
+  {
+    id: "21-production-beads-cross-clause-binding",
+    description: "Production-derived 82542953 reproduction: a Jira/Linear comparison followed by evaluating alternatives to Beads binds to Beads and cannot materialize demand for Linear.",
+    body: "Spent the past 1,5 years building a tool that might be relevant, helping keep durable task state between agent sessions. It is an issue tracker persisting state as immutable event logs, allows you to inspect workflows after the fact, lets you inspect diffs inline in the tickets and it is much more lightweight than Jira&#x2F;Linear. There is no central service to integrate with, as it is Git-backed and lives with your code in your repo.<p>Might be worth a look if you’re evaluating alternatives to Beads.",
+    options: { sourceKey: "hacker-news", publishedAt: "2026-09-26T07:31:31+00:00", now: "2026-09-26T14:30:00.000Z" },
+    assert: (result) => {
+      expect(result.demand_target_name).toBe("Beads");
+      expect(result.demand_target_name).not.toBe("Linear");
+      expect(result.demand_target_type).toBe("third_party_product");
+      expect(result.status).not.toBe("qualified");
+      expect(result.status).not.toBe("high_confidence_signal");
+    },
+  },
+  {
+    id: "22-production-category-demand-preserved",
+    description: "Production-derived 96b12127 reproduction: a historical project/bug/task-management resource request remains category-level and is not promoted to a Linear-specific target.",
+    body: "Does anyone know of excellent (in your opinion) books/websites that go over in details how to pragmatically use a bug/task/project management tool to help improve software development process? Ideally, I would like from-the-trench kind of resource, not theory. Examples of such mgmt tools are: JIRA/Confluence combo, Visual Studio Team System / Sharepoint, FogBugz, etc. I think I'm looking for books that are like the 3 Pragmatic book series and how to integrate project management tools into the software development process.",
+    options: { sourceKey: "stack-exchange", publishedAt: "2009-05-06T02:17:02+00:00", now: "2026-09-26T00:00:00.000Z" },
+    assert: (result) => {
+      expect(["qualified", "high_confidence_signal"]).toContain(result.status);
+      expect(result.demand_target_type).not.toBe("scanned_product");
+      expect(result.demand_target_name).not.toBe("Linear");
+      expect(result.qualification_reason).toMatch(/2009-05-06|may not reflect current demand/i);
+    },
+  },
 ];
 
-describe("Evidence fidelity golden fixture (12A.3A.1, 19 cases)", () => {
+describe("Evidence fidelity golden fixture (12A.3A.1, 22 cases)", () => {
   it.each(cases)("$id: $description", ({ body, options, assert: assertion }) => {
     const result = qualifySignal(inputFor(body, options));
     assertion(result);

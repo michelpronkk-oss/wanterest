@@ -35,7 +35,7 @@ export function buildConversationMarketReasoning(input: {
     ...input.demand.source_products.map((name) => mention(name, input.demand.demand_target_type === "implementation" ? "implementation_context" : "source", 0.82)),
     ...(input.demand.demand_target_name ? [mention(input.demand.demand_target_name, input.demand.host_product_context ? "host" : input.demand.demand_target_type === "implementation" ? "implementation_context" : "destination", input.demand.demand_direction === "unknown" ? 0.35 : 0.82)] : []),
   ];
-  if (!mentioned.some((item) => item.name.toLowerCase() === input.productName.toLowerCase()) && new RegExp(`(^|[^A-Za-z0-9])${input.productName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[^A-Za-z0-9])`, "i").test(sourceText)) mentioned.push(mention(input.productName, "mentioned", 0.6));
+  if (input.demand.scanned_product_entity_evidence !== "invalidated" && !mentioned.some((item) => item.name.toLowerCase() === input.productName.toLowerCase()) && new RegExp(`(^|[^A-Za-z0-9])${input.productName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[^A-Za-z0-9])`, "i").test(sourceText)) mentioned.push(mention(input.productName, "mentioned", 0.6));
   const relationshipCandidates = input.demand.demand_target_type === "third_party_product" && input.demand.demand_target_name && !input.context.relationships.some((item) => item.entity_name.toLowerCase() === input.demand.demand_target_name?.toLowerCase())
     ? [{ entity_name: input.demand.demand_target_name, relationship_type: input.demand.demand_direction === "away_from_product" ? "direct_competitor" as const : "adjacent_product" as const, confidence: input.demand.demand_direction === "away_from_product" ? 0.7 : 0.5, evidence_count: 1 }]
     : [];

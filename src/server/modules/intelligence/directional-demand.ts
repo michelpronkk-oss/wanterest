@@ -12,6 +12,7 @@ export type DirectionalDemand = {
   demand_direction: DemandDirection;
   demand_target_type: DemandTargetType;
   demand_target_name: string | null;
+  scanned_product_entity_evidence: "absent" | "valid" | "invalidated";
   source_products: string[];
   speaker_role: SpeakerRole;
   positive_for_product: boolean | null;
@@ -89,6 +90,19 @@ function explicitUnnamedDestination(textValue: string): string | null {
   return name && !/^(?:A|An|The|This|That|Another|Other)$/i.test(name) && !/^[A-Z]{2,}$/.test(name) ? name : null;
 }
 
+function explicitAlternativeTarget(textValue: string): string | null {
+  const match = textValue.match(/\b(?:alternative(?:s)?|replacement(?:s)?)\s+(?:to|for)\s+(?:the\s+)?([A-Z][A-Za-z0-9.+-]{1,79})\b/i);
+  const name = match?.[1]?.trim();
+  return name && !/^(?:A|An|The|This|That|Another|Other)$/i.test(name) ? name : null;
+}
+
+function hasSamePropositionProductIntent(textValue: string, productName: string): boolean {
+  const escaped = escapeRegExp(productName);
+  const directTarget = new RegExp(`\\b(?:need|needs|want|wants|looking\\s+for|consider|considering|evaluate|evaluating|recommend|recommends|suggest|suggests|buy|pricing)\\s+(?:the\\s+)?${escaped}(?:\\b|\\s+(?:app|software|tool|platform)\\b)`, "i");
+  const productRequest = new RegExp(`\\b${escaped}\\b\\s+(?:supports?|has|offers?|provides?|needs?|requires?|is\\s+(?:missing|too\\s+[^.!?]{1,40}))\\b`, "i");
+  return directTarget.test(textValue) || productRequest.test(textValue);
+}
+
 function sourceNamesFor(textValue: string, names: string[], destination: string | null, excludedNames: string[] = [], groundingEnabled = false): string[] {
   const clauses = [
     ...[...textValue.matchAll(/\b(?:leave|leaving|migrat(?:e|ing)\s+from|switch(?:ing)?\s+from|alternative(?:s)?\s+(?:to|for)|replace|replacing|replacement\s+for|parity\s+with|from)\b[^.!?]{0,160}/gi)].map((match) => match[0]),
@@ -141,6 +155,9 @@ export function deriveDirectionalDemand(input: DirectionalDemandInput): Directio
   const names = knownNames(input);
   const productName = input.productName;
   const repository = repositoryProduct(input, names);
+  const candidateProductMentioned = namesIn(textValue, [productName], false).length > 0;
+  const productMentioned = namesIn(textValue, [productName], groundingEnabled).length > 0;
+  const scanned_product_entity_evidence: DirectionalDemand["scanned_product_entity_evidence"] = productMentioned ? "valid" : candidateProductMentioned ? "invalidated" : "absent";
   const destination = destinationFor(textValue, names) ?? (repository ? null : explicitUnnamedDestination(textValue));
   const sourceProducts = sourceNamesFor(textValue, names, destination, repository ? [repository] : [], groundingEnabled);
   if (destination && destination.toLowerCase() !== productName.toLowerCase() && new RegExp(`(?:^|[^A-Za-z0-9])${escapeRegExp(productName)}\\s+(?:is|was|has become)\\s+(?:too expensive|too complex|unreliable|slow|frustrating)`, "i").test(textValue)) sourceProducts.push(productName);
@@ -153,7 +170,8 @@ export function deriveDirectionalDemand(input: DirectionalDemandInput): Directio
   // When disabled, the original inline detection runs unchanged.
   const implementation = groundingEnabled ? (detectIntentTarget(textValue, true) === "authentication" || detectIntentTarget(textValue, true) === "implementation") : legacyImplementationDetection(textValue);
   const featureRequest = /\b(?:needs?|requires?|wants?|should|must have|add|support|import(?:er|ing)?|bring|there is no way|missing|lacks?)\b/i.test(textValue);
-  const productMentioned = namesIn(textValue, names, groundingEnabled).some((name) => name.toLowerCase() === productName.toLowerCase());
+  const productTargetBound = productMentioned && hasSamePropositionProductIntent(textValue, productName);
+  const alternativeTarget = explicitAlternativeTarget(textValue);
   const hostProductContext = hasHostProductContext(textValue, repository, sourceProducts, productName);
 
   let demand_direction: DemandDirection = "unknown";
@@ -187,20 +205,25 @@ export function deriveDirectionalDemand(input: DirectionalDemandInput): Directio
     demand_target_type = "third_party_product";
     demand_target_name = repository;
     positive_for_product = false;
+  } else if (productTargetBound) {
+    demand_direction = "toward_product";
+    demand_target_type = "scanned_product";
+    demand_target_name = productName;
+    positive_for_product = true;
+  } else if (productMentioned && alternativeTarget && !productTargetBound) {
+    demand_direction = "contextual";
+    demand_target_type = "third_party_product";
+    demand_target_name = alternativeTarget;
+    positive_for_product = false;
   } else if (/\b(?:alternative(?:s)?|instead of|other options?)\b/i.test(textValue) && sourceProducts.length > 0) {
     demand_direction = "toward_category";
     demand_target_type = "category";
     demand_target_name = input.category ?? null;
-    positive_for_product = true;
-  } else if (productMentioned && /\b(?:need|needs|want|wants|looking for|evaluate|evaluating|buy|pricing|support|feature)\b/i.test(textValue)) {
-    demand_direction = "toward_product";
-    demand_target_type = "scanned_product";
-    demand_target_name = productName;
     positive_for_product = true;
   }
 
   const stance: AuthorialStance = groundingEnabled ? classifyAuthorialStance({ text: textValue, hasCompetitorOrAlternativeClaim: sourceProducts.length > 0 || Boolean(destination) }).stance : "unknown";
   const role = speakerRole(input, textValue, positive_for_product, stance);
   if (role === "unknown" && demand_target_type === "third_party_product") positive_for_product = false;
-  return { demand_direction, demand_target_type, demand_target_name, source_products: sourceProducts, speaker_role: role, positive_for_product, host_product_context: hostProductContext, authorial_stance: stance };
+  return { demand_direction, demand_target_type, demand_target_name, scanned_product_entity_evidence, source_products: sourceProducts, speaker_role: role, positive_for_product, host_product_context: hostProductContext, authorial_stance: stance };
 }
