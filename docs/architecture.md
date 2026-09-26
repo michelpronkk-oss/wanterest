@@ -4321,3 +4321,37 @@ is not executed in production by this amendment.
 `product_match_evaluation_fingerprint_v2`, HN Search v2, 12A.1 telemetry, 12A.2 partitions, source adapters,
 signal lifecycle semantics, durable clustering semantics, the semantic scan budget, and the fidelity
 workspace allowlist are all untouched - this amendment adds preview infrastructure only.
+
+### 12A.3A.1 Amendment V — Semantic Entity and Target Fidelity (`semantic_target_binding_v1`) — IMPLEMENTED_LOCALLY
+
+**Why this exists.** The read-only signal preview exposed two deterministic fidelity gaps that are not
+safe to handle through wording alone: a common-word occurrence such as `linear regression` could still
+leave a named `Linear` product signal qualified through generic profile/recommendation relevance, and a
+product mention could inherit an unrelated evaluation phrase from another clause (for example, a tool
+described as lighter than `Jira/Linear` followed by “evaluating alternatives to Beads”). These are
+evidence-binding errors, not ranking-threshold or provider-quality problems.
+
+**Entity evidence fail-closed.** Entity disambiguation records whether apparent scanned-product evidence
+is absent, valid, or fully invalidated as a non-entity/common-word use. When all apparent scanned-product
+mentions are invalidated, generic pain, recommendation, profile, category, or match-relevance evidence
+cannot reconstruct a named-product target. Category demand remains eligible only when the deterministic
+target is explicitly category-level; it must not be serialized or worded as demand for the scanned product.
+An explicit valid product occurrence remains eligible and is never globally blacklisted by the product name.
+
+**Same-proposition target binding.** Switching, evaluation, alternative, replacement, and related intent
+language may bind to a named product only when the existing deterministic evidence places that target in
+the same clause/proposition or an explicit relation pattern. A product mention in one comparison clause
+cannot inherit intent from an unrelated clause. Existing explicit relations such as “evaluating Linear as
+a Jira alternative” and “moving from Jira to Linear” remain valid. No general NLP framework or new provider
+call is introduced.
+
+**Materialization boundary.** These guards run before the existing qualification/materialization decision.
+They preserve category-level demand and existing authorial-stance handling, while preventing a named
+product signal from surviving solely because numeric relevance or generic intent thresholds remain high.
+The existing qualification thresholds, semantic verification budget, retrieval/candidate-selection
+versions, workspace allowlist, cluster semantics, and signal lifecycle semantics remain frozen.
+
+**Frozen**: qualification numeric thresholds, `query_planning_v7`, `candidate_selection_v3`,
+`maxEvaluations=15`, retrieval/source adapters, `timestamp_canonicalization_v1`,
+`evaluation_semantic_cache_v2`, semantic provider budget, workspace allowlist, cluster semantics, and
+signal lifecycle semantics are unchanged by this amendment.
