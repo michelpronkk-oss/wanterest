@@ -404,25 +404,37 @@ export class IntelligenceService {
 
   async qualificationProfile(product: ProductRow, profile: import("../../db/database.helpers").DemandProfileRow): Promise<SignalQualificationProfile> {
     const snapshots = await this.repository.getProductSnapshots(product.id);
-    const snapshot = snapshots.find((candidate) => candidate.id === product.current_snapshot_id) ?? snapshots.at(-1);
-    const demandProfileV2 = snapshot ? readDemandProfileV2(snapshot) : null;
-    if (demandProfileV2) {
-      const projection = projectDemandProfileV2ForQualification(demandProfileV2);
-      return { ...projection, profile_version: demandProfileV2.version, market_context: buildMarketContext(demandProfileV2) };
-    }
-    return {
-      relevant_pains: asStrings(profile.problems),
-      relevant_outcomes: asStrings(profile.desired_outcomes),
-      relevant_intents: [],
-      relevant_jtbd: asStrings(profile.jobs),
-      relevant_features: asStrings(profile.capabilities),
-      buyer_roles: asStrings(profile.audience),
-      competitors: [],
-      alternatives: asStrings(profile.alternatives),
-      geography: { market_scope: "global", primary_country_code: null, primary_region: null, primary_city: null, location_dependency: 0, demand_geography_terms: [] },
-      profile_confidence: profile.confidence,
-      primary_category: product.name,
-      profile_version: null,
-    };
+    return buildQualificationProfile(product, profile, snapshots);
   }
+}
+
+/**
+ * Pure projection of a product's current snapshot/demand profile into the shape
+ * qualifySignal() needs. Extracted out of IntelligenceService.qualificationProfile
+ * so any other read path (e.g. the revalidation preview) that already has the
+ * product/profile/snapshots in hand can reuse the exact same projection logic
+ * instead of re-deriving it - qualification fidelity depends on both paths
+ * computing an identical profile for the same inputs.
+ */
+export function buildQualificationProfile(product: ProductRow, profile: import("../../db/database.helpers").DemandProfileRow, snapshots: ProductSnapshotRow[]): SignalQualificationProfile {
+  const snapshot = snapshots.find((candidate) => candidate.id === product.current_snapshot_id) ?? snapshots.at(-1);
+  const demandProfileV2 = snapshot ? readDemandProfileV2(snapshot) : null;
+  if (demandProfileV2) {
+    const projection = projectDemandProfileV2ForQualification(demandProfileV2);
+    return { ...projection, profile_version: demandProfileV2.version, market_context: buildMarketContext(demandProfileV2) };
+  }
+  return {
+    relevant_pains: asStrings(profile.problems),
+    relevant_outcomes: asStrings(profile.desired_outcomes),
+    relevant_intents: [],
+    relevant_jtbd: asStrings(profile.jobs),
+    relevant_features: asStrings(profile.capabilities),
+    buyer_roles: asStrings(profile.audience),
+    competitors: [],
+    alternatives: asStrings(profile.alternatives),
+    geography: { market_scope: "global", primary_country_code: null, primary_region: null, primary_city: null, location_dependency: 0, demand_geography_terms: [] },
+    profile_confidence: profile.confidence,
+    primary_category: product.name,
+    profile_version: null,
+  };
 }

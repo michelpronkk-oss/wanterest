@@ -1,5 +1,3 @@
-import "server-only";
-
 import { canMaterializeQualifiedSignal, failClosedQualification, qualifySignal, type SignalQualificationInput } from "./signal-qualification.service";
 import type { SignalQualification } from "./signal-qualification.schemas";
 import { transitionSignalLifecycle, type SignalLifecycleRepository } from "./signal-lifecycle.service";

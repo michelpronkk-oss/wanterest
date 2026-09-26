@@ -1,4 +1,4 @@
-export { IntelligenceService, PRODUCT_MATCH_EVALUATION_FINGERPRINT_VERSION, productMatchEvaluationFingerprint } from "./intelligence.service";
+export { buildQualificationProfile, IntelligenceService, PRODUCT_MATCH_EVALUATION_FINGERPRINT_VERSION, productMatchEvaluationFingerprint } from "./intelligence.service";
 export type { ProductMatchEvaluationFingerprintInput } from "./intelligence.service";
 export { SIGNAL_LIFECYCLE_VERSION, signalLifecycleReasonSchema, signalLifecycleStatusSchema, transitionSignalLifecycle } from "./signal-lifecycle.service";
 export { InMemoryIntelligenceRepository } from "./intelligence.repository";
@@ -41,3 +41,9 @@ export type { DemandDirection, DemandTargetType, MarketResonance, SignalQualific
 export type { SignalQualificationInput, SignalQualificationProfile } from "./signal-qualification.service";
 export type { SignalQualificationFixture } from "./signal-qualification.fixtures";
 export type { IntelligenceRepository } from "./intelligence.repository";
+// Neither signal-revalidation.service.ts nor signal-revalidation-preview.service.ts (which
+// imports decideRevalidationAction from it as a real value, not just a type) is re-exported
+// from this barrel: signal-revalidation.service.ts carries its own `import "server-only"`,
+// and re-exporting either from here would make every existing consumer of "./intelligence"
+// (including client-safe contexts that only need e.g. schemas) transitively load it. Both are
+// imported directly by their own file paths wherever they are used.
