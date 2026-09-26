@@ -4111,3 +4111,102 @@ independently explicit second allowlist - not merged with it, not replaced by it
   materialization gate activate and a verified upgrade succeed for that one workspace, and observe every
   other workspace's qualification output is provably unchanged (the scoped helper returns `false` for
   them regardless of the global flag), before ever widening the allowlist.
+
+### 12A.3A.1 Amendment III — Evaluation Semantic Cache (`evaluation_semantic_cache_v2`) — IMPLEMENTED_LOCALLY
+
+**Bug confirmed during the real fidelity-canary retry after the P0 timestamp hotfix
+(`timestamp_canonicalization_v1`) reached production.** `matchProduct()`'s persisted-evaluation reuse
+check (`intelligence.service.ts`) is a strict pipeline: `qualifySignal`/`qualifySignalWithReasoning` always
+runs first (with a `try/catch` around it converting any throw into `failClosedQualification()`), and only
+*afterward* does the function compute an `input_fingerprint` and call
+`getEvaluation(matchId, engineVersionId, inputFingerprint)` - if a row with that exact fingerprint already
+exists, it is returned unchanged and the just-computed `qualification` is discarded without ever being
+persisted. Before this amendment, that fingerprint (`sha256Json({ matchId, profileId, analysisId,
+engineVersionId, qualificationVersion: qualification.version, thresholdVersion, demandProfileVersion,
+groundingEnabled, reasoningOverrideFingerprint })`) hashed only identity fields and version *strings* -
+never the qualification's own computed content. The timestamp hotfix was a correctness-only change: it
+did not bump `SIGNAL_QUALIFICATION_VERSION`, `SIGNAL_QUALIFICATION_THRESHOLD_VERSION`, or
+`demand_profile_version` (rightly - none of those actually changed meaning). So for any candidate already
+evaluated *before* the hotfix, the freshly recomputed, now-correct, non-crashing qualification produced the
+exact same fingerprint as the old crashed `failClosedQualification()` fallback (both stamp the same version
+constants), `getEvaluation` found the pre-existing row, and the corrected result was silently thrown away -
+confirmed directly against production: the two evaluations from canary scan `6b3b0e02-…` were returned
+byte-for-byte identical (same `id`, same `created_at` to the microsecond) by canary retry scan
+`be8d1d8a-…`, and zero `product_match_evaluations` rows were created between the two scans.
+
+**Required invariants** (this amendment's contract):
+
+1. *A persisted product-match evaluation may be reused only when the current, freshly computed qualification
+   result is semantically equivalent to the cached one* - not merely when a handful of identity/version
+   strings match.
+2. *A failed generic fallback evaluation (`failClosedQualification()`) is never reusable as a successful
+   semantic cache result* - a crash-derived row and a genuinely successful one must never share a cache
+   identity.
+
+**Fix: `product_match_evaluation_fingerprint_v2`.** Because `qualification` is already fully computed
+before the fingerprint is derived, the fingerprint is built from the qualification's own content instead of
+a hand-maintained list of version strings:
+
+```
+sha256Json({
+  fingerprintVersion: "product_match_evaluation_fingerprint_v2",
+  matchId, profileId, analysisId, engineVersionId,
+  groundingEnabled,
+  reasoningOverrideFingerprint,
+  qualification: <qualification, minus dimensions.freshness and demand_quality_score>,
+})
+```
+
+`SignalQualification` is already a pure, deterministic projection of its inputs (existing test: "is fully
+deterministic - replaying the entire fixture set twice yields identical results"), and `sha256Json` already
+canonicalizes object key order recursively before hashing (`stableJsonStringify`/`canonicalize` in
+`ingestion/hash.ts`), so this is a direct, order-independent content hash - no hand-maintained field list to
+fall out of sync the next time a correctness-only change ships. Invariant 2 falls out of this by
+construction rather than needing a special case: `failClosedQualification()`'s output differs from a
+genuine result in `diagnostics.failed`, `failure_code`, `status`, `reason_codes`, and effectively every other
+field, so the two can never hash identically.
+
+**Two fields are deliberately excluded**: `dimensions.freshness` and `demand_quality_score` (which blends
+freshness in - `scoreDemandQuality()`). Both are continuous functions of the evaluation's own wall-clock
+`now` by design (freshness is meant to decay over time), so two calls microseconds apart with byte-identical
+business inputs already compute measurably different values - including them would make even an
+instantaneous replay of the exact same content miss the cache. This is the same "current wall-clock
+timestamp" exclusion the fingerprint already needs for job/scan/trigger metadata, just expressed as a
+derived score rather than a raw timestamp. Freshness scoring itself, and every other ranking component, is
+unmodified - only what participates in *cache identity* is narrowed. Confirmed by the pre-existing test
+"still reuses the cached evaluation when the qualification version has NOT changed" (`intelligence.test.ts`),
+which calls `matchProduct` twice back-to-back with no explicit `now` and requires a cache hit - this failed
+under a naive whole-object hash (each call's `new Date()` a few microseconds apart already shifted
+`freshness`/`demand_quality_score`) and passes with these two fields excluded.
+
+**Timestamp representation is already handled for free.** `evidence_published_at` in `qualification` is
+already the canonicalized output of `canonicalTimestamp()` (the P0 hotfix) - two different raw
+representations of the same instant produce the identical canonical string before they ever reach this
+fingerprint, so cache-hit case G ("equivalent ISO representations of the same instant" → reuse) requires no
+special handling here; it was already solved one layer down.
+
+**Immutability preserved, DB-enforced.** `product_match_evaluations` already carries a
+`before update or delete ... prevent_phase3_history_mutation()` trigger (Phase 3 migration) - the table
+physically cannot be mutated in place. A cache miss can therefore only ever mean *insert a new row and move
+the current pointer* (`setCurrentEvaluation`, which updates `product_matches.current_match_evaluation_id`),
+never rewrite history. The old failed row remains exactly as it was, as historical/audit evidence; every
+downstream reader (`rankEvaluation`, signal materialization, `demand-clustering.repository.ts`'s
+`current_match_evaluation_id` reads) follows the pointer or the `matchProduct()` return value directly, so
+none of them need to change to pick up the corrected evaluation.
+
+**Concurrency/idempotency: no migration, no new locking.** `product_match_evaluations` already has a DB-level
+`unique (product_match_id, match_engine_version_id, input_fingerprint)` constraint, and
+`IntelligenceRepository.createEvaluation()` already retries a `23505` unique-violation by re-reading and
+returning the existing row (the same pattern already used by `createMatch`/`createRanking`). This protection
+is agnostic to how the fingerprint string itself is derived, so it continues to guarantee two concurrent
+workers computing the same v2 fingerprint cannot create two "current" rows - no schema change, no new
+locking primitive.
+
+**No migration.** Pure application-layer change to how one string is derived; no schema, RLS, or table
+change. Old v1-fingerprint rows remain valid historical rows under their original `input_fingerprint` value
+- they are never rewritten, and no backfill runs against them.
+
+**Frozen**: `query_planning_v7`, Retrieval Precision V1, Source Health V1, `candidate_selection_v3`,
+`maxEvaluations=15`, qualification numeric thresholds, HN Search v2, 12A.1 telemetry, 12A.2 partition
+semantics, 12A.3A retrieval, the fidelity workspace allowlist, and the semantic call budget are all
+untouched by this amendment - it is evaluation persistence/cache correctness only.
