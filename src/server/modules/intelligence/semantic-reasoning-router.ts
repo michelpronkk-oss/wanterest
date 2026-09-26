@@ -2,17 +2,39 @@ import { createHash } from "node:crypto";
 
 import type { ConversationMarketReasoning } from "./signal-qualification.schemas";
 
-export const SEMANTIC_REASONING_ROUTER_VERSION = "semantic_reasoning_router_v1" as const;
+export const SEMANTIC_REASONING_ROUTER_VERSION = "semantic_reasoning_router_v2" as const;
 export const SEMANTIC_REASONING_PROMPT_VERSION = "semantic_reasoning_prompt_v1" as const;
 export type SemanticReasoningRoute = "deterministic_only" | "reject_without_llm" | "llm_reasoning";
-export type SemanticReasoningReason = "obvious_noise" | "implementation_safeguard" | "explicit_direction" | "ambiguous_direction" | "unclear_buyer_context" | "unknown_product_entity" | "conflicting_semantic_evidence";
+export type SemanticReasoningUncertaintyReason = "obvious_noise" | "implementation_safeguard" | "explicit_direction" | "ambiguous_direction" | "unclear_buyer_context" | "unknown_product_entity" | "conflicting_semantic_evidence";
 
-export function routeSemanticReasoning(input: { deterministic: ConversationMarketReasoning; text: string; relevance: number; noise: number }): { route: SemanticReasoningRoute; reasons: SemanticReasoningReason[]; priority: number } {
+/**
+ * 12A.3A.1 amendment (materialization_safety_gate_v1): a bounded, named set of
+ * high-risk claim types that must be either deterministically low-risk or
+ * verified before they can materialize, regardless of how confident the
+ * deterministic pass is. See docs/architecture.md's "12A.3A.1 Amendment"
+ * section for the exact contract each reason represents.
+ */
+export type MaterializationSafetyReason = "high_risk_switching_claim" | "high_risk_competitor_claim" | "high_risk_purchase_claim" | "high_risk_wtp_claim" | "high_risk_migration_claim" | "high_risk_urgency_claim" | "ambiguous_entity_claim" | "ambiguous_author_stance";
+
+export type SemanticReasoningReason = SemanticReasoningUncertaintyReason | MaterializationSafetyReason;
+
+/**
+ * v2 (materially changed from v1, truthfully re-versioned): gains an optional
+ * materializationRisk input. A non-empty value forces llm_reasoning at top
+ * priority - overriding the confidence>=0.75 "explicit_direction" fast path
+ * that previously let a confident-but-high-risk claim through untouched -
+ * unless the content is obvious noise/promotional (still rejected outright,
+ * never worth a call) or implementation_only (definitionally not a
+ * materializable claim). Every other input/behavior is unchanged from v1: a
+ * caller that never passes materializationRisk sees identical routing.
+ */
+export function routeSemanticReasoning(input: { deterministic: ConversationMarketReasoning; text: string; relevance: number; noise: number; materializationRisk?: MaterializationSafetyReason[] }): { route: SemanticReasoningRoute; reasons: SemanticReasoningReason[]; priority: number } {
   const value = input.text.trim();
   if (!value || value.length < 24 || input.noise >= 0.75 || input.deterministic.promotional_content) return { route: "reject_without_llm", reasons: ["obvious_noise"], priority: 0 };
   if (input.deterministic.implementation_only) return { route: "deterministic_only", reasons: ["implementation_safeguard"], priority: 0 };
+  if (input.materializationRisk?.length) return { route: "llm_reasoning", reasons: input.materializationRisk, priority: 2 };
   if (input.deterministic.direction_relative_to_scanned_product !== "unknown" && input.deterministic.confidence >= 0.75) return { route: "deterministic_only", reasons: ["explicit_direction"], priority: 0 };
-  const reasons: SemanticReasoningReason[] = [];
+  const reasons: SemanticReasoningUncertaintyReason[] = [];
   if (input.deterministic.direction_relative_to_scanned_product === "unknown") reasons.push("ambiguous_direction");
   if (!input.deterministic.buyer_context) reasons.push("unclear_buyer_context");
   if (input.deterministic.mentioned_products.some((item) => item.confidence < 0.5)) reasons.push("unknown_product_entity");

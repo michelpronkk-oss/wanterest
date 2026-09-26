@@ -1,5 +1,5 @@
 import type { ConversationMarketReasoning } from "./signal-qualification.schemas";
-import { routeSemanticReasoning, semanticReasoningFingerprint, type SemanticReasoningReason, type SemanticReasoningRoute } from "./semantic-reasoning-router";
+import { routeSemanticReasoning, semanticReasoningFingerprint, type MaterializationSafetyReason, type SemanticReasoningReason, type SemanticReasoningRoute } from "./semantic-reasoning-router";
 
 export type ShadowPlanItem = { conversationId: string; route: SemanticReasoningRoute; reasons: SemanticReasoningReason[]; priority: number; fingerprint: string | null; execution: "none" | "cache_hit" | "scheduled_for_llm" | "budget_skipped" };
 export type ShadowPlanDiagnostics = { deterministicOnlyCount: number; rejectWithoutLlmCount: number; llmRequestedCount: number; cacheHitCount: number; scheduledForLlmCount: number; budgetSkippedCount: number };
@@ -12,6 +12,8 @@ export type SemanticShadowPlanningCandidate = {
   noise: number;
   fingerprintInput: unknown;
   reasoningVersion: string;
+  /** 12A.3A.1 amendment: non-empty when the deterministic-only qualification was capped pending verification (see evidence-grounding.ts's assessMaterializationRisk). Forces routeSemanticReasoning to llm_reasoning at top priority regardless of deterministic confidence. */
+  materializationRisk?: MaterializationSafetyReason[];
 };
 
 export async function planSemanticShadowReasoning(input: { enabled: boolean; maxCalls: number; candidates: SemanticShadowPlanningCandidate[]; cacheHit: (input: { fingerprint: string; candidate: SemanticShadowPlanningCandidate }) => Promise<boolean> }): Promise<{ items: ShadowPlanItem[]; diagnostics: ShadowPlanDiagnostics }> {

@@ -35,7 +35,7 @@ function qualification(overrides: Partial<SignalQualification> = {}): SignalQual
     qualification_reason: "Fixture qualification.",
     evidence_published_at: null,
     resonance: { available: false, score: 0, likes: null, replies: null, reposts: null, upvotes: null, reactions: null, comments: null, source_normalized_metrics: {}, reason: "not evaluated" },
-    diagnostics: { qualification_version: "signal_qualification_v1_7", threshold_version: "signal_qualification_thresholds_v1", market_context_version: "market_context_v1", conversation_reasoning_version: "conversation_market_reasoning_v1", analysis_version: null, demand_profile_version: null, profile_confidence: 0.9, evidence_validated: true, gate_failures: [], failed: false, failure_code: null, grounding_version: "evidence_grounding_v1", grounding_verification_required: false, grounding_downgraded_claims: [] },
+    diagnostics: { qualification_version: "signal_qualification_v1_7", threshold_version: "signal_qualification_thresholds_v1", market_context_version: "market_context_v1", conversation_reasoning_version: "conversation_market_reasoning_v1", analysis_version: null, demand_profile_version: null, profile_confidence: 0.9, evidence_validated: true, gate_failures: [], failed: false, failure_code: null, grounding_version: "evidence_grounding_v1", grounding_verification_required: false, grounding_downgraded_claims: [], materialization_gate_version: "materialization_safety_gate_v1", materialization_verification_required: false, materialization_risk_reasons: [], materialization_verified: false },
     ...overrides,
   };
 }
@@ -147,6 +147,7 @@ function freshInputFixture(): SignalQualificationInput {
     match: { decision: "rejected", matchConfidence: 0.1, rationale: "no longer relevant", evidence: { painAlignment: [], buyerAlignment: [], capabilityAlignment: [], intentRelevance: [] } },
     profile: { relevant_pains: [], relevant_outcomes: [], relevant_intents: [], relevant_jtbd: [], relevant_features: [], buyer_roles: [], competitors: [], alternatives: [], geography: { market_scope: "global", primary_country_code: null, primary_region: null, primary_city: null, location_dependency: 0, demand_geography_terms: [] }, profile_confidence: 0.9, primary_category: "CRM", profile_version: null },
     now: new Date("2026-09-26T00:00:00.000Z"),
+    groundingEnabled: true,
   };
 }
 
@@ -202,5 +203,15 @@ describe("signal revalidation orchestration", () => {
     const candidate: SignalRevalidationCandidate = { signalId: deterministicUuid("missing-signal"), workspaceId, previousQualification: qualification({ status: "qualified" }), freshInput: freshInputFixture() };
     const outcomes = await revalidateSignalBatch(repository, [candidate], new Date("2026-09-26T00:00:00.000Z"));
     expect(outcomes[0]?.action).toBe("skipped");
+  });
+
+  it("12A.3A.1 amendment: a flag-off revalidation pass is a deliberate no-op - it never invalidates, even a signal that would fail closed under the new gate", async () => {
+    const signal = signalRow();
+    const repository = repositoryFixture(signal);
+    const candidate: SignalRevalidationCandidate = { signalId: signal.id, workspaceId, previousQualification: qualification({ status: "qualified" }), freshInput: { ...freshInputFixture(), groundingEnabled: false } };
+    const outcome = await revalidateSignal(repository, candidate, new Date("2026-09-26T00:00:00.000Z"));
+    expect(outcome.action).toBe("skipped");
+    expect(outcome.reason).toBe("evidence_fidelity_grounding_disabled");
+    expect(repository.updateSignal).not.toHaveBeenCalled();
   });
 });

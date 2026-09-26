@@ -1,7 +1,15 @@
-import type { ConversationMarketReasoning } from "./signal-qualification.schemas";
-import { routeSemanticReasoning, type SemanticReasoningReason } from "./semantic-reasoning-router";
+import type { ConversationMarketReasoning, SignalQualificationPrimaryIntent } from "./signal-qualification.schemas";
+import { routeSemanticReasoning, type MaterializationSafetyReason, type SemanticReasoningReason } from "./semantic-reasoning-router";
+import { detectWillingnessToPay } from "./semantic-verification.schemas";
+import type { DirectionalDemand } from "./directional-demand";
 
 export const EVIDENCE_GROUNDING_VERSION = "evidence_grounding_v1" as const;
+/** 12A.3A.1 amendment: the materialization safety gate, distinct from (and layered on top of) the v1 downgrade gate above. */
+export const MATERIALIZATION_SAFETY_GATE_VERSION = "materialization_safety_gate_v1" as const;
+
+export function evidenceFidelityGroundingEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return env.EVIDENCE_FIDELITY_GROUNDING_ENABLED === "true";
+}
 
 /** Minimum-safe temporal fix: past this age, wording must not imply current/ongoing demand. */
 export const EVIDENCE_HISTORICAL_THRESHOLD_DAYS = 90;
@@ -32,8 +40,8 @@ export type EvidenceGroundingGate = {
  * the (possibly trimmed) reasoning and the candidate can still qualify on its
  * remaining dimensions (pain, specificity, evidence quality, ...).
  */
-export function groundDeterministicReasoning(input: { reasoning: ConversationMarketReasoning; text: string; relevance: number; noise: number }): { reasoning: ConversationMarketReasoning; gate: EvidenceGroundingGate } {
-  const decision = routeSemanticReasoning({ deterministic: input.reasoning, text: input.text, relevance: input.relevance, noise: input.noise });
+export function groundDeterministicReasoning(input: { reasoning: ConversationMarketReasoning; text: string; relevance: number; noise: number; materializationRisk?: MaterializationSafetyReason[] }): { reasoning: ConversationMarketReasoning; gate: EvidenceGroundingGate } {
+  const decision = routeSemanticReasoning({ deterministic: input.reasoning, text: input.text, relevance: input.relevance, noise: input.noise, materializationRisk: input.materializationRisk });
   if (decision.route !== "llm_reasoning") {
     return { reasoning: input.reasoning, gate: { version: EVIDENCE_GROUNDING_VERSION, verificationRequired: false, reasons: decision.reasons, downgradedClaimTypes: [] } };
   }
@@ -58,4 +66,25 @@ export function temporalGroundingClause(publishedAt: string | null, now: Date): 
   const isoDate = publishedAt.slice(0, 10);
   if (ageDays >= EVIDENCE_HISTORICAL_THRESHOLD_DAYS) return ` This was published on ${isoDate} and may not reflect current demand.`;
   return ` Published on ${isoDate}.`;
+}
+
+/**
+ * 12A.3A.1 amendment: the bounded, named high-risk claim contract. Pure and
+ * deterministic - no LLM call. Only meaningful to run once a candidate would
+ * otherwise materialize (qualified/high_confidence_signal) on its ordinary
+ * dimensions; a candidate that would reject/stay weak anyway is never a
+ * materialization risk and should not be assessed (that is the deterministic
+ * zero-LLM path, not a side effect of this function).
+ */
+export function assessMaterializationRisk(input: { primaryIntent: SignalQualificationPrimaryIntent; demand: DirectionalDemand; urgency: number | null; text: string; mentionedProducts: ConversationMarketReasoning["mentioned_products"] }): MaterializationSafetyReason[] {
+  const reasons: MaterializationSafetyReason[] = [];
+  if (input.primaryIntent === "switching_intent") reasons.push("high_risk_switching_claim");
+  if (input.demand.source_products.length > 0 && (input.demand.demand_target_type === "third_party_product" || input.demand.demand_target_type === "category")) reasons.push("high_risk_competitor_claim");
+  if (input.primaryIntent === "purchase_research" || input.primaryIntent === "vendor_evaluation") reasons.push("high_risk_purchase_claim");
+  if (detectWillingnessToPay(input.text)) reasons.push("high_risk_wtp_claim");
+  if (input.demand.demand_direction === "away_from_product" && input.demand.source_products.length > 0) reasons.push("high_risk_migration_claim");
+  if (input.urgency !== null && input.urgency >= 0.7) reasons.push("high_risk_urgency_claim");
+  if (input.mentionedProducts.some((product) => product.confidence < 0.5)) reasons.push("ambiguous_entity_claim");
+  if (input.demand.speaker_role === "buyer" && input.demand.authorial_stance !== "buyer") reasons.push("ambiguous_author_stance");
+  return [...new Set(reasons)];
 }

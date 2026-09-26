@@ -71,6 +71,10 @@ function qualificationFor(status: SignalQualification["status"], candidateId: st
       grounding_version: "evidence_grounding_v1",
       grounding_verification_required: false,
       grounding_downgraded_claims: [],
+      materialization_gate_version: "materialization_safety_gate_v1",
+      materialization_verification_required: false,
+      materialization_risk_reasons: [],
+      materialization_verified: false,
     },
   };
 }

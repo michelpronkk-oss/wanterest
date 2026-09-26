@@ -11,9 +11,9 @@ import type { DemandProfileV2Engine, DemandProfileV2Hints } from "./demand-profi
 import { calculateOpportunityScore, freshnessScore, INTENT_STRENGTH, RANKING_FORMULA_VERSION, sourceQuality, type RankingComponents } from "./ranking";
 import type { ConversationAnalysisEngine, DemandProfileEngine, ProductMatchingEngine } from "./engines";
 import type { IntelligenceRepository } from "./intelligence.repository";
-import { canMaterializeQualifiedSignal, failClosedQualification, qualificationFromEvidence, qualifySignal, serializeQualification, type SignalQualificationProfile } from "./signal-qualification.service";
+import { canMaterializeQualifiedSignal, failClosedQualification, qualificationFromEvidence, qualifySignal, qualifySignalWithReasoning, serializeQualification, type SignalQualificationProfile } from "./signal-qualification.service";
 import { isDuplicateSignalContent, inspectSignalContent } from "./signal-quality";
-import type { SignalQualification } from "./signal-qualification.schemas";
+import type { ConversationMarketReasoning, SignalQualification } from "./signal-qualification.schemas";
 import { classifyConversationIntent } from "./intent-semantics";
 import { buildMarketContext } from "./market-context";
 
@@ -151,7 +151,7 @@ export class IntelligenceService {
     return analysis;
   }
 
-  async matchProduct(product: ProductRow, profileId: string, analysisId: string, engineVersionId: string, engine: ProductMatchingEngine) {
+  async matchProduct(product: ProductRow, profileId: string, analysisId: string, engineVersionId: string, engine: ProductMatchingEngine, options: { groundingEnabled?: boolean; reasoningOverride?: ConversationMarketReasoning; overrideDroppedClaims?: string[] } = {}) {
     const profiles = await this.repository.getDemandProfiles(product.id);
     const profile = profiles.find((row) => row.id === profileId);
     if (!profile) throw new AppError("NOT_FOUND", "Demand profile was not found.");
@@ -165,13 +165,20 @@ export class IntelligenceService {
     const match = await this.repository.getMatch(product.workspace_id, product.id, conversation.id) ?? await this.repository.createMatch({ workspace_id: product.workspace_id, product_id: product.id, conversation_id: conversation.id, evidence_node_id: deterministicUuid(`evidence:match:${product.id}:${conversation.id}`) });
     await this.repository.linkProvenance({ derivedEvidenceNodeId: match.evidence_node_id, sourceEvidenceNodeId: conversation.evidence_node_id, relationType: "matches_conversation" });
     const qualificationProfile = await this.qualificationProfile(product, profile);
+    const qualificationInput = { candidateId: conversation.id, productId: product.id, productName: product.name, conversation, sourceItem, analysis, match: result, profile: qualificationProfile, groundingEnabled: options.groundingEnabled };
     let qualification: SignalQualification;
     try {
-      qualification = qualifySignal({ candidateId: conversation.id, productId: product.id, productName: product.name, conversation, sourceItem, analysis, match: result, profile: qualificationProfile });
+      qualification = options.reasoningOverride
+        ? qualifySignalWithReasoning(qualificationInput, options.reasoningOverride, options.overrideDroppedClaims ?? [])
+        : qualifySignal(qualificationInput);
     } catch (error) {
       qualification = failClosedQualification({ candidateId: conversation.id, productId: product.id, profile: qualificationProfile, analysis }, error instanceof Error ? error.message.slice(0, 120) : "QUALIFICATION_FAILED");
     }
-    const inputFingerprint = sha256Json({ matchId: match.id, profileId, analysisId, engineVersionId, qualificationVersion: qualification.version, thresholdVersion: qualification.diagnostics.threshold_version, demandProfileVersion: qualification.diagnostics.demand_profile_version });
+    // 12A.3A.1: groundingEnabled and any reasoning-override fingerprint are hashed
+    // in so flipping the flag, or a fresh verified upgrade, always recomputes
+    // instead of silently reusing a cached evaluation computed under different
+    // qualification/grounding semantics.
+    const inputFingerprint = sha256Json({ matchId: match.id, profileId, analysisId, engineVersionId, qualificationVersion: qualification.version, thresholdVersion: qualification.diagnostics.threshold_version, demandProfileVersion: qualification.diagnostics.demand_profile_version, groundingEnabled: options.groundingEnabled ?? false, reasoningOverrideFingerprint: options.reasoningOverride ? sha256Json(options.reasoningOverride) : null });
     const existing = await this.repository.getEvaluation(match.id, engineVersionId, inputFingerprint);
     if (existing) return existing;
     const evaluation = await this.repository.createEvaluation({ workspace_id: product.workspace_id, product_match_id: match.id, product_id: product.id, conversation_id: conversation.id, demand_profile_id: profile.id, conversation_analysis_id: analysis.id, match_engine_version_id: engineVersionId, evidence_node_id: deterministicUuid(`evidence:evaluation:${match.id}:${engineVersionId}:${inputFingerprint}`), input_fingerprint: inputFingerprint, match_confidence: result.matchConfidence, rationale: `${result.rationale} ${qualification.qualification_reason}`.trim(), evidence: json({ ...result.evidence, qualification: serializeQualification(qualification) }), decision: canMaterializeQualifiedSignal(qualification) ? "qualified" : qualification.status === "weak_candidate" ? "weak" : "rejected" });

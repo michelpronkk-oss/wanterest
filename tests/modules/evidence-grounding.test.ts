@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { EVIDENCE_GROUNDING_VERSION, EVIDENCE_HISTORICAL_THRESHOLD_DAYS, groundDeterministicReasoning, temporalGroundingClause } from "../../src/server/modules/intelligence/evidence-grounding";
+import { assessMaterializationRisk, EVIDENCE_GROUNDING_VERSION, EVIDENCE_HISTORICAL_THRESHOLD_DAYS, evidenceFidelityGroundingEnabled, groundDeterministicReasoning, MATERIALIZATION_SAFETY_GATE_VERSION, temporalGroundingClause } from "../../src/server/modules/intelligence/evidence-grounding";
 import type { ConversationMarketReasoning } from "../../src/server/modules/intelligence/signal-qualification.schemas";
+import type { DirectionalDemand } from "../../src/server/modules/intelligence/directional-demand";
 
 function reasoning(overrides: Partial<ConversationMarketReasoning> = {}): ConversationMarketReasoning {
   return {
@@ -106,5 +107,86 @@ describe("temporal grounding clause (minimum-safe temporal fix)", () => {
     const oldDate = new Date(now.getTime() - (EVIDENCE_HISTORICAL_THRESHOLD_DAYS + 1) * 86_400_000).toISOString();
     const clause = temporalGroundingClause(oldDate, now);
     expect(clause).toMatch(/may not reflect current demand/);
+  });
+});
+
+function demand(overrides: Partial<DirectionalDemand> = {}): DirectionalDemand {
+  return {
+    demand_direction: "unknown",
+    demand_target_type: "unknown",
+    demand_target_name: null,
+    source_products: [],
+    speaker_role: "unknown",
+    positive_for_product: null,
+    host_product_context: false,
+    authorial_stance: "unknown",
+    ...overrides,
+  };
+}
+
+describe("materialization risk assessment (materialization_safety_gate_v1)", () => {
+  it("is versioned", () => {
+    expect(MATERIALIZATION_SAFETY_GATE_VERSION).toBe("materialization_safety_gate_v1");
+  });
+
+  it("flags high_risk_switching_claim for a switching_intent candidate", () => {
+    expect(assessMaterializationRisk({ primaryIntent: "switching_intent", demand: demand(), urgency: null, text: "we switched", mentionedProducts: [] })).toContain("high_risk_switching_claim");
+  });
+
+  it("flags high_risk_competitor_claim when a specific competitor is named as a third-party/category target", () => {
+    expect(assessMaterializationRisk({ primaryIntent: "explicit_pain", demand: demand({ source_products: ["Jira"], demand_target_type: "third_party_product" }), urgency: null, text: "x", mentionedProducts: [] })).toContain("high_risk_competitor_claim");
+    expect(assessMaterializationRisk({ primaryIntent: "explicit_pain", demand: demand({ source_products: ["Jira"], demand_target_type: "category" }), urgency: null, text: "x", mentionedProducts: [] })).toContain("high_risk_competitor_claim");
+  });
+
+  it("does not flag high_risk_competitor_claim when the target is the scanned product itself", () => {
+    expect(assessMaterializationRisk({ primaryIntent: "explicit_pain", demand: demand({ source_products: ["Jira"], demand_target_type: "scanned_product" }), urgency: null, text: "x", mentionedProducts: [] })).not.toContain("high_risk_competitor_claim");
+  });
+
+  it("flags high_risk_purchase_claim for purchase_research and vendor_evaluation", () => {
+    expect(assessMaterializationRisk({ primaryIntent: "purchase_research", demand: demand(), urgency: null, text: "x", mentionedProducts: [] })).toContain("high_risk_purchase_claim");
+    expect(assessMaterializationRisk({ primaryIntent: "vendor_evaluation", demand: demand(), urgency: null, text: "x", mentionedProducts: [] })).toContain("high_risk_purchase_claim");
+  });
+
+  it("flags high_risk_wtp_claim for an explicit willingness-to-pay phrase", () => {
+    expect(assessMaterializationRisk({ primaryIntent: "explicit_pain", demand: demand(), urgency: null, text: "I would happily pay for this.", mentionedProducts: [] })).toContain("high_risk_wtp_claim");
+  });
+
+  it("flags high_risk_migration_claim for a genuine away-from-product migration with a named source", () => {
+    expect(assessMaterializationRisk({ primaryIntent: "explicit_pain", demand: demand({ demand_direction: "away_from_product", source_products: ["Jira"] }), urgency: null, text: "x", mentionedProducts: [] })).toContain("high_risk_migration_claim");
+  });
+
+  it("flags high_risk_urgency_claim only at or above the urgency threshold", () => {
+    expect(assessMaterializationRisk({ primaryIntent: "explicit_pain", demand: demand(), urgency: 0.7, text: "x", mentionedProducts: [] })).toContain("high_risk_urgency_claim");
+    expect(assessMaterializationRisk({ primaryIntent: "explicit_pain", demand: demand(), urgency: 0.5, text: "x", mentionedProducts: [] })).not.toContain("high_risk_urgency_claim");
+    expect(assessMaterializationRisk({ primaryIntent: "explicit_pain", demand: demand(), urgency: null, text: "x", mentionedProducts: [] })).not.toContain("high_risk_urgency_claim");
+  });
+
+  it("flags ambiguous_entity_claim for a low-confidence mentioned product", () => {
+    expect(assessMaterializationRisk({ primaryIntent: "explicit_pain", demand: demand(), urgency: null, text: "x", mentionedProducts: [{ name: "Orbit", role: "destination", confidence: 0.3 }] })).toContain("ambiguous_entity_claim");
+  });
+
+  it("flags ambiguous_author_stance when speaker_role and authorial_stance disagree", () => {
+    expect(assessMaterializationRisk({ primaryIntent: "explicit_pain", demand: demand({ speaker_role: "buyer", authorial_stance: "vendor_marketing" }), urgency: null, text: "x", mentionedProducts: [] })).toContain("ambiguous_author_stance");
+    expect(assessMaterializationRisk({ primaryIntent: "explicit_pain", demand: demand({ speaker_role: "buyer", authorial_stance: "buyer" }), urgency: null, text: "x", mentionedProducts: [] })).not.toContain("ambiguous_author_stance");
+  });
+
+  it("returns no reasons for a genuinely low-risk candidate", () => {
+    expect(assessMaterializationRisk({ primaryIntent: "explicit_pain", demand: demand(), urgency: null, text: "our workflow is slow and manual", mentionedProducts: [] })).toEqual([]);
+  });
+
+  it("deduplicates reasons and is a pure function of its inputs", () => {
+    const input = { primaryIntent: "switching_intent" as const, demand: demand({ source_products: ["Jira"], demand_target_type: "third_party_product" as const }), urgency: null, text: "x", mentionedProducts: [] };
+    const result = assessMaterializationRisk(input);
+    expect(new Set(result).size).toBe(result.length);
+    expect(assessMaterializationRisk(input)).toEqual(assessMaterializationRisk(input));
+  });
+});
+
+describe("evidenceFidelityGroundingEnabled (EVIDENCE_FIDELITY_GROUNDING_ENABLED)", () => {
+  it("defaults to false, and is explicit-string-gated (not merely truthy)", () => {
+    expect(evidenceFidelityGroundingEnabled({})).toBe(false);
+    expect(evidenceFidelityGroundingEnabled({ EVIDENCE_FIDELITY_GROUNDING_ENABLED: "false" })).toBe(false);
+    expect(evidenceFidelityGroundingEnabled({ EVIDENCE_FIDELITY_GROUNDING_ENABLED: "1" })).toBe(false);
+    expect(evidenceFidelityGroundingEnabled({ EVIDENCE_FIDELITY_GROUNDING_ENABLED: "true" })).toBe(true);
   });
 });

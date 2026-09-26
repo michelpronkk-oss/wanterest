@@ -59,7 +59,7 @@ describe("Layer 12A.1 frozen-system isolation", () => {
     const { SIGNAL_QUALIFICATION_VERSION } = await import("../../src/server/modules/intelligence/signal-qualification.config");
     const { SEMANTIC_REASONING_ROUTER_VERSION } = await import("../../src/server/modules/intelligence/semantic-reasoning-router");
     expect(SIGNAL_QUALIFICATION_VERSION).toBe("signal_qualification_v1_7");
-    expect(SEMANTIC_REASONING_ROUTER_VERSION).toBe("semantic_reasoning_router_v1");
+    expect(SEMANTIC_REASONING_ROUTER_VERSION).toBe("semantic_reasoning_router_v2");
     const policy = readFileSync("src/server/modules/operations/incremental-product-matching.policy.ts", "utf8");
     expect(policy).toContain("export const INCREMENTAL_MATCH_MAX_EVALUATIONS_PER_PRODUCT = 15;");
     const refreshPolicy = readFileSync("src/server/modules/ingestion/market-partition-refresh.policy.ts", "utf8");

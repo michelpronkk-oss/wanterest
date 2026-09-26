@@ -404,6 +404,6 @@ describe("GitHub retrieval precision gate", () => {
     expect(result.diagnostics.version).toBe("candidate_selection_v3");
     expect(SIGNAL_QUALIFICATION_VERSION).toBe("signal_qualification_v1_7");
     expect(SIGNAL_QUALIFICATION_THRESHOLD_VERSION).toBe("signal_qualification_thresholds_v1");
-    expect(SEMANTIC_REASONING_ROUTER_VERSION).toBe("semantic_reasoning_router_v1");
+    expect(SEMANTIC_REASONING_ROUTER_VERSION).toBe("semantic_reasoning_router_v2");
   });
 });

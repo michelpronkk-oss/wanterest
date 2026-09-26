@@ -34,7 +34,8 @@ import { SemanticShadowReasoningRepository } from "@/server/modules/intelligence
 import { getSemanticReasoningShadowConfig } from "@/server/modules/intelligence/semantic-reasoning-shadow.config";
 import { executeScheduledSemanticShadowReasoning, type SemanticShadowExecutionCandidate } from "@/server/modules/intelligence/semantic-shadow-execution";
 import { planSemanticShadowReasoning, type ShadowPlanDiagnostics } from "@/server/modules/intelligence/semantic-shadow-planning";
-import { SEMANTIC_REASONING_PROMPT_VERSION, SEMANTIC_REASONING_ROUTER_VERSION } from "@/server/modules/intelligence/semantic-reasoning-router";
+import { SEMANTIC_REASONING_PROMPT_VERSION, SEMANTIC_REASONING_ROUTER_VERSION, type MaterializationSafetyReason } from "@/server/modules/intelligence/semantic-reasoning-router";
+import { evidenceFidelityGroundingEnabled } from "@/server/modules/intelligence/evidence-grounding";
 import { getStructuredLlmProvider } from "@/server/providers/llm";
 import { conversationMarketReasoningSchema } from "@/server/modules/intelligence/signal-qualification.schemas";
 import { productMatchResultSchema } from "@/server/modules/intelligence/intelligence.schemas";
@@ -815,10 +816,11 @@ export async function processScanCandidates(input: { product: ProductRow; profil
       diagnostics.push({ sourceKey: sourceItem.source_key, state: "failed", message: `Analysis skipped: ${safeSummary(error)}` });
     }
   }
+  const groundingEnabled = evidenceFidelityGroundingEnabled(process.env);
   const evaluations: Awaited<ReturnType<IntelligenceService["matchProduct"]>>[] = [];
   for (const analysis of analyses.slice(0, Math.max(0, input.maxLlmEvaluations ?? analyses.length))) {
     try {
-      evaluations.push(await intelligence.matchProduct(input.product, input.profileId, analysis.id, matcherVersion.id, matcher));
+      evaluations.push(await intelligence.matchProduct(input.product, input.profileId, analysis.id, matcherVersion.id, matcher, { groundingEnabled }));
     } catch (error) {
       diagnostics.push({ sourceKey: "matching", state: "failed", message: safeSummary(error) });
     }
@@ -846,6 +848,7 @@ export async function processScanCandidates(input: { product: ProductRow; profil
         relevance: qualification.dimensions.product_relevance,
         noise: qualification.dimensions.noise_risk,
         reasoningVersion: qualification.conversation_reasoning.version,
+        materializationRisk: qualification.diagnostics.materialization_risk_reasons as MaterializationSafetyReason[],
         fingerprintInput: {
           conversation: { id: conversation.id, content: sourceText },
           product: { id: input.product.id, name: input.product.name, profileId: input.profileId },
@@ -934,7 +937,9 @@ export async function processScanCandidates(input: { product: ProductRow; profil
             intentRelevance: stringValues(storedEvidence.intentRelevance),
           },
         });
-        const shadow = qualifySignalWithReasoning({ candidateId: conversation.id, productId: input.product.id, productName: input.product.name, conversation, sourceItem: source, analysis, match, profile: qualificationProfile }, merged.data);
+        const evidenceValidation = objectValue(artifactRecord.evidence_validation);
+        const droppedClaims = Array.isArray(evidenceValidation.droppedClaims) ? evidenceValidation.droppedClaims.filter((item): item is string => typeof item === "string") : [];
+        const shadow = qualifySignalWithReasoning({ candidateId: conversation.id, productId: input.product.id, productName: input.product.name, conversation, sourceItem: source, analysis, match, profile: qualificationProfile, groundingEnabled }, merged.data, droppedClaims);
         const comparison = compareSemanticShadowQualification(actual, shadow);
         comparisons.push(comparison);
         await shadowRepository.persistComparison({
@@ -951,6 +956,24 @@ export async function processScanCandidates(input: { product: ProductRow; profil
           shadowReasonCodes: shadow.reason_codes,
           impact: comparison.impact,
         });
+        // 12A.3A.1 amendment (materialization_safety_gate_v1): the first-pass
+        // deterministic-only evaluation already failed closed (capped at
+        // weak_candidate) for a high-risk claim. Reusing this same shadow
+        // verification result (no new LLM call), if it actually clears the
+        // gate, promote it into a new, additional, IMMUTABLE evaluation row and
+        // point the match's current evaluation at it - the original capped
+        // evaluation remains as historical evidence, never rewritten. If it
+        // does not clear the gate, nothing further happens: the capped
+        // evaluation stands, exactly the fail-closed contract.
+        if (groundingEnabled && actual.diagnostics.materialization_verification_required && shadow.diagnostics.materialization_verified) {
+          try {
+            const revised = await intelligence.matchProduct(input.product, input.profileId, analysis.id, matcherVersion.id, matcher, { groundingEnabled: true, reasoningOverride: merged.data, overrideDroppedClaims: droppedClaims });
+            const index = evaluations.findIndex((row) => row.conversation_id === conversation.id);
+            if (index >= 0) evaluations[index] = revised;
+          } catch (error) {
+            diagnostics.push({ sourceKey: "semantic_reasoning_shadow", state: "warning", message: `Verified materialization upgrade skipped: ${safeSummary(error)}` });
+          }
+        }
       }
       semanticReasoningShadow = { ...semanticReasoningShadow, ...summarizeSemanticShadowComparisons(comparisons) };
     }
@@ -1299,7 +1322,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
     const evaluations = [];
     for (const analysis of analyses.slice(0, scanBudget.maxLlmEvaluationsPerScan)) {
       try {
-        evaluations.push(await intelligence.matchProduct(product, profile.id, analysis.id, matcherVersion.id, matcher));
+        evaluations.push(await intelligence.matchProduct(product, profile.id, analysis.id, matcherVersion.id, matcher, { groundingEnabled: evidenceFidelityGroundingEnabled(process.env) }));
       } catch (error) {
         diagnostics.push({ sourceKey: "matching", state: "failed", message: safeSummary(error) });
       }

@@ -289,7 +289,7 @@ describe("Layer 12A.2 frozen systems", () => {
     const { MARKET_PARTITION_IDENTITY_VERSION } = await import("../../src/server/modules/ingestion/market-partition-identity");
     const { queryPlanningVersion } = await import("../../src/server/modules/operations/query-planning.schemas");
     expect(SIGNAL_QUALIFICATION_VERSION).toBe("signal_qualification_v1_7");
-    expect(SEMANTIC_REASONING_ROUTER_VERSION).toBe("semantic_reasoning_router_v1");
+    expect(SEMANTIC_REASONING_ROUTER_VERSION).toBe("semantic_reasoning_router_v2");
     expect(INCREMENTAL_MATCH_MAX_EVALUATIONS_PER_PRODUCT).toBe(15);
     expect(INCREMENTAL_MATCH_MAX_PRODUCTS_PER_REFRESH).toBe(20);
     expect(INCREMENTAL_MATCH_INTEREST_WINDOW_MS).toBe(policy.MARKET_PARTITION_INTEREST_TTL_MS);

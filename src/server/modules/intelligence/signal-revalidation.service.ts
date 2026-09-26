@@ -71,6 +71,11 @@ export type SignalRevalidationOutcome = {
  * second time.
  */
 export async function revalidateSignal(repository: SignalRevalidationRepository, candidate: SignalRevalidationCandidate, now = new Date()): Promise<SignalRevalidationOutcome> {
+  // 12A.3A.1 amendment: a flag-off revalidation pass is a deliberate no-op, not
+  // a silent behavior change - recomputing under the pre-12A.3A.1 legacy path
+  // would never invalidate anything meaningfully different from what already
+  // materialized, and would defeat the point of gating the flag at all.
+  if (!candidate.freshInput.groundingEnabled) return { signalId: candidate.signalId, action: "skipped", reason: "evidence_fidelity_grounding_disabled" };
   let fresh: SignalQualification;
   try {
     fresh = qualifySignal(candidate.freshInput);

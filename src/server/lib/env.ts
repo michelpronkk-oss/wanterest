@@ -92,6 +92,17 @@ const serverEnvSchema = publicEnvSchema.extend({
   // through the existing 12A.2/2C pipeline. Read in Vercel and Trigger
   // (scans run in both). Defaults off.
   HN_ALGOLIA_SEARCH_ENABLED: z.enum(["true", "false"]).optional(),
+  // Layer 12A.3A.1: Evidence Fidelity and Grounding. Off = signal qualification,
+  // reasoning, and revalidation are byte/behavior-compatible with pre-12A.3A.1
+  // production (a6b6b830...): the deterministic guard unification, entity
+  // disambiguation, authorial-stance modeling, the grounding/materialization
+  // gates, and the temporal wording fix are all inert. On = those guards run
+  // and a high-risk claim (switching/competitor/purchase/WTP/migration/urgency/
+  // ambiguous entity or author stance) cannot materialize as a qualified/
+  // high-confidence signal without either a low-risk deterministic contract or
+  // bounded, reused semantic verification. Read wherever a scan qualifies or
+  // revalidates signals (Vercel and Trigger). Defaults off.
+  EVIDENCE_FIDELITY_GROUNDING_ENABLED: z.enum(["true", "false"]).optional(),
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;

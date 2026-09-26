@@ -25,7 +25,9 @@ import { detectIntentTarget } from "./intent-semantics";
 import { deriveDirectionalDemand, type DirectionalDemand } from "./directional-demand";
 import { buildConversationMarketReasoning, CONVERSATION_MARKET_REASONING_VERSION } from "./conversation-market-reasoning";
 import { fallbackMarketContext, MARKET_CONTEXT_VERSION, type MarketContext } from "./market-context";
-import { EVIDENCE_GROUNDING_VERSION, groundDeterministicReasoning, temporalGroundingClause, type EvidenceGroundingGate } from "./evidence-grounding";
+import { assessMaterializationRisk, EVIDENCE_GROUNDING_VERSION, groundDeterministicReasoning, MATERIALIZATION_SAFETY_GATE_VERSION, temporalGroundingClause, type EvidenceGroundingGate } from "./evidence-grounding";
+import { deriveSemanticVerificationResult } from "./semantic-verification.schemas";
+import type { MaterializationSafetyReason } from "./semantic-reasoning-router";
 
 export type SignalQualificationProfile = {
   relevant_pains: Array<{ key?: string; label?: string; description?: string; confidence?: number; specificity?: number } | string>;
@@ -65,6 +67,7 @@ export type SignalQualificationInput = {
     audience_signals: Json;
     specificity: number;
     confidence: number;
+    urgency?: number | null;
     status?: string;
     engine_version_id?: string;
     evidence_spans?: Json;
@@ -72,6 +75,13 @@ export type SignalQualificationInput = {
   match: ProductMatchResult;
   profile: SignalQualificationProfile;
   now?: Date;
+  /**
+   * 12A.3A.1 (EVIDENCE_FIDELITY_GROUNDING_ENABLED), explicit parameter per this
+   * codebase's purity convention. Defaults false: qualifySignal reproduces
+   * pre-12A.3A.1 production byte-for-byte when omitted, matching every
+   * existing call site that does not pass it.
+   */
+  groundingEnabled?: boolean;
 };
 
 type JsonRecord = Record<string, Json>;
@@ -150,7 +160,7 @@ function hasAny(value: string, patterns: readonly RegExp[]): boolean {
 
 function intentFromText(input: SignalQualificationInput): SignalQualificationPrimaryIntent {
   const value = lower(sourceText(input));
-  const intentTarget = detectIntentTarget(value);
+  const intentTarget = detectIntentTarget(value, input.groundingEnabled ?? false);
   if (intentTarget === "authentication" || intentTarget === "implementation") return "problem_solution_search";
   if (hasAny(value, [/\bswitch(?:ing|ed)?\b/, /\breplac(?:e|ing|ed)\b/, /\bleaving\b/, /\bmigrat(?:e|ing|ed)\b/, /\bmove away\b/, /\bstopped using\b/, /\brenew(?:al|ing)\b/])) return "switching_intent";
   if (hasAny(value, [/\balternative(?:s)?\b/, /\binstead of\b/, /\bwhat else\b/, /\bother options?\b/])) return "alternative_search";
@@ -452,14 +462,15 @@ function directionalDemandFromReasoning(reasoning: ConversationMarketReasoning):
   };
 }
 
-function buildQualification(input: SignalQualificationInput, reasoningOverride?: ConversationMarketReasoning): SignalQualification {
+function buildQualification(input: SignalQualificationInput, reasoningOverride?: ConversationMarketReasoning, overrideDroppedClaims: string[] = []): SignalQualification {
   if (input.analysis.status === "failed" || input.analysis.status === "skipped") throw new Error("qualification_analysis_unavailable");
+  const groundingEnabled = input.groundingEnabled ?? false;
   const primaryIntent = intentFromText(input);
   const value = sourceText(input);
-  const intentTarget = detectIntentTarget(value);
+  const intentTarget = detectIntentTarget(value, groundingEnabled);
   const concepts = matchedConcepts(input, value);
   const marketContext = marketContextFor(input);
-  const derivedDemand = deriveDirectionalDemand({ productName: input.productName, title: input.conversation.title ?? input.sourceItem.title, body: bodyText(input), sourceKey: input.sourceItem.source_key, sourceMetadata: input.sourceItem.metadata, knownProducts: marketContext.relationships.map((item) => item.entity_name), category: marketContext.categories[0] ?? input.profile.primary_category });
+  const derivedDemand = deriveDirectionalDemand({ productName: input.productName, title: input.conversation.title ?? input.sourceItem.title, body: bodyText(input), sourceKey: input.sourceItem.source_key, sourceMetadata: input.sourceItem.metadata, knownProducts: marketContext.relationships.map((item) => item.entity_name), category: marketContext.categories[0] ?? input.profile.primary_category, groundingEnabled });
   const reasonCodes: SignalQualificationReasonCode[] = [];
   const evidence = verifiedEvidence(input, primaryIntent);
 
@@ -473,6 +484,13 @@ function buildQualification(input: SignalQualificationInput, reasoningOverride?:
     // gating is required or possible here.
     conversationReasoning = reasoningOverride;
     demand = directionalDemandFromReasoning(reasoningOverride);
+    dimensions = dimensionsFor(input, concepts, evidence, primaryIntent, demand, reasonCodes);
+    groundingGate = { version: EVIDENCE_GROUNDING_VERSION, verificationRequired: false, reasons: [], downgradedClaimTypes: [] };
+  } else if (!groundingEnabled) {
+    // EVIDENCE_FIDELITY_GROUNDING_ENABLED=false: byte-identical to pre-12A.3A.1 -
+    // no v1 downgrade gate, no materialization gate below.
+    conversationReasoning = buildConversationMarketReasoning({ productName: input.productName, context: marketContext, demand: derivedDemand, title: input.conversation.title ?? input.sourceItem.title, body: bodyText(input), analysis: input.analysis });
+    demand = derivedDemand;
     dimensions = dimensionsFor(input, concepts, evidence, primaryIntent, demand, reasonCodes);
     groundingGate = { version: EVIDENCE_GROUNDING_VERSION, verificationRequired: false, reasons: [], downgradedClaimTypes: [] };
   } else {
@@ -501,7 +519,38 @@ function buildQualification(input: SignalQualificationInput, reasoningOverride?:
   const strongIntent = STRONG_COMMERCIAL_INTENTS.includes(primaryIntent);
   const qualified = demand.positive_for_product !== false && dimensions.product_relevance >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.productRelevance && (dimensions.demand_intent >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.demandIntent || dimensions.pain_clarity >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.painClarity || strongIntent) && dimensions.specificity >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.specificity && dimensions.evidence_quality >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.evidenceQuality && dimensions.noise_risk < 0.5 && dimensions.spam_probability < SIGNAL_QUALIFICATION_THRESHOLDS.qualified.spamProbabilityMaxExclusive && dimensions.promotional_probability < SIGNAL_QUALIFICATION_THRESHOLDS.qualified.promotionalProbabilityMaxExclusive && evidence.length > 0;
   const highConfidence = qualified && dimensions.product_relevance >= SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.productRelevance && dimensions.demand_intent >= SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.demandIntent && dimensions.specificity >= SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.specificity && dimensions.evidence_quality >= SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.evidenceQuality && dimensions.commercial_relevance >= SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.commercialRelevance && confidence >= SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.confidence && dimensions.noise_risk < SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.noiseRiskMaxExclusive && strongIntent;
-  const status: SignalQualificationStatus = highConfidence ? "high_confidence_signal" : qualified ? "qualified" : dimensions.product_relevance >= 0.4 || dimensions.demand_intent >= 0.35 || dimensions.pain_clarity >= 0.4 ? "weak_candidate" : "rejected";
+  const provisionalStatus: SignalQualificationStatus = highConfidence ? "high_confidence_signal" : qualified ? "qualified" : dimensions.product_relevance >= 0.4 || dimensions.demand_intent >= 0.35 || dimensions.pain_clarity >= 0.4 ? "weak_candidate" : "rejected";
+
+  // 12A.3A.1 amendment (materialization_safety_gate_v1): a bounded, named set of
+  // high-risk claims must be either deterministically low-risk or verified
+  // before they can materialize - confidence in the deterministic pass alone is
+  // no longer sufficient. Only assessed once ordinary dimensions would already
+  // materialize the candidate (the deterministic zero-LLM path for an obvious
+  // reject never reaches this check).
+  const wouldMaterialize = provisionalStatus === "qualified" || provisionalStatus === "high_confidence_signal";
+  const materializationRiskReasons: MaterializationSafetyReason[] = groundingEnabled && wouldMaterialize
+    ? assessMaterializationRisk({ primaryIntent, demand, urgency: input.analysis.urgency ?? null, text: value, mentionedProducts: conversationReasoning.mentioned_products })
+    : [];
+  let status = provisionalStatus;
+  let materializationVerified = false;
+  if (materializationRiskReasons.length) {
+    if (reasoningOverride) {
+      const verification = deriveSemanticVerificationResult({ merged: reasoningOverride, droppedClaims: overrideDroppedClaims, primaryIntent, sourceText: value });
+      materializationVerified = verification.supported && (verification.claim_strength === "explicit" || verification.claim_strength === "strongly_supported");
+      reasonCodes.push(materializationVerified ? "HIGH_RISK_VERIFICATION_CONFIRMED" : "HIGH_RISK_VERIFICATION_REQUIRED");
+      if (!materializationVerified) status = "weak_candidate";
+    } else {
+      // Fail closed: no verified reasoning is available on the deterministic-only
+      // path, so a high-risk claim can never materialize as qualified/
+      // high_confidence_signal here, regardless of how confident the
+      // deterministic dimensions are. The scan itself never fails - the
+      // candidate still stands on its remaining (ungrounded-independent)
+      // dimensions, capped at weak_candidate.
+      status = "weak_candidate";
+      reasonCodes.push("HIGH_RISK_VERIFICATION_REQUIRED");
+    }
+  }
+
   const resonance = resonanceFor(input);
   const publishedAt = input.sourceItem.published_at ?? input.sourceItem.captured_at ?? null;
   const now = input.now ?? new Date();
@@ -535,7 +584,7 @@ function buildQualification(input: SignalQualificationInput, reasoningOverride?:
     matched_profile_concepts: concepts,
     evidence_spans: evidence,
     reason_codes: uniqueReasonCodes,
-    qualification_reason: reasonText(status, primaryIntent, intentTarget, concepts, evidence, demand, { publishedAt, now }),
+    qualification_reason: reasonText(status, primaryIntent, intentTarget, concepts, evidence, demand, { publishedAt: groundingEnabled ? publishedAt : null, now }),
     evidence_published_at: publishedAt,
     resonance,
     diagnostics: {
@@ -553,6 +602,10 @@ function buildQualification(input: SignalQualificationInput, reasoningOverride?:
       grounding_version: EVIDENCE_GROUNDING_VERSION,
       grounding_verification_required: groundingGate.verificationRequired,
       grounding_downgraded_claims: groundingGate.downgradedClaimTypes,
+      materialization_gate_version: MATERIALIZATION_SAFETY_GATE_VERSION,
+      materialization_verification_required: materializationRiskReasons.length > 0,
+      materialization_risk_reasons: materializationRiskReasons,
+      materialization_verified: materializationVerified,
     },
   });
 }
@@ -562,8 +615,8 @@ export function qualifySignal(input: SignalQualificationInput): SignalQualificat
 }
 
 /** Runs the same qualification engine against a separately validated semantic interpretation. */
-export function qualifySignalWithReasoning(input: SignalQualificationInput, reasoning: ConversationMarketReasoning): SignalQualification {
-  return buildQualification(input, reasoning);
+export function qualifySignalWithReasoning(input: SignalQualificationInput, reasoning: ConversationMarketReasoning, droppedClaims: string[] = []): SignalQualification {
+  return buildQualification(input, reasoning, droppedClaims);
 }
 
 export function failClosedQualification(input: Pick<SignalQualificationInput, "candidateId" | "productId" | "profile" | "analysis">, failureCode = "QUALIFICATION_FAILED"): SignalQualification {

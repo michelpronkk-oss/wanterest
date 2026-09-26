@@ -130,6 +130,8 @@ export const signalQualificationReasonCodeSchema = z.enum([
   "NON_POSITIVE_PRODUCT_DIRECTION",
   "EVIDENCE_GROUNDING_DOWNGRADED",
   "VENDOR_PITCH_NOT_BUYER_DEMAND",
+  "HIGH_RISK_VERIFICATION_REQUIRED",
+  "HIGH_RISK_VERIFICATION_CONFIRMED",
 ]);
 export type SignalQualificationReasonCode = z.infer<typeof signalQualificationReasonCodeSchema>;
 
@@ -193,6 +195,13 @@ export const signalQualificationDiagnosticsSchema = z.object({
   grounding_version: z.string().trim().min(1).max(120).default("unknown"),
   grounding_verification_required: z.boolean().default(false),
   grounding_downgraded_claims: z.array(z.string().trim().min(1).max(120)).max(10).default([]),
+  // Additive (12A.3A.1 amendment): whether this candidate is a high-risk
+  // materialization claim, whether it required verification to materialize,
+  // and whether a verified upgrade actually cleared the gate.
+  materialization_gate_version: z.string().trim().min(1).max(120).default("unknown"),
+  materialization_verification_required: z.boolean().default(false),
+  materialization_risk_reasons: z.array(z.string().trim().min(1).max(120)).max(10).default([]),
+  materialization_verified: z.boolean().default(false),
 });
 export type SignalQualificationDiagnostics = z.infer<typeof signalQualificationDiagnosticsSchema>;
 

@@ -27,6 +27,15 @@ export type DirectionalDemandInput = {
   sourceMetadata: Json;
   knownProducts: string[];
   category: string | undefined;
+  /**
+   * 12A.3A.1 flag (EVIDENCE_FIDELITY_GROUNDING_ENABLED), explicit parameter per
+   * this codebase's purity convention (never an internal env read here).
+   * Defaults false so every existing caller that does not pass it reproduces
+   * pre-12A.3A.1 behavior byte-for-byte: the original inline implementation
+   * regex (not the shared, expanded detectIntentTarget), no entity
+   * disambiguation filtering, and authorial_stance always "unknown".
+   */
+  groundingEnabled?: boolean;
 };
 
 function text(value: string | null | undefined): string {
@@ -55,8 +64,9 @@ function knownNames(input: DirectionalDemandInput): string[] {
     .sort((left, right) => right.length - left.length);
 }
 
-function namesIn(textValue: string, names: string[]): string[] {
-  return filterLikelyEntityMentions(names.filter((name) => mentionPattern(name).test(textValue)), textValue);
+function namesIn(textValue: string, names: string[], groundingEnabled: boolean): string[] {
+  const matched = names.filter((name) => mentionPattern(name).test(textValue));
+  return groundingEnabled ? filterLikelyEntityMentions(matched, textValue) : matched;
 }
 
 function destinationFor(textValue: string, names: string[]): string | null {
@@ -79,13 +89,13 @@ function explicitUnnamedDestination(textValue: string): string | null {
   return name && !/^(?:A|An|The|This|That|Another|Other)$/i.test(name) && !/^[A-Z]{2,}$/.test(name) ? name : null;
 }
 
-function sourceNamesFor(textValue: string, names: string[], destination: string | null, excludedNames: string[] = []): string[] {
+function sourceNamesFor(textValue: string, names: string[], destination: string | null, excludedNames: string[] = [], groundingEnabled = false): string[] {
   const clauses = [
     ...[...textValue.matchAll(/\b(?:leave|leaving|migrat(?:e|ing)\s+from|switch(?:ing)?\s+from|alternative(?:s)?\s+(?:to|for)|replace|replacing|replacement\s+for|parity\s+with|from)\b[^.!?]{0,160}/gi)].map((match) => match[0]),
     ...[...textValue.matchAll(/\b[^.!?]{0,80}\b(?:alternative|alternatives|replacement)\b/gi)].map((match) => match[0]),
     ...[...textValue.matchAll(/\b[^.!?]{0,80}\b(?:like|similar\s+to)\b[^.!?]{0,80}/gi)].map((match) => match[0]),
   ];
-  const sourceNames = namesIn(clauses.join(" "), names);
+  const sourceNames = namesIn(clauses.join(" "), names, groundingEnabled);
   const genericSystems = [...textValue.matchAll(/\b(?:spreadsheet|spreadsheets|excel|csv)\b/gi)].map((match) => match[0]);
   return [...new Set([...sourceNames, ...genericSystems])].filter((name) => !destination || name.toLowerCase() !== destination.toLowerCase()).filter((name) => !excludedNames.some((excluded) => name.toLowerCase() === excluded.toLowerCase()));
 }
@@ -113,23 +123,37 @@ function speakerRole(input: DirectionalDemandInput, textValue: string, positive:
   return "unknown";
 }
 
+// Pre-12A.3A.1 implementation detection, kept exactly as production ran it:
+// used only when groundingEnabled is false, so the default path never
+// depends on intent-semantics.ts's shared (and now-expandable) detector.
+function legacyImplementationDetection(textValue: string): boolean {
+  return /\b(?:oauth|authentication|auth|api tokens?|access tokens?|credentials?|login|sign[- ]?in)\b/i.test(textValue)
+    && (
+      /\b(?:alternative|method)\b[^.!?]{0,80}\b(?:for|to)\b/i.test(textValue)
+      || /\b(?:add|change|implement|support)\b[^.!?]{0,100}\b(?:oauth|authentication|auth|api tokens?|access tokens?|credentials?|login|sign[- ]?in)\b[^.!?]{0,100}\bintegration\b/i.test(textValue)
+      || /\b(?:integration|implementation)\b[^.!?]{0,80}\b(?:alternative|change|switch)\b/i.test(textValue)
+    );
+}
+
 export function deriveDirectionalDemand(input: DirectionalDemandInput): DirectionalDemand {
+  const groundingEnabled = input.groundingEnabled ?? false;
   const textValue = text(`${input.title ?? ""} ${input.body}`);
   const names = knownNames(input);
   const productName = input.productName;
   const repository = repositoryProduct(input, names);
   const destination = destinationFor(textValue, names) ?? (repository ? null : explicitUnnamedDestination(textValue));
-  const sourceProducts = sourceNamesFor(textValue, names, destination, repository ? [repository] : []);
+  const sourceProducts = sourceNamesFor(textValue, names, destination, repository ? [repository] : [], groundingEnabled);
   if (destination && destination.toLowerCase() !== productName.toLowerCase() && new RegExp(`(?:^|[^A-Za-z0-9])${escapeRegExp(productName)}\\s+(?:is|was|has become)\\s+(?:too expensive|too complex|unreliable|slow|frustrating)`, "i").test(textValue)) sourceProducts.push(productName);
-  // Single source of truth for "this is an authentication/implementation/technical
-  // discussion, not a product-relationship claim" - previously duplicated here with
-  // its own narrower pattern pair, which drifted from intent-semantics.ts and let
-  // protocol/standard discussions (X.509, TLS, SSO, ...) fall through into a genuine
-  // product-demand branch below.
-  const intentTarget = detectIntentTarget(textValue);
-  const implementation = intentTarget === "authentication" || intentTarget === "implementation";
+  // 12A.3A.1: intent-semantics.ts's detectIntentTarget() (expanded vocabulary)
+  // becomes the single source of truth for "this is an authentication/
+  // implementation/technical discussion, not a product-relationship claim"
+  // only when grounding is enabled - it previously drifted from this file's
+  // own narrower inline pattern pair, letting protocol/standard discussions
+  // (X.509, TLS, SSO, ...) fall through into a genuine product-demand branch.
+  // When disabled, the original inline detection runs unchanged.
+  const implementation = groundingEnabled ? (detectIntentTarget(textValue, true) === "authentication" || detectIntentTarget(textValue, true) === "implementation") : legacyImplementationDetection(textValue);
   const featureRequest = /\b(?:needs?|requires?|wants?|should|must have|add|support|import(?:er|ing)?|bring|there is no way|missing|lacks?)\b/i.test(textValue);
-  const productMentioned = namesIn(textValue, names).some((name) => name.toLowerCase() === productName.toLowerCase());
+  const productMentioned = namesIn(textValue, names, groundingEnabled).some((name) => name.toLowerCase() === productName.toLowerCase());
   const hostProductContext = hasHostProductContext(textValue, repository, sourceProducts, productName);
 
   let demand_direction: DemandDirection = "unknown";
@@ -175,7 +199,7 @@ export function deriveDirectionalDemand(input: DirectionalDemandInput): Directio
     positive_for_product = true;
   }
 
-  const stance = classifyAuthorialStance({ text: textValue, hasCompetitorOrAlternativeClaim: sourceProducts.length > 0 || Boolean(destination) }).stance;
+  const stance: AuthorialStance = groundingEnabled ? classifyAuthorialStance({ text: textValue, hasCompetitorOrAlternativeClaim: sourceProducts.length > 0 || Boolean(destination) }).stance : "unknown";
   const role = speakerRole(input, textValue, positive_for_product, stance);
   if (role === "unknown" && demand_target_type === "third_party_product") positive_for_product = false;
   return { demand_direction, demand_target_type, demand_target_name, source_products: sourceProducts, speaker_role: role, positive_for_product, host_product_context: hostProductContext, authorial_stance: stance };
