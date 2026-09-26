@@ -129,7 +129,7 @@ export class MarketPartitionRefreshRepository {
    * interest is simply not selected here - callers must never disable it
    * for that reason (interest can return on a later tick).
    */
-  async listDuePartitions(now: string, limit: number): Promise<DueMarketPartitionCandidate[]> {
+  async listDuePartitions(now: string, limit: number, explicitInterestKeys?: (partitionKeys: string[]) => Promise<Set<string>>): Promise<DueMarketPartitionCandidate[]> {
     // Overselect due state rows, then narrow by interest/recent-scan so the
     // final result still respects `limit` after filtering.
     const candidateWindow = Math.max(limit * 10, 50);
@@ -156,6 +156,8 @@ export class MarketPartitionRefreshRepository {
     const interested = await this.table("query_yield_artifacts").select("market_partition_key").in("market_partition_key", keys).gte("created_at", interestSince).limit(10_000);
     if (interested.error) throw persistenceError(interested.error, "interest lookup");
     const interestedKeys = new Set((interested.data ?? []).map((row) => row.market_partition_key as string));
+    // Layer 12A.2 (flag-gated by the caller): active explicit scan/seed interests also keep a partition due.
+    if (explicitInterestKeys) for (const key of await explicitInterestKeys(keys)) interestedKeys.add(key);
     const recentlyScanned = await this.table("query_yield_artifacts").select("market_partition_key").in("market_partition_key", keys).gte("created_at", recentScanSince).limit(10_000);
     if (recentlyScanned.error) throw persistenceError(recentlyScanned.error, "recent-scan lookup");
     const recentlyScannedKeys = new Set((recentlyScanned.data ?? []).map((row) => row.market_partition_key as string));

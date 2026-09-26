@@ -9,6 +9,8 @@ import { createSupabaseServiceClient } from "@/server/providers/supabase/service
 import { deriveMarketPartitionIdentity } from "@/server/modules/ingestion/market-partition-identity";
 import { ingestPublicPartition } from "@/server/modules/ingestion/public-ingestion.service";
 import { signalSupplyTelemetryFor, type SignalSupplyTelemetryWriter } from "@/server/modules/operations/signal-supply-telemetry";
+import { supplyPartitionSeedingEnabled } from "@/server/modules/operations/supply-partition-seeding.policy";
+import { SupplyPartitionInterestRepository } from "@/server/modules/operations/supply-partition-interest.repository";
 import { MarketPartitionRefreshRepository, type DueMarketPartitionCandidate } from "@/server/modules/ingestion/market-partition-refresh.repository";
 import {
   MARKET_PARTITION_REFRESH_INTEREST_WINDOW_MS,
@@ -347,7 +349,10 @@ export async function listDueMarketPartitionRefreshes(limit: number): Promise<Du
   const now = new Date();
   const used = await repository.countRefreshJobsBySourceSince(new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString());
   const remaining: Record<string, number> = remainingDailyRefreshBudget(used);
-  const candidates = await repository.listDuePartitions(now.toISOString(), Math.max(limit * 4, limit));
+  const explicitInterests = supplyPartitionSeedingEnabled() ? new SupplyPartitionInterestRepository(client) : null;
+  const candidates = explicitInterests
+    ? await repository.listDuePartitions(now.toISOString(), Math.max(limit * 4, limit), async (keys) => new Set((await explicitInterests.listActive(keys, now.toISOString(), 5000)).map((interest) => interest.partitionKey)))
+    : await repository.listDuePartitions(now.toISOString(), Math.max(limit * 4, limit));
   const selected: DueMarketPartitionCandidate[] = [];
   for (const candidate of candidates) {
     if (!isMarketPartitionRefreshSource(candidate.sourceKey) || (remaining[candidate.sourceKey] ?? 0) <= 0) continue;

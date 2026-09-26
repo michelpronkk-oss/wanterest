@@ -11,6 +11,8 @@ import { generateActionsForScan } from "@/server/modules/actions/action.orchestr
 import { IncrementalProductMatchingRepository } from "./incremental-product-matching.repository";
 import { deterministicUuid } from "@/server/modules/ingestion/hash";
 import { signalSupplyTelemetryFor, type SignalSupplyTelemetryWriter } from "./signal-supply-telemetry";
+import { supplyPartitionSeedingEnabled } from "./supply-partition-seeding.policy";
+import { interestAsArtifact, SupplyPartitionInterestRepository } from "./supply-partition-interest.repository";
 import {
   INCREMENTAL_MATCH_INTEREST_WINDOW_MS,
   INCREMENTAL_MATCH_MAX_EVALUATIONS_PER_PRODUCT,
@@ -62,6 +64,13 @@ export type IncrementalMatchingDependencies = {
   maxProducts?: number;
   /** Layer 12A.1: observational supply facts; a no-op unless SIGNAL_SUPPLY_TELEMETRY_ENABLED=true. */
   telemetry?: SignalSupplyTelemetryWriter;
+  /**
+   * Layer 12A.2: explicit market_partition_interests read path (scan + planner
+   * seed). Null unless SUPPLY_PARTITION_SEEDING_ENABLED=true, in which case
+   * interest = legacy scan artifacts UNION active explicit interests, through
+   * the same selection policy and provenance validation.
+   */
+  partitionInterests?: Pick<SupplyPartitionInterestRepository, "listActive"> | null;
 };
 
 export type ProductIncrementalMatchResult = {
@@ -110,6 +119,7 @@ function defaultDependencies(): IncrementalMatchingDependencies {
   return {
     repository: new IncrementalProductMatchingRepository(client),
     telemetry: signalSupplyTelemetryFor(client),
+    partitionInterests: supplyPartitionSeedingEnabled() ? new SupplyPartitionInterestRepository(client) : null,
     loadProduct: getScanProduct,
     processCandidates: processScanCandidates,
     rebuildDemand: rebuildDemandIntelligenceForScan,
@@ -177,7 +187,7 @@ async function matchOneProduct(input: {
     traceId: input.traceId,
     workspaceId: interest.workspaceId,
     productId: interest.productId,
-    inputReference: { policyVersion: INCREMENTAL_PRODUCT_MATCHING_POLICY_VERSION, refreshJobRunId: input.refreshJobRunId, partitionKey: input.partitionKey, interestArtifactId: interest.interestArtifactId, interestScanJobRunId: interest.interestScanJobRunId },
+    inputReference: { policyVersion: INCREMENTAL_PRODUCT_MATCHING_POLICY_VERSION, refreshJobRunId: input.refreshJobRunId, partitionKey: input.partitionKey, interestArtifactId: interest.interestArtifactId, interestScanJobRunId: interest.interestScanJobRunId, ...(interest.interestOrigin ? { interestOrigin: interest.interestOrigin } : {}) },
   });
   result.jobRunId = job.id;
 
@@ -243,7 +253,7 @@ async function matchOneProduct(input: {
     }
     result.status = "succeeded";
     result.durationMs = Date.now() - startedAt;
-    await deps.repository.completeJob(job.id, { status: "succeeded", inputReference: { ...result, policyVersion: INCREMENTAL_PRODUCT_MATCHING_POLICY_VERSION, refreshJobRunId: input.refreshJobRunId, partitionKey: input.partitionKey, interestScanJobRunId: interest.interestScanJobRunId } });
+    await deps.repository.completeJob(job.id, { status: "succeeded", inputReference: { ...result, policyVersion: INCREMENTAL_PRODUCT_MATCHING_POLICY_VERSION, refreshJobRunId: input.refreshJobRunId, partitionKey: input.partitionKey, interestScanJobRunId: interest.interestScanJobRunId, ...(interest.interestOrigin ? { interestOrigin: interest.interestOrigin } : {}) } });
     // Layer 12A.1: best-effort fact after the job is finalized; only successful
     // jobs have fully measured counts (a failed job's counts are unknown).
     try {
@@ -305,7 +315,10 @@ export async function matchRefreshedPartitionIncrementally(
 
   const since = new Date(deps.now().getTime() - INCREMENTAL_MATCH_INTEREST_WINDOW_MS).toISOString();
   const artifacts = await deps.repository.listInterestArtifacts(partitionKey, since, INCREMENTAL_MATCH_MAX_INTEREST_ARTIFACTS);
-  const interest = selectInterestedProducts(artifacts, deps.maxProducts ?? INCREMENTAL_MATCH_MAX_PRODUCTS_PER_REFRESH);
+  const explicitInterests = deps.partitionInterests
+    ? (await deps.partitionInterests.listActive([partitionKey], deps.now().toISOString(), INCREMENTAL_MATCH_MAX_INTEREST_ARTIFACTS)).map(interestAsArtifact)
+    : [];
+  const interest = selectInterestedProducts([...artifacts, ...explicitInterests], deps.maxProducts ?? INCREMENTAL_MATCH_MAX_PRODUCTS_PER_REFRESH);
 
   const products: ProductIncrementalMatchResult[] = [];
   for (const interestedProduct of interest.selected) {

@@ -3610,3 +3610,73 @@ telemetry reads/writes and no behaviour change; on = facts are recorded, nothing
 - **Rollout**: migration dry-run → apply → schema verification → deploy with the flag off (prove no
   behaviour change) → enable → reconcile facts with `job_runs` and evaluations on natural jobs →
   first 24h funnel → only then 12A.2.
+
+### 12A.2 — Planner-Seeded Shared Partitions (`supply_partition_seeding_v1`) — IMPLEMENTED_LOCALLY
+
+Flag `SUPPLY_PARTITION_SEEDING_ENABLED` (default off; Vercel and Trigger, because product scans run in
+both). Off = no seed or scan interest is written, no explicit-interest read happens anywhere, and the
+scan, scheduler and incremental matching run exactly their pre-12A.2 code paths. On = the behaviour
+below. Seeding itself makes no provider request and no model call; `market_partition_identity_v1`,
+`query_planning_v7` output and every frozen 12A system are unchanged.
+
+- **Seed source**: `buildQueryPlanSeedCandidates` returns the planner's *own* candidates
+  (`buildCandidates` → the same low-confidence filter → the same duplicate/diversity suppression,
+  without the per-source query-count cap) mapped through the same `toPlanQuery` as the plan.
+  `buildQueryPlan` is untouched in behaviour: a golden digest of 120 planner inputs
+  (`tests/fixtures/query-planning-v7-golden.json`, captured at `241ae56`) proves byte-identical
+  output. No free-form query is ever invented.
+- **Eligibility** (all required, deterministic, in planner order): source in the refresh allowlist
+  (today `github`, `stack-exchange`; X/YouTube/HN/Bluesky/Discourse/Forem stay excluded); query not
+  executed by this scan; identity derived from the exact request execution would send
+  (`toSourceDiscoveryRequest`, plus Stack Exchange preparation exactly as ingestion applies it);
+  the spec round-trips through `buildMarketPartitionRefreshRequest` to the same key (a spec the
+  scheduler would disable is never seeded); partition not already executed by this scan; a valid
+  canonical provenance template for its own query id and source; per-product per-source cap.
+  Duplicate candidates collapse onto one partition key.
+- **Bounds**: ≤ 6 seeds per product per source (app and DB), ≤ 60 distinct seed-kept partitions per
+  source globally (DB, under a per-source advisory lock so concurrent scans cannot overshoot). The
+  existing rolling-24h refresh caps (GitHub 120, Stack Exchange 60) and adaptive cadence remain the
+  hard spend bound; seeds only become background refreshes inside them.
+- **`market_partition_interests`** (migration `20261021000000`): one row per
+  `(workspace_id, product_id, market_partition_id)`; origin `scan` | `planner_seed`; the origin scan
+  job (trigger: same workspace/product); `query_plan_id` + **required** `provenance` (the canonical
+  `DiscoveryProvenanceTemplate`; checks force `queryPlanId`/`source` to match the row and require
+  family, surface, concepts, competitorSpecific), `seed_version` + descriptive `seed_metadata`
+  (family, surface, intent, concepts, language — never identity), `renewed_at`, `expires_at`
+  (≤ 31 days), `renewal_count`, `deactivated_at/_reason`. Composite FK to `products`, workspace-member
+  select RLS, no browser writes; global partition/spec stay service-role only. Newly created
+  interests therefore cannot be `provenance_missing`; historical `query_yield_artifacts` without
+  provenance are not repaired and remain unsupported until a scan recreates them.
+- **Writes**: `upsert_market_partition_interest` (security invoker, service role only), one
+  transaction per interest: refuse inactive products; take the per-source lock; refuse seeds on
+  retired partitions; enforce both caps for a new/expired seed; insert-or-ignore the immutable
+  `market_partitions` row (seeds only — a scan interest attaches only to a partition its ingestion
+  already created); create or renew the single interest row. Scan origin outranks seed: a seed renewal
+  only extends a scan interest's expiry, never replaces its provenance. The scan calls this after its
+  query-yield rows are persisted (scan interests first, then seeds); every failure is contained and
+  reported as a count in a `partition-seeding` diagnostic.
+- **Lifecycle**: TTL = the existing 14-day interest window, renewed by each scan of an active product.
+  Archiving a product deactivates its interests in the same transaction; an inactive product cannot
+  create or renew; expired or deactivated interests stop routing and stop keeping partitions due;
+  a later scan/seed of an active product renews or reactivates the same row.
+- **Canonical read path**: `active_market_partition_interests(keys, now)` (unexpired, not deactivated,
+  active products only). Incremental matching unions it with the legacy 14-day
+  `query_yield_artifacts` interest and runs the *unchanged* `selectInterestedProducts` (same
+  provenance validation, fanout cap 20, newest-first, job idempotency); the product job records
+  `interestOrigin`. No concept-overlap routing (12A.4). The refresh scheduler treats a partition with
+  an active explicit interest as interested; the recent-scan exclusion, daily caps and cadence are
+  unchanged.
+- **Retirement** (`retired_at`, `retired_reason` on `market_partition_refresh_state`; retired ⇒
+  `enabled = false`, `disabled_reason = 'retired'`): `retire_exhausted_seed_partitions` runs at most 20
+  per scheduler tick and retires a partition only if it has a seed interest, no live scan interest,
+  no `query_yield_artifacts` in 30 days, `consecutive_zero_new ≥ 6`, **and** its last 6 refreshes all
+  have 12A.1 `supply_refresh_facts` with `raw_new_count = 0` and zero qualified product facts. Missing
+  telemetry never retires (fail closed). Retired partitions are never re-seeded; a product scan that
+  executes the spec again reactivates it. Not the 12A.5 allocator.
+- **Telemetry**: independent of 12A.1 being on; seeding never depends on a telemetry write. Seed
+  dimensions are joinable (interest `origin`/`seed_metadata` by partition, `interestOrigin` on product
+  jobs); 12A.1 schemas are unchanged.
+- **Rollout**: migration dry-run → apply → schema/RLS verification → deploy flag off (prove zero
+  interest rows and unchanged scheduler output) → enable in Vercel and Trigger → observe natural scans
+  create bounded seeds/interests → first natural refresh of a seeded partition → incremental routing
+  with valid provenance → 12A.1 facts for seeded partitions.

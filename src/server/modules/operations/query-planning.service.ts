@@ -436,6 +436,51 @@ function allocateQueryBudgets(candidates: Candidate[], budget: number): number[]
   return candidates.map((_, index) => base + (index < remainder ? 1 : 0));
 }
 
+function toPlanQuery(input: QueryPlanningInput, route: SourceRoutingRoute, candidate: Candidate, candidateBudget: number, category: string, audience: string): QueryPlanQuery {
+  const normalized = normalizeQuery(candidate.query_text);
+  return {
+    query_id: `qp-${route.source_key}-${slug(candidate.query_family)}-${slug(normalized)}`,
+    query_family: candidate.query_family,
+    demand_surface: candidate.demand_surface,
+    competitor_specific: candidate.competitorSpecific,
+    intent_type: candidate.intent_type,
+    query_text: candidate.query_text,
+    normalized_query: normalized,
+    source_key: route.source_key,
+    priority: priorityFor(candidate.score),
+    confidence: candidate.confidence,
+    candidate_budget: candidateBudget,
+    reason_codes: candidate.reason_codes,
+    reason_summary: reasonSummary(candidate.query_family, candidate.reason_codes),
+    concept_keys: candidate.concept_keys,
+    competitor_refs: candidate.competitor_refs,
+    alternative_refs: candidate.alternative_refs,
+    geo_context: candidate.geo_context,
+    language_context: candidate.language_context,
+    cost_hint: candidate.cost_hint,
+    metadata: {
+      planner_version: queryPlanningVersion,
+      discovery_intent: { surface: candidate.demand_surface, query_family: candidate.query_family, concept_keys: candidate.concept_keys, competitor_specific: candidate.competitorSpecific },
+      semantic_query: candidate.query_text,
+      provider_context: {
+        product_name: input.demandProfile?.product_name ?? null,
+        category,
+        audience,
+        competitors: competitorNames(input.demandProfile),
+        alternatives: topItems(input.demandProfile?.alternative_solutions).map((item) => clean(item.label, 70)),
+        competitor_targets: topItems(input.demandProfile?.known_competitors).map((item) => ({ key: item.key, kind: "competitor", name: clean(item.name, 70), domain: item.domain })),
+        alternative_targets: topItems(input.demandProfile?.alternative_solutions).map((item) => ({ key: item.key, kind: "alternative", name: clean(item.label, 70) })),
+        pains: topPains(input.demandProfile).map((item) => clean(item.label, 70)),
+        switching_triggers: topItems(input.demandProfile?.switching_triggers).map((item) => clean(item.trigger, 70)),
+        comparison_terms: topItems(input.demandProfile?.comparison_terms).map((item) => clean(item.term, 70)),
+        feature_terms: topItems(input.demandProfile?.feature_demands).map((item) => clean(item.feature, 70)),
+      },
+      route_relevance: route.relevance_score,
+      source_capability_fit: Number((sourceRoutingCapabilityProfiles[route.source_key] ?? sourceRoutingCapabilityProfiles.fixture)[familySupportKey[candidate.query_family]] ?? 0),
+    },
+  } satisfies QueryPlanQuery;
+}
+
 function buildSourcePlan(input: QueryPlanningInput, route: SourceRoutingRoute): { plan: QueryPlanSource; suppressed: number } {
   const confidence = profileConfidence(input);
   const lowConfidence = confidence < 0.55;
@@ -450,50 +495,7 @@ function buildSourcePlan(input: QueryPlanningInput, route: SourceRoutingRoute): 
   const maxQueries = Math.min(queryCountCap(input.scanMode), policy.maxQueries ?? Number.MAX_SAFE_INTEGER, Math.max(1, Math.floor(route.max_candidates)), paidSourceQueryCap, onboardingSourceQueryCap, lowConfidence ? 2 : Number.MAX_SAFE_INTEGER);
   const diverse = selectDiverse(candidates, maxQueries);
   const budgets = allocateQueryBudgets(diverse.selected, route.max_candidates);
-  const queries = diverse.selected.map((candidate, index) => {
-    const normalized = normalizeQuery(candidate.query_text);
-    return {
-      query_id: `qp-${route.source_key}-${slug(candidate.query_family)}-${slug(normalized)}`,
-      query_family: candidate.query_family,
-      demand_surface: candidate.demand_surface,
-      competitor_specific: candidate.competitorSpecific,
-      intent_type: candidate.intent_type,
-      query_text: candidate.query_text,
-      normalized_query: normalized,
-      source_key: route.source_key,
-      priority: priorityFor(candidate.score),
-      confidence: candidate.confidence,
-      candidate_budget: budgets[index] ?? 0,
-      reason_codes: candidate.reason_codes,
-      reason_summary: reasonSummary(candidate.query_family, candidate.reason_codes),
-      concept_keys: candidate.concept_keys,
-      competitor_refs: candidate.competitor_refs,
-      alternative_refs: candidate.alternative_refs,
-      geo_context: candidate.geo_context,
-      language_context: candidate.language_context,
-      cost_hint: candidate.cost_hint,
-      metadata: {
-        planner_version: queryPlanningVersion,
-        discovery_intent: { surface: candidate.demand_surface, query_family: candidate.query_family, concept_keys: candidate.concept_keys, competitor_specific: candidate.competitorSpecific },
-        semantic_query: candidate.query_text,
-        provider_context: {
-          product_name: input.demandProfile?.product_name ?? null,
-          category,
-          audience,
-          competitors: competitorNames(input.demandProfile),
-          alternatives: topItems(input.demandProfile?.alternative_solutions).map((item) => clean(item.label, 70)),
-          competitor_targets: topItems(input.demandProfile?.known_competitors).map((item) => ({ key: item.key, kind: "competitor", name: clean(item.name, 70), domain: item.domain })),
-          alternative_targets: topItems(input.demandProfile?.alternative_solutions).map((item) => ({ key: item.key, kind: "alternative", name: clean(item.label, 70) })),
-          pains: topPains(input.demandProfile).map((item) => clean(item.label, 70)),
-          switching_triggers: topItems(input.demandProfile?.switching_triggers).map((item) => clean(item.trigger, 70)),
-          comparison_terms: topItems(input.demandProfile?.comparison_terms).map((item) => clean(item.term, 70)),
-          feature_terms: topItems(input.demandProfile?.feature_demands).map((item) => clean(item.feature, 70)),
-        },
-        route_relevance: route.relevance_score,
-        source_capability_fit: Number((sourceRoutingCapabilityProfiles[route.source_key] ?? sourceRoutingCapabilityProfiles.fixture)[familySupportKey[candidate.query_family]] ?? 0),
-      },
-    } satisfies QueryPlanQuery;
-  });
+  const queries = diverse.selected.map((candidate, index) => toPlanQuery(input, route, candidate, budgets[index] ?? 0, category, audience));
   const sourceReasonCodes: QueryPlanReasonCode[] = [];
   if (lowConfidence) sourceReasonCodes.push("LOW_PROFILE_CONFIDENCE");
   if (route.cost_class === "paid_medium") sourceReasonCodes.push("BUDGET_CONSTRAINED");
@@ -584,6 +586,35 @@ export function buildQueryPlan(input: QueryPlanningInput): QueryPlan {
     source_plans: sourcePlans,
     diagnostics,
   };
+}
+
+/**
+ * Layer 12A.2: the planner's OWN generated candidates for the given sources,
+ * after the same low-confidence filter and the same duplicate/diversity
+ * suppression `buildSourcePlan` applies, minus the per-source query-count
+ * cap. Read-only and pure: it never changes `buildQueryPlan` output (the plan
+ * is built first and independently) and never invents query text - every
+ * entry is a candidate `buildCandidates` produced, shaped by the same
+ * `toPlanQuery` mapping the plan uses (so query ids, provider context and
+ * provenance fields are identical to what executing it would record).
+ * Used only to seed reusable market partitions; nothing here is executed.
+ */
+export function buildQueryPlanSeedCandidates(input: QueryPlanningInput, sourceKeys: readonly string[]): QueryPlanQuery[] {
+  const allowed = new Set(sourceKeys);
+  const confidence = profileConfidence(input);
+  const lowConfidence = confidence < 0.55;
+  const { category, audience } = categoryAndAudience(input);
+  const seeds: QueryPlanQuery[] = [];
+  for (const route of selectExecutableSourceRoutes(input.sourceRoutingPlan)) {
+    if (!allowed.has(route.source_key)) continue;
+    const context: CandidateContext = { classification: input.classification, profile: input.demandProfile, route, lowConfidence, category, audience, geoContext: geoContext(input) };
+    let candidates = buildCandidates(context);
+    if (lowConfidence) candidates = candidates.filter((candidate) => !candidate.competitorSpecific && ["pain", "recommendation", "category_discovery", "jtbd", "desired_outcome"].includes(candidate.query_family));
+    const diverse = selectDiverse(candidates, Number.MAX_SAFE_INTEGER);
+    const budget = Math.max(1, Math.floor(route.max_candidates));
+    seeds.push(...diverse.selected.map((candidate) => toPlanQuery(input, route, candidate, budget, category, audience)));
+  }
+  return seeds;
 }
 
 export function formatQueryPlanDryRun(plan: QueryPlan): string {

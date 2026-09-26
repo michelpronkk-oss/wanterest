@@ -62,6 +62,8 @@ export type InterestArtifact = {
   sourceKey: string;
   createdAt: string;
   discoveryProvenance: unknown;
+  /** Layer 12A.2: set only for explicit market_partition_interests rows (absent for query_yield_artifacts). */
+  interestOrigin?: "scan" | "planner_seed";
 };
 
 export type InterestedProduct = {
@@ -71,6 +73,7 @@ export type InterestedProduct = {
   interestScanJobRunId: string;
   interestedAt: string;
   provenanceTemplate: DiscoveryProvenanceTemplate;
+  interestOrigin?: "scan" | "planner_seed";
 };
 
 export type SkippedInterest = {
@@ -123,6 +126,7 @@ export function selectInterestedProducts(artifacts: InterestArtifact[], maxProdu
       interestScanJobRunId: usable.artifact.jobRunId,
       interestedAt: usable.artifact.createdAt,
       provenanceTemplate: usable.template,
+      ...(usable.artifact.interestOrigin ? { interestOrigin: usable.artifact.interestOrigin } : {}),
     });
   }
   eligible.sort((a, b) => b.interestedAt.localeCompare(a.interestedAt) || a.productId.localeCompare(b.productId));

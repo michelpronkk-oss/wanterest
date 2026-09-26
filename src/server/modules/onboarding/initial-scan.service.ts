@@ -42,7 +42,9 @@ import { FixtureConversationAnalysisEngine, FixtureProductMatchingEngine } from 
 import { ensureEngineVersion } from "@/server/modules/observability/engine.repository";
 import { getTraceId } from "@/server/lib/request-context";
 import { buildSourceRoutingPlan, selectExecutableSourceRoutes, type SourceRoutingPlan, type SourceRoutingHealthStatus } from "@/server/modules/operations/source-routing.index";
-import { buildQueryPlan, githubPainRetrievalDiagnostics, toSourceDiscoveryRequest, type GithubPainQueryCompilation, type QueryPlan } from "@/server/modules/operations/query-planning.index";
+import { buildQueryPlan, githubPainRetrievalDiagnostics, toSourceDiscoveryRequest, type GithubPainQueryCompilation, type QueryPlan, type QueryPlanningInput } from "@/server/modules/operations/query-planning.index";
+import { supplyPartitionSeedingEnabled } from "@/server/modules/operations/supply-partition-seeding.policy";
+import { seedSupplyPartitionsForScan } from "@/server/modules/operations/supply-partition-seeding.service";
 import { getDiscoveryCoverageConfig } from "@/server/modules/operations/discovery-coverage.config";
 import { alignGithubFeatureEvidence, alignGithubJobEvidence, alignGithubPainEvidence, classifyGithubRetrievalQuality, emptyGithubJobEvidenceAlignmentDiagnostics, githubJobEvidenceMismatchReason, type GithubFeatureEvidenceAlignmentDiagnostics, type GithubJobEvidenceAlignmentDiagnostics, type GithubPainEvidenceAlignmentDiagnostics, type GithubRetrievalPrecisionDiagnostics } from "@/server/modules/operations/github-retrieval-quality";
 import { emptyHackerNewsPainLaunchFilterDiagnostics, hackerNewsPainLaunchMismatchReason, titleMatchesExplicitShowHnLaunch, type HackerNewsPainLaunchFilterDiagnostics } from "@/server/modules/operations/hacker-news-retrieval-quality";
@@ -1154,16 +1156,18 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
     message: capabilities.plan + "/" + scanProfile + ": " + discoveryBudget.maxSourcesPerScan + " sources, " + discoveryBudget.maxQueriesPerScan + " queries, " + discoveryBudget.maxCandidatesPerScan + " candidates, " + scanBudget.maxLlmEvaluationsPerScan + " LLM evaluations." + (coverage.enabled ? " Internal Discovery Coverage V1 override active." : ""),
   });
   let queryPlan: QueryPlan | null = null;
+  let queryPlanningInput: QueryPlanningInput | null = null;
   if (routingPlan) {
     diagnostics.push({ sourceKey: "source-routing", state: "planned", message: `${routingPlan.coverage_status} coverage (${routingPlan.overall_coverage_confidence}); selected ${routingPlan.diagnostics.selected_sources.join(", ") || "none"}.` });
     try {
-      queryPlan = buildQueryPlan({
+      queryPlanningInput = {
         classification,
         demandProfile: demandProfileV2 ? readDemandProfileV2RoutingModel(demandProfileV2) : null,
         sourceRoutingPlan: routingPlan,
         scanMode,
         maxQueries: discoveryBudget.maxQueriesPerScan,
-      });
+      };
+      queryPlan = buildQueryPlan(queryPlanningInput);
       diagnostics.push({ sourceKey: "query-planning", state: "planned", message: `${queryPlan.diagnostics.query_count} semantic quer${queryPlan.diagnostics.query_count === 1 ? "y" : "ies"} across ${queryPlan.diagnostics.source_count} source${queryPlan.diagnostics.source_count === 1 ? "" : "s"}.` });
     } catch (error) {
       diagnostics.push({ sourceKey: "query-planning", state: "fallback", message: safeSummary(error) });
@@ -1428,6 +1432,14 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       try {
         await queryYieldRepository.insertImmutable({ workspaceId: product.workspace_id, productId: product.id, jobRunId: job.id, queryPlanId: telemetry.queryPlanId, sourceKey: telemetry.source, queryFamily: telemetry.family, demandSurface: telemetry.surface, conceptKeys: telemetry.concepts, competitorSpecific: telemetry.competitorSpecific, retrievalWindow: {}, pagesRequested: telemetry.pagesRequested, pagesCompleted: telemetry.pagesCompleted, cursorContinuationCount: telemetry.cursorContinuationCount, continuationStoppedReason: telemetry.continuationStoppedReason, executionStatus: telemetry.executionStatus, rawItems: telemetry.rawItems, normalizedItems: telemetry.normalizedItems, uniqueConversations: telemetry.uniqueConversations, duplicateCount: telemetry.duplicateCount, sourceBudgetSuppressedCount: 0, candidateBudgetSuppressedCount: 0, evaluationCapSuppressedCount: 0, selectedCount: telemetry.selectedCount, evaluatedCount: telemetry.evaluatedCount, qualifiedInfluencedCount: telemetry.qualifiedInfluencedCount, weakInfluencedCount: telemetry.weakInfluencedCount, rejectedInfluencedCount: telemetry.rejectedInfluencedCount, estimatedCostUsd: telemetry.estimatedCostUsd, marketPartitionKey: telemetry.marketPartitionKey, marketPartitionIneligibleReason: telemetry.marketPartitionIneligibleReason, rawNewItems: telemetry.rawNewItems, discoveryProvenance: telemetry.discoveryProvenance ?? null });
       } catch (error) { diagnostics.push({ sourceKey: "query-yield", state: "warning", message: `Query telemetry persistence skipped: ${safeSummary(error)}` }); }
+    }
+    // Layer 12A.2: planner-seeded shared partitions (flag-gated, persistence only,
+    // no provider/model calls). Never changes what this scan executed or returns.
+    if (queryPlan && queryPlanningInput && supplyPartitionSeedingEnabled()) {
+      try {
+        const seeding = await seedSupplyPartitionsForScan({ client, workspaceId: product.workspace_id, productId: product.id, scanJobRunId: job.id, planningInput: queryPlanningInput, executed: finalizedQueryYield });
+        diagnostics.push({ sourceKey: "partition-seeding", state: "resolved", message: JSON.stringify({ candidates: seeding.plannerCandidates, selected: seeding.seedsSelected, seeds: seeding.seeds, scanInterests: seeding.scanInterests }).slice(0, 400) });
+      } catch (error) { diagnostics.push({ sourceKey: "partition-seeding", state: "warning", message: `Partition seeding skipped: ${safeSummary(error)}` }); }
     }
     const newSignalCount = candidateResult.newSignals ?? (isMonitoringScanMode(scanMode) ? newSignalEvaluationIds.length : candidateResult.signals);
     const shouldRefreshDerived = shouldRefreshDerivedIntelligence(scanMode, newSignalCount);

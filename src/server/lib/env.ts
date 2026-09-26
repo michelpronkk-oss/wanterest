@@ -80,6 +80,10 @@ const serverEnvSchema = publicEnvSchema.extend({
   // Layer 12A.1: signal supply telemetry facts (observational only; never
   // changes discovery, selection, qualification or clustering). Trigger. Defaults off.
   SIGNAL_SUPPLY_TELEMETRY_ENABLED: z.enum(["true", "false"]).optional(),
+  // Layer 12A.2: planner-seeded shared market partitions + explicit partition
+  // interests (persistence only; no extra foreground provider/model calls).
+  // Read in Vercel and Trigger (scans run in both). Defaults off.
+  SUPPLY_PARTITION_SEEDING_ENABLED: z.enum(["true", "false"]).optional(),
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
@@ -151,6 +155,7 @@ export function getServerEnv(): ServerEnv {
     GEOGRAPHY_V2_ENABLED: process.env.GEOGRAPHY_V2_ENABLED,
     EXPERIMENT_MEASUREMENT_ENABLED: process.env.EXPERIMENT_MEASUREMENT_ENABLED,
     SIGNAL_SUPPLY_TELEMETRY_ENABLED: process.env.SIGNAL_SUPPLY_TELEMETRY_ENABLED,
+    SUPPLY_PARTITION_SEEDING_ENABLED: process.env.SUPPLY_PARTITION_SEEDING_ENABLED,
   });
 }
 

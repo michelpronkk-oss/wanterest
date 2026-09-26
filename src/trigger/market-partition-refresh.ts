@@ -3,6 +3,9 @@ import { z } from "zod";
 
 import { getServerEnv } from "@/server/lib/env";
 import { refreshMarketPartition, ensureMarketPartitionRefreshState, listDueMarketPartitionRefreshes } from "@/server/modules/ingestion/market-partition-refresh.service";
+import { supplyPartitionSeedingEnabled } from "@/server/modules/operations/supply-partition-seeding.policy";
+import { retireExhaustedSeedPartitions } from "@/server/modules/operations/supply-partition-seeding.service";
+import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
 import { incrementalMatchDispatchKey, incrementalProductMatchingEnabled, matchRefreshedPartitionTask } from "./incremental-product-matching";
 
 /**
@@ -56,6 +59,11 @@ export const marketPartitionRefreshSchedulerTask = schedules.task({
       return { enabled: false, ensured: 0, due: 0, dispatched: 0, scheduledAt: payload.timestamp };
     }
     const ensured = await ensureMarketPartitionRefreshState();
+    // Layer 12A.2: conservative seed retirement before due selection (flag-gated; never fails the tick).
+    let seedRetirement: { retired: number } | { error: true } | null = null;
+    if (supplyPartitionSeedingEnabled()) {
+      try { seedRetirement = await retireExhaustedSeedPartitions({ client: createSupabaseServiceClient() }); } catch { seedRetirement = { error: true }; }
+    }
     const due = await listDueMarketPartitionRefreshes(MAX_PARTITIONS_PER_TICK);
     if (due.length) {
       await refreshMarketPartitionTask.batchTrigger(
@@ -65,6 +73,6 @@ export const marketPartitionRefreshSchedulerTask = schedules.task({
         })),
       );
     }
-    return { enabled: true, ensured: ensured.ensured, due: due.length, dispatched: due.length, scheduledAt: payload.timestamp };
+    return { enabled: true, ensured: ensured.ensured, due: due.length, dispatched: due.length, scheduledAt: payload.timestamp, ...(seedRetirement ? { seedRetirement } : {}) };
   },
 });
