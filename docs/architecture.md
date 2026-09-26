@@ -3680,3 +3680,95 @@ below. Seeding itself makes no provider request and no model call; `market_parti
   interest rows and unchanged scheduler output) → enable in Vercel and Trigger → observe natural scans
   create bounded seeds/interests → first natural refresh of a seeded partition → incremental routing
   with valid provenance → 12A.1 facts for seeded partitions.
+
+### 12A.3A — Hacker News Search v2 (`hacker_news_search_v2_1`) — IMPLEMENTED_LOCALLY
+
+Approved architecture: replace Hacker News' only retrieval mechanism - an unparameterized
+`/newstories.json` walk filtered client-side by bounded lexical anchors (`adapter_side_product_filter`;
+no literal, faithfully-identity-able provider query exists) - with the public Hacker News Algolia
+Search API as the primary query/search path, while keeping the official Firebase item API available
+for hydration. Goal is coverage (more real market evidence through the same qualification), not yield
+by relaxation: `query_planning_v7`, Retrieval Precision V1 (except Hacker News' own retrieval),
+Source Health V1, `candidate_selection_v3`, `maxEvaluations = 15`, `signal_qualification_v1_7` and its
+thresholds, `semantic_reasoning_router_v1`, `market_partition_identity_v1`'s algorithm/version, signal
+lifecycle, clustering, Map/Gap/Drift/Geography, Actions, Experiments, 12A.1 telemetry semantics, 12A.2
+interest/provenance semantics, and the GitHub/Stack Exchange adapters are all unchanged.
+
+- **One canonical source identity, two retrieval implementations.** No new source key: `"hacker-news"`
+  is preserved exactly (`HackerNewsSourceAdapter.key`), so evidence already ingested through the
+  legacy path and evidence ingested through Search v2 canonicalize onto the same conversations/story
+  ids - there is no duplicate Hacker News identity anywhere. `SourceDiscoveryRequest.requestMetadata.executionMode`
+  distinguishes them per request (`"filtered_newstories_feed"` legacy, `"algolia_search_v2"` v2); the
+  adapter itself never reads the flag, only this field, so a refresh-rebuilt request (which carries
+  `executionMode` through the `market_partition_identity_v1` per-source param allowlist) reproduces the
+  same path deterministically.
+- **Flag** `HN_ALGOLIA_SEARCH_ENABLED` (default off; Vercel and Trigger, because scans run in both -
+  same reason as `SUPPLY_PARTITION_SEEDING_ENABLED`). Off: `toSourceDiscoveryRequest`'s Hacker News
+  branch is byte-identical to pre-12A.3A (same `executionMode`, `lexicalAnchors`, no `providerQuery`);
+  `deriveMarketPartitionIdentity` still returns `adapter_side_product_filter` for it (see below), so no
+  `market_partitions` row, no refresh/seed eligibility, and no new provider requests - matching the
+  golden-digest discipline already proven for `query_planning_v7`/12A.2. On: the planner's own semantic
+  query is sent as a literal `providerQuery`, Hacker News becomes market-partition-identity-eligible and
+  flows through the *existing* 12A.2/2C pipeline unchanged - no new scheduler, no special-cased path.
+- **Retrieval**: `GET https://hn.algolia.com/api/v1/search_by_date?query=...&tags=(story,comment)&numericFilters=created_at_i>X,created_at_i<Y&page=N&hitsPerPage=M`
+  (recency-ordered, not relevance-only, per "prefer fresh, query-relevant results"; live contract
+  verified 2026-09-26). Bounded: `hitsPerPage` ≤ 20, ≤ 3 pages per call, `request.limit` respected,
+  deterministic `algolia-page:N` cursor. Freshness window: `request.windowStart`/`windowEnd` if the
+  caller supplied them, else a default 14-day lookback - excluded from partition identity like every
+  other source's window fields (documented existing imprecision, unchanged). Timeout + 2-attempt
+  retry with backoff on `RATE_LIMITED`/`HTTP_5xx`/timeout, matching the existing Hacker News/Stack
+  Exchange retry shape; dead/deleted/empty-text hits are dropped (Algolia's own index already excludes
+  dead/deleted items; this adapter additionally drops any hit with no usable text). No LLM call
+  anywhere in retrieval. The Firebase item API remains available for hydration but is not called in
+  the common case: Algolia comment hits already carry `story_id` (the root), so thread association
+  needs no extra request.
+- **Story/comment canonicalization** (unchanged canonicalization code - Stage 2A `conversationIdentity()`):
+  a story is its own conversation root; a matched comment resolves to `story_id` as
+  `externalConversationId`, so every relevant comment from the same thread canonicalizes onto the one
+  existing thread conversation - no duplicate canonical conversations, no unbounded comment-tree
+  concatenation. The exact matched item id (comment or story), its parent id, thread URL, story URL,
+  and `hacker_news_search_v2_1` are preserved on the `source_items`/evidence-node metadata so the
+  specific match is never lost even though it rolls up to the thread.
+- **`market_partition_identity_v1`** (algorithm/version unchanged; narrow, source-specific data change
+  only, exactly the carve-out the frozen list names): `"hacker-news"` moves from
+  `INELIGIBLE_REASON_BY_SOURCE` to `PARAM_ALLOWLIST` (`["executionMode"]`), but eligibility additionally
+  requires `requestMetadata.providerQuery` to be a non-empty string - true only for Search v2 requests,
+  never for the legacy path, so old-path requests remain exactly as ineligible as before with the same
+  reason. This is a pure, request-shape check with no env/flag read inside the identity module.
+- **Background refresh / seeding eligibility**: `MARKET_PARTITION_REFRESH_SOURCE_KEYS` gains
+  `"hacker-news"` at the type level, but `isMarketPartitionRefreshSource` (the single function every
+  call site - seeding, refresh-request rebuild, `listRefreshableMarketPartitions`'s live source list -
+  now goes through) additionally requires `hnAlgoliaSearchEnabled()` for that one source, so a flag-off
+  environment's scheduler/seeding behavior for every existing source is provably unaffected and Hacker
+  News specifically never becomes seedable or refreshable. `MARKET_PARTITION_CADENCE_BY_SOURCE`/`MARKET_PARTITION_REFRESH_DAILY_CAP`/`SEED_MAX_PARTITIONS_PER_SOURCE`
+  get a Hacker News entry as conservative as Stack Exchange's (24h/12h/7d cadence bounds, 60/day,
+  60 seeded partitions/source) even though the public Algolia HN Search API is keyless and unmetered -
+  a shared free resource still gets a bounded, respectful cadence, not GitHub's authenticated rate;
+  GitHub and Stack Exchange's own caps are unchanged.
+- **Provenance**: no schema change. `toSourceDiscoveryRequest` already stamps `queryPlanId`,
+  `semanticQuery`, `queryFamily`, `demandSurface`, `competitorSpecific`, and `discoveryIntent`
+  (→ `concepts`) unconditionally for every source before any per-source branch runs, so Hacker News
+  inherits the same `discoveryProvenanceTemplateSchema`-valid provenance every other planner-driven
+  source already gets - a newly seeded Hacker News interest cannot become `provenance_missing` for a
+  reason specific to this source. Per-item provenance (matched item id, thread URL, story URL,
+  `hacker_news_search_v2_1`) lives in `source_items`/evidence-node metadata, generically persisted by
+  the unchanged ingestion pipeline.
+- **Telemetry**: no `signal-supply-telemetry.ts` change. That module is already fully source-agnostic;
+  Hacker News simply starts flowing through the same `supply_refresh_facts`/`product_supply_facts`
+  writers as GitHub/Stack Exchange once it has a `refresh-market-partition` job. `providerCost("hacker-news", ...)`
+  already returns `{ value: null, unit: "unknown" }` (absent from `PROVIDER_COST_UNIT_BY_SOURCE`,
+  correct for a free/unmetered source) - never mixes USD, quota units, or request counts.
+- **Migration**: none. `source_key` is a regex check (`^[a-z][a-z0-9_-]*$`) on every table that stores
+  it, not an enum; `"hacker-news"` already satisfies it and already has rows. No new table, column, or
+  constraint is required for this slice.
+- **Source Health V1**: no module change. `classifySourceHealth`/`classifyExecution` branch purely on
+  the `SourceAdapterError.code`/`executionStatus` values a request produces, never on source name; the
+  new adapter path reuses the exact same codes (`RATE_LIMITED`, `HTTP_5xx`, `HTTP_4xx`,
+  `MALFORMED_PROVIDER_PAYLOAD`, `REQUEST_FAILED`) the legacy path and every other adapter already use.
+- **Rollout**: deploy flag off (prove old Hacker News behaviour, zero Hacker News `market_partitions`
+  rows, unchanged scheduler output) → enable `HN_ALGOLIA_SEARCH_ENABLED` in Vercel and Trigger →
+  observe one natural product scan retrieve through Search v2 → planner seeds bounded Hacker News
+  partitions/interests with valid provenance → first natural seeded-partition refresh → incremental
+  routing through the explicit interest with valid provenance and no cross-workspace leakage → 12A.1
+  facts for the new Hacker News refresh/matching jobs → compare qualified evidence yield against the
+  pre-12A.3A Hacker News baseline (evidence yield is the success measure, not raw hit count).
