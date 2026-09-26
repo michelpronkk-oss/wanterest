@@ -3856,6 +3856,20 @@ are reused as-is - not replaced, not forked - per the sections below.
   LLM result for every candidate it always evaluated, which is the telemetry needed to decide whether
   promoting a verified upgrade into a new, additional (never overwritten) evaluation row is warranted -
   that materialization step is intentionally deferred, not built here (see Scope boundary below).
+- **Structured semantic output boundary (`semantic_output_normalization_v1`).** Provider structured
+  output is treated as untrusted JSON even when the provider receives the generated Zod JSON Schema:
+  the application must still validate the returned value. Before the strict
+  `conversationMarketReasoningSchema` parse, `semantic-output-normalizer.ts` may make only two
+  deterministic, source-preserving repairs. An overlong `evidence_spans[].text` is replaced only when
+  the supplied source text contains that span (after the same whitespace normalization used by the
+  prompt) with the first 500 characters of the literal source slice, with no paraphrase or ellipsis;
+  an overlong span that cannot be anchored is discarded and remains fail-closed if no valid evidence
+  remains. A `relationship_candidates[]` item with an unknown `relationship_type` is discarded, never
+  coerced to a nearby enum; if the discarded item is the sole relationship evidence for a
+  third-party-product or away-from-product conclusion, normalization fails closed. The canonical
+  schema remains strict, persisted validated/merged artifacts contain only canonical values, raw
+  provider JSON remains available only in the existing immutable shadow audit row, and normalization
+  never changes qualification thresholds, routing, budgets, or signal lifecycle semantics.
 - **Scope boundary (explicitly deferred, not 12A.3B).** `product_match_evaluations` rows are immutable
   per this document's own tenancy/idempotency rules ("current pointers may optimize reads but must never
   overwrite historical matching/ranking results"); `IntelligenceService.matchProduct` therefore stays
