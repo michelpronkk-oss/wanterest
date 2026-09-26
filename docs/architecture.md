@@ -3903,8 +3903,158 @@ are reused as-is - not replaced, not forked - per the sections below.
   a required-but-unavailable verification fails closed without throwing; no additional LLM call is made
   for a safe deterministic reject or for a candidate whose router route is not `llm_reasoning`; the
   grounding gate is a pure function of its inputs, so replay is idempotent).
-- **Rollout**: this is a scoring/wording/lifecycle-only change with no new environment flag, no schema
-  migration, and no new provider dependency - safe to run in production immediately behind the existing
-  deterministic qualification path once merged; revalidation is implemented but not scheduled by this
-  section (invoking it against existing production signals is a separate, explicit operational decision,
-  not automatic on deploy).
+
+### 12A.3A.1 Amendment — Materialization Safety Gate (`materialization_safety_gate_v1`) — IMPLEMENTED_LOCALLY
+
+**Gap confirmed.** The 12A.3A.1 grounding gate reuses `semantic_reasoning_router_v1`'s routing decision,
+and that decision escalates to `llm_reasoning` only when the deterministic pass is already
+uncertain/conservative (direction unknown, `buyer_context` false, or a low-confidence entity). A
+*confident* deterministic misread - a strong `switching_intent` classification, a named competitor, an
+explicit willingness-to-pay phrase - takes the router's own `deterministic_only` fast path and is never
+routed for verification, regardless of how consequential the claim is. Expanding the regex/entity guard
+set (as 12A.3A.1 did) narrows the set of confident misreads but cannot, by construction, prove the
+invariant for claims no guard yet anticipates. This amendment closes that gap for a bounded, named set
+of **high-risk** claim types: those must be either deterministically low-risk or verified before they can
+materialize as a `qualified`/`high_confidence_signal` signal - confidence in the deterministic pass is no
+longer sufficient on its own for a high-risk claim.
+
+This does **not** replace or weaken 12A.3A.1's existing work; it adds one more gate after it, and every
+primitive it needs is being reused, not rebuilt.
+
+- **High-risk claim contract.** A candidate is high-risk when, after ordinary deterministic qualification
+  would materialize it (`qualified`/`high_confidence_signal`), at least one of these holds (computed by
+  `assessMaterializationRisk()` in `evidence-grounding.ts`, pure, no LLM):
+  - `high_risk_switching_claim` - `primary_intent === "switching_intent"`.
+  - `high_risk_competitor_claim` - a specific competing product is named as source or third-party/category
+    target (`demand.source_products.length > 0` with `demand_target_type` `third_party_product`/`category`,
+    or a `relationship_candidates` entry).
+  - `high_risk_purchase_claim` - `primary_intent` is `purchase_research` or `vendor_evaluation`.
+  - `high_risk_wtp_claim` - an explicit willingness-to-pay phrase (new deterministic pattern: "willing to
+    pay", "I'd/we'd (happily/gladly) pay", "worth paying for").
+  - `high_risk_migration_claim` - a genuine migration direction (`demand_direction === "away_from_product"`
+    with a named source, or explicit migrat(e/ing) language) rather than a same-product feature note.
+  - `high_risk_urgency_claim` - `analysis.urgency !== null && analysis.urgency >= 0.7`.
+  - `ambiguous_entity_claim` - a `mentioned_products` entry below 0.5 confidence remains after the v1
+    grounding trim (i.e., the router's own `unknown_product_entity` reason).
+  - `ambiguous_author_stance` - `speaker_role === "buyer"` but `authorial_stance !== "buyer"` (the two
+    independently-computed signals disagree about who is speaking).
+  A candidate that would not materialize anyway (rejected/weak on its ordinary dimensions) is never
+  assessed for risk - this is the deterministic zero-LLM path (see below), not a side effect of a budget
+  check.
+- **Router extension, truthfully versioned.** `SEMANTIC_REASONING_ROUTER_VERSION` moves to
+  `semantic_reasoning_router_v2`: `routeSemanticReasoning()` gains an optional `materializationRisk:
+  MaterializationSafetyReason[]` input; when non-empty (and the content isn't obvious noise/promotional,
+  which still short-circuits to `reject_without_llm`, and isn't `implementation_only`, which is
+  definitionally not a materializable claim), the route is forced to `llm_reasoning` with those reasons
+  and top priority (`2`, above the existing uncertainty-priority range of `0..1`) - overriding the
+  `explicit_direction` confidence≥0.75 fast path that let confident-but-wrong claims through. The
+  existing three uncertainty reasons, `validateShadowReasoningEvidence`, and `mergeValidatedShadowReasoning`
+  are unchanged - reused exactly as they are; only the router's own routing function gained a new input
+  and a new case. Any caller that does not pass `materializationRisk` (there are none left after this
+  amendment, but the parameter is optional for defensiveness) sees identical behavior to v1.
+- **Structured verification result, not free-form model prose.** `semantic-verification.schemas.ts`
+  (new) defines `semanticVerificationResultSchema`: `supported: boolean`, `intent_type` (`switching` |
+  `alternative_search` | `purchase` | `willingness_to_pay` | `feature_request` | `pain` | `comparison` |
+  `recommendation` | `other` | `none`), `authorial_stance` (`first_party_demand` | `first_party_experience`
+  | `recommendation` | `vendor_marketing` | `technical_discussion` | `descriptive_reference` | `unknown`),
+  `target_type` (`tracked_product` | `competitor` | `category` | `feature` | `workflow` | `none` |
+  `ambiguous`), `target_name` (nullable), `claim_strength` (`explicit` | `strongly_supported` |
+  `weakly_supported` | `unsupported`), `evidence_spans` (exact, already source-verified spans), and
+  `temporal_tense` (`current` | `past` | `future` | `unclear`). This is **not** a second LLM call or a
+  parallel provider stack: `deriveSemanticVerificationResult()` projects it deterministically from the
+  *already-validated* `ConversationMarketReasoning` that `validateShadowReasoningEvidence` +
+  `mergeValidatedShadowReasoning` produce today (`supported` is false iff the specific high-risk claim's
+  field was in `droppedClaims`; `claim_strength` and `temporal_tense` are derived from the merged
+  reasoning's confidence and source text). `reasonText()` consumes only this structured result for a
+  verified high-risk claim - never the LLM's own prose - so a "past first-party experience" claim reads
+  as "reports having moved from X to Y," not "actively considering switching."
+- **Materialization safety gate.** In `qualifySignal`'s no-`reasoningOverride` path: once ordinary
+  dimensions would materialize the candidate, `assessMaterializationRisk()` runs; if it returns any
+  reason, `diagnostics.materialization_verification_required = true` and the **status is capped at
+  `weak_candidate`** (a `HIGH_RISK_VERIFICATION_REQUIRED` reason code is added) - synchronously, with no
+  LLM call, so this is the *default* and *only* behavior wherever semantic verification is disabled,
+  unbudgeted, or not yet run. This is the fail-closed contract: a high-risk claim materializes as
+  `qualified`/`high_confidence_signal` only via `qualifySignalWithReasoning()` with a `merged` reasoning
+  whose derived `SemanticVerificationResult` has `supported: true` and `claim_strength` of
+  `explicit`/`strongly_supported` - `qualifySignalWithReasoning()` skips the deterministic-only cap
+  entirely (it is, by definition, already grounded). Pipeline shape:
+  `retrieval → deterministic analysis → candidate selection → qualification candidate (capped if
+  high-risk) → (bounded, reused) semantic verification → grounded qualification → materialization`.
+- **Live wiring reuses the existing shadow pipeline verbatim - no parallel call site.**
+  `SemanticShadowPlanningCandidate`/`SemanticShadowExecutionCandidate` gain an optional
+  `materializationRisk?: MaterializationSafetyReason[]` field, populated in `initial-scan.service.ts` from
+  the first-pass evaluation's own `diagnostics.materialization_risk_reasons` (already persisted, since the
+  gate above always runs). `planSemanticShadowReasoning`/`executeScheduledSemanticShadowReasoning` are
+  unchanged code; they already compute exactly the validated+merged reasoning this gate needs. The scan
+  loop's existing shadow block (previously comparison-only) now additionally does this for a candidate
+  flagged `materialization_verification_required`: if a `merged` result exists whose derived
+  `SemanticVerificationResult` supports the claim, call `IntelligenceService.matchProduct(...,
+  reasoningOverride: merged)` again - creating one more **immutable** evaluation row (a new
+  `input_fingerprint`, since it hashes the override's fingerprint) - and `setCurrentEvaluation()` points
+  the match at it, exactly the "current pointer over immutable history" pattern this repository's own
+  tenancy rules already require and `matchProduct`/`setCurrentEvaluation` already implement for every
+  other evaluation. No evaluation is ever mutated or deleted. If no verified upgrade exists (disabled,
+  no budget, provider failure, schema failure, evidence failure, or `supported: false`), the first-pass,
+  already-capped evaluation simply remains current - the scan does not fail, nothing extra happens.
+- **Deterministic zero-LLM path preserved.** X.509/protocol discussion, "linear regression", empty/low
+  relevance evidence, and implementation/config-only content never reach `assessMaterializationRisk()`
+  because they do not materialize on ordinary dimensions in the first place (or, for `implementation_only`,
+  are explicitly exempted) - zero verification calls, exactly as before this amendment.
+- **Cost bound: no new budget invented.** `SEMANTIC_REASONING_SHADOW_MAX_NEW_CALLS_PER_SCAN`
+  (`getSemanticReasoningShadowConfig`, default `0`) already bounds every LLM call
+  `executeScheduledSemanticShadowReasoning` can make in a scan, regardless of why a candidate routed to
+  `llm_reasoning`. This amendment does not raise that cap or add a second one; it changes what competes
+  for it: a `materializationRisk` reason now sorts to priority `2`, ahead of the existing `0..1`
+  uncertainty-only priority range, so a constrained budget is spent on materialization safety first.
+  `maxEvaluations = 15` (`candidate_selection_v3`) is unchanged - the gate only ever evaluates candidates
+  already inside that bound.
+- **Fail-closed, never fails the scan.** Provider unavailable, timeout, schema-invalid output, evidence
+  validation failure, or budget exhaustion all already produce a non-`success` `execution_status` in the
+  existing `executeScheduledSemanticShadowReasoning`/persistence path (unchanged); this amendment's rule
+  for all of them is identical: no verified upgrade, so the capped (`weak_candidate` at most) first-pass
+  evaluation stands. The scan's own error handling is untouched - `processScanCandidates`'s shadow block
+  already treats shadow failures as observational and continues.
+- **Feature flag `EVIDENCE_FIDELITY_GROUNDING_ENABLED`** (`env.ts`, default off; read in Vercel and
+  Trigger). Off: `qualifySignal`/`deriveDirectionalDemand`/`detectIntentTarget` all take the flag as an
+  explicit parameter (never an internal env read, matching the `hnAlgoliaSearchEnabled` convention) and,
+  when it is false, run the *original* pre-12A.3A.1 code paths byte-for-byte - the original
+  (non-expanded) `AUTHENTICATION_TERMS`/`IMPLEMENTATION_TERMS`, the original inline implementation
+  regex in `directional-demand.ts`, no entity-disambiguation filtering, no authorial-stance computation
+  (`authorial_stance` stays `"unknown"`), no v1 grounding downgrade, no materialization gate, no temporal
+  wording, and `reasonText()` matches its pre-12A.3A.1 output exactly. This makes the whole of 12A.3A.1
+  *and* this amendment inert when the flag is off, correcting the previous 12A.3A.1 commit's unconditional
+  rollout (this is the reason the amendment retrofits a flag onto already-shipped code rather than only
+  gating the new gate). On: every 12A.3A.1 guard plus this amendment's materialization gate is active.
+  The flag never touches retrieval - Hacker News Search v2 (`HN_ALGOLIA_SEARCH_ENABLED`) keeps running
+  regardless of this flag's state, in either direction.
+- **Idempotency/fingerprint correctness.** `IntelligenceService.matchProduct`'s `input_fingerprint` now
+  additionally hashes `groundingEnabled` and, when true, `qualification.diagnostics.grounding_version` -
+  so flipping the flag for a workspace naturally produces a new fingerprint (recomputes instead of
+  silently reusing a stale cached evaluation) without needing to bump the global
+  `SIGNAL_QUALIFICATION_VERSION` (which the codebase's own convention reserves for a *default-path*
+  dimension-composition change - correct to leave unchanged here, since the default/flag-off path is
+  unchanged from `signal_qualification_v1_7`). Semantic verification reuse across replay is already
+  idempotent for free: `SemanticShadowReasoningRepository.findByFingerprint` keys on
+  `routerVersion`/`reasoningVersion`/`promptSchemaVersion` plus a content fingerprint that itself embeds
+  `routerVersion` - the v1→v2 router bump alone guarantees no stale v1 verification result is reused as
+  if it answered a v2 (materialization-aware) question, while a repeated v2 candidate still hits cache.
+- **Revalidation integration.** `revalidateSignal`/`revalidateSignalBatch` take `groundingEnabled` as
+  part of the candidate's `freshInput`; when false, revalidation returns `skipped` immediately (a flag-off
+  revalidation pass is a deliberate no-op, not a silent behavior change). When true, revalidation
+  recomputes through the exact same gate new signals use, including reusing any existing verified
+  semantic-verification artifact for that conversation/product/router-version rather than requesting a
+  new one - an old signal is never invalidated by a new regex alone when the architecture says
+  verification is required; it is capped/held pending verification exactly like a new candidate would be.
+- **Rollout.** No schema migration (one new env var; `signals`/`product_match_evaluations` already support
+  everything used here). Deploy with the flag off (byte-identical to pre-12A.3A.1 production) → enable in
+  a bounded internal workspace allowlist alongside a nonzero `SEMANTIC_REASONING_SHADOW_MAX_NEW_CALLS_PER_SCAN`
+  and `SEMANTIC_REASONING_SHADOW_ENABLED=true` (both already exist and already default to no calls) →
+  observe that a known high-risk case caps at `weak_candidate` with zero verification budget configured →
+  observe a verified upgrade materialize once budget/enablement are both on → widen the allowlist.
+- **Rollout**: this is a scoring/wording/lifecycle-only change with no schema migration and no new
+  provider dependency; revalidation is implemented but not scheduled by this section (invoking it
+  against existing production signals is a separate, explicit operational decision, not automatic on
+  deploy). **Superseded by the 12A.3A.1 Amendment immediately below**: this section's guards, wording,
+  and revalidation eligibility are now gated behind `EVIDENCE_FIDELITY_GROUNDING_ENABLED` (default off,
+  matching pre-12A.3A.1 production exactly) rather than being unconditionally active as first written
+  here - see the amendment for the corrected rollout contract and the reason it was required.
