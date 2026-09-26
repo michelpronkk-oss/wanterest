@@ -21,6 +21,25 @@ begin
 end;
 $$;
 
+-- ---------------------------------------------------------------- privilege contract
+select l12pt.ok(not has_table_privilege('anon', 'public.semantic_shadow_reasoning', 'SELECT'), 'anon_cannot_read_shadow_reasoning');
+select l12pt.ok(not has_table_privilege('anon', 'public.semantic_shadow_reasoning', 'INSERT'), 'anon_cannot_insert_shadow_reasoning');
+select l12pt.ok(not has_table_privilege('authenticated', 'public.semantic_shadow_reasoning', 'INSERT'), 'authenticated_cannot_insert_shadow_reasoning');
+select l12pt.ok(not has_table_privilege('authenticated', 'public.semantic_shadow_reasoning', 'UPDATE'), 'authenticated_cannot_update_shadow_reasoning');
+select l12pt.ok(not has_table_privilege('authenticated', 'public.semantic_shadow_reasoning', 'DELETE'), 'authenticated_cannot_delete_shadow_reasoning');
+select l12pt.ok(has_table_privilege('service_role', 'public.semantic_shadow_reasoning', 'SELECT'), 'service_role_can_read_shadow_reasoning');
+select l12pt.ok(has_table_privilege('service_role', 'public.semantic_shadow_reasoning', 'INSERT'), 'service_role_can_insert_shadow_reasoning');
+select l12pt.ok(has_table_privilege('service_role', 'public.semantic_shadow_reasoning', 'UPDATE'), 'service_role_can_update_shadow_reasoning');
+select l12pt.ok(not has_table_privilege('service_role', 'public.semantic_shadow_reasoning', 'DELETE'), 'service_role_cannot_delete_shadow_reasoning');
+select l12pt.ok(exists (
+  select 1 from pg_policies
+  where schemaname = 'public'
+    and tablename = 'semantic_shadow_reasoning'
+    and policyname = 'semantic_shadow_reasoning_member_select'
+    and roles = array['authenticated']::name[]
+    and cmd = 'SELECT'
+), 'member_select_policy_unchanged');
+
 -- ---------------------------------------------------------------- fixtures
 insert into auth.users (id, email) values ('10000000-0000-4000-8000-000000000001', 'owner@example.test');
 insert into public.workspaces (id, name, slug, created_by) values ('20000000-0000-4000-8000-000000000001', 'Preview Test Workspace', 'preview-test-workspace', '10000000-0000-4000-8000-000000000001');
