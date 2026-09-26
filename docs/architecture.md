@@ -3550,3 +3550,63 @@ invalid first-class; capped attribution and no unjustified causal/statistical wo
 idempotent single-writer measurement pass; append-only results, observations and transitions;
 audit; Layer 12 isolation; migration, code and tests green (including real Postgres); structural
 production proof recorded — without requiring natural production outcomes.
+
+## 24. Layer 12A — Low-Cost Signal Supply Engine
+
+Approved architecture: more real, cheap, globally reusable public evidence into the existing
+pipeline without changing any downstream semantics. Frozen throughout 12A: `query_planning_v7`,
+Retrieval Precision V1, Source Health V1, `candidate_selection_v3`, `maxEvaluations = 15`,
+`signal_qualification_v1_7` and its thresholds, `semantic_reasoning_router_v1`, read-first, signal
+lifecycle, durable clustering, Map/Gap/Drift/Geography, Actions and Experiments. X is optional and
+never required; Reddit is not a dependency. Phases: 12A.1 telemetry → 12A.2 planner-seeded shared
+partitions → 12A.3 low-cost sources → 12A.4 cross-product routing + candidate backlog → 12A.5
+adaptive allocator → 12A.6 natural production yield validation.
+
+### 12A.1 — Signal Supply Telemetry V1 (`signal_supply_telemetry_v1`) — IMPLEMENTED_LOCALLY
+
+Observational only. Flag `SIGNAL_SUPPLY_TELEMETRY_ENABLED` (default off; Trigger): off = zero
+telemetry reads/writes and no behaviour change; on = facts are recorded, nothing else changes.
+
+- **`supply_refresh_facts`** (migration `20261020000000`): one immutable row per
+  `refresh-market-partition` job (`job_run_id` unique; a trigger requires a global refresh job).
+  Global public-market operational data, RLS on with no policy: service role only.
+- **`product_supply_facts`**: one immutable row per `match-product-incremental` job
+  (`job_run_id` unique; `(refresh_job_run_id, product_id)` unique; composite FK to
+  `products(workspace_id, id)`; a trigger requires the job's own workspace/product). Tenant-private:
+  workspace-member `select` RLS; no browser writes.
+- **Writers**: the refresh service and incremental matching record a fact *after* their job row is
+  finalized, from values the job already computed (plus one bounded ≤500-id `conversations` lookup
+  for the new/reused canonical split, only while the flag is on). Best-effort: a telemetry failure is
+  swallowed and never changes an outcome, refresh state or cadence. Replays insert-or-ignore on the
+  job identity (never `+=`); rows are immutable (update trigger). Only terminal outcomes with
+  measured counts are recorded: refresh `succeeded` / `failed` (after ingestion) / `deferred`;
+  product jobs `succeeded`. Replayed slots write nothing.
+- **Costs** carry an explicit unit (`usd`, `quota_units`, `requests`, `unknown`); a value exists
+  exactly when the unit is known (X = usd, YouTube = quota units, otherwise unknown). Units are never
+  converted or summed together.
+- **Authoritative sources** (facts are normalized copies, never a second truth): refresh counts ←
+  the refresh job's `input_reference.result`; new canonical ← `conversations.created_at` ≥ the refresh
+  job's `started_at` over that job's conversation ids (a conversation first created concurrently by
+  another writer inside that window also counts as new); product counts ← the product job's
+  `input_reference`; weak/rejected/qualified ← that job's candidate outcomes; clusters created and
+  memberships created ← the job's demand-rebuild clustering result (0 when no rebuild ran, null when
+  not observable); reasoning calls/cost ← the semantic-reasoning shadow summary.
+- **`signal_supply_funnel(since, until, workspace?, product?)`**: security invoker, service role
+  only, window required and ≤ 31 days, bounded group outputs. Returns refresh funnels by source and
+  partition (raw, raw_new, normalized, unique, new/reused canonical, provider requests, duplicate
+  rate = (raw − raw_new) / raw), product funnels (routed, already matched, candidates, overflow,
+  selected, evaluated, weak, rejected, qualified, materialized, clusters created, memberships,
+  selection and qualification rates), costs grouped by unit, and qualified evidence.
+- **Qualified evidence item (gross)**: one distinct `(workspace_id, product_id, conversation_id)`
+  whose *first* `product_match_evaluations` row with `decision = 'qualified'` falls in the window,
+  excluding `fixture` sources. Re-qualification, replays, weak/rejected and duplicate canonical
+  conversations never count. Computed from existing evaluations (new partial indexes), covering
+  every intake path (scans and incremental matching).
+- **Deferred (not measured in 12A.1)**: net qualified (signal invalidation reasons are not
+  unambiguously "false positive"), clusters strengthened and cluster-strengthening rate (the frozen
+  clustering result exposes created clusters and memberships only), surface and concept dimensions
+  (12A.2 seeds), provider cost for product scans (existing `query_yield_artifacts.estimated_cost_usd`
+  is unit-ambiguous for YouTube), and a refresh whose discovery threw (counts unknown).
+- **Rollout**: migration dry-run → apply → schema verification → deploy with the flag off (prove no
+  behaviour change) → enable → reconcile facts with `job_runs` and evaluations on natural jobs →
+  first 24h funnel → only then 12A.2.

@@ -77,6 +77,9 @@ const serverEnvSchema = publicEnvSchema.extend({
   // (public events, manual measurement observations, the measurement pass).
   // Read in both Vercel and Trigger. Defaults off.
   EXPERIMENT_MEASUREMENT_ENABLED: z.enum(["true", "false"]).optional(),
+  // Layer 12A.1: signal supply telemetry facts (observational only; never
+  // changes discovery, selection, qualification or clustering). Trigger. Defaults off.
+  SIGNAL_SUPPLY_TELEMETRY_ENABLED: z.enum(["true", "false"]).optional(),
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
@@ -147,6 +150,7 @@ export function getServerEnv(): ServerEnv {
     CONCEPT_ACTIONS_ENABLED: process.env.CONCEPT_ACTIONS_ENABLED,
     GEOGRAPHY_V2_ENABLED: process.env.GEOGRAPHY_V2_ENABLED,
     EXPERIMENT_MEASUREMENT_ENABLED: process.env.EXPERIMENT_MEASUREMENT_ENABLED,
+    SIGNAL_SUPPLY_TELEMETRY_ENABLED: process.env.SIGNAL_SUPPLY_TELEMETRY_ENABLED,
   });
 }
 

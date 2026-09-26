@@ -8,6 +8,7 @@ import { jsonObjectSchema, type JobRunRow } from "@/server/db/database.helpers";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
 import { deriveMarketPartitionIdentity } from "@/server/modules/ingestion/market-partition-identity";
 import { ingestPublicPartition } from "@/server/modules/ingestion/public-ingestion.service";
+import { signalSupplyTelemetryFor, type SignalSupplyTelemetryWriter } from "@/server/modules/operations/signal-supply-telemetry";
 import { MarketPartitionRefreshRepository, type DueMarketPartitionCandidate } from "@/server/modules/ingestion/market-partition-refresh.repository";
 import {
   MARKET_PARTITION_REFRESH_INTEREST_WINDOW_MS,
@@ -82,6 +83,11 @@ export type StoredRefreshJobResult = {
   cadence?: AdaptiveCadenceDecision & { nextDueAt: string };
 };
 
+function telemetryPages(entry: unknown): number | null {
+  const pages = entry && typeof entry === "object" ? (entry as { pagesCompleted?: unknown }).pagesCompleted : undefined;
+  return typeof pages === "number" ? pages : null;
+}
+
 function zeroOutcome(status: MarketPartitionRefreshOutcome["status"], jobRunId: string | null, reason?: string): MarketPartitionRefreshOutcome {
   return { status, jobRunId, rawItems: 0, rawNewItems: 0, normalizedItems: 0, conversations: 0, executionStatus: null, ...(reason ? { reason } : {}) };
 }
@@ -128,9 +134,11 @@ async function completeJobRun(client: Client, jobId: string, status: "succeeded"
   if (error) throw new Error(`Refresh job completion failed: ${error.message}`);
 }
 
-export async function refreshMarketPartition(input: { partitionId: string; traceId: string }): Promise<MarketPartitionRefreshOutcome> {
+export async function refreshMarketPartition(input: { partitionId: string; traceId: string }, options: { telemetry?: SignalSupplyTelemetryWriter } = {}): Promise<MarketPartitionRefreshOutcome> {
   const client = createSupabaseServiceClient();
   const repository = new MarketPartitionRefreshRepository(client);
+  // Layer 12A.1: observational only; a no-op unless SIGNAL_SUPPLY_TELEMETRY_ENABLED=true.
+  const supplyTelemetry = options.telemetry ?? signalSupplyTelemetryFor(client);
   const now = new Date().toISOString();
 
   const stateBefore = await repository.getStateRow(input.partitionId);
@@ -226,6 +234,26 @@ export async function refreshMarketPartition(input: { partitionId: string; trace
   const conversations = ingestionResult.conversationIds.length;
   const executionStatus = telemetry?.executionStatus ?? (ingestionResult.failedQueryCount ? "provider_error" : "completed_zero_results");
 
+  // Layer 12A.1: best-effort fact, written only after the refresh job row is
+  // finalized and from values this refresh already computed. It can never
+  // change the refresh outcome, refresh state or cadence.
+  const queryPages = telemetryPages(ingestionResult.queryTelemetry[0]);
+  const recordSupplyFact = async (refreshStatus: "succeeded" | "failed" | "deferred") => {
+    try {
+    const providerRequests = ingestionResult.providerMetrics?.requestCount;
+    await supplyTelemetry.recordRefresh({
+      jobRunId: job.id, marketPartitionId: partition.id, partitionKey: partition.partition_key, sourceKey: partition.source_key,
+      refreshStatus, executionStatus, startedAt: job.started_at ?? now, finishedAt,
+      rawItems, rawNewItems, normalizedItems, conversationIds: ingestionResult.conversationIds,
+      newCanonicalCount: await supplyTelemetry.countNewCanonical(ingestionResult.conversationIds, job.started_at ?? now),
+      pagesCompleted: queryPages,
+      providerRequestCount: typeof providerRequests === "number" ? providerRequests : null,
+      estimatedCost: ingestionResult.estimatedCost, durationMs,
+    });
+    } catch {
+      // Telemetry is observational; it never fails a refresh.
+    }
+  };
   const storedResult: StoredRefreshJobResult = {
     partitionKey: partition.partition_key,
     sourceKey: partition.source_key,
@@ -241,6 +269,7 @@ export async function refreshMarketPartition(input: { partitionId: string; trace
   if (ingestionResult.errorCode === "CONFLICT") {
     await completeJobRun(client, job.id, "failed", storedResult, "Source control reported the source as temporarily unavailable.");
     await repository.recordDeferral({ partitionId: input.partitionId, leaseToken, nextDueAt: marketPartitionRefreshDeferralAt(finishedAt) });
+    await recordSupplyFact("deferred");
     return { status: "deferred", jobRunId: job.id, rawItems, rawNewItems, normalizedItems, conversations, executionStatus, reason: "source_control_conflict", partitionKey: partition.partition_key, sourceKey: partition.source_key, estimatedCostUsd: ingestionResult.estimatedCost, durationMs };
   }
 
@@ -252,6 +281,7 @@ export async function refreshMarketPartition(input: { partitionId: string; trace
     } else {
       await repository.recordFailure({ partitionId: input.partitionId, leaseToken, now: finishedAt, nextDueAt: marketPartitionRefreshFailureBackoffAt(finishedAt, stateBefore.consecutive_failures), consecutiveFailures, jobRunId: job.id });
     }
+    await recordSupplyFact("failed");
     return { status: "failed", jobRunId: job.id, rawItems, rawNewItems, normalizedItems, conversations, executionStatus, reason: ingestionResult.errorCode ?? "provider_error", partitionKey: partition.partition_key, sourceKey: partition.source_key, estimatedCostUsd: ingestionResult.estimatedCost, durationMs };
   }
 
@@ -274,6 +304,7 @@ export async function refreshMarketPartition(input: { partitionId: string; trace
     partitionId: input.partitionId, leaseToken, now: finishedAt, nextDueAt, jobRunId: job.id,
     cadence: { consecutiveZeroNew: decision.consecutiveZeroNew, rawItems, rawNewItems, cadenceSeconds: Math.round(decision.cadenceMs / 1000), policyVersion: decision.policyVersion },
   });
+  await recordSupplyFact("succeeded");
 
   return {
     status: "succeeded",

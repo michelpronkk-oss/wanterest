@@ -9,6 +9,8 @@ import { getScanProduct, processScanCandidates } from "@/server/modules/onboardi
 import { rebuildDemandIntelligenceForScan } from "@/server/modules/demand-intelligence/demand.orchestration";
 import { generateActionsForScan } from "@/server/modules/actions/action.orchestration";
 import { IncrementalProductMatchingRepository } from "./incremental-product-matching.repository";
+import { deterministicUuid } from "@/server/modules/ingestion/hash";
+import { signalSupplyTelemetryFor, type SignalSupplyTelemetryWriter } from "./signal-supply-telemetry";
 import {
   INCREMENTAL_MATCH_INTEREST_WINDOW_MS,
   INCREMENTAL_MATCH_MAX_EVALUATIONS_PER_PRODUCT,
@@ -58,6 +60,8 @@ export type IncrementalMatchingDependencies = {
   generateActions: typeof generateActionsForScan;
   now: () => Date;
   maxProducts?: number;
+  /** Layer 12A.1: observational supply facts; a no-op unless SIGNAL_SUPPLY_TELEMETRY_ENABLED=true. */
+  telemetry?: SignalSupplyTelemetryWriter;
 };
 
 export type ProductIncrementalMatchResult = {
@@ -102,8 +106,10 @@ export type IncrementalPartitionMatchOutcome = {
 };
 
 function defaultDependencies(): IncrementalMatchingDependencies {
+  const client = createSupabaseServiceClient();
   return {
-    repository: new IncrementalProductMatchingRepository(createSupabaseServiceClient()),
+    repository: new IncrementalProductMatchingRepository(client),
+    telemetry: signalSupplyTelemetryFor(client),
     loadProduct: getScanProduct,
     processCandidates: processScanCandidates,
     rebuildDemand: rebuildDemandIntelligenceForScan,
@@ -138,6 +144,7 @@ async function matchOneProduct(input: {
   interest: InterestedProduct;
   refreshJobRunId: string;
   partitionKey: string;
+  sourceKey: string;
   conversationIds: string[];
   normalizedSourceItemIds: string[];
   traceId: string;
@@ -174,6 +181,12 @@ async function matchOneProduct(input: {
   });
   result.jobRunId = job.id;
 
+  // Layer 12A.1 observations of values this job already computes (never persisted onto the job result).
+  let outcomeStatuses: Array<string | null> = [];
+  let reasoningCalls: number | null = 0;
+  let reasoningCostUsd: number | null = null;
+  let clustersCreated: number | null = 0;
+  let clusterMembershipsCreated: number | null = 0;
   try {
     const matched = await deps.repository.listMatchedConversationIds({ workspaceId: interest.workspaceId, productId: interest.productId, conversationIds: input.conversationIds });
     const candidates = newCandidateConversationIds({ refreshConversationIds: input.conversationIds, alreadyMatchedConversationIds: matched });
@@ -197,12 +210,19 @@ async function matchOneProduct(input: {
       result.qualifiedCount = processed.outcomes.filter((outcome) => outcome.qualificationStatus === "qualified").length;
       result.evaluationIds = processed.evaluationIds;
       result.signalIds = processed.signalIds.filter((id): id is string => typeof id === "string");
+      outcomeStatuses = processed.outcomes.map((outcome) => outcome.qualificationStatus);
+      reasoningCalls = processed.semanticReasoningShadow ? processed.semanticReasoningShadow.llmExecutedCount : null;
+      reasoningCostUsd = processed.semanticReasoningShadow?.reasoningCostUsd ?? null;
       if (processed.signals > 0) {
         // Only re-aggregate Map/Gap/Drift when product intelligence materially
         // changed; an unchanged refresh must not mint noise snapshots.
+        clustersCreated = null;
+        clusterMembershipsCreated = null;
         try {
-          await deps.rebuildDemand({ product, evaluationIds: processed.evaluationIds, signalIds: processed.signalIds, traceId: input.traceId });
+          const rebuilt = await deps.rebuildDemand({ product, evaluationIds: processed.evaluationIds, signalIds: processed.signalIds, traceId: input.traceId });
           result.demandRebuilt = true;
+          clustersCreated = rebuilt?.clustering?.clustersCreated ?? null;
+          clusterMembershipsCreated = rebuilt?.clustering?.membershipsCreated ?? null;
         } catch (error) {
           result.reason = `demand_rebuild_skipped:${safeMessage(error)}`;
         }
@@ -224,6 +244,20 @@ async function matchOneProduct(input: {
     result.status = "succeeded";
     result.durationMs = Date.now() - startedAt;
     await deps.repository.completeJob(job.id, { status: "succeeded", inputReference: { ...result, policyVersion: INCREMENTAL_PRODUCT_MATCHING_POLICY_VERSION, refreshJobRunId: input.refreshJobRunId, partitionKey: input.partitionKey, interestScanJobRunId: interest.interestScanJobRunId } });
+    // Layer 12A.1: best-effort fact after the job is finalized; only successful
+    // jobs have fully measured counts (a failed job's counts are unknown).
+    try {
+      await deps.telemetry?.recordProduct({
+        workspaceId: interest.workspaceId, productId: interest.productId, jobRunId: job.id, refreshJobRunId: input.refreshJobRunId,
+        marketPartitionId: deterministicUuid(`market-partition:${input.partitionKey}`), partitionKey: input.partitionKey, sourceKey: input.sourceKey,
+        refreshConversationCount: result.refreshConversationCount, alreadyMatchedCount: result.alreadyMatchedCount, candidateCount: result.candidateCount,
+        overflowCount: result.overflowCount, selectedCount: result.selectedCount, evaluatedCount: result.evaluations, outcomeStatuses,
+        materializedCount: result.signals, demandRebuilt: result.demandRebuilt, clustersCreated, clusterMembershipsCreated,
+        reasoningCalls, reasoningCostUsd, startedAt: new Date(startedAt).toISOString(), finishedAt: new Date(startedAt + result.durationMs).toISOString(),
+      });
+    } catch {
+      // Telemetry is observational; it never fails a product match.
+    }
     return result;
   } catch (error) {
     result.status = "failed";
@@ -275,7 +309,7 @@ export async function matchRefreshedPartitionIncrementally(
 
   const products: ProductIncrementalMatchResult[] = [];
   for (const interestedProduct of interest.selected) {
-    products.push(await matchOneProduct({ deps, interest: interestedProduct, refreshJobRunId: input.refreshJobRunId, partitionKey, conversationIds, normalizedSourceItemIds, traceId: input.traceId }));
+    products.push(await matchOneProduct({ deps, interest: interestedProduct, refreshJobRunId: input.refreshJobRunId, partitionKey, sourceKey: stored.data.sourceKey, conversationIds, normalizedSourceItemIds, traceId: input.traceId }));
   }
 
   const failed = products.filter((product) => product.status === "failed");
