@@ -4058,3 +4058,56 @@ primitive it needs is being reused, not rebuilt.
   and revalidation eligibility are now gated behind `EVIDENCE_FIDELITY_GROUNDING_ENABLED` (default off,
   matching pre-12A.3A.1 production exactly) rather than being unconditionally active as first written
   here - see the amendment for the corrected rollout contract and the reason it was required.
+
+### 12A.3A.1 Amendment II — Evidence Fidelity Canary Scope (`evidence_fidelity_canary_scope_v1`) — IMPLEMENTED_LOCALLY
+
+**Rollout bug confirmed during production validation.** `EVIDENCE_FIDELITY_GROUNDING_ENABLED`
+(`evidenceFidelityGroundingEnabled()`, `evidence-grounding.ts`) checked only a single global boolean -
+no workspace or product parameter existed at the function or either of its two call sites
+(`initial-scan.service.ts`). `semantic_reasoning_router_v1`'s own verification budget, by contrast, is
+already workspace-scoped (`SEMANTIC_REASONING_SHADOW_WORKSPACE_IDS`). Turning the fidelity flag on today
+would therefore activate the materialization safety gate's fail-closed cap for every high-risk claim in
+*every* production workspace at once (only the one shadow-allowlisted workspace could ever clear it via
+verification; every other workspace would have every high-risk claim capped at `weak_candidate`
+permanently) - a tenant-wide behavior change, not a scoped canary. This section closes that gap with the
+narrowest possible fix: reuse the exact same allowlist design semantic reasoning already uses, kept as an
+independently explicit second allowlist - not merged with it, not replaced by it.
+
+- **Contract.** Evidence fidelity is active for a given scan only when **both** hold: (a)
+  `EVIDENCE_FIDELITY_GROUNDING_ENABLED=true`, and (b) the scan's `workspaceId` is present in
+  `EVIDENCE_FIDELITY_GROUNDING_WORKSPACE_IDS` (a comma-separated allowlist, identical parsing/trim rules
+  to the existing `SEMANTIC_REASONING_SHADOW_WORKSPACE_IDS`). `enabled=true` with an absent or empty
+  allowlist fails closed as **disabled for every workspace** - an empty allowlist is never read as global
+  enablement, mirroring the existing shadow config's own fail-closed behavior for a missing workspace id.
+  No percentage rollout, no product-level scoping, no remote config, no new table - a second environment
+  variable and a second allowlist check, nothing else.
+- **No env used implicitly.** `evidenceFidelityGroundingEnabled()` moves from a single optional
+  `env` parameter to a required `{ env?, workspaceId }` input - a compile-time-enforced signature change,
+  so no call site can silently keep the old global-only behavior. Both existing call sites in
+  `initial-scan.service.ts` now pass the scan's own `product.workspace_id` (the same field
+  `getSemanticReasoningShadowConfig` already reads at its own call site immediately above).
+- **Independently explicit from the shadow allowlist.** `EVIDENCE_FIDELITY_GROUNDING_WORKSPACE_IDS` and
+  `SEMANTIC_REASONING_SHADOW_WORKSPACE_IDS` are two separate environment variables, read by two separate
+  functions, with no code path that infers one from the other. Evidence fidelity scope decides *where the
+  materialization safety gate runs at all*; semantic shadow scope decides *where a verified upgrade is
+  possible*. A workspace can be fidelity-scoped without being shadow-scoped: for such a workspace, a
+  high-risk claim is still assessed and still fails closed to `weak_candidate` - it simply can never be
+  verified and upgraded there, exactly the existing fail-closed contract, just permanently applied for
+  that workspace's high-risk claims until shadow is separately enabled for it too. The production canary
+  configuration deliberately sets both allowlists to the same single workspace id
+  (`8b7a4189-54b7-4cc0-a4a3-1502dc2be82a`) so that one workspace gets the full loop (cap → verify →
+  upgrade), but the two configs remain independently settable.
+- **Revalidation uses the identical scope check**, not a parallel one: `SignalRevalidationCandidate`'s
+  `freshInput.groundingEnabled` is computed by the same scoped helper before being passed in: a signal
+  belonging to a workspace outside the fidelity allowlist now revalidates as `skipped` for the same
+  reason a flag-off revalidation already does - a workspace-scoped skip is not a new decision, it is the
+  existing "flag off is a deliberate no-op" rule applied per-workspace instead of globally. No task, API
+  endpoint, or scheduler is added for revalidation in this section, matching the standing instruction not
+  to invoke it yet.
+- **No migration.** One new environment variable; no schema, RLS, or table change.
+- **Rollout plan**: with the flag still unset in production, set
+  `EVIDENCE_FIDELITY_GROUNDING_WORKSPACE_IDS=8b7a4189-54b7-4cc0-a4a3-1502dc2be82a` (matching the existing
+  shadow allowlist) and only then set `EVIDENCE_FIDELITY_GROUNDING_ENABLED=true` - observe the
+  materialization gate activate and a verified upgrade succeed for that one workspace, and observe every
+  other workspace's qualification output is provably unchanged (the scoped helper returns `false` for
+  them regardless of the global flag), before ever widening the allowlist.
