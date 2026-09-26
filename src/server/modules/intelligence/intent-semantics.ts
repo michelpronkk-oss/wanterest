@@ -2,8 +2,8 @@ import type { IntentType } from "./intelligence.schemas";
 
 export type IntentTarget = "product" | "authentication" | "implementation" | "unknown";
 
-const AUTHENTICATION_TERMS = /\b(?:oauth|authentication|auth|api tokens?|access tokens?|credentials?|login|sign[- ]?in)\b/i;
-const IMPLEMENTATION_TERMS = /\b(?:integration|implementation|tooling|sdk|api|webhook|parser|endpoint|library|adapter|connector|label operations?)\b/i;
+const AUTHENTICATION_TERMS = /\b(?:oauth2?|authentication|auth|api tokens?|access tokens?|credentials?|login|sign[- ]?in|x\.509|tls|ssl|jwt|saml|ldap|sso|mfa|2fa|client certificates?)\b/i;
+const IMPLEMENTATION_TERMS = /\b(?:integration|implementation|tooling|sdk|api|webhook|parser|endpoint|library|adapter|connector|label operations?|config(?:uration)?|deployment|self[- ]?host(?:ed|ing)?|maintenance)\b/i;
 const IMPLEMENTATION_ACTIONS = /\b(?:alternative|switch(?:ing|ed)?|replac(?:e|ing|ed)|change|migrat(?:e|ing|ed)|refactor(?:ing)?|rewrite|add|build(?:ing)?|implement(?:ation|ing)?|support|need|want|looking for)\b/i;
 
 function normalized(value: string): string {

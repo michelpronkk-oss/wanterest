@@ -12,6 +12,9 @@ export type DemandTargetType = z.infer<typeof demandTargetTypeSchema>;
 export const speakerRoleSchema = z.enum(["buyer", "maintainer", "unknown"]);
 export type SpeakerRole = z.infer<typeof speakerRoleSchema>;
 
+export const authorialStanceSchema = z.enum(["buyer", "vendor_marketing", "third_party_technical_discussion", "unknown"]);
+export type AuthorialStanceValue = z.infer<typeof authorialStanceSchema>;
+
 export const marketRelationshipTypeSchema = z.enum(["direct_competitor", "indirect_competitor", "substitute", "adjacent_product", "integration_complement", "legacy_manual_substitute"]);
 export const marketRelationshipSourceSchema = z.enum(["onboarding", "website", "structured_profile", "conversation", "external_evidence"]);
 export const marketRelationshipSchema = z.object({
@@ -65,6 +68,10 @@ export const conversationMarketReasoningSchema = z.object({
   short_user_facing_summary: z.string().trim().min(1).max(300),
   short_user_facing_why: z.string().trim().min(1).max(300),
   relationship_candidates: z.array(z.object({ entity_name: z.string().trim().min(1).max(160), relationship_type: marketRelationshipTypeSchema, confidence: z.number().min(0).max(1), evidence_count: z.number().int().positive().max(100) })).max(5),
+  // Additive (12A.3A.1): distinct from actor_type/speaker_role - whether the
+  // author is pitching their own product versus expressing independent buyer
+  // demand. Defaults to "unknown" so every pre-existing stored row still parses.
+  authorial_stance: authorialStanceSchema.default("unknown"),
 });
 export type ConversationMarketReasoning = z.infer<typeof conversationMarketReasoningSchema>;
 
@@ -121,6 +128,8 @@ export const signalQualificationReasonCodeSchema = z.enum([
   "ENGAGEMENT_NOT_QUALIFYING",
   "QUALIFICATION_FAILED",
   "NON_POSITIVE_PRODUCT_DIRECTION",
+  "EVIDENCE_GROUNDING_DOWNGRADED",
+  "VENDOR_PITCH_NOT_BUYER_DEMAND",
 ]);
 export type SignalQualificationReasonCode = z.infer<typeof signalQualificationReasonCodeSchema>;
 
@@ -178,6 +187,12 @@ export const signalQualificationDiagnosticsSchema = z.object({
   gate_failures: z.array(z.string().trim().min(1).max(120)).max(20),
   failed: z.boolean(),
   failure_code: z.string().trim().max(120).nullable(),
+  // Additive (12A.3A.1): whether semantic_reasoning_router_v1 flagged this
+  // candidate as needing verification, and which claim(s) were downgraded to
+  // their safe/unknown default because no verified reasoning was available.
+  grounding_version: z.string().trim().min(1).max(120).default("unknown"),
+  grounding_verification_required: z.boolean().default(false),
+  grounding_downgraded_claims: z.array(z.string().trim().min(1).max(120)).max(10).default([]),
 });
 export type SignalQualificationDiagnostics = z.infer<typeof signalQualificationDiagnosticsSchema>;
 
@@ -198,7 +213,7 @@ export const signalQualificationSchema = z.object({
   primary_intent: signalQualificationPrimaryIntentSchema,
   intent_target: intentTargetSchema.default("unknown"),
   market_context: marketContextSchema.default({ version: "unknown", product_name: "unknown", categories: [], capabilities: [], jobs_to_be_done: [], pains_solved: [], buyer_roles: [], relationships: [] }),
-  conversation_reasoning: conversationMarketReasoningSchema.default({ version: "unknown", actor_type: "unknown", actor_confidence: 0, buyer_context: false, buyer_context_confidence: 0, current_solution: null, pain_summary: null, requested_outcome: null, demand_target_type: "unknown", demand_target: null, source_products: [], destination_products: [], mentioned_products: [], direction_relative_to_scanned_product: "unknown", category_or_job_demand: false, commercial_intent: false, first_party_experience: false, implementation_only: false, promotional_content: false, confidence: 0, evidence_spans: [], short_user_facing_summary: "Conversation context is unknown.", short_user_facing_why: "No supported market interpretation is available.", relationship_candidates: [] }),
+  conversation_reasoning: conversationMarketReasoningSchema.default({ version: "unknown", actor_type: "unknown", actor_confidence: 0, buyer_context: false, buyer_context_confidence: 0, current_solution: null, pain_summary: null, requested_outcome: null, demand_target_type: "unknown", demand_target: null, source_products: [], destination_products: [], mentioned_products: [], direction_relative_to_scanned_product: "unknown", category_or_job_demand: false, commercial_intent: false, first_party_experience: false, implementation_only: false, promotional_content: false, confidence: 0, evidence_spans: [], short_user_facing_summary: "Conversation context is unknown.", short_user_facing_why: "No supported market interpretation is available.", relationship_candidates: [], authorial_stance: "unknown" }),
   demand_direction: demandDirectionSchema.default("unknown"),
   demand_target_type: demandTargetTypeSchema.default("unknown"),
   demand_target_name: z.string().trim().max(160).nullable().default(null),
@@ -208,6 +223,11 @@ export const signalQualificationSchema = z.object({
   evidence_spans: z.array(signalQualificationEvidenceSpanSchema).max(20),
   reason_codes: z.array(signalQualificationReasonCodeSchema).max(30),
   qualification_reason: z.string().trim().min(1).max(2_000),
+  // Additive (12A.3A.1): the evidence's own published date, surfaced separately
+  // from discovery/scan time so wording never implies an old conversation is
+  // current. Sourced from the same published_at/captured_at precedence
+  // freshnessScore already uses; scoring itself is unchanged.
+  evidence_published_at: z.string().datetime().nullable().default(null),
   resonance: marketResonanceSchema,
   diagnostics: signalQualificationDiagnosticsSchema,
 });

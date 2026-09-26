@@ -25,6 +25,7 @@ import { detectIntentTarget } from "./intent-semantics";
 import { deriveDirectionalDemand, type DirectionalDemand } from "./directional-demand";
 import { buildConversationMarketReasoning, CONVERSATION_MARKET_REASONING_VERSION } from "./conversation-market-reasoning";
 import { fallbackMarketContext, MARKET_CONTEXT_VERSION, type MarketContext } from "./market-context";
+import { EVIDENCE_GROUNDING_VERSION, groundDeterministicReasoning, temporalGroundingClause, type EvidenceGroundingGate } from "./evidence-grounding";
 
 export type SignalQualificationProfile = {
   relevant_pains: Array<{ key?: string; label?: string; description?: string; confidence?: number; specificity?: number } | string>;
@@ -338,7 +339,7 @@ function dimensionsFor(input: SignalQualificationInput, profileMatches: string[]
   const buyerLanguageCount = strings(input.analysis.buyer_language).length;
   const audienceSignalCount = strings(input.analysis.audience_signals).length;
   const painClarity = clamp(painCount ? 0.48 + Math.min(0.3, painCount * 0.06) + (hasAny(value, [/\btoo expensive\b/, /\bmanual(?:ly)?\b/, /\bslow\b/, /\bfrustrat\w*\b/, /\bcomplex\b/, /\bmissing\b/, /\bproblem\b/, /\bspends?\b/]) ? 0.16 : 0) : hasAny(value, [/\btoo expensive\b/, /\bmanual(?:ly)?\b/, /\bslow\b/, /\bfrustrat\w*\b/, /\bcomplex\b/, /\bmissing\b/, /\bproblem\b/, /\bspends?\b/]) ? 0.78 : 0.15);
-  const buyerPlausibilityCap = demand.speaker_role === "maintainer" ? 0.5 : demand.speaker_role === "unknown" && demand.demand_target_type === "third_party_product" ? 0.45 : 1;
+  const buyerPlausibilityCap = demand.speaker_role === "maintainer" ? 0.5 : demand.authorial_stance === "vendor_marketing" ? 0.35 : demand.speaker_role === "unknown" && demand.demand_target_type === "third_party_product" ? 0.45 : 1;
   const buyerPlausibility = clamp(Math.min(buyerPlausibilityCap, (buyerLanguageCount || audienceSignalCount ? 0.68 : 0.25) + (hasAny(value, [/\b(?:our team|we need|we use|for our company|i need|my team)\b/]) ? 0.2 : 0)));
   const commercialRelevance = clamp((strongIntent ? 0.72 : 0.3) + (buyerPlausibility >= 0.7 ? 0.12 : 0) + (painClarity >= 0.7 ? 0.08 : 0) + (profileMatches.length ? 0.08 : 0));
   const evidenceQuality = evidence.length ? clamp(0.68 + Math.min(0.2, evidence.length * 0.04) + (input.analysis.confidence * 0.12)) : 0.12;
@@ -356,6 +357,7 @@ function dimensionsFor(input: SignalQualificationInput, profileMatches: string[]
   const spamProbability = clamp((repetitive ? 0.85 : 0) + (hasAny(value, [/\bgiveaway\b/, /\bcoupon\b/, /\bfree money\b/, /\bcrypto\b/]) ? 0.8 : 0) + (promotionalProbability > 0.7 ? 0.25 : 0));
   if (productRelevance >= 0.65) reasonCodes.push("HIGH_PRODUCT_RELEVANCE"); else reasonCodes.push("LOW_RELEVANCE");
   if (demand.positive_for_product === false) reasonCodes.push("NON_POSITIVE_PRODUCT_DIRECTION");
+  if (demand.authorial_stance === "vendor_marketing") reasonCodes.push("VENDOR_PITCH_NOT_BUYER_DEMAND");
   if (strongIntent) reasonCodes.push(primaryIntent === "switching_intent" ? "STRONG_SWITCHING_INTENT" : primaryIntent === "alternative_search" ? "STRONG_ALTERNATIVE_INTENT" : primaryIntent === "recommendation_request" ? "RECOMMENDATION_INTENT" : primaryIntent === "comparison_intent" ? "COMPARISON_INTENT" : primaryIntent === "feature_requirement" ? "CLEAR_FEATURE_REQUIREMENT" : "COMMERCIAL_CONTEXT_PRESENT");
   if (painClarity >= 0.7) reasonCodes.push("SPECIFIC_PAIN", "EXPLICIT_PAIN");
   if (buyerPlausibility >= 0.7) reasonCodes.push("CLEAR_BUYER_CONTEXT", "BUYER_CONTEXT_PRESENT");
@@ -390,6 +392,7 @@ function confidenceFor(input: SignalQualificationInput, dimensions: SignalQualif
 }
 
 function actorLabel(demand: DirectionalDemand): string {
+  if (demand.authorial_stance === "vendor_marketing") return "The vendor";
   return demand.speaker_role === "buyer" ? "User" : demand.speaker_role === "maintainer" ? "Maintainer" : "Conversation";
 }
 
@@ -399,10 +402,19 @@ function nameList(values: string[]): string {
   return `${values.slice(0, -1).join(", ")}, and ${values.at(-1)}`;
 }
 
-function reasonText(status: SignalQualificationStatus, intent: SignalQualificationPrimaryIntent, target: ReturnType<typeof detectIntentTarget>, concepts: string[], evidence: SignalQualificationEvidenceSpan[], demand: DirectionalDemand): string {
+function reasonSentence(status: SignalQualificationStatus, intent: SignalQualificationPrimaryIntent, target: ReturnType<typeof detectIntentTarget>, concepts: string[], evidence: SignalQualificationEvidenceSpan[], demand: DirectionalDemand): string {
   const actor = actorLabel(demand);
   const targetName = demand.demand_target_name ?? "another product";
   const sources = nameList(demand.source_products);
+  // A vendor pitching their own product against a named competitor is not an
+  // independent buyer's switching intent, even when it names the same
+  // competitor/category a genuine buyer signal would - this must not be worded
+  // as though a user asked for it.
+  if (demand.authorial_stance === "vendor_marketing" && (demand.demand_target_type === "category" || demand.demand_target_type === "third_party_product")) {
+    return demand.source_products.length
+      ? `This is vendor positioning that frames the discussed product as an alternative to ${sources}; it is not an independent buyer's switching intent.`
+      : "This is vendor positioning for the discussed product; it is not an independent buyer's switching intent.";
+  }
   if (demand.demand_target_type === "implementation") return `${actor} is asking for an implementation or authentication change${demand.demand_target_name ? ` related to ${demand.demand_target_name}` : ""}.`;
   if (demand.host_product_context && demand.source_products.length) return `${actor} is evaluating ${targetName} as a ${sources} alternative and asking for ${sources}-like features.`;
   if (demand.demand_direction === "away_from_product" && demand.source_products.length) return `${actor} is moving from ${sources} to ${targetName}.`;
@@ -413,13 +425,17 @@ function reasonText(status: SignalQualificationStatus, intent: SignalQualificati
   if (target === "authentication" || target === "implementation") {
     const technicalObject = target === "authentication" ? "an authentication method" : "an implementation detail";
     const technicalReason = `Technical request about ${technicalObject}${concepts.length ? ` related to ${concepts.slice(0, 2).join(", ")}` : ""}.`;
-    return `${technicalReason}${evidence[0] ? ` Evidence: “${evidence[0].text.slice(0, 240)}”` : ""}`.slice(0, 2_000);
+    return `${technicalReason}${evidence[0] ? ` Evidence: “${evidence[0].text.slice(0, 240)}”` : ""}`;
   }
   const verb = intent === "switching_intent" ? "actively considering a switch" : intent === "alternative_search" ? "looking for an alternative" : intent === "recommendation_request" ? "requesting a recommendation" : intent === "feature_requirement" ? "describing a required capability" : intent === "comparison_intent" ? "comparing solutions" : intent === "explicit_pain" || intent === "problem_solution_search" ? "describing a concrete problem" : "showing possible solution interest";
   const conceptText = concepts.length ? ` related to ${concepts.slice(0, 3).join(", ")}` : "";
   const evidenceText = evidence[0] ? ` Evidence: “${evidence[0].text.slice(0, 240)}”` : "";
   const reason = status === "high_confidence_signal" ? `High-confidence demand: ${verb}${conceptText}, with specific, traceable evidence.` : status === "qualified" ? `${verb.charAt(0).toUpperCase()}${verb.slice(1)}${conceptText}, supported by specific evidence.` : status === "weak_candidate" ? `${verb.charAt(0).toUpperCase()}${verb.slice(1)}${conceptText}, but the available evidence is limited.` : "No clear product-relevant demand was found in this conversation.";
-  return `${reason}${evidenceText}`.slice(0, 2_000);
+  return `${reason}${evidenceText}`;
+}
+
+function reasonText(status: SignalQualificationStatus, intent: SignalQualificationPrimaryIntent, target: ReturnType<typeof detectIntentTarget>, concepts: string[], evidence: SignalQualificationEvidenceSpan[], demand: DirectionalDemand, temporal: { publishedAt: string | null; now: Date }): string {
+  return `${reasonSentence(status, intent, target, concepts, evidence, demand)}${temporalGroundingClause(temporal.publishedAt, temporal.now)}`.slice(0, 2_000);
 }
 
 function directionalDemandFromReasoning(reasoning: ConversationMarketReasoning): DirectionalDemand {
@@ -432,6 +448,7 @@ function directionalDemandFromReasoning(reasoning: ConversationMarketReasoning):
     speaker_role: reasoning.actor_type,
     positive_for_product: reasoning.direction_relative_to_scanned_product === "toward_product" ? true : reasoning.direction_relative_to_scanned_product === "away_from_product" ? false : null,
     host_product_context: reasoning.mentioned_products.some((product) => product.role === "host"),
+    authorial_stance: reasoning.authorial_stance,
   };
 }
 
@@ -443,17 +460,51 @@ function buildQualification(input: SignalQualificationInput, reasoningOverride?:
   const concepts = matchedConcepts(input, value);
   const marketContext = marketContextFor(input);
   const derivedDemand = deriveDirectionalDemand({ productName: input.productName, title: input.conversation.title ?? input.sourceItem.title, body: bodyText(input), sourceKey: input.sourceItem.source_key, sourceMetadata: input.sourceItem.metadata, knownProducts: marketContext.relationships.map((item) => item.entity_name), category: marketContext.categories[0] ?? input.profile.primary_category });
-  const conversationReasoning = reasoningOverride ?? buildConversationMarketReasoning({ productName: input.productName, context: marketContext, demand: derivedDemand, title: input.conversation.title ?? input.sourceItem.title, body: bodyText(input), analysis: input.analysis });
-  const demand = reasoningOverride ? directionalDemandFromReasoning(reasoningOverride) : derivedDemand;
   const reasonCodes: SignalQualificationReasonCode[] = [];
   const evidence = verifiedEvidence(input, primaryIntent);
-  const dimensions = dimensionsFor(input, concepts, evidence, primaryIntent, demand, reasonCodes);
+
+  let demand: DirectionalDemand;
+  let conversationReasoning: ConversationMarketReasoning;
+  let dimensions: SignalQualificationDimensions;
+  let groundingGate: EvidenceGroundingGate;
+  if (reasoningOverride) {
+    // A verified/merged reasoning is already grounded (semantic_reasoning_router_v1's
+    // shadow pipeline validated it against source text before merging); no further
+    // gating is required or possible here.
+    conversationReasoning = reasoningOverride;
+    demand = directionalDemandFromReasoning(reasoningOverride);
+    dimensions = dimensionsFor(input, concepts, evidence, primaryIntent, demand, reasonCodes);
+    groundingGate = { version: EVIDENCE_GROUNDING_VERSION, verificationRequired: false, reasons: [], downgradedClaimTypes: [] };
+  } else {
+    const rawReasoning = buildConversationMarketReasoning({ productName: input.productName, context: marketContext, demand: derivedDemand, title: input.conversation.title ?? input.sourceItem.title, body: bodyText(input), analysis: input.analysis });
+    const provisionalDimensions = dimensionsFor(input, concepts, evidence, primaryIntent, derivedDemand, reasonCodes);
+    const grounded = groundDeterministicReasoning({ reasoning: rawReasoning, text: value, relevance: provisionalDimensions.product_relevance, noise: provisionalDimensions.noise_risk });
+    groundingGate = grounded.gate;
+    if (grounded.gate.downgradedClaimTypes.length) {
+      // The router itself flagged a high-risk claim as needing verification, and
+      // this is the deterministic-only path (no verified reasoning available):
+      // fail closed by discarding the provisional (ungrounded) dimensions/reason
+      // codes and recomputing everything from the downgraded reasoning instead of
+      // asserting an unverified claim.
+      reasonCodes.length = 0;
+      conversationReasoning = grounded.reasoning;
+      demand = directionalDemandFromReasoning(grounded.reasoning);
+      dimensions = dimensionsFor(input, concepts, evidence, primaryIntent, demand, reasonCodes);
+      reasonCodes.push("EVIDENCE_GROUNDING_DOWNGRADED");
+    } else {
+      conversationReasoning = rawReasoning;
+      demand = derivedDemand;
+      dimensions = provisionalDimensions;
+    }
+  }
   const confidence = confidenceFor(input, dimensions, evidence) * (input.profile.profile_confidence < 0.55 ? 0.9 : 1);
   const strongIntent = STRONG_COMMERCIAL_INTENTS.includes(primaryIntent);
   const qualified = demand.positive_for_product !== false && dimensions.product_relevance >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.productRelevance && (dimensions.demand_intent >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.demandIntent || dimensions.pain_clarity >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.painClarity || strongIntent) && dimensions.specificity >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.specificity && dimensions.evidence_quality >= SIGNAL_QUALIFICATION_THRESHOLDS.qualified.evidenceQuality && dimensions.noise_risk < 0.5 && dimensions.spam_probability < SIGNAL_QUALIFICATION_THRESHOLDS.qualified.spamProbabilityMaxExclusive && dimensions.promotional_probability < SIGNAL_QUALIFICATION_THRESHOLDS.qualified.promotionalProbabilityMaxExclusive && evidence.length > 0;
   const highConfidence = qualified && dimensions.product_relevance >= SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.productRelevance && dimensions.demand_intent >= SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.demandIntent && dimensions.specificity >= SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.specificity && dimensions.evidence_quality >= SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.evidenceQuality && dimensions.commercial_relevance >= SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.commercialRelevance && confidence >= SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.confidence && dimensions.noise_risk < SIGNAL_QUALIFICATION_THRESHOLDS.highConfidence.noiseRiskMaxExclusive && strongIntent;
   const status: SignalQualificationStatus = highConfidence ? "high_confidence_signal" : qualified ? "qualified" : dimensions.product_relevance >= 0.4 || dimensions.demand_intent >= 0.35 || dimensions.pain_clarity >= 0.4 ? "weak_candidate" : "rejected";
   const resonance = resonanceFor(input);
+  const publishedAt = input.sourceItem.published_at ?? input.sourceItem.captured_at ?? null;
+  const now = input.now ?? new Date();
   if (resonance.available) reasonCodes.push("ENGAGEMENT_NOT_QUALIFYING");
   const uniqueReasonCodes = uniqueCodes(reasonCodes);
   const gateFailures = [
@@ -484,7 +535,8 @@ function buildQualification(input: SignalQualificationInput, reasoningOverride?:
     matched_profile_concepts: concepts,
     evidence_spans: evidence,
     reason_codes: uniqueReasonCodes,
-    qualification_reason: reasonText(status, primaryIntent, intentTarget, concepts, evidence, demand),
+    qualification_reason: reasonText(status, primaryIntent, intentTarget, concepts, evidence, demand, { publishedAt, now }),
+    evidence_published_at: publishedAt,
     resonance,
     diagnostics: {
       qualification_version: SIGNAL_QUALIFICATION_VERSION,
@@ -498,6 +550,9 @@ function buildQualification(input: SignalQualificationInput, reasoningOverride?:
       gate_failures: gateFailures,
       failed: false,
       failure_code: null,
+      grounding_version: EVIDENCE_GROUNDING_VERSION,
+      grounding_verification_required: groundingGate.verificationRequired,
+      grounding_downgraded_claims: groundingGate.downgradedClaimTypes,
     },
   });
 }

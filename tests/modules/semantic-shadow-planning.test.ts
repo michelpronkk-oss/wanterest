@@ -13,7 +13,7 @@ function reasoning(overrides: Partial<ConversationMarketReasoning> = {}): Conver
     mentioned_products: [], direction_relative_to_scanned_product: "unknown", category_or_job_demand: false,
     commercial_intent: false, first_party_experience: true, implementation_only: false, promotional_content: false,
     confidence: 0.2, evidence_spans: [], short_user_facing_summary: "Unclear market intent.",
-    short_user_facing_why: "The direction is ambiguous.", relationship_candidates: [],
+    short_user_facing_why: "The direction is ambiguous.", relationship_candidates: [], authorial_stance: "unknown",
     ...overrides,
   };
 }

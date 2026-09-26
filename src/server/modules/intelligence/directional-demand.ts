@@ -4,6 +4,9 @@ import type {
   DemandTargetType,
   SpeakerRole,
 } from "./signal-qualification.schemas";
+import { detectIntentTarget } from "./intent-semantics";
+import { filterLikelyEntityMentions } from "./entity-disambiguation";
+import { classifyAuthorialStance, type AuthorialStance } from "./authorial-stance";
 
 export type DirectionalDemand = {
   demand_direction: DemandDirection;
@@ -13,6 +16,7 @@ export type DirectionalDemand = {
   speaker_role: SpeakerRole;
   positive_for_product: boolean | null;
   host_product_context: boolean;
+  authorial_stance: AuthorialStance;
 };
 
 export type DirectionalDemandInput = {
@@ -52,7 +56,7 @@ function knownNames(input: DirectionalDemandInput): string[] {
 }
 
 function namesIn(textValue: string, names: string[]): string[] {
-  return names.filter((name) => mentionPattern(name).test(textValue));
+  return filterLikelyEntityMentions(names.filter((name) => mentionPattern(name).test(textValue)), textValue);
 }
 
 function destinationFor(textValue: string, names: string[]): string | null {
@@ -99,9 +103,12 @@ function hasHostProductContext(textValue: string, hostProduct: string | null, so
   return /\b(?:alternative|alternatives|replacement|parity|roadmap|feature|features|like)\b/i.test(textValue);
 }
 
-function speakerRole(input: DirectionalDemandInput, textValue: string, positive: boolean | null): SpeakerRole {
+function speakerRole(input: DirectionalDemandInput, textValue: string, positive: boolean | null, stance: AuthorialStance): SpeakerRole {
   const authorAssociation = metadataValue(input.sourceMetadata, "authorAssociation")?.toLowerCase();
   if (authorAssociation && ["owner", "member", "collaborator", "maintainer"].includes(authorAssociation)) return "maintainer";
+  // A vendor pitching their own product is not a buyer, even if the pitch names
+  // a competitor and matches the generic first-person "we/our team" regex below.
+  if (stance === "vendor_marketing") return "unknown";
   if (positive !== null && /\b(?:i|we|our team|our company|my team)\b/i.test(textValue)) return "buyer";
   return "unknown";
 }
@@ -114,12 +121,13 @@ export function deriveDirectionalDemand(input: DirectionalDemandInput): Directio
   const destination = destinationFor(textValue, names) ?? (repository ? null : explicitUnnamedDestination(textValue));
   const sourceProducts = sourceNamesFor(textValue, names, destination, repository ? [repository] : []);
   if (destination && destination.toLowerCase() !== productName.toLowerCase() && new RegExp(`(?:^|[^A-Za-z0-9])${escapeRegExp(productName)}\\s+(?:is|was|has become)\\s+(?:too expensive|too complex|unreliable|slow|frustrating)`, "i").test(textValue)) sourceProducts.push(productName);
-  const implementation = /\b(?:oauth|authentication|auth|api tokens?|access tokens?|credentials?|login|sign[- ]?in)\b/i.test(textValue)
-    && (
-      /\b(?:alternative|method)\b[^.!?]{0,80}\b(?:for|to)\b/i.test(textValue)
-      || /\b(?:add|change|implement|support)\b[^.!?]{0,100}\b(?:oauth|authentication|auth|api tokens?|access tokens?|credentials?|login|sign[- ]?in)\b[^.!?]{0,100}\bintegration\b/i.test(textValue)
-      || /\b(?:integration|implementation)\b[^.!?]{0,80}\b(?:alternative|change|switch)\b/i.test(textValue)
-    );
+  // Single source of truth for "this is an authentication/implementation/technical
+  // discussion, not a product-relationship claim" - previously duplicated here with
+  // its own narrower pattern pair, which drifted from intent-semantics.ts and let
+  // protocol/standard discussions (X.509, TLS, SSO, ...) fall through into a genuine
+  // product-demand branch below.
+  const intentTarget = detectIntentTarget(textValue);
+  const implementation = intentTarget === "authentication" || intentTarget === "implementation";
   const featureRequest = /\b(?:needs?|requires?|wants?|should|must have|add|support|import(?:er|ing)?|bring|there is no way|missing|lacks?)\b/i.test(textValue);
   const productMentioned = namesIn(textValue, names).some((name) => name.toLowerCase() === productName.toLowerCase());
   const hostProductContext = hasHostProductContext(textValue, repository, sourceProducts, productName);
@@ -167,7 +175,8 @@ export function deriveDirectionalDemand(input: DirectionalDemandInput): Directio
     positive_for_product = true;
   }
 
-  const role = speakerRole(input, textValue, positive_for_product);
+  const stance = classifyAuthorialStance({ text: textValue, hasCompetitorOrAlternativeClaim: sourceProducts.length > 0 || Boolean(destination) }).stance;
+  const role = speakerRole(input, textValue, positive_for_product, stance);
   if (role === "unknown" && demand_target_type === "third_party_product") positive_for_product = false;
-  return { demand_direction, demand_target_type, demand_target_name, source_products: sourceProducts, speaker_role: role, positive_for_product, host_product_context: hostProductContext };
+  return { demand_direction, demand_target_type, demand_target_name, source_products: sourceProducts, speaker_role: role, positive_for_product, host_product_context: hostProductContext, authorial_stance: stance };
 }

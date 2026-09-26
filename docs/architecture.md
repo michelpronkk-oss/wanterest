@@ -3826,31 +3826,36 @@ are reused as-is - not replaced, not forked - per the sections below.
   `VENDOR_PITCH_NOT_BUYER_DEMAND` reason code is emitted, and `reasonText()` states the vendor-pitch case
   in its own precise sentence ("This is vendor positioning ... it is not an independent buyer's
   switching intent.") instead of routing it through the buyer-actor sentence templates.
-- **Grounding gate promotes `semantic_reasoning_router_v1` from shadow-only to enforcing, with zero new
-  LLM calls in the primary path (`evidence-grounding.ts`, new, `evidence_grounding_v1`).**
-  `groundDeterministicReasoning()` calls the existing, unmodified `routeSemanticReasoning()` with the
-  same inputs the shadow pipeline already computes (deterministic reasoning, source text, provisional
-  `product_relevance`/`noise_risk`). A route of `deterministic_only`/`reject_without_llm` is unchanged
-  (the vast majority of candidates, per production telemetry - zero added cost). A route of
-  `llm_reasoning` is exactly `semantic_reasoning_router_v1`'s own enumeration of high-risk claim types
-  (`ambiguous_direction`, `unclear_buyer_context`, `unknown_product_entity`) requiring verification; the
-  *deterministic-only* qualification path (`qualifySignal`, no `reasoningOverride`) has no LLM result to
-  verify against, so it fails closed by construction: the flagged field(s) are downgraded to their safe/
-  unknown default (`direction_relative_to_scanned_product → "unknown"`, `buyer_context → false` +
-  `commercial_intent → false`, low-confidence `mentioned_products` dropped) *before* `dimensionsFor()`/
-  `reasonText()` ever see them, via the existing `directionalDemandFromReasoning()` conversion (the same
-  function the shadow-verified path already uses to turn a `ConversationMarketReasoning` back into a
-  `DirectionalDemand`) - one code path handles both a verified LLM result and a fail-closed deterministic
-  default. A `EVIDENCE_GROUNDING_DOWNGRADED` reason code and `diagnostics.grounding_verification_required`/
-  `grounding_downgraded_claims` record exactly what was withheld and why, so the effect is auditable, not
-  silent. This never fails the scan: a candidate that needed grounding still qualifies or rejects on its
-  remaining (ungrounded) dimensions - pain, specificity, evidence quality - exactly as before; it simply
-  cannot assert the specific claim the router itself flagged as unverified. The *existing* shadow
-  comparison pipeline (unchanged: same budget, same `maxEvaluations = 15` bound it always ran within, same
-  persistence) now compares the fail-closed default against a verified LLM upgrade for the same
-  candidates it always evaluated, which is the exact telemetry needed to decide whether promoting a
-  verified upgrade into a new, additional (never overwritten) evaluation row is warranted - that
-  materialization step is intentionally deferred, not built here (see Scope boundary below).
+- **Grounding gate reuses `semantic_reasoning_router_v1`'s own routing decision as an explicit,
+  auditable fail-closed signal, with zero new LLM calls in the primary path (`evidence-grounding.ts`,
+  new, `evidence_grounding_v1`).** `groundDeterministicReasoning()` calls the existing, unmodified
+  `routeSemanticReasoning()` with the same inputs the shadow pipeline already computes (deterministic
+  reasoning, source text, provisional `product_relevance`/`noise_risk`). Its three reasons
+  (`ambiguous_direction`, `unclear_buyer_context`, `unknown_product_entity`) all fire precisely when the
+  deterministic pass is already conservative/uncertain - direction already `"unknown"`, `buyer_context`
+  already `false`, or a mentioned-product entity below 0.5 confidence - never when it is confidently
+  wrong (a concrete direction at ≥ 0.75 confidence, or `buyer_context: true`, takes the router's own
+  `deterministic_only` fast path and is trusted as-is, by the router's own unmodified design). The gate's
+  job is therefore *not* to rewrite an overclaiming direction or buyer-context assertion - the router
+  never routes those to verification in the first place - but to make the "this needs verification"
+  fact auditable (`diagnostics.grounding_verification_required`) instead of letting a later, unverified
+  shadow result silently apply, and to act on the one field that genuinely is unresolved without
+  verification: a low-confidence `mentioned_products` entry is dropped from the record (never left to be
+  read downstream as a confirmed entity) via `directionalDemandFromReasoning()` - the same conversion the
+  shadow-verified path already uses to turn a `ConversationMarketReasoning` back into a
+  `DirectionalDemand` - so one code path handles both a verified LLM result and this fail-closed default.
+  A `EVIDENCE_GROUNDING_DOWNGRADED` reason code records exactly when that trim happened. This never fails
+  the scan: a candidate flagged for verification still qualifies or rejects on its remaining dimensions
+  (pain, specificity, evidence quality, ...) exactly as before. The audited overclaiming defects
+  themselves (X.509 misclassification, "linear regression" matched as the product Linear, a vendor pitch
+  read as buyer demand) are *confident* deterministic misreads, not ambiguous ones, so the router would
+  never have flagged them for verification either - they are fixed at the source by the deterministic
+  guard unification and the entity-disambiguation/authorial-stance modules above, not by this gate. The
+  *existing* shadow comparison pipeline (unchanged: same budget, same `maxEvaluations = 15` bound it
+  always ran within, same persistence) continues to compare the deterministic baseline against a verified
+  LLM result for every candidate it always evaluated, which is the telemetry needed to decide whether
+  promoting a verified upgrade into a new, additional (never overwritten) evaluation row is warranted -
+  that materialization step is intentionally deferred, not built here (see Scope boundary below).
 - **Scope boundary (explicitly deferred, not 12A.3B).** `product_match_evaluations` rows are immutable
   per this document's own tenancy/idempotency rules ("current pointers may optimize reads but must never
   overwrite historical matching/ranking results"); `IntelligenceService.matchProduct` therefore stays
@@ -3883,8 +3888,12 @@ are reused as-is - not replaced, not forked - per the sections below.
   recomputes cluster strength from current evidence validity on every `clusterProduct()` run
   (`demand-clustering.service.ts`). Transitioning a signal to `invalidated` via the revalidation service
   above is therefore automatically reflected - excluded from `lifecycleMix`/strength - on the next
-  cluster recompute, with no membership-row change and no deletion. This section adds one regression
-  test proving that path end-to-end; it does not add reconciliation logic that already exists.
+  cluster recompute, with no membership-row change and no deletion. This path is already proven
+  end-to-end by the pre-existing `tests/modules/demand-clustering-service.test.ts` case "stops counting
+  invalidated, superseded (re-evaluated) and stale evidence, appending history instead of rewriting it"
+  (it flips a signal's `lifecycle_status` to `"invalidated"` exactly as `revalidateSignal()` now does and
+  asserts the cluster's next state excludes it with `signal_invalidated`); this section relies on that
+  existing coverage rather than adding parallel reconciliation logic or a redundant test.
 - **Tests**: `entity-disambiguation.test.ts`, `authorial-stance.test.ts`, `evidence-grounding.test.ts`,
   `signal-revalidation.test.ts`, plus regression cases added to the signal-qualification test suite for
   each named production failure class (X.509/protocol technical discussion, "alternative method"

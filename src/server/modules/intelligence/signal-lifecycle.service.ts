@@ -11,6 +11,7 @@ export const signalLifecycleReasonSchema = z.enum([
   "evidence_invalidated",
   "source_withdrawn",
   "admin_review",
+  "evidence_fidelity_revalidation",
 ]);
 export type SignalLifecycleReason = z.infer<typeof signalLifecycleReasonSchema>;
 

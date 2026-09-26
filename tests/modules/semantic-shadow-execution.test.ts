@@ -17,7 +17,7 @@ function reasoning(overrides: Partial<ConversationMarketReasoning> = {}): Conver
     direction_relative_to_scanned_product: "toward_product", category_or_job_demand: false, commercial_intent: true,
     first_party_experience: true, implementation_only: false, promotional_content: false, confidence: 0.7,
     evidence_spans: [{ text: sourceText, confidence: 0.9 }], short_user_facing_summary: "Moving from Jira to Linear.",
-    short_user_facing_why: "The author reports Jira is too slow.", relationship_candidates: [], ...overrides,
+    short_user_facing_why: "The author reports Jira is too slow.", relationship_candidates: [], authorial_stance: "buyer", ...overrides,
   };
 }
 

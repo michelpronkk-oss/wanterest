@@ -72,5 +72,6 @@ export function buildConversationMarketReasoning(input: {
     short_user_facing_summary: summary,
     short_user_facing_why: summary,
     relationship_candidates: relationshipCandidates,
+    authorial_stance: input.demand.authorial_stance,
   });
 }
