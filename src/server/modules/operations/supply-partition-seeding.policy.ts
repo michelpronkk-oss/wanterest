@@ -18,7 +18,7 @@ import type { QueryPlanQuery, QueryPlanSource } from "./query-planning.schemas";
  * Layer 12A.2: planner-seeded shared market partitions. Pure and
  * deterministic; reads no external state and calls no provider or model.
  *
- * A seed is a query_planning_v7 candidate the product scan did NOT execute,
+ * A seed is a planner candidate the product scan did NOT execute,
  * turned into exactly the provider request executing it would have sent,
  * then into its market_partition_identity_v1 key. Nothing here changes which
  * queries a scan executes; seeds are persisted as reusable partitions plus an
@@ -72,7 +72,7 @@ export type PartitionSeed = {
   retrievalSpec: MarketPartitionRetrievalSpec;
   provenance: DiscoveryProvenanceTemplate;
   metadata: {
-    seedOrigin: "query_planning_v7";
+    seedOrigin: "query_planning_v7" | "query_planning_v8";
     queryFamily: string;
     demandSurface: string;
     intentType: string;
@@ -89,6 +89,10 @@ export type SeedSelection = {
 
 function sourcePlanFor(query: QueryPlanQuery): QueryPlanSource {
   return { source_key: query.source_key, priority: query.priority, candidate_budget: query.candidate_budget, query_budget: 1, queries: [query], excluded_query_families: [], reason_codes: [], confidence: query.confidence };
+}
+
+function plannerVersionFor(query: QueryPlanQuery): "query_planning_v7" | "query_planning_v8" {
+  return (query.metadata as Record<string, unknown>).planner_version === "query_planning_v8" ? "query_planning_v8" : "query_planning_v7";
 }
 
 /**
@@ -143,7 +147,7 @@ export function selectPartitionSeeds(input: {
       retrievalSpec: identity.retrievalSpec,
       provenance,
       metadata: {
-        seedOrigin: "query_planning_v7",
+        seedOrigin: plannerVersionFor(query),
         queryFamily: query.query_family,
         demandSurface: query.demand_surface,
         intentType: query.intent_type,

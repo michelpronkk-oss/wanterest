@@ -2,7 +2,7 @@ import "server-only";
 
 import { SEED_MAX_PARTITIONS_PER_SOURCE, MARKET_PARTITION_INTEREST_TTL_MS, SEED_MAX_PER_PRODUCT_PER_SOURCE, SEED_RETIREMENT_MAX_PER_TICK, SEED_RETIREMENT_MIN_REFRESHES, SEED_RETIREMENT_WINDOW_DAYS, selectExecutedQueryInterests, selectPartitionSeeds, SUPPLY_PARTITION_SEEDING_VERSION, type SeedSkipReason } from "./supply-partition-seeding.policy";
 import { SupplyPartitionInterestRepository, type InterestUpsertStatus } from "./supply-partition-interest.repository";
-import { buildQueryPlanSeedCandidates } from "./query-planning.service";
+import { buildQueryPlanSeedCandidatesV8 } from "./query-planning-v8.service";
 import type { QueryPlanningInput } from "./query-planning.schemas";
 import { liveMarketPartitionRefreshSourceKeys, type MarketPartitionRefreshSourceKey } from "@/server/modules/ingestion/market-partition-refresh.policy";
 import { deterministicUuid } from "@/server/modules/ingestion/hash";
@@ -69,7 +69,7 @@ export async function seedSupplyPartitionsForScan(input: {
   }
 
   // 2. Planner seeds: the planner's own non-executed candidates, bounded and deduplicated.
-  const candidates = buildQueryPlanSeedCandidates(input.planningInput, liveMarketPartitionRefreshSourceKeys());
+  const candidates = buildQueryPlanSeedCandidatesV8(input.planningInput, liveMarketPartitionRefreshSourceKeys());
   outcome.plannerCandidates = candidates.length;
   const selection = selectPartitionSeeds({
     candidates,

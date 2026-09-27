@@ -7,6 +7,7 @@ import type { JsonObject } from "../../db/database.helpers";
 import type { SourceRoutingCostClass, SourceRoutingPlan, SourceRoutingPriority, SourceRoutingScanMode } from "./source-routing.schemas";
 
 export const queryPlanningVersion = "query_planning_v7" as const;
+export type QueryPlanningVersion = typeof queryPlanningVersion | "query_planning_v8";
 
 export const demandSurfaceSchema = z.enum(["direct_product", "competitor_pain", "alternative_search", "category_demand", "job_demand", "pain_first", "feature_demand", "switching", "substitute_displacement", "commercial_pain"]);
 export type DemandSurface = z.infer<typeof demandSurfaceSchema>;
@@ -98,7 +99,7 @@ export type QueryPlanDiagnostics = {
 };
 
 export type QueryPlan = {
-  version: typeof queryPlanningVersion;
+  version: QueryPlanningVersion;
   product_id: string;
   demand_profile_version: string | null;
   source_routing_version: SourceRoutingPlan["version"];

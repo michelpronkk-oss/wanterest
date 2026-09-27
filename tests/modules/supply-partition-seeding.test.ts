@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("@/server/providers/supabase/service", () => ({ createSupabaseServiceClient: () => { throw new Error("no client in unit tests"); } }));
 
-const { buildQueryPlan, buildQueryPlanSeedCandidates } = await import("../../src/server/modules/operations");
+const { buildQueryPlan, buildQueryPlanV8, buildQueryPlanSeedCandidates, buildQueryPlanSeedCandidatesV8 } = await import("../../src/server/modules/operations");
 const policy = await import("../../src/server/modules/operations/supply-partition-seeding.policy");
 const { seedSupplyPartitionsForScan, retireExhaustedSeedPartitions } = await import("../../src/server/modules/operations/supply-partition-seeding.service");
 const { interestAsArtifact } = await import("../../src/server/modules/operations/supply-partition-interest.repository");
@@ -23,7 +23,7 @@ const REFRESHABLE = ["github", "stack-exchange"] as const;
 
 async function inputsWithSeeds() {
   const inputs = await plannerGoldenInputs();
-  return inputs.map((entry) => ({ ...entry, candidates: buildQueryPlanSeedCandidates(entry.input, REFRESHABLE) })).filter((entry) => entry.candidates.length > 0);
+  return inputs.map((entry) => ({ ...entry, candidates: buildQueryPlanSeedCandidatesV8(entry.input, REFRESHABLE) })).filter((entry) => entry.candidates.length > 0);
 }
 
 function recordingRepository(statusFor: (input: InterestUpsertInput) => InterestUpsertStatus = () => "created") {
@@ -61,7 +61,7 @@ describe("Layer 12A.2 planner output is frozen (query_planning_v7)", () => {
     const entries = await inputsWithSeeds();
     expect(entries.length).toBeGreaterThan(10);
     for (const { input, candidates } of entries) {
-      const plan = buildQueryPlan(input);
+      const plan = buildQueryPlanV8(input);
       const byId = new Map(candidates.map((candidate) => [candidate.query_id, candidate]));
       for (const query of plan.source_plans.filter((source) => REFRESHABLE.includes(source.source_key as never)).flatMap((source) => source.queries)) {
         const candidate = byId.get(query.query_id);
@@ -77,7 +77,7 @@ describe("Layer 12A.2 planner output is frozen (query_planning_v7)", () => {
 describe("Layer 12A.2 seed selection", () => {
   it("only background-refreshable sources are seeded; everything else is skipped with a reason", async () => {
     const inputs = await plannerGoldenInputs();
-    const all = inputs.flatMap(({ input }) => buildQueryPlanSeedCandidates(input, ["github", "stack-exchange", "x", "youtube", "hacker-news", "reddit", "bluesky", "product-hunt"]));
+    const all = inputs.flatMap(({ input }) => buildQueryPlanSeedCandidatesV8(input, ["github", "stack-exchange", "x", "youtube", "hacker-news", "reddit", "bluesky", "product-hunt"]));
     const selection = policy.selectPartitionSeeds({ candidates: all, executedQueryPlanIds: new Set(), executedPartitionKeys: new Set(), now: NOW, maxPerSource: 1000 });
     expect(new Set(selection.seeds.map((seed) => seed.sourceKey))).toEqual(new Set(["github", "stack-exchange"]));
     const nonRefreshable = all.filter((candidate) => !REFRESHABLE.includes(candidate.source_key as never));
@@ -122,16 +122,16 @@ describe("Layer 12A.2 seed selection", () => {
       const rebuilt = buildMarketPartitionRefreshRequest({ sourceKey: seed.sourceKey, retrievalSpec: seed.retrievalSpec });
       expect(rebuilt.ok && deriveMarketPartitionIdentity({ sourceKey: seed.sourceKey, request: rebuilt.request })).toMatchObject({ eligible: true, partitionKey: seed.partitionKey });
       expect(JSON.stringify(seed.retrievalSpec)).not.toMatch(/queryFamily|demandSurface|concept|seed|workspace|product_id/);
-      expect(seed.metadata).toMatchObject({ seedOrigin: "query_planning_v7", queryFamily: query.query_family, demandSurface: query.demand_surface });
+      expect(seed.metadata).toMatchObject({ seedOrigin: query.metadata.planner_version === "query_planning_v8" ? "query_planning_v8" : "query_planning_v7", queryFamily: query.query_family, demandSurface: query.demand_surface });
     }
   });
 
   it("the same retrieval spec from different products resolves to the same global partition", async () => {
     const inputs = await plannerGoldenInputs();
-    const [a] = inputs.filter((entry) => buildQueryPlanSeedCandidates(entry.input, REFRESHABLE).length);
+    const [a] = inputs.filter((entry) => buildQueryPlanSeedCandidatesV8(entry.input, REFRESHABLE).length);
     const other = { ...a.input, sourceRoutingPlan: { ...a.input.sourceRoutingPlan, product_id: "another-product" } };
-    const seedsA = policy.selectPartitionSeeds({ candidates: buildQueryPlanSeedCandidates(a.input, REFRESHABLE), executedQueryPlanIds: new Set(), executedPartitionKeys: new Set(), now: NOW }).seeds;
-    const seedsB = policy.selectPartitionSeeds({ candidates: buildQueryPlanSeedCandidates(other, REFRESHABLE), executedQueryPlanIds: new Set(), executedPartitionKeys: new Set(), now: NOW }).seeds;
+    const seedsA = policy.selectPartitionSeeds({ candidates: buildQueryPlanSeedCandidatesV8(a.input, REFRESHABLE), executedQueryPlanIds: new Set(), executedPartitionKeys: new Set(), now: NOW }).seeds;
+    const seedsB = policy.selectPartitionSeeds({ candidates: buildQueryPlanSeedCandidatesV8(other, REFRESHABLE), executedQueryPlanIds: new Set(), executedPartitionKeys: new Set(), now: NOW }).seeds;
     expect(seedsA.length).toBeGreaterThan(0);
     expect(seedsB.map((seed) => [seed.partitionId, seed.partitionKey])).toEqual(seedsA.map((seed) => [seed.partitionId, seed.partitionKey]));
   });
@@ -231,7 +231,7 @@ describe("Layer 12A.2 feature flag", () => {
     expect(scan).toMatch(/if \(queryPlan && queryPlanningInput && supplyPartitionSeedingEnabled\(\)\) \{\s+try \{\s+const seeding = await seedSupplyPartitionsForScan/);
     // Seeding runs after the scan's own query yield rows are persisted, and is wrapped so it can never fail the scan.
     expect(scan.indexOf("seedSupplyPartitionsForScan({")).toBeGreaterThan(scan.indexOf("await queryYieldRepository.insertImmutable("));
-    expect(scan).toContain("queryPlan = buildQueryPlan(queryPlanningInput);");
+    expect(scan).toContain("queryPlan = buildQueryPlanV8(queryPlanningInput);");
     const incremental = readFileSync("src/server/modules/operations/incremental-product-matching.service.ts", "utf8");
     expect(incremental).toContain("partitionInterests: supplyPartitionSeedingEnabled() ? new SupplyPartitionInterestRepository(client) : null,");
     const refresh = readFileSync("src/server/modules/ingestion/market-partition-refresh.service.ts", "utf8");

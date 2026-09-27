@@ -43,7 +43,7 @@ import { FixtureConversationAnalysisEngine, FixtureProductMatchingEngine } from 
 import { ensureEngineVersion } from "@/server/modules/observability/engine.repository";
 import { getTraceId } from "@/server/lib/request-context";
 import { buildSourceRoutingPlan, selectExecutableSourceRoutes, type SourceRoutingPlan, type SourceRoutingHealthStatus } from "@/server/modules/operations/source-routing.index";
-import { buildQueryPlan, githubPainRetrievalDiagnostics, toSourceDiscoveryRequest, type GithubPainQueryCompilation, type QueryPlan, type QueryPlanningInput } from "@/server/modules/operations/query-planning.index";
+import { buildQueryPlanV8, githubPainRetrievalDiagnostics, toSourceDiscoveryRequest, type GithubPainQueryCompilation, type QueryPlan, type QueryPlanningInput } from "@/server/modules/operations/query-planning.index";
 import { hnAlgoliaSearchEnabled } from "@/server/modules/ingestion/market-partition-refresh.policy";
 import { supplyPartitionSeedingEnabled } from "@/server/modules/operations/supply-partition-seeding.policy";
 import { seedSupplyPartitionsForScan } from "@/server/modules/operations/supply-partition-seeding.service";
@@ -1192,7 +1192,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
         scanMode,
         maxQueries: discoveryBudget.maxQueriesPerScan,
       };
-      queryPlan = buildQueryPlan(queryPlanningInput);
+      queryPlan = buildQueryPlanV8(queryPlanningInput);
       diagnostics.push({ sourceKey: "query-planning", state: "planned", message: `${queryPlan.diagnostics.query_count} semantic quer${queryPlan.diagnostics.query_count === 1 ? "y" : "ies"} across ${queryPlan.diagnostics.source_count} source${queryPlan.diagnostics.source_count === 1 ? "" : "s"}.` });
     } catch (error) {
       diagnostics.push({ sourceKey: "query-planning", state: "fallback", message: safeSummary(error) });
