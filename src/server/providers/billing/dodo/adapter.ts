@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { z } from "zod";
+import { APIError, APIConnectionError, DodoPayments } from "dodopayments";
 
 import type { JsonObject } from "../../../db/database.helpers";
 import type { BillingInterval } from "../../../modules/billing/billing.schemas";
@@ -10,10 +11,13 @@ import {
   type BillingProvider,
   type CheckoutRequest,
   type CheckoutResult,
+  type ProviderDiscountCreateRequest,
+  type ProviderDiscountSnapshot,
   type ProviderSubscription,
   type VerifiedBillingEvent,
   type WebhookHeaders,
 } from "../contracts";
+import { createDodoClient, type DodoEnvironment } from "./client";
 
 const dodoPayloadSchema = z.object({
   type: z.string().trim().min(1).optional(),
@@ -113,7 +117,8 @@ function redact(value: unknown): unknown {
 export type DodoBillingConfig = {
   apiKey: string;
   webhookSecret: string;
-  baseUrl: string;
+  baseUrl?: string;
+  environment?: DodoEnvironment;
   catalog: DodoProductCatalog;
   fetcher?: FetchLike;
   clock?: () => Date;
@@ -122,44 +127,35 @@ export type DodoBillingConfig = {
 
 export class DodoBillingProvider implements BillingProvider {
   readonly name = "dodo" as const;
-  private readonly fetcher: FetchLike;
   private readonly clock: () => Date;
+  private readonly client: DodoPayments;
 
   constructor(private readonly config: DodoBillingConfig) {
-    this.fetcher = config.fetcher ?? fetch;
     this.clock = config.clock ?? (() => new Date());
+    this.client = createDodoClient({
+      apiKey: config.apiKey,
+      environment: config.environment,
+      baseUrl: config.baseUrl,
+      fetcher: config.fetcher,
+    });
   }
 
   async createCheckout(input: CheckoutRequest): Promise<CheckoutResult> {
-    // Dodo's hosted checkout-creation endpoint is POST /checkouts (a prior "/checkout-sessions"
-    // path does not exist on the live API and returned 403, not 404, because it never reached
-    // real request handling). The request body contract (product_cart/customer/return_url/
-    // metadata) is unchanged between the two — only the path was wrong.
-    const response = await this.request("/checkouts", {
-      method: "POST",
-      headers: { "Idempotency-Key": input.checkoutReference },
-      body: {
-        product_cart: [{ product_id: input.providerProductId, quantity: 1 }],
-        ...(input.providerCustomerId ? { customer: { customer_id: input.providerCustomerId } } : {}),
-        return_url: input.returnUrl,
-        metadata: {
-          workspace_id: input.workspaceId,
-          workspaceId: input.workspaceId,
-          internal_plan: input.internalPlan,
-          billing_interval: input.billingInterval,
-          checkout_reference: input.checkoutReference,
-        },
+    const response = await this.call("/checkouts", () => this.client.checkoutSessions.create({
+      product_cart: [{ product_id: input.providerProductId, quantity: 1 }],
+      ...(input.providerCustomerId ? { customer: { customer_id: input.providerCustomerId } } : {}),
+      ...(input.discountCodes?.length ? { discount_codes: input.discountCodes, feature_flags: { allow_discount_code: false } } : {}),
+      return_url: input.returnUrl,
+      metadata: {
+        workspace_id: input.workspaceId,
+        workspaceId: input.workspaceId,
+        internal_plan: input.internalPlan,
+        billing_interval: input.billingInterval,
+        checkout_reference: input.checkoutReference,
       },
-    });
-    // /checkouts responds with { session_id, checkout_url, ... } — not the { session_id |
-    // checkout_id | id } / { checkout_url | url } guesswork the old code carried over
-    // unverified from the wrong endpoint. checkout_url is nullable in Dodo's own schema
-    // (e.g. when a payment is confirmed immediately), so this can legitimately fail.
-    const record = asRecord(response);
-    const checkoutUrl = stringAt(record, "checkout_url");
-    const checkoutId = stringAt(record, "session_id");
-    if (!checkoutUrl || !checkoutId) throw new BillingProviderError("PROVIDER_ERROR", "Dodo did not return a checkout URL.");
-    return { providerCheckoutId: checkoutId, checkoutUrl };
+    }, { headers: { "Idempotency-Key": input.checkoutReference } }));
+    if (!response.checkout_url) throw new BillingProviderError("PROVIDER_ERROR", "Dodo did not return a checkout URL.");
+    return { providerCheckoutId: response.session_id, checkoutUrl: response.checkout_url };
   }
 
   /**
@@ -171,7 +167,7 @@ export class DodoBillingProvider implements BillingProvider {
    */
   async checkConnectivity(): Promise<{ ok: true } | { ok: false; code: BillingProviderError["code"]; message: string }> {
     try {
-      await this.request("/products?page_size=1", { method: "GET" });
+      await this.call("/products", () => this.client.products.list({ page_size: 1 }));
       return { ok: true };
     } catch (error) {
       if (error instanceof BillingProviderError) return { ok: false, code: error.code, message: error.message };
@@ -180,17 +176,14 @@ export class DodoBillingProvider implements BillingProvider {
   }
 
   async createPortalSession(providerCustomerId: string, returnUrl?: string) {
-    const query = new URLSearchParams();
-    if (returnUrl) query.set("return_url", returnUrl);
-    const suffix = query.size > 0 ? `?${query.toString()}` : "";
-    const response = await this.request(`/customers/${encodeURIComponent(providerCustomerId)}/customer-portal/session${suffix}`, { method: "POST" });
+    const response = await this.call("/customers/customer-portal/session", () => this.client.customers.customerPortal.create(providerCustomerId, returnUrl ? { return_url: returnUrl } : undefined));
     const link = stringAt(asRecord(response), "link", "url", "portal_url");
     if (!link) throw new BillingProviderError("PROVIDER_ERROR", "Dodo did not return a customer portal link.");
     return { portalUrl: link };
   }
 
   async getSubscription(providerSubscriptionId: string): Promise<ProviderSubscription> {
-    const response = await this.request(`/subscriptions/${encodeURIComponent(providerSubscriptionId)}`, { method: "GET" });
+    const response = await this.call(`/subscriptions/${encodeURIComponent(providerSubscriptionId)}`, () => this.client.subscriptions.retrieve(providerSubscriptionId));
     return this.normalizeSubscription({
       type: "subscription.updated",
       data: jsonObject(response),
@@ -199,19 +192,40 @@ export class DodoBillingProvider implements BillingProvider {
   }
 
   async cancelSubscription(providerSubscriptionId: string): Promise<ProviderSubscription | null> {
-    const response = await this.request(`/subscriptions/${encodeURIComponent(providerSubscriptionId)}`, {
-      method: "PATCH",
-      body: { cancel_at_next_billing_date: true },
-    });
+    const response = await this.call(`/subscriptions/${encodeURIComponent(providerSubscriptionId)}`, () => this.client.subscriptions.update(providerSubscriptionId, { cancel_at_next_billing_date: true }));
     return this.normalizeSubscription({ type: "subscription.updated", data: jsonObject(response), created_at: this.clock().toISOString() }, providerSubscriptionId);
   }
 
-  async changeSubscription(input: { providerSubscriptionId: string; providerProductId: string; billingInterval: BillingInterval }): Promise<ProviderSubscription> {
-    const response = await this.request(`/subscriptions/${encodeURIComponent(input.providerSubscriptionId)}`, {
-      method: "PATCH",
-      body: { product_id: input.providerProductId, billing_interval: input.billingInterval },
-    });
-    return this.normalizeSubscription({ type: "subscription.updated", data: jsonObject(response), created_at: this.clock().toISOString() }, input.providerSubscriptionId);
+  async changeSubscription(input: { providerSubscriptionId: string; providerProductId: string; billingInterval: BillingInterval; discountCodes?: string[] }): Promise<ProviderSubscription> {
+    await this.call(`/subscriptions/${encodeURIComponent(input.providerSubscriptionId)}/change-plan`, () => this.client.subscriptions.changePlan(input.providerSubscriptionId, {
+      product_id: input.providerProductId,
+      quantity: 1,
+      proration_billing_mode: "do_not_bill",
+      ...(input.discountCodes ? { discount_codes: input.discountCodes } : {}),
+      effective_at: "immediately",
+    }, { headers: { "Idempotency-Key": `plan-change:${input.providerSubscriptionId}:${input.providerProductId}:${input.billingInterval}` } }));
+    return this.getSubscription(input.providerSubscriptionId);
+  }
+
+  async createDiscount(input: ProviderDiscountCreateRequest): Promise<ProviderDiscountSnapshot> {
+    const response = await this.call("/discounts", () => this.client.discounts.create({
+      amount: input.amountBasisPoints,
+      type: "percentage",
+      restricted_to: input.productIds,
+      subscription_cycles: input.subscriptionCycles,
+      expires_at: input.expiresAt ?? null,
+      preserve_on_plan_change: false,
+      metadata: input.metadata,
+    }, { headers: { "Idempotency-Key": input.idempotencyKey } }));
+    return this.normalizeDiscount(response);
+  }
+
+  async getDiscount(providerDiscountId: string): Promise<ProviderDiscountSnapshot> {
+    return this.normalizeDiscount(await this.call(`/discounts/${encodeURIComponent(providerDiscountId)}`, () => this.client.discounts.retrieve(providerDiscountId)));
+  }
+
+  async deleteDiscount(providerDiscountId: string): Promise<void> {
+    await this.call(`/discounts/${encodeURIComponent(providerDiscountId)}`, () => this.client.discounts.delete(providerDiscountId));
   }
 
   async verifyWebhook(rawBody: string, headers: WebhookHeaders, now = this.clock()): Promise<VerifiedBillingEvent> {
@@ -316,46 +330,62 @@ export class DodoBillingProvider implements BillingProvider {
       canceledAt: data.canceled_at ? dateString(data.canceled_at, occurredAt) : null,
       endedAt: data.ended_at ? dateString(data.ended_at, occurredAt) : (status === "canceled" || status === "expired" ? updatedAt : null),
       paymentFailureState: status === "past_due" ? (stringAt(data, "payment_failure_state", "failure_code") ?? "provider_payment_failed") : null,
+      providerDiscounts: Array.isArray(data.discounts) ? data.discounts.map((discount) => this.normalizeDiscount(discount as Record<string, unknown>)) : [],
       providerUpdatedAt: updatedAt,
     };
   }
 
-  private async request(path: string, input: { method: string; headers?: Record<string, string>; body?: unknown }): Promise<unknown> {
+  private normalizeDiscount(value: unknown): ProviderDiscountSnapshot {
+    const record = asRecord(value);
+    const id = stringAt(record, "discount_id", "id");
+    const code = stringAt(record, "code");
+    const type = stringAt(record, "type");
+    const amount = record.amount;
+    if (!id || !code || type !== "percentage" || typeof amount !== "number") {
+      throw new BillingProviderError("INVALID_REQUEST", "Dodo discount payload is malformed.");
+    }
+    const restrictedTo = Array.isArray(record.restricted_to) ? record.restricted_to.filter((item): item is string => typeof item === "string") : [];
+    const metadata = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).safeParse(record.metadata ?? {});
+    if (!metadata.success) throw new BillingProviderError("INVALID_REQUEST", "Dodo discount metadata is malformed.");
+    const customerEligibility = stringAt(record, "customer_eligibility");
+    return {
+      providerDiscountId: id,
+      code,
+      amountBasisPoints: amount,
+      restrictedTo,
+      ...(customerEligibility === "any" || customerEligibility === "first_time" || customerEligibility === "existing" || customerEligibility === "specific" ? { customerEligibility } : {}),
+      expiresAt: typeof record.expires_at === "string" ? dateString(record.expires_at, record.expires_at) : null,
+      subscriptionCycles: typeof record.subscription_cycles === "number" ? record.subscription_cycles : null,
+      cyclesRemaining: typeof record.cycles_remaining === "number" ? record.cycles_remaining : (typeof record.discount_cycles_remaining === "number" ? record.discount_cycles_remaining : null),
+      preserveOnPlanChange: record.preserve_on_plan_change === true,
+      usageLimit: typeof record.usage_limit === "number" ? record.usage_limit : null,
+      metadata: metadata.data,
+    };
+  }
+
+  private async call<T>(path: string, operation: () => Promise<T>): Promise<T> {
     if (!this.config.apiKey) throw new BillingProviderError("CONFIGURATION", "Dodo API key is not configured.");
-    let response: Response;
     try {
-      response = await this.fetcher(`${this.config.baseUrl.replace(/\/$/, "")}${path}`, {
-        method: input.method,
-        headers: { Authorization: `Bearer ${this.config.apiKey}`, "Content-Type": "application/json", ...input.headers },
-        ...(input.body === undefined ? {} : { body: JSON.stringify(input.body) }),
-      });
-    } catch {
-      throw new BillingProviderError("UNAVAILABLE", "Dodo is temporarily unavailable.", true);
+      return await operation();
+    } catch (error) {
+      if (error instanceof BillingProviderError) throw error;
+      if (error instanceof APIConnectionError) throw new BillingProviderError("UNAVAILABLE", "Dodo is temporarily unavailable.", true);
+      if (error instanceof APIError) {
+        const status = error.status;
+        const providerRecord = asRecord(error.error);
+        const providerCode = stringAt(providerRecord, "code", "error_code", "type");
+        const providerMessage = stringAt(providerRecord, "message", "error");
+        console.error("[dodo] request failed", { path, status, providerCode, providerMessage: providerMessage?.slice(0, 300) });
+        if (status === 401) throw new BillingProviderError("UNAUTHORIZED", "Dodo did not accept the configured API credentials.");
+        if (status === 403) throw new BillingProviderError("FORBIDDEN", "Dodo authenticated the request but denied this action.");
+        if (status === 404) throw new BillingProviderError("NOT_FOUND", "Dodo could not find the referenced resource.");
+        if (status === 422) throw new BillingProviderError("INVALID_REQUEST", "Dodo rejected the request payload.");
+        if (status === 429) throw new BillingProviderError("RATE_LIMITED", "Dodo rate limited the request.", true);
+        if (typeof status === "number" && status >= 500) throw new BillingProviderError("UNAVAILABLE", "Dodo is temporarily unavailable.", true);
+        throw new BillingProviderError("PROVIDER_ERROR", "Dodo rejected the billing request.");
+      }
+      throw new BillingProviderError("PROVIDER_ERROR", error instanceof Error ? error.message : "Dodo billing request failed.");
     }
-    const text = await response.text();
-    let body: unknown = {};
-    try { body = text ? JSON.parse(text) : {}; } catch { body = {}; }
-    if (!response.ok) {
-      const record = asRecord(body);
-      const providerCode = stringAt(record, "code", "error_code", "type");
-      const providerMessage = stringAt(record, "message", "error");
-      // Safe: only the provider's own short code/message is logged, never the
-      // Authorization header, request body, or payment data.
-      console.error("[dodo] request failed", { path, status: response.status, providerCode, providerMessage: providerMessage?.slice(0, 300) });
-      // 401 means the credentials were not accepted at all (bad/missing key) — a genuine
-      // config error. 403 means the credentials WERE accepted but this specific account/key
-      // is not permitted to perform the action (e.g. live mode not activated, product/key
-      // environment mismatch, IP allowlist). Collapsing these two hid exactly the signal
-      // needed to rule out "the key is wrong" once the key is already confirmed valid.
-      if (response.status === 401) throw new BillingProviderError("UNAUTHORIZED", "Dodo did not accept the configured API credentials.");
-      if (response.status === 403) throw new BillingProviderError("FORBIDDEN", "Dodo authenticated the request but denied this action.");
-      if (response.status === 404) throw new BillingProviderError("NOT_FOUND", "Dodo could not find the referenced resource.");
-      if (response.status === 422) throw new BillingProviderError("INVALID_REQUEST", "Dodo rejected the request payload.");
-      if (response.status === 429) throw new BillingProviderError("RATE_LIMITED", "Dodo rate limited the request.", true);
-      if (response.status >= 500) throw new BillingProviderError("UNAVAILABLE", "Dodo is temporarily unavailable.", true);
-      throw new BillingProviderError("PROVIDER_ERROR", "Dodo rejected the billing request.");
-    }
-    return body;
   }
 }
 

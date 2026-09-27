@@ -28,7 +28,31 @@ export type ProviderSubscription = {
   canceledAt?: string | null;
   endedAt?: string | null;
   paymentFailureState?: string | null;
+  providerDiscounts?: ProviderDiscountSnapshot[];
   providerUpdatedAt: string;
+};
+
+export type ProviderDiscountSnapshot = {
+  providerDiscountId: string;
+  code: string;
+  amountBasisPoints: number;
+  restrictedTo: string[];
+  customerEligibility?: "any" | "first_time" | "existing" | "specific";
+  expiresAt?: string | null;
+  subscriptionCycles?: number | null;
+  cyclesRemaining?: number | null;
+  preserveOnPlanChange: boolean;
+  usageLimit?: number | null;
+  metadata: Record<string, string | number | boolean>;
+};
+
+export type ProviderDiscountCreateRequest = {
+  amountBasisPoints: number;
+  productIds: string[];
+  expiresAt?: string | null;
+  subscriptionCycles: number;
+  metadata: Record<string, string | number | boolean>;
+  idempotencyKey: string;
 };
 
 export type CheckoutRequest = {
@@ -39,6 +63,7 @@ export type CheckoutRequest = {
   providerCustomerId?: string | null;
   returnUrl?: string;
   checkoutReference: string;
+  discountCodes?: string[];
 };
 
 export type CheckoutResult = {
@@ -68,11 +93,15 @@ export interface BillingProvider {
   createCheckout(input: CheckoutRequest): Promise<CheckoutResult>;
   createPortalSession?(providerCustomerId: string, returnUrl?: string): Promise<PortalSessionResult>;
   getSubscription(providerSubscriptionId: string): Promise<ProviderSubscription>;
+  createDiscount?(input: ProviderDiscountCreateRequest): Promise<ProviderDiscountSnapshot>;
+  getDiscount?(providerDiscountId: string): Promise<ProviderDiscountSnapshot>;
+  deleteDiscount?(providerDiscountId: string): Promise<void>;
   cancelSubscription(providerSubscriptionId: string): Promise<ProviderSubscription | null>;
   changeSubscription?(input: {
     providerSubscriptionId: string;
     providerProductId: string;
     billingInterval: BillingInterval;
+    discountCodes?: string[];
   }): Promise<ProviderSubscription>;
   verifyWebhook(rawBody: string, headers: WebhookHeaders, now?: Date): Promise<VerifiedBillingEvent>;
   normalizeStoredWebhook(payload: JsonObject, context: { providerEventId: string; occurredAt: string; eventType: string }): VerifiedBillingEvent;
