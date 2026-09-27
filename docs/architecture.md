@@ -4910,3 +4910,49 @@ window and row limits, and compatible with service-role-only telemetry access. N
 for V1. A future scheduled summary is optional and may only aggregate existing facts idempotently with
 zero provider, LLM, and intelligence writes. Active allocator and active cross-product routing remain
 disabled throughout the natural baseline window.
+
+### 13A.1 — Waitlist Foundation V1 (`waitlist_foundation_v1`) — FEATURE-BRANCH ARCHITECTURE
+
+**Boundary.** The waitlist is a private pre-access system, not a product-access or entitlement system.
+Submitting a request never creates a Supabase Auth user, workspace, membership, subscription, dashboard
+permission, Founding 25 identity, Early 100 identity, or other cohort membership. Admission and conversion
+belong to a later invite/access phase. Layer 13A.1 does not touch the Layer 12A supply or natural-yield
+measurement paths.
+
+**Durable object.** `waitlist_applications` stores bounded private application fields, normalized email,
+optional attribution, optional marketing consent, a future conversion linkage, explicit application status,
+and timestamps. `waitlist_application_events` is append-only audit history. Both tables are server-only
+through RLS and explicit service-role grants; anonymous and normal authenticated clients cannot enumerate or
+write them. No existing waitlist records were found, so no backfill or historical ordering decision is needed.
+
+**Early Access identity.** `early_access_number` is a nullable public display identity until email
+verification succeeds. It is allocated from the database-owned monotonic `waitlist_early_access_number_seq`
+inside the locked verification function, never with `MAX()+1`, and is unique, immutable after allocation,
+never reassigned, and never used as authorization. Founding Member and other cohort numbers are separate
+future namespaces and are intentionally absent from this schema.
+
+**Verification and private status.** The existing server-only Resend adapter is reused when configured.
+Verification and status tokens are random opaque values; only SHA-256 hashes are persisted. Verification is
+bounded by a 48-hour expiry and is idempotent after success. A successful verification finalizes the Early
+Access number and may send a transactional confirmation. If Resend is not configured, the application is
+retained as pending and the exact limitation is surfaced for rollout review rather than pretending delivery occurred.
+
+**Status machine.** `pending -> verified -> under_review -> approved_for_invite|declined`; pending, verified,
+under_review, and approved_for_invite may transition to `withdrawn`. Transitions are centralized in guarded
+database functions and append audit events. `approved_for_invite` remains an admission decision only and
+cannot create access. Declined and withdrawn applications are not silently reusable; a later policy must
+explicitly define any reactivation behavior.
+
+**Privacy and abuse boundary.** Public submission goes through a server route with bounded Zod input,
+same-origin checking, a honeypot, existing atomic Supabase rate-limit buckets, no raw-IP persistence, and
+generic success behavior that does not reveal duplicate-email state. UTM/referrer fields are optional,
+bounded attribution only and never influence admission. Marketing consent is optional and separate from
+required transactional communication. Raw tokens, secrets, and full private payloads are not logged.
+
+**Future seams.** 13A.2 can attach cohort membership and its own immutable namespace through the future
+conversion linkage without changing waitlist history. 13A.3/13B can add referrals, sharing, public cards,
+and attribution without using the Early Access number as a credential. No public wall, referral priority,
+Founder Pass, invite acceptance, or dashboard access is implemented here. Internal review repository methods
+provide bounded pagination/filtering and guarded transition calls, but there is no existing repository-wide
+internal-admin identity convention, so no public admin route is exposed until that authorization boundary is
+approved.
