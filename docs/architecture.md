@@ -4870,3 +4870,43 @@ have different semantics. No 12A.4 code is changed by this phase.
 adapter/depth semantics, `candidate_selection_v3`, `maxEvaluations=15`, `signal_qualification_v1_7`,
 qualification thresholds, semantic reasoning, Evidence Fidelity, public/private boundaries, lifecycle,
 clustering, active cross-product routing, and global budgets remain unchanged.
+
+### 12A.6 — Natural Yield Validation V1 (`natural_yield_validation_v1`) — APPROVED READ-ONLY MEASUREMENT ARCHITECTURE
+
+**Objective and boundary.** 12A.6 measures natural supply over a bounded UTC window; it does not
+change retrieval, planning, allocation, matching, qualification, lifecycle, clustering, or provider
+behavior. Reports are derived from existing `query_yield_artifacts`, `job_runs`, product evaluations,
+signals, supply facts, source health, allocator telemetry, and routing-shadow telemetry. No provider or
+LLM call is part of measurement.
+
+**Canonical unit and funnel.** The primary unit is one distinct, non-fixture qualified evaluation per
+`(workspace_id, product_id, conversation_id)`, using the existing first-qualified rule. Query artifacts
+remain the source of truth for planned/executed queries, raw/normalized results, query-scoped duplicates,
+selection, evaluation influence, source, stable query-plan ID, and partition. Daily and rolling reports
+must label query-scoped sums separately from conversation-deduplicated qualified evidence; a canonical
+demand episode is not inferred when the schema only proves a conversation.
+
+**Read model.** A bounded repository loads at most the configured row limit for a caller-supplied window
+and workspace/product scope, and reads only telemetry columns plus scalar job-result diagnostics. A pure
+aggregation layer fills empty UTC days, produces daily and 3/7/14-day rolling summaries, groups by
+source/query-plan/partition, summarizes allocator baseline/proposed/applied allocations, and reports
+cross-product shadow observations. It fails closed on malformed telemetry and never exposes raw provider
+payloads or evidence bodies.
+
+**Measurability contract.** Existing telemetry makes query, source, partition, retrieval, selection,
+evaluation, qualification, provider-health, cap-pressure, allocator-shadow, routing-shadow, and first
+qualified evidence metrics measurable. Exact demand-episode counts, evidence-strengthening events, and
+provider request economics for scan jobs remain explicitly partial or unavailable where no durable event
+or request counter exists. Reports must preserve those gaps rather than estimate them.
+
+**Evidence reuse and quality.** Stable product matches and immutable evaluations permit first-qualified
+deduplication. They do not by themselves prove a strengthening event, so new-vs-strengthened reporting
+must return `not_measurable` for strengthening unless a durable event exists. Quality review is a bounded
+human/sample contract over existing Evidence Fidelity fields: source support, intent, target, temporal
+truth, competitor specificity, and provenance completeness. It never starts a second semantic pipeline.
+
+**Operational safety.** Measurement is server-only, workspace/product scoped, read-only, bounded by
+window and row limits, and compatible with service-role-only telemetry access. No migration is required
+for V1. A future scheduled summary is optional and may only aggregate existing facts idempotently with
+zero provider, LLM, and intelligence writes. Active allocator and active cross-product routing remain
+disabled throughout the natural baseline window.
