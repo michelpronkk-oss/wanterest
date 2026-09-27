@@ -4369,3 +4369,32 @@ versions, workspace allowlist, cluster semantics, and signal lifecycle semantics
 `maxEvaluations=15`, retrieval/source adapters, `timestamp_canonicalization_v1`,
 `evaluation_semantic_cache_v2`, semantic provider budget, workspace allowlist, cluster semantics, and
 signal lifecycle semantics are unchanged by this amendment.
+
+### 12A.3A.1 Amendment VI — Semantic Shadow Retry Persistence (`semantic_shadow_retry_persistence_v1`) — IMPLEMENTED_LOCALLY
+
+**Attempt identity is separate from semantic identity.** A semantic shadow fingerprint identifies the
+answer that may be reused; the table row UUID identifies one immutable execution attempt. Failed,
+schema-failed, evidence-failed, provider-failed, and budget-skipped attempts remain append-only audit
+history and never occupy the reusable-success cache slot. A later attempt with the same semantic
+fingerprint therefore appends a new row instead of updating or deleting an earlier failure.
+
+**Reusable-success uniqueness.** The unconditional `(workspace_id, product_id, conversation_id,
+fingerprint)` uniqueness is replaced by a partial unique index covering only `success` and `cache_hit`
+artifacts. This preserves at most one reusable canonical artifact for a semantic identity while allowing
+multiple terminal failures. `findByFingerprint` and `loadForReplay` select only those reusable statuses;
+replay orders by `created_at DESC, id DESC`, so historical failures can never shadow a valid success.
+
+**Provider-spend concurrency guard.** The existing successful-artifact uniqueness remains the database
+idempotency boundary for concurrent successful persistence, but it cannot prevent two workers from
+spending provider calls before either result exists. A small service-role-only
+`semantic_shadow_reasoning_claims` guard uses the same semantic identity and an expiring lease. Claim
+and release are atomic database functions; a worker must claim before calling the provider and releases
+the claim after terminal persistence. Expiry permits recovery from abandoned workers, while a completed
+failure releases the guard so an explicitly authorized maintenance retry can append another immutable
+attempt. This is an execution guard only, not a general job system and not a semantic fingerprint change.
+
+**Security and frozen systems.** The existing `semantic_shadow_reasoning` RLS, authenticated read policy,
+and service-role `SELECT/INSERT/UPDATE` contract are unchanged; the new claim table is service-role-only
+and grants no browser access. No semantic output normalization, schema semantics, qualification,
+target-binding, retrieval, budgets, provider configuration, signal lifecycle, evaluation pointers,
+clusters, or memberships change in this amendment.
