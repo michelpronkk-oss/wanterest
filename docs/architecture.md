@@ -4455,3 +4455,62 @@ selection restores the frozen v7 execution path without changing stored evidence
 `signal_qualification_v1_7`, qualification thresholds, `semantic_reasoning_router_v2`, evidence fidelity
 and target binding, semantic normalization/retry persistence, signal lifecycle, cluster semantics,
 provider adapters, and scan budgets are unchanged.
+
+### 12A.3B — GitHub Depth V1 (`github_depth_v1`) — IMPLEMENTED_LOCALLY
+
+**Why this exists.** The existing GitHub adapter already retrieves public issue roots, GitHub Discussions,
+and optional comments, but its comment expansion was caller-shaped: a request that enabled expansion could
+fetch the first bounded comment pages for every returned root. That made thread depth a retrieval volume
+switch rather than an evidence-quality decision. GitHub Depth V1 adds a deterministic, provider-local gate
+so useful demand evidence can be recovered from existing public threads without changing planner query
+volume, candidate budgets, or qualification thresholds.
+
+**Existing-path audit.** GitHub issue search remains the REST `search/issues` endpoint with `is:issue` and
+the existing repository/owner/org qualifiers. Pull requests and private repositories remain rejected.
+Discussions remain the existing GraphQL search surface with `is:discussion` and the existing category and
+pain-anchor filters. Issue comments use `/repos/{owner}/{repo}/issues/{number}/comments`; Discussion
+comments are returned by the existing GraphQL connection. Raw envelopes, normalization, canonicalization,
+and provenance are not replaced: a root and each accepted comment retain their provider external identity,
+all comments carry the root as `externalConversationId`, and the existing ingestion replay creates one
+thread conversation with relational source-item/provenance links.
+
+**Depth eligibility.** A public issue or Discussion is eligible only when it has comments, its title/body
+contains deterministic request, pain, switching, replacement, migration, workaround, or support language,
+and the root is not authored by a bot/app/automation identity or labelled as automated, dependency,
+release, security, maintenance, or equivalent noise. Pull requests stay excluded. Individual bot/app/
+automation comments are also dropped. This is a retrieval gate, not a semantic classifier and not a
+qualification decision; accepted evidence still flows through the unchanged candidate-selection and
+Evidence Fidelity paths.
+
+**Bounded policy.** `github_depth_v1` expands at most three eligible roots per provider page, at most twelve
+comments per root, and at most two REST comment pages with a page size of six. Discussion comments use the
+same twelve-comment bound inside the existing single GraphQL search request; comments from ineligible roots
+are not persisted. Comment envelopes are deduplicated by stable provider external ID within a discovery page.
+The policy records cap skips, ineligible roots, comment requests, returned/persisted/dropped comments, and
+deduplication counts in the existing nested `providerMetrics.githubDepthV1` object, which already flows
+through ingestion and scan telemetry.
+
+**Incremental refresh.** When a request supplies a refresh window, GitHub receives an `updated:>=YYYY-MM-DD`
+search qualifier for efficient lower-bound narrowing and the adapter applies the exact timestamp window
+locally to roots before depth expansion. Stable root/comment external IDs make repeated refreshes idempotent;
+changed raw payload hashes remain replayable history while the existing source-item identity and canonical
+thread relation preserve one conversation. No new cursor, table, or refresh job is introduced.
+
+**Versioning, reuse, and tenancy.** V8 planner requests opt into this provider policy through the existing
+`queryPlanVersion` metadata; an explicit `depthPolicyVersion` is also accepted for direct adapter contracts.
+The planner's query text, source count, source budgets, candidate cap, and `maxEvaluations=15` are unchanged.
+Raw GitHub items remain global reusable evidence; workspace/product matching and all derived intelligence
+remain workspace-scoped. Existing raw payload, source-item, conversation, and evidence-provenance records
+are the complete lineage for every depth item.
+
+**Validation and rollback.** Fixture tests cover root eligibility, bot/dependency noise, comment dedupe,
+expansion caps, refresh-window qualifiers, issue/discussion compatibility, canonical thread reuse, and
+provider metrics. Adversarial tests assert that implementation chatter does not become depth evidence.
+No migration, RLS change, provider configuration change, live GitHub retrieval, or production scan is part
+of this decision. Removing the adapter policy activation restores the previous root-only v8 behavior without
+changing stored evidence or downstream semantics.
+
+**Frozen**: `query_planning_v8` query generation and budgets, Retrieval Precision V1, Source Health V1,
+`candidate_selection_v3`, `maxEvaluations=15`, `signal_qualification_v1_7`, semantic reasoning and provider
+configuration, Evidence Fidelity and target binding, semantic shadow persistence, lifecycle semantics,
+cluster semantics, non-GitHub adapters, and global scan budgets remain unchanged.
