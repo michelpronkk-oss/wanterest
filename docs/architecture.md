@@ -4514,3 +4514,66 @@ changing stored evidence or downstream semantics.
 `candidate_selection_v3`, `maxEvaluations=15`, `signal_qualification_v1_7`, semantic reasoning and provider
 configuration, Evidence Fidelity and target binding, semantic shadow persistence, lifecycle semantics,
 cluster semantics, non-GitHub adapters, and global scan budgets remain unchanged.
+
+### 12A.3C — Stack Exchange V2 (`stack_exchange_v2` / `stack_exchange_depth_v1`) — APPROVED ARCHITECTURE
+
+**Decision.** Stack Exchange remains a source adapter over the existing public-ingestion boundary. The current
+adapter is root-only: query-planned requests use `/2.3/search/advanced` with `filter=withbody`, bounded pages,
+the configured Stack Exchange sites, and question-only normalization. It retains question body/title, tags,
+question identity, timestamps, answer-count/accepted-answer metadata, and quota/backoff information, but it does
+not fetch answers or comments and therefore cannot recover message-level evidence from a question thread.
+
+Stack Exchange V2 adds source-specific bounded depth while reusing the proven Depth V1 principles: deterministic
+eligibility, a maximum root expansion cap, bounded message counts/pages, stable root/message identity, explicit
+message provenance, source-aware noise filtering, incremental refresh skips, deduplication, nested provider
+telemetry, and the existing child-to-parent result persistence. This is a small source adapter extension, not a
+generic crawler or a new service.
+
+**V2 retrieval.** Search continues to find promising questions. Eligible questions may be enriched through the
+existing Stack Exchange API with `/questions/{ids}/answers`, `/questions/{ids}/comments`, and
+`/answers/{ids}/comments`. Answers are selected deterministically: the accepted answer is retained when present,
+then the highest-scoring bounded answers, with a hard per-question cap. Question comments and selected-answer
+comments use separate hard caps and deterministic score/demand-language filtering. No LLM is used for retrieval
+selection. Edits, linked questions, and related questions are not fetched in this phase; tags and site context
+remain part of the root provenance.
+
+**Depth eligibility and noise.** A question is depth-eligible only when it has meaningful answer/comment supply,
+contains deterministic recommendation, alternative, pain, capability, workaround, migration, tool-selection, or
+workflow-demand language, and is not closed/off-topic/spam/deleted or bot/system content. Pure syntax/debugging,
+homework, mathematical/statistical uses of ambiguous product words, dependency/install issues without demand, and
+generic “alternative method” wording remain excluded. Technical context may be retained as provenance but cannot
+become product demand solely because it has answers.
+
+**Canonical thread and provenance.** A question, selected answers, question comments, and selected answer comments
+form one logical conversation keyed by the stable site/question identity. Each answer/comment remains a separate
+source item with its own stable Stack Exchange ID, parent post ID, site, author, creation timestamp, last-activity
+timestamp where available, tags, and accepted-answer relationship. `externalConversationId` is the question thread
+identity; answer/comment external IDs are never promoted to independent market conversations. Existing global raw,
+source-item, conversation, and evidence-node/link persistence is reused, while workspace/product interpretation
+remains private.
+
+**Temporal and refresh semantics.** The adapter preserves provider `creation_date` and `last_activity_date` as
+actual timestamps. Historical questions remain historical evidence and do not become current merely because they
+were refreshed. A refresh may carry the stable question identity, known answer IDs, and known comment IDs; unchanged
+questions skip depth retrieval, while changed questions fetch only bounded answer/comment deltas. Existing market
+partition refresh cadence and caps remain unchanged.
+
+**Bounds and telemetry.** Stack Exchange V2 uses bounded per-query roots, answers, question comments, answer
+comments, pages, sequential depth requests, and provider backoff/quota handling. It emits `stackExchangeDepthV1`
+metrics aligned with GitHub Depth: `searchRoots`, `depthEligible`, `depthExpanded`, `depthRequests`,
+`answersLoaded`, `answersPersisted`, `commentsLoaded`, `commentsPersisted`, `dropped`, `deduplicated`,
+`refreshSkips`, and `quotaSkips`. Metrics must survive adapter → public ingestion → child result → durable parent
+result. V8 request metadata, including `queryPlanVersion=query_planning_v8`, is preserved; planner generation and
+global budgets are not changed.
+
+**Adversarial validation.** Fixtures cover linear regression versus the Linear product, Jira technical/plugin
+issues versus genuine Jira alternatives, database alternatives inside plugin development, historical project-
+management recommendation demand, accepted and non-accepted useful answers, noisy comments, duplicate discovery,
+updated questions, and cross-workspace/product reuse of one public thread. These tests protect Evidence Fidelity
+without changing Evidence Fidelity itself.
+
+**Frozen.** `query_planning_v8`, GitHub Depth behavior, Retrieval Precision V1, Source Health V1,
+`candidate_selection_v3`, `maxEvaluations=15`, `signal_qualification_v1_7`, qualification thresholds,
+`semantic_reasoning_router_v2`, Evidence Fidelity, semantic normalization/retry persistence, signal lifecycle,
+cluster semantics, all non-Stack-Exchange adapters, and global scan budgets remain unchanged. No migration,
+deployment, production retrieval, or production scan is part of this decision.
