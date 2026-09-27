@@ -4805,3 +4805,68 @@ fanout. No production migration or deployment is part of this development task.
 `candidate_selection_v3`, `maxEvaluations=15`, `signal_qualification_v1_7`, qualification thresholds,
 semantic routing v2, Evidence Fidelity, lifecycle, clustering, actions, experiments, and global budgets
 remain unchanged.
+
+### 12A.5 — Adaptive Allocator V1 (`adaptive_allocator_v1`) — APPROVED FEATURE-BRANCH ARCHITECTURE
+
+**Objective and boundary.** Adaptive allocation optimizes qualified-evidence yield per unit of the
+already-authorized retrieval budget. It does not add queries, provider requests, candidates, evaluations,
+sources, partitions, model calls, or global capacity. Planner v8 remains the semantic authority: the allocator
+can only rank and redistribute candidate slots among the queries that planner v8 already selected for the
+current product scan. Source routing remains authoritative for which sources are eligible, selected, healthy,
+and how much candidate budget each selected source owns. V1 therefore applies zero-sum allocation within each
+selected source; it does not move capacity between sources or invent a partition.
+
+**Execution seam.** The pure allocator runs after `buildQueryPlanV8`/global query-cap enforcement and before
+`toSourceDiscoveryRequestsForPlan`. In `off` mode the current plan is unchanged and no history is read. In
+`shadow` mode the current plan is executed unchanged while a deterministic proposal is calculated and stored
+in the existing `job_runs.input_reference.result` JSON. In `active` mode the same proposal may replace only
+per-query candidate slots, preserving each source's total candidate budget, provider safety ceilings, query
+count, competitor mix, and all downstream caps. Active mode is not enabled by this phase.
+
+**History and allocation identity.** Existing workspace/product-scoped `query_yield_artifacts` are the only
+learning input. Rows are read through a bounded recent window and row limit, then aggregated by the stable
+Planner v8 query ID, source, query family, demand surface, and optional market partition key. Raw query text,
+evidence bodies, private labels, signals, and provider payloads are never copied into allocator telemetry.
+At planning time a current query has no reliable partition key until request identity is materialized, so
+partition history is measured and reported but is not independently reassigned in V1.
+
+**Scoring.** A transparent prior-weighted score rewards qualified evidence per retrieval unit first, then
+candidate/evaluation efficiency, while applying bounded recency, duplicate/noise, and current source-health
+adjustments. A neutral prior and confidence shrinkage prevent one lucky evaluation from dominating a mature
+surface. No model, LLM, vector index, or opaque statistical service is used.
+
+**Exploration and diversity.** Every eligible query retains at least one candidate slot when its selected
+source has capacity. Remaining slots are assigned deterministically by score, stable query ID, and a rotating
+exploration tie-break derived from the scan idempotency seed. Source diversity is preserved by leaving source
+totals and source selection untouched. Unhealthy, blocked, unavailable, or unconfigured sources cannot be
+reactivated by allocator history. Competitor-specific query slots cannot increase when planner-selected
+non-competitor supply exists.
+
+**Modes and configuration.** `ADAPTIVE_ALLOCATOR_MODE` is an allowlisted `off|shadow|active` flag and
+`ADAPTIVE_ALLOCATOR_WORKSPACE_IDS` scopes non-off behavior to explicit workspaces. Missing or invalid values
+fail closed to `off`; no environment change is part of this implementation. The default production behavior
+is therefore bit-for-bit baseline allocation.
+
+**Telemetry and persistence.** The result records mode, eligible/historical/cold-start surfaces, baseline,
+proposed and applied allocations, shifted query slots, unchanged source and partition allocations, historical
+qualified-evidence/candidate/evaluation yields, confidence/sample indicators, exploration and diversity-floor
+reasons, source-health exclusions, cap pressure, duration, and bounded warnings/errors. This reuses the
+existing job result and query-yield artifact path; no parallel analytics table or migration is introduced.
+
+**Validation and rollout.** Tests cover off/shadow/active contracts, zero-sum budgets, query/candidate/
+evaluation caps, qualified-evidence-vs-raw-volume scoring, cold start, low sample, exploration, diversity,
+health suppression, recency/recovery, partition-aware history, determinism, competitor mix, tenant scoping,
+failure isolation, and bounded history reads. The rollout is human review, fast-forward merge, deployment,
+OFF sanity, then SHADOW-only canary scans; ACTIVE requires a later separately approved decision. 12A.6 is not
+implemented here, but the telemetry is designed to support its natural 7–14 day measurement window.
+
+**12A.4 read-only finding.** The production `routeMissShadow=19`, `routeExtraShadow=0`, and
+`deterministicPrefilterMatches=0` are a routing-recall observation, not an allocator defect: the normal scan
+compared the current product's existing match set with deterministic cross-product profile routes, and the
+profile lexical prefilter found no route. The existing match path and the new shadow route path intentionally
+have different semantics. No 12A.4 code is changed by this phase.
+
+**Frozen.** `query_planning_v8`, source routing, Retrieval Precision V1, Source Health V1, all provider
+adapter/depth semantics, `candidate_selection_v3`, `maxEvaluations=15`, `signal_qualification_v1_7`,
+qualification thresholds, semantic reasoning, Evidence Fidelity, public/private boundaries, lifecycle,
+clustering, active cross-product routing, and global budgets remain unchanged.
