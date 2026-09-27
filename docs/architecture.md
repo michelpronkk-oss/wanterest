@@ -4577,3 +4577,81 @@ without changing Evidence Fidelity itself.
 `semantic_reasoning_router_v2`, Evidence Fidelity, semantic normalization/retry persistence, signal lifecycle,
 cluster semantics, all non-Stack-Exchange adapters, and global scan budgets remain unchanged. No migration,
 deployment, production retrieval, or production scan is part of this decision.
+
+### 12A.3D — Discourse Depth V1 (`discourse_v1` / `discourse_depth_v1`) — APPROVED ARCHITECTURE
+
+**Current support and scope.** Wanterest currently has no Discourse adapter, registry entry, planner route,
+source-control entry, or Discourse-specific canonicalization. This decision adds one public, provider-neutral
+adapter over the existing public-ingestion port. It must not crawl an entire forum or assume that independent
+Discourse installations share identity, API behavior, categories, tags, or authentication requirements.
+
+**Discovery and instance configuration.** V8 supplies intent/concept language; it does not change planner
+semantics. The adapter searches an explicitly configured public instance through `GET /search.json?q=...&page=N`
+and hydrates bounded topic hits through `GET /t/{slug}/{topic_id}.json`. An instance is selected from request
+metadata (`discourseInstance` or `discourseInstances`) or the server-only `DISCOURSE_BASE_URL` fallback. Only
+HTTPS origins with a normalized base path are accepted. Public instances require no credential; optional
+instance authentication is not introduced in this phase. Search pagination is bounded and topic hydration is
+performed only within the depth budget. No latest/category/tag feed crawl, related-topic crawl, edit-history
+crawl, or linked-topic crawl is included.
+
+**Canonical thread and identity.** One Discourse topic is one global public conversation. The topic identity is
+`discourse:<normalized-instance>:topic:<topic-id>`. A retained post identity is
+`discourse:<normalized-instance>:topic:<topic-id>:post:<post-id>`; the instance is mandatory for both roots and
+children, so overlapping topic/post/user/category IDs across forums never merge. The topic root and selected
+replies remain separate source items with `externalConversationId` set to the topic identity. Nested reply
+relationships are retained as metadata and provenance; a reply never becomes its own market conversation.
+
+**Target surfaces and policy.** The root topic, first post, demand-bearing replies, original-poster follow-ups,
+and an explicitly marked solved/accepted post are included when retained by deterministic eligibility and
+selection. Tags, categories, topic state, like counts, author metadata, `created_at`, `updated_at`, and
+`bumped_at` are retained as context. Edits/history and related/linked topics are excluded. Moderation, release
+notes/changelogs, bot/system posts, spam, vendor self-promotion, pure support resolution, code/log dumps without
+market demand, and duplicated cross-posts are excluded from depth evidence. A topic is depth-eligible only when
+its title/first post or qualifying metadata contains deterministic pain, recommendation, alternative, migration,
+capability, workflow-friction, feature-request, or literal purchasing/adoption language and it is not closed,
+archived, deleted, or automation-owned. This is a retrieval gate, not an LLM classifier or a qualification
+decision.
+
+**Bounded selection and economics.** Search returns at most three eligible topic roots per provider page; at most
+eight posts are retained per topic including the root; at most two topic pages are requested per query; at most
+twelve Discourse requests are made per query; and at most three queries are planned for the source. The root is
+always retained. Replies are deduplicated by post ID, then selected deterministically in this order: marked
+solution/accepted post, original-poster follow-up, demand-bearing reply, then stable score/creation/post-ID order,
+subject to the per-topic cap. The adapter does not use an LLM to decide what to fetch. Concurrency is sequential
+within a query; 429 responses honor `Retry-After` through the existing bounded HTTP error path, and no new global
+budget or retry system is introduced.
+
+**Content, provenance, and temporal truth.** Prefer Discourse `cooked` HTML, falling back to `raw` Markdown. The
+deterministic normalizer preserves paragraph/code boundaries and visible links while stripping presentation
+markup; raw provider payloads remain available through the existing evidence path. Every retained post records
+instance, topic ID, post ID/number, parent post number when present, author identity/profile, created/updated
+timestamps, topic/post URLs, root/child type, tags/category/state, and solution metadata. `created_at`,
+`updated_at`, and `bumped_at` remain provider timestamps; retrieval time never makes an old topic current.
+
+**Incremental refresh.** Refresh requests may carry a topic refresh boundary, known post IDs, and the highest known
+post number. An unchanged topic skips depth hydration when its bump/update timestamp is outside the refresh
+window. A changed topic returns only unseen post IDs/post numbers after deterministic selection. Stable topic/post
+identities and the existing raw/source/conversation uniqueness rules make repeated query discovery idempotent;
+historical raw payloads remain replayable.
+
+**Telemetry and shared reuse.** Discourse emits nested `discourseDepthV1` telemetry with `searchRoots`,
+`depthEligible`, `depthExpanded`, `depthRequests`, `postsLoaded`, `postsPersisted`, `dropped`, `deduplicated`,
+`refreshSkips`, `rateLimitSkips`, and `capSkips`. It uses the existing shared depth telemetry/identity primitives
+only where field semantics are identical, while eligibility, post selection, content normalization, and instance
+handling remain Discourse-specific. `query.metadata.planner_version` must round-trip to
+`requestMetadata.queryPlanVersion` and the adapter must preserve the metadata through adapter → public-ingestion
+→ child result → parent result persistence.
+
+**Global reuse and validation.** Public Discourse raw/source/conversation evidence is globally reusable through
+the existing public-ingestion and market-partition architecture; matching, evaluation, ranking, signals, and all
+other interpretation remain tenant-private. Tests must cover public search/topic fixtures, HTML/raw normalization,
+depth eligibility and support-noise exclusions, deterministic reply/solution selection, nested parent links,
+multi-instance overlapping IDs, canonical one-topic/one-conversation behavior, repeated-query dedupe, refresh
+skips/deltas, rate limits, telemetry persistence, planner-version propagation, candidate/qualification integration,
+and Evidence Fidelity adversarial fixtures. No production retrieval, migration, deployment, or global budget
+change is part of this decision.
+
+**Frozen.** `query_planning_v8`, GitHub Depth, Stack Exchange V2, Retrieval Precision V1, Source Health V1,
+`candidate_selection_v3`, `maxEvaluations=15`, `signal_qualification_v1_7`, qualification thresholds,
+`semantic_reasoning_router_v2`, Evidence Fidelity, semantic output/retry persistence, signal lifecycle, clusters,
+all existing adapter semantics, and global scan budgets remain unchanged.
