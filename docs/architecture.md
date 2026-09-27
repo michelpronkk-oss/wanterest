@@ -4398,3 +4398,60 @@ and service-role `SELECT/INSERT/UPDATE` contract are unchanged; the new claim ta
 and grants no browser access. No semantic output normalization, schema semantics, qualification,
 target-binding, retrieval, budgets, provider configuration, signal lifecycle, evaluation pointers,
 clusters, or memberships change in this amendment.
+
+### 12A.3A.2 — Query / Planner Quality (`query_planning_v8`) — IMPLEMENTED_LOCALLY
+
+**Why this exists.** The production Linear planner corpus exposed a deterministic quality defect in
+`query_planning_v7`: pain candidates were emitted as three lead-in variants (`category + pain`,
+`struggling with category + pain`, and `problem with category + pain`) even when they represented one
+semantic retrieval surface. The same synthetic pain wording was then copied into multiple source
+partitions, and Hacker News received the long web-style form. Known competitors were also expanded into
+alternative, switching, and comparison candidates before selection, so a high-confidence competitor could
+occupy too much of a product's retrieval surface. This is planner quality, not evidence quality, provider
+quality, qualification, or threshold behavior.
+
+**Frozen baseline.** `query_planning_v7` and its golden corpus remain available and behaviorally unchanged
+as the audit baseline. `query_planning_v8` is a deterministic quality layer over the v7 candidate/route
+contract; it does not introduce an LLM query generator, a new provider adapter, a new retrieval primitive,
+or a new budget. The production scan path selects v8 explicitly; v7 remains callable for regression and
+side-by-side comparison.
+
+**V8 quality contract.** V8 applies the smallest deterministic transformations after v7 selection:
+
+- Pain lead-ins are canonicalized to one natural query per source (`category with pain` for general
+  sources; a concise `pain in category` form for Hacker News). Stored profile text is never treated as
+  source evidence, and intent family/demand surface fields remain unchanged.
+- Template-level deduplication keys each source/family by normalized semantic text after removing trivial
+  pain lead-ins. Different sources may retain the same semantic query because source-specific retrieval
+  surfaces are intentional; trivial variants within one source may not consume multiple partitions.
+- Competitor-oriented queries (`switching`, `alternative_search`, `competitor_pain`, or an explicit
+  competitor marker) receive a deterministic minority allocation. When non-competitor coverage exists,
+  the retained competitor count is bounded to at most 35% of the final plan (with one competitor query
+  allowed when competitor evidence is the only available expansion). Selection is stable by confidence,
+  source key, and query id; no competitor name is hard-coded.
+- Query IDs and metadata carry `query_planning_v8`, so v7 and v8 partitions cannot collide by planner
+  identity. Provider request contracts, source keys, candidate caps, `maxEvaluations=15`, and scan
+  budgets remain unchanged.
+
+**Source-aware planning.** V8 preserves the existing source-family policy. Hacker News receives concise
+concept/pain/alternative strings suitable for Algolia title/comment search and never receives a provider
+call during planning. GitHub keeps its existing technical pain compilation boundary; X keeps its existing
+provider-native competitor-pain compiler; all other adapters receive the same `QueryPlanQuery` contract.
+No adapter is modified by this phase.
+
+**Invariants.** Every v8 plan must be deterministic and bounded; queries must be plausible human search
+language; pain, recommendation, switching, alternative, capability, and workflow intent must remain
+distinct; category text must not become named-product demand; competitor expansion must remain a minority
+when category/pain/job coverage exists; trivial template variants must not consume separate partitions;
+and source-specific query structure must remain within each adapter's existing contract.
+
+**Validation and rollback.** Unit, snapshot, partition-seeding, Hacker News, dedupe, and multi-product
+regression tests compare v7/v8 without network execution. Typecheck, lint, build, and the full Vitest
+suite are required. V8 is a pure application-layer planner change: no migration, RLS change, provider
+configuration change, scan-budget change, or historical-data backfill exists. Reverting the v8 planner
+selection restores the frozen v7 execution path without changing stored evidence or lifecycle state.
+
+**Frozen**: Retrieval Precision V1, Source Health V1, `candidate_selection_v3`, `maxEvaluations=15`,
+`signal_qualification_v1_7`, qualification thresholds, `semantic_reasoning_router_v2`, evidence fidelity
+and target binding, semantic normalization/retry persistence, signal lifecycle, cluster semantics,
+provider adapters, and scan budgets are unchanged.
