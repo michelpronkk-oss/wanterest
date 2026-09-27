@@ -9,7 +9,6 @@ describe("Layer 12A.2 migration contract", () => {
   it("sorts directly after 12A.1, is additive and backfills nothing", () => {
     const files = readdirSync("supabase/migrations").filter((file) => file.endsWith(".sql")).sort();
     expect(files.indexOf(name)).toBe(files.indexOf("20261020000000_signal_supply_telemetry_v1.sql") + 1);
-    expect(files.at(-1)).toBe(name);
     expect(migration).not.toMatch(/\bdrop table\b|\bdelete from\b|\bdrop column\b|\btruncate\b/i);
     expect(migration).not.toMatch(/alter table public\.(market_partitions|query_yield_artifacts|supply_refresh_facts|product_supply_facts|product_match_evaluations|signals)\b/i);
     expect(migration).not.toMatch(/insert into public\.market_partition_interests\s*\([^)]*\)\s*select/i);

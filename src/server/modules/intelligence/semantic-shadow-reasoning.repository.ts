@@ -14,7 +14,11 @@ type ShadowReasoningQuery = {
   order(field: string, options: { ascending: boolean }): Promise<{ data: ShadowReasoningRow[] | null; error: ShadowReasoningError }>;
   insert(row: ShadowReasoningRow): { select(columns: string): { maybeSingle(): Promise<{ data: ShadowReasoningRow | null; error: ShadowReasoningError }> } };
 };
-type ShadowReasoningClient = { from(table: "semantic_shadow_reasoning"): ShadowReasoningQuery };
+type ShadowReasoningRpc = { data: unknown; error: ShadowReasoningError };
+type ShadowReasoningClient = {
+  from(table: "semantic_shadow_reasoning"): ShadowReasoningQuery;
+  rpc(name: "claim_semantic_shadow_reasoning" | "release_semantic_shadow_reasoning", args: Record<string, unknown>): Promise<ShadowReasoningRpc>;
+};
 
 /** Immutable, workspace-scoped cache for shadow-only semantic reasoning. */
 export class SemanticShadowReasoningRepository {
@@ -45,10 +49,37 @@ export class SemanticShadowReasoningRepository {
     throw new Error("Shadow reasoning persistence failed.");
   }
 
+  async claimAttempt(input: ShadowReasoningKey & { leaseToken: string; leaseSeconds?: number }) {
+    const { data, error } = await (this.client as ShadowReasoningClient).rpc("claim_semantic_shadow_reasoning", {
+      p_workspace_id: input.workspaceId,
+      p_product_id: input.productId,
+      p_conversation_id: input.conversationId,
+      p_fingerprint: input.fingerprint,
+      p_lease_token: input.leaseToken,
+      p_lease_seconds: input.leaseSeconds ?? 120,
+    });
+    if (error) throw new Error("Shadow reasoning claim failed.");
+    return data === true;
+  }
+
+  async releaseAttempt(input: ShadowReasoningKey & { leaseToken: string }) {
+    const { error } = await (this.client as ShadowReasoningClient).rpc("release_semantic_shadow_reasoning", {
+      p_workspace_id: input.workspaceId,
+      p_product_id: input.productId,
+      p_conversation_id: input.conversationId,
+      p_fingerprint: input.fingerprint,
+      p_lease_token: input.leaseToken,
+    });
+    if (error) throw new Error("Shadow reasoning release failed.");
+  }
+
   async loadForReplay(input: Pick<ShadowReasoningKey, "workspaceId" | "productId" | "conversationId">) {
-    const { data, error } = await this.table().select("*").eq("workspace_id", input.workspaceId).eq("product_id", input.productId).eq("conversation_id", input.conversationId).order("created_at", { ascending: false });
+    const { data, error } = await this.table().select("*").eq("workspace_id", input.workspaceId).eq("product_id", input.productId).eq("conversation_id", input.conversationId).in("execution_status", ["success", "cache_hit"]).order("created_at", { ascending: false });
     if (error) throw new Error("Shadow reasoning replay load failed.");
-    return data ?? [];
+    return (data ?? []).sort((left, right) => {
+      const createdAt = String(right.created_at ?? "").localeCompare(String(left.created_at ?? ""));
+      return createdAt || String(right.id ?? "").localeCompare(String(left.id ?? ""));
+    });
   }
 
   /**

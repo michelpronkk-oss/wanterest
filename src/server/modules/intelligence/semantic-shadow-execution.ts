@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { StructuredLlmProvider } from "../../providers/llm/contracts";
 import { toStructuredJsonSchema } from "../../providers/llm/json-schema";
 import { conversationMarketReasoningSchema, type ConversationMarketReasoning, type MarketContext } from "./signal-qualification.schemas";
@@ -17,7 +18,11 @@ export type SemanticShadowExecutionCandidate = SemanticShadowPlanningCandidate &
   promptContext: SemanticShadowPromptContext;
 };
 
-export type SemanticShadowPersistence = Pick<{ insertImmutable(input: ShadowReasoningInsert): Promise<Record<string, unknown>> }, "insertImmutable">;
+export type SemanticShadowPersistence = {
+  insertImmutable(input: ShadowReasoningInsert): Promise<Record<string, unknown>>;
+  claimAttempt(input: ShadowReasoningKey & { leaseToken: string; leaseSeconds?: number }): Promise<boolean>;
+  releaseAttempt(input: ShadowReasoningKey & { leaseToken: string }): Promise<void>;
+};
 
 export type SemanticShadowExecutionDiagnostics = {
   llmExecutedCount: number;
@@ -26,6 +31,7 @@ export type SemanticShadowExecutionDiagnostics = {
   schemaFailureCount: number;
   evidenceFailureCount: number;
   conflictBlockCount: number;
+  claimSkippedCount: number;
   inputTokens: number;
   outputTokens: number;
   reasoningLatencyMs: number;
@@ -87,7 +93,7 @@ function usageNumber(usage: Record<string, unknown> | undefined, key: string): n
 }
 
 function initialDiagnostics(): SemanticShadowExecutionDiagnostics {
-  return { llmExecutedCount: 0, providerSuccessCount: 0, providerFailureCount: 0, schemaFailureCount: 0, evidenceFailureCount: 0, conflictBlockCount: 0, inputTokens: 0, outputTokens: 0, reasoningLatencyMs: 0, reasoningCostUsd: null };
+  return { llmExecutedCount: 0, providerSuccessCount: 0, providerFailureCount: 0, schemaFailureCount: 0, evidenceFailureCount: 0, conflictBlockCount: 0, claimSkippedCount: 0, inputTokens: 0, outputTokens: 0, reasoningLatencyMs: 0, reasoningCostUsd: null };
 }
 
 function persistenceInput(input: { key: ShadowReasoningKey; plan: ShadowPlanItem; candidate: SemanticShadowExecutionCandidate; status: "success" | "provider_failed" | "schema_failed" | "evidence_failed"; llmReasoning: unknown | null; validatedReasoning: ConversationMarketReasoning | null; mergedReasoning: ConversationMarketReasoning | null; evidenceValidation: Record<string, unknown>; provider: string | null; model: string | null; inputTokens: number; outputTokens: number; latencyMs: number; errorCode?: string }): ShadowReasoningInsert {
@@ -136,13 +142,18 @@ export async function executeScheduledSemanticShadowReasoning(input: {
       reasoningVersion: candidate.reasoningVersion,
       promptSchemaVersion: SEMANTIC_REASONING_PROMPT_VERSION,
     };
-    const startedAt = Date.now();
-    if (!input.provider) {
-      diagnostics.providerFailureCount += 1;
-      await input.persistence.insertImmutable(persistenceInput({ key, plan, candidate, status: "provider_failed", llmReasoning: null, validatedReasoning: null, mergedReasoning: null, evidenceValidation: { status: "not_run" }, provider: input.providerIdentity.provider, model: input.providerIdentity.model, inputTokens: 0, outputTokens: 0, latencyMs: Date.now() - startedAt, errorCode: "PROVIDER_UNAVAILABLE" }));
+    const leaseToken = randomUUID();
+    if (!await input.persistence.claimAttempt({ ...key, leaseToken, leaseSeconds: 120 })) {
+      diagnostics.claimSkippedCount += 1;
       continue;
     }
+    const startedAt = Date.now();
     try {
+      if (!input.provider) {
+        diagnostics.providerFailureCount += 1;
+        await input.persistence.insertImmutable(persistenceInput({ key, plan, candidate, status: "provider_failed", llmReasoning: null, validatedReasoning: null, mergedReasoning: null, evidenceValidation: { status: "not_run" }, provider: input.providerIdentity.provider, model: input.providerIdentity.model, inputTokens: 0, outputTokens: 0, latencyMs: Date.now() - startedAt, errorCode: "PROVIDER_UNAVAILABLE" }));
+        continue;
+      }
       const prompt = promptFor(candidate);
       const response = await input.provider.generateStructured<unknown>({
         schemaName: "ConversationMarketReasoning",
@@ -187,6 +198,8 @@ export async function executeScheduledSemanticShadowReasoning(input: {
       const latencyMs = Date.now() - startedAt;
       diagnostics.reasoningLatencyMs += latencyMs;
       await input.persistence.insertImmutable(persistenceInput({ key, plan, candidate, status: "provider_failed", llmReasoning: null, validatedReasoning: null, mergedReasoning: null, evidenceValidation: { status: "provider_failed" }, provider: input.providerIdentity.provider, model: input.providerIdentity.model, inputTokens: 0, outputTokens: 0, latencyMs, errorCode: error instanceof Error ? error.name.slice(0, 120) : "PROVIDER_FAILED" }));
+    } finally {
+      await input.persistence.releaseAttempt({ ...key, leaseToken });
     }
   }
   return diagnostics;

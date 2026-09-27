@@ -41,7 +41,12 @@ function plan(id = "conversation-a"): ShadowPlanItem {
 
 function persistence() {
   const rows: ShadowReasoningInsert[] = [];
-  return { rows, insertImmutable: vi.fn(async (input: ShadowReasoningInsert) => { rows.push(structuredClone(input)); return { id: String(rows.length) }; }) };
+  return {
+    rows,
+    claimAttempt: vi.fn(async () => true),
+    releaseAttempt: vi.fn(async () => undefined),
+    insertImmutable: vi.fn(async (input: ShadowReasoningInsert) => { rows.push(structuredClone(input)); return { id: String(rows.length) }; }),
+  };
 }
 
 function provider(value: unknown): StructuredLlmProvider & { calls: ReturnType<typeof vi.fn> } {
@@ -155,5 +160,16 @@ describe("semantic shadow execution", () => {
     expect(store.rows.map((row) => row.execution_status)).toEqual(["provider_failed", "success"]);
     expect(first.diagnostics.llmExecutedCount).toBe(first.diagnostics.providerFailureCount + first.diagnostics.providerSuccessCount + first.diagnostics.schemaFailureCount + first.diagnostics.evidenceFailureCount);
     expect(second.diagnostics.llmExecutedCount).toBe(second.diagnostics.providerFailureCount + second.diagnostics.providerSuccessCount + second.diagnostics.schemaFailureCount + second.diagnostics.evidenceFailureCount);
+  });
+
+  it("claims before spending and skips a concurrent execution without persisting a fake attempt", async () => {
+    const store = persistence();
+    store.claimAttempt.mockResolvedValue(false);
+    const model = provider(reasoning());
+    const result = await execute({ provider: model, store });
+    expect(model.calls).not.toHaveBeenCalled();
+    expect(store.rows).toHaveLength(0);
+    expect(store.releaseAttempt).not.toHaveBeenCalled();
+    expect(result.diagnostics).toMatchObject({ llmExecutedCount: 1, claimSkippedCount: 1, providerSuccessCount: 0, providerFailureCount: 0 });
   });
 });
