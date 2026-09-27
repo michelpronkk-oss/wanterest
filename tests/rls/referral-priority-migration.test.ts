@@ -46,5 +46,7 @@ describe("13A.3 referral and priority migration contract", () => {
     expect(migration).toContain("status = 'invalidated'");
     expect(migration).toContain("verified_referral_invalidated");
     expect(migration).toContain("priority-revoked:' || v_priority.id::text || ':invalidation:'");
+    expect(migration).toContain("set status = 'granted', granted_at = timezone('utc', now()), revoked_at = null");
+    expect(migration).toContain(":regrant:' || encode(digest");
   });
 });

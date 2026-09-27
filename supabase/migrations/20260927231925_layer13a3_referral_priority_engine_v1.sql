@@ -252,6 +252,7 @@ declare
   v_referrer public.waitlist_applications;
   v_priority public.waitlist_priority_access;
   v_count integer;
+  v_previous_revoked_at timestamptz;
 begin
   if not public.is_service_role() then raise exception using errcode = '42501', message = 'waitlist_referral_service_role_required'; end if;
   if p_policy_key is null or char_length(trim(p_policy_key)) not between 1 and 120 or p_threshold is null or p_threshold < 1 then
@@ -297,6 +298,22 @@ begin
     ) values (
       v_referral.referrer_application_id, v_priority.id, 'priority-revoked:' || v_priority.id::text || ':' || v_count::text,
       'priority_access_revoked', 'system', jsonb_build_object('verified_count', v_count, 'reason', 'verified_referral_count_below_threshold')
+    ) on conflict (event_key) do nothing;
+  elsif v_priority.id is not null and v_priority.status = 'revoked'
+    and v_priority.reason in ('verified_referral_invalidated', 'verified_referral_count_below_threshold')
+    and v_count >= v_priority.threshold then
+    v_previous_revoked_at := v_priority.revoked_at;
+    update public.waitlist_priority_access
+       set status = 'granted', granted_at = timezone('utc', now()), revoked_at = null,
+           verified_referral_count = v_count, reason = null
+     where id = v_priority.id
+     returning * into v_priority;
+    insert into public.waitlist_referral_events (
+      application_id, priority_access_id, event_key, event_type, actor_kind, metadata
+    ) values (
+      v_referral.referrer_application_id, v_priority.id,
+      'priority-granted:' || v_priority.id::text || ':regrant:' || encode(digest(coalesce(v_previous_revoked_at::text, '') || ':' || v_count::text, 'sha256'), 'hex'),
+      'priority_access_granted', 'system', jsonb_build_object('policy_key', p_policy_key, 'threshold', p_threshold, 'verified_count', v_count, 'regrant', true)
     ) on conflict (event_key) do nothing;
   elsif v_priority.id is not null then
     update public.waitlist_priority_access set verified_referral_count = v_count where id = v_priority.id returning * into v_priority;
