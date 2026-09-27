@@ -13,6 +13,8 @@ import { BillingService } from "./billing.service";
 import { changePlanInputSchema, createCheckoutInputSchema, workspaceIdSchema, type BillingInterval, type BillingPlan } from "./billing.schemas";
 import { getDodoProductCatalog, productFor } from "./product-mapping";
 import { getDashboardContext } from "@/server/modules/dashboard/dashboard.context";
+import { createCohortBenefitService } from "@/server/modules/cohort-benefits";
+import { createSupabaseCohortBenefitRepository } from "@/server/modules/cohort-benefits/cohort-benefit.repository";
 
 export const BILLING_RETURN_URL = "https://app.wanterest.com/app/settings/billing";
 export const CHECKOUT_RETURN_URL = `${BILLING_RETURN_URL}?checkout=success`;
@@ -214,7 +216,7 @@ async function service(actorUserId?: string) {
         }, client);
       }
     : undefined;
-  return new BillingService(repository, provider(), catalog, audit);
+  return new BillingService(repository, provider(), catalog, audit, createCohortBenefitService(createSupabaseCohortBenefitRepository(client)));
 }
 
 export async function createCheckoutCommand(input: unknown) {
@@ -288,9 +290,7 @@ export async function createPortalSessionCommand(workspaceId: unknown) {
 }
 
 export async function receiveDodoWebhook(rawBody: string, headers: WebhookHeaders, traceId?: string) {
-  const repository = new SupabaseBillingRepository(createSupabaseBillingServiceClient());
-  const catalog = getDodoProductCatalog();
-  const billing = new BillingService(repository, provider(), catalog);
+  const billing = await service();
   const received = await billing.receiveWebhook(rawBody, headers);
   // The inbox is durable before this bounded normalization step. A failure
   // leaves the event retryable and causes Dodo to redeliver it.
@@ -299,9 +299,7 @@ export async function receiveDodoWebhook(rawBody: string, headers: WebhookHeader
 }
 
 export async function processBillingWebhookJob(eventId: string, traceId?: string) {
-  const repository = new SupabaseBillingRepository(createSupabaseBillingServiceClient());
-  const catalog = getDodoProductCatalog();
-  return new BillingService(repository, provider(), catalog).processWebhook(eventId, traceId);
+  return (await service()).processWebhook(eventId, traceId);
 }
 
 export async function reconcileBillingSubscriptionCommand(workspaceId: unknown) {

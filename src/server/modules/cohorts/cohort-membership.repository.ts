@@ -44,6 +44,8 @@ function firstRow<T>(data: T | T[] | null): T | null {
 
 export type CohortMembershipRepository = {
   assignAtAdmission(input: CohortAssignmentInput): Promise<CohortAssignment>;
+  /** Production uses the atomic 13A.2B wrapper; fixtures may omit it. */
+  assignAtAdmissionWithBenefit?(input: CohortAssignmentInput): Promise<CohortAssignment>;
   getWorkspaceIdentity(workspaceId: string): Promise<WorkspaceCohortIdentity>;
 };
 
@@ -58,6 +60,33 @@ export function createSupabaseCohortMembershipRepository(client: Client = servic
         p_assignment_version: input.assignmentVersion,
       });
       if (error) throw mapDatabaseError(error, "Workspace cohort identity could not be assigned.");
+      const raw = firstRow(data as unknown as Record<string, unknown> | Record<string, unknown>[] | null);
+      if (!raw) throw new AppError("INTERNAL_ERROR", "Workspace cohort assignment returned no result.");
+      const parsed = cohortAssignmentSchema.safeParse({
+        assignmentStatus: raw.assignment_status,
+        membershipId: raw.membership_id,
+        workspaceId: raw.workspace_id,
+        cohort: raw.cohort,
+        number: raw.cohort_number,
+        assignedAt: raw.assigned_at,
+        sourceWaitlistApplicationId: raw.source_waitlist_application_id,
+        admissionPrincipalUserId: raw.admission_principal_user_id,
+        assignmentReason: raw.assignment_reason,
+        assignmentVersion: raw.assignment_version,
+      });
+      if (!parsed.success) throw new AppError("INTERNAL_ERROR", "Stored workspace cohort assignment is invalid.");
+      return parsed.data;
+    },
+
+    async assignAtAdmissionWithBenefit(input) {
+      const { data, error } = await client.rpc("assign_workspace_cohort_membership_with_benefit", {
+        p_workspace_id: input.workspaceId,
+        p_source_waitlist_application_id: input.sourceWaitlistApplicationId ?? null,
+        p_admission_principal_user_id: input.admissionPrincipalUserId ?? null,
+        p_assignment_reason: input.assignmentReason,
+        p_assignment_version: input.assignmentVersion,
+      });
+      if (error) throw mapDatabaseError(error, "Workspace cohort identity and benefit eligibility could not be assigned.");
       const raw = firstRow(data as unknown as Record<string, unknown> | Record<string, unknown>[] | null);
       if (!raw) throw new AppError("INTERNAL_ERROR", "Workspace cohort assignment returned no result.");
       const parsed = cohortAssignmentSchema.safeParse({

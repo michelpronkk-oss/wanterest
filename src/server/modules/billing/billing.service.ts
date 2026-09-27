@@ -7,6 +7,7 @@ import { productFor, type DodoProductCatalog } from "./product-mapping";
 import type { BillingInterval, BillingPlan } from "./billing.schemas";
 import type { BillingOverview, BillingRepository } from "./billing.repository";
 import { resolveInternalPlan } from "../entitlements/plan-capabilities";
+import type { CohortBenefitActivationPort } from "../cohort-benefits/cohort-benefit.service";
 
 export type BillingAuditLogger = (input: {
   workspaceId: string;
@@ -50,6 +51,7 @@ export class BillingService {
     private readonly provider: BillingProvider,
     private readonly catalog: DodoProductCatalog,
     private readonly audit: BillingAuditLogger = noopAudit,
+    private readonly cohortBenefits?: CohortBenefitActivationPort,
   ) {}
 
   async createCheckout(input: { workspaceId: string; plan: BillingPlan; interval: BillingInterval; returnUrl?: string; idempotencyKey?: string }): Promise<{ checkoutUrl: string; checkoutReference: string }> {
@@ -160,6 +162,14 @@ export class BillingService {
   private async applyVerifiedEvent(workspaceId: string, event: VerifiedBillingEvent, traceId?: string) {
     const previous = await this.repository.getCurrentSubscription(workspaceId);
     const applied = await this.repository.applySubscription({ workspaceId, subscription: event.subscription!, providerEventId: event.providerEventId, traceId });
+    if (applied.status === "active" && applied.internal_plan !== "free") {
+      await this.cohortBenefits?.activateFromSuccessfulPaidSubscription({
+        workspaceId,
+        subscriptionId: applied.id,
+        providerEventId: event.providerEventId,
+        activatedAt: event.occurredAt,
+      });
+    }
     await this.audit({ workspaceId, action: eventAction(event.subscription!.status, previous?.status), targetType: "subscriptions", targetId: applied.id, metadata: { provider_event_id: event.providerEventId, provider_event_type: event.eventType, internal_plan: applied.internal_plan, status: applied.status } });
     return applied;
   }
@@ -194,6 +204,14 @@ export class BillingService {
     if (!current) throw new AppError("NOT_FOUND", "No normalized subscription was found.");
     const providerSubscription = await this.provider.getSubscription(current.provider_subscription_id);
     const applied = await this.repository.applySubscription({ workspaceId, subscription: providerSubscription, providerEventId: `reconcile:${current.provider_subscription_id}:${providerSubscription.providerUpdatedAt}` });
+    if (applied.status === "active" && applied.internal_plan !== "free") {
+      await this.cohortBenefits?.activateFromSuccessfulPaidSubscription({
+        workspaceId,
+        subscriptionId: applied.id,
+        providerEventId: `reconcile:${current.provider_subscription_id}:${providerSubscription.providerUpdatedAt}`,
+        activatedAt: providerSubscription.providerUpdatedAt,
+      });
+    }
     await this.audit({ workspaceId, action: "billing.reconciliation_correction", targetType: "subscriptions", targetId: applied.id, metadata: { provider_updated_at: providerSubscription.providerUpdatedAt, status: providerSubscription.status } });
     return applied;
   }

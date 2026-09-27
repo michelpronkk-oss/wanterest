@@ -28,6 +28,7 @@ export class CohortMembershipService {
     if (!parsed.success) {
       throw new AppError("VALIDATION_ERROR", "Invalid workspace cohort assignment.", 422, { issues: parsed.error.issues });
     }
+    if (this.repository.assignAtAdmissionWithBenefit) return this.repository.assignAtAdmissionWithBenefit(parsed.data);
     return this.repository.assignAtAdmission(parsed.data);
   }
 }
