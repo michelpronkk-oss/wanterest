@@ -229,8 +229,8 @@ describe("Phase 6 billing", () => {
       fetcher: async (input, init) => {
         requests.push({ url: String(input), body: typeof init?.body === "string" ? init.body : undefined });
         return String(input).includes("customer-portal")
-          ? new Response(JSON.stringify({ link: "https://portal.dodo.test/session" }), { status: 200 })
-          : new Response(JSON.stringify({ session_id: "cks_123", checkout_url: "https://checkout.dodo.test/session" }), { status: 200 });
+          ? new Response(JSON.stringify({ link: "https://portal.dodo.test/session" }), { status: 200, headers: { "content-type": "application/json" } })
+          : new Response(JSON.stringify({ session_id: "cks_123", checkout_url: "https://checkout.dodo.test/session" }), { status: 200, headers: { "content-type": "application/json" } });
       },
     });
     const checkout = await provider.createCheckout({ workspaceId, internalPlan: "pro", billingInterval: "monthly", providerProductId: "dodo_pro_monthly", providerCustomerId: "cus_123", returnUrl: "https://app.wanterest.com/app/settings/billing", checkoutReference: "checkout:test" });
@@ -302,9 +302,9 @@ describe("Phase 6 billing", () => {
       fetcher: async (url, init) => {
         requestedUrl = String(url);
         requestedMethod = init?.method;
-        requestedAuth = init?.headers ? (init.headers as Record<string, string>).Authorization : undefined;
+        requestedAuth = init?.headers ? new Headers(init.headers).get("authorization") ?? undefined : undefined;
         requestedBody = init?.body ? JSON.parse(init.body as string) : undefined;
-        return new Response(JSON.stringify({ session_id: "cks_regression_1", checkout_url: "https://checkout.dodopayments.com/cks_regression_1" }), { status: 200 });
+        return new Response(JSON.stringify({ session_id: "cks_regression_1", checkout_url: "https://checkout.dodopayments.com/cks_regression_1" }), { status: 200, headers: { "content-type": "application/json" } });
       },
     });
 
@@ -403,5 +403,35 @@ describe("Phase 6 billing", () => {
       fetcher: async () => new Response(JSON.stringify({}), { status: 403 }),
     });
     await expect(denied.checkConnectivity()).resolves.toMatchObject({ ok: false, code: "FORBIDDEN" });
+  });
+
+  it("propagates server-derived cohort discount codes into checkout and plan-change replacement", async () => {
+    const repository = new InMemoryBillingRepository();
+    const provider = new FixtureBillingProvider(catalog, () => new Date("2027-07-01T00:00:00.000Z"));
+    provider.seedSubscription({ providerSubscriptionId: "sub-plan-change", providerCustomerId: "cus-plan-change", internalPlan: "pro", billingInterval: "monthly", currentPeriodEnd: "2027-08-01T00:00:00.000Z" });
+    const billing = new BillingService(repository, provider, catalog, undefined, {
+      activateFromSuccessfulPaidSubscription: async () => ({ status: "already_active" }),
+      prepareCheckoutDiscount: async () => "OPAQUE123",
+      preparePlanChangeDiscount: async () => ["OPAQUE456"],
+    });
+
+    await billing.createCheckout({ workspaceId, plan: "pro", interval: "monthly" });
+    expect([...provider.checkoutInputs.values()][0]?.discountCodes).toEqual(["OPAQUE123"]);
+
+    await billing.processVerifiedEvent(workspaceId, await provider.emit("sub-plan-change", "active"));
+    await billing.changePlan(workspaceId, "growth", "annual");
+    expect(provider.changeInputs.get("sub-plan-change")?.discountCodes).toEqual(["OPAQUE456"]);
+  });
+
+  it("ignores browser-supplied cohort policy and provider discount fields", () => {
+    const parsed = createCheckoutInputSchema.parse({
+      plan: "pro",
+      cadence: "monthly",
+      policyKey: "founding_25_v1",
+      discountPercent: 100,
+      durationMonths: 1,
+      discountCode: "PUBLIC-CODE",
+    });
+    expect(parsed).toEqual({ plan: "pro", cadence: "monthly" });
   });
 });

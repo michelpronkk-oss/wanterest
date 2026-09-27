@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const migration = readFileSync(resolve(process.cwd(), "supabase/migrations/20260927212230_layer13a2b_cohort_benefits_billing_v1.sql"), "utf8");
+const providerMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/20260927222103_layer13a2b_dodo_provider_discount_bindings_v1.sql"), "utf8");
 
 describe("13A.2B cohort benefit migration contract", () => {
   it("keeps benefit state additive and workspace-scoped", () => {
@@ -38,9 +39,20 @@ describe("13A.2B cohort benefit migration contract", () => {
     expect(migration).toContain("assign_workspace_cohort_membership_with_benefit");
   });
 
-  it("does not alter capability entitlements or add provider discount claims", () => {
+  it("keeps Dodo provider bindings private, interval-scoped, and historically replaceable", () => {
+    expect(providerMigration).toContain("create table if not exists public.workspace_cohort_benefit_provider_bindings");
+    expect(providerMigration).toContain("foreign key (workspace_id, entitlement_id)");
+    expect(providerMigration).toContain("billing_interval text not null check (billing_interval in ('monthly', 'annual'))");
+    expect(providerMigration).toContain("cycle_limit integer not null check (cycle_limit > 0)");
+    expect(providerMigration).toMatch(/revoke all on public\.workspace_cohort_benefit_provider_bindings from public, anon, authenticated/i);
+    expect(providerMigration).toMatch(/grant all on public\.workspace_cohort_benefit_provider_bindings to service_role/i);
+    expect(providerMigration).toContain("status = 'superseded'");
+    expect(providerMigration).toContain("upsert_workspace_cohort_benefit_provider_binding");
+  });
+
+  it("does not alter capability entitlements or make Dodo the benefit authority", () => {
     expect(migration).not.toContain("insert into public.workspace_entitlements");
-    expect(migration).not.toContain("dodo_discount");
-    expect(migration).not.toContain("coupon");
+    expect(providerMigration).toContain("Wanterest entitlement terms and calendar expiry remain authoritative");
+    expect(providerMigration).not.toContain("policy_key = 'dodo'");
   });
 });
