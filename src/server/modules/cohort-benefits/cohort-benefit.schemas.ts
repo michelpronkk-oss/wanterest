@@ -3,7 +3,7 @@ import { z } from "zod";
 export const cohortBenefitStatuses = ["eligible", "active", "expired", "revoked"] as const;
 export type CohortBenefitStatus = (typeof cohortBenefitStatuses)[number];
 
-export const cohortBenefitProviderStatuses = ["unsupported", "pending", "applied", "removed"] as const;
+export const cohortBenefitProviderStatuses = ["not_required", "pending", "applied", "mismatch", "unsupported"] as const;
 export type CohortBenefitProviderStatus = (typeof cohortBenefitProviderStatuses)[number];
 
 export const cohortBenefitReadModelSchema = z.object({

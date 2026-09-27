@@ -7,9 +7,22 @@ import { requireUser } from "@/server/modules/auth";
 import { createSupabaseServerClient } from "@/server/providers/supabase/server";
 import { AppError } from "@/server/lib/errors";
 import type { CohortName } from "../cohorts/cohort-membership.schemas";
+import type { BillingInterval } from "../billing/billing.schemas";
+import { getRemainingEligibleDiscountCycles, initialDiscountCycles } from "./cohort-benefit.cycles";
 import { policyForCohort } from "./cohort-benefit.policies";
 import { createSupabaseCohortBenefitRepository, type CohortBenefitRepository } from "./cohort-benefit.repository";
 import type { CohortBenefitReadModel } from "./cohort-benefit.schemas";
+
+export type CohortBenefitProviderPort = {
+  createDiscount(input: {
+    amountBasisPoints: number;
+    productIds: string[];
+    expiresAt?: string | null;
+    subscriptionCycles: number;
+    metadata: Record<string, string | number | boolean>;
+    idempotencyKey: string;
+  }): Promise<{ providerDiscountId: string; code: string; amountBasisPoints: number; restrictedTo: string[]; subscriptionCycles?: number | null }>;
+};
 
 export type PaidBenefitActivationInput = {
   workspaceId: string;
@@ -23,8 +36,29 @@ export type CohortBenefitActivationPort = {
   activateFromSuccessfulPaidSubscription(input: PaidBenefitActivationInput): Promise<{ status: "activated" | "already_active" | "not_eligible" | "expired" | "revoked" }>;
 };
 
+export type CohortBenefitBillingPort = CohortBenefitActivationPort & {
+  prepareCheckoutDiscount(input: {
+    workspaceId: string;
+    billingInterval: BillingInterval;
+    productIds: string[];
+    now?: string;
+    nextBillingAt?: string;
+  }): Promise<string | null>;
+  preparePlanChangeDiscount(input: {
+    workspaceId: string;
+    billingInterval: BillingInterval;
+    productIds: string[];
+    nextBillingAt: string;
+    now?: string;
+  }): Promise<string[]>;
+};
+
 export class CohortBenefitService implements CohortBenefitActivationPort {
-  constructor(private readonly repository: CohortBenefitRepository = createSupabaseCohortBenefitRepository()) {}
+  constructor(
+    private readonly repository: CohortBenefitRepository = createSupabaseCohortBenefitRepository(),
+    private readonly provider?: CohortBenefitProviderPort,
+    private readonly clock: () => Date = () => new Date(),
+  ) {}
 
   async grantForAdmission(input: { workspaceId: string; membershipId: string; cohort: CohortName; actorUserId?: string | null }) {
     const policy = policyForCohort(input.cohort);
@@ -64,10 +98,120 @@ export class CohortBenefitService implements CohortBenefitActivationPort {
     if (!parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid cohort benefit revocation.", 422);
     return this.repository.revoke(parsed.data);
   }
+
+  async prepareCheckoutDiscount(input: {
+    workspaceId: string;
+    billingInterval: BillingInterval;
+    productIds: string[];
+    now?: string;
+    nextBillingAt?: string;
+  }): Promise<string | null> {
+    if (!this.provider) return null;
+    const benefit = await this.repository.getReadModel(input.workspaceId);
+    if (!benefit.benefit || benefit.benefit.status === "revoked" || benefit.benefit.status === "expired") return null;
+    const now = input.now ?? this.clock().toISOString();
+    const entitlementId = await this.repository.getEntitlementId(input.workspaceId);
+    if (!entitlementId) return null;
+    const cycles = benefit.benefit.status === "active" && benefit.benefit.expiresAt
+      ? getRemainingEligibleDiscountCycles({
+          activatedAt: benefit.benefit.activatedAt ?? now,
+          expiresAt: benefit.benefit.expiresAt,
+          now,
+          nextBillingAt: input.nextBillingAt ?? now,
+          billingInterval: input.billingInterval,
+        })
+      : initialDiscountCycles(benefit.benefit.durationMonths, input.billingInterval);
+    if (cycles < 1) return null;
+    return this.ensureProviderDiscount({
+      workspaceId: input.workspaceId,
+      entitlementId,
+      policyKey: benefit.benefit.policyKey,
+      discountPercent: benefit.benefit.discountPercent,
+      expiresAt: benefit.benefit.status === "active" ? benefit.benefit.expiresAt : null,
+      billingInterval: input.billingInterval,
+      productIds: input.productIds,
+      cycles,
+    });
+  }
+
+  async preparePlanChangeDiscount(input: {
+    workspaceId: string;
+    billingInterval: BillingInterval;
+    productIds: string[];
+    nextBillingAt: string;
+    now?: string;
+  }): Promise<string[]> {
+    if (!this.provider) return [];
+    const benefit = await this.repository.getReadModel(input.workspaceId);
+    if (!benefit.benefit || benefit.benefit.status !== "active" || !benefit.benefit.activatedAt || !benefit.benefit.expiresAt) return [];
+    const now = input.now ?? this.clock().toISOString();
+    const entitlementId = await this.repository.getEntitlementId(input.workspaceId);
+    if (!entitlementId) return [];
+    const cycles = getRemainingEligibleDiscountCycles({
+      activatedAt: benefit.benefit.activatedAt,
+      expiresAt: benefit.benefit.expiresAt,
+      now,
+      nextBillingAt: input.nextBillingAt,
+      billingInterval: input.billingInterval,
+    });
+    if (cycles < 1) return [];
+    const code = await this.ensureProviderDiscount({
+      workspaceId: input.workspaceId,
+      entitlementId,
+      policyKey: benefit.benefit.policyKey,
+      discountPercent: benefit.benefit.discountPercent,
+      expiresAt: benefit.benefit.expiresAt,
+      billingInterval: input.billingInterval,
+      productIds: input.productIds,
+      cycles,
+    });
+    return [code];
+  }
+
+  private async ensureProviderDiscount(input: {
+    workspaceId: string;
+    entitlementId: string;
+    policyKey: string;
+    discountPercent: number;
+    expiresAt: string | null;
+    billingInterval: BillingInterval;
+    productIds: string[];
+    cycles: number;
+  }): Promise<string> {
+    const existing = await this.repository.getProviderBinding({
+      workspaceId: input.workspaceId,
+      entitlementId: input.entitlementId,
+      billingInterval: input.billingInterval,
+    });
+    if (existing && existing.status === "active" && existing.cycleLimit === input.cycles && existing.discountPercent === input.discountPercent) return existing.providerDiscountCode;
+    const discount = await this.provider!.createDiscount({
+      amountBasisPoints: input.discountPercent * 100,
+      productIds: input.productIds,
+      expiresAt: input.expiresAt,
+      subscriptionCycles: input.cycles,
+      metadata: {
+        wanterest_entitlement_id: input.entitlementId,
+        workspace_id: input.workspaceId,
+        policy_key: input.policyKey,
+        cohort: input.policyKey.startsWith("founding") ? "founding_25" : "early_100",
+      },
+      idempotencyKey: `wanterest:cohort-benefit:${input.entitlementId}:${input.billingInterval}:${input.cycles}`,
+    });
+    return (await this.repository.upsertProviderBinding({
+      workspaceId: input.workspaceId,
+      entitlementId: input.entitlementId,
+      provider: "dodo",
+      providerDiscountId: discount.providerDiscountId,
+      providerDiscountCode: discount.code,
+      billingInterval: input.billingInterval,
+      cycleLimit: input.cycles,
+      discountPercent: input.discountPercent,
+    })).providerDiscountCode;
+  }
 }
 
-export function createCohortBenefitService(repository?: CohortBenefitRepository): CohortBenefitService {
-  return new CohortBenefitService(repository);
+export function createCohortBenefitService(repository?: CohortBenefitRepository, provider?: CohortBenefitProviderPort): CohortBenefitService {
+  return new CohortBenefitService(repository, provider);
 }
 
 export const getWorkspaceCohortBenefitQuery = cache(async function getWorkspaceCohortBenefitQuery(workspaceId: unknown): Promise<CohortBenefitReadModel> {

@@ -21,6 +21,7 @@ export class FixtureBillingProvider implements BillingProvider {
   readonly name = "fixture" as const;
   readonly checkouts = new Map<string, CheckoutResult>();
   readonly checkoutInputs = new Map<string, CheckoutRequest>();
+  readonly changeInputs = new Map<string, { providerSubscriptionId: string; providerProductId: string; billingInterval: BillingInterval; discountCodes?: string[] }>();
   readonly subscriptions = new Map<string, ProviderSubscription>();
   private eventCounter = 0;
   private readonly verifier: DodoBillingProvider;
@@ -64,7 +65,8 @@ export class FixtureBillingProvider implements BillingProvider {
     return clone(updated);
   }
 
-  async changeSubscription(input: { providerSubscriptionId: string; providerProductId: string; billingInterval: BillingInterval }): Promise<ProviderSubscription> {
+  async changeSubscription(input: { providerSubscriptionId: string; providerProductId: string; billingInterval: BillingInterval; discountCodes?: string[] }): Promise<ProviderSubscription> {
+    this.changeInputs.set(input.providerSubscriptionId, input);
     const current = await this.getSubscription(input.providerSubscriptionId);
     const mapping = Object.values(this.catalog).find((candidate) => candidate.providerProductId === input.providerProductId);
     if (!mapping) throw new Error("fixture_product_not_found");

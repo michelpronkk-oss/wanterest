@@ -7,7 +7,7 @@ import { productFor, type DodoProductCatalog } from "./product-mapping";
 import type { BillingInterval, BillingPlan } from "./billing.schemas";
 import type { BillingOverview, BillingRepository } from "./billing.repository";
 import { resolveInternalPlan } from "../entitlements/plan-capabilities";
-import type { CohortBenefitActivationPort } from "../cohort-benefits/cohort-benefit.service";
+import type { CohortBenefitActivationPort, CohortBenefitBillingPort } from "../cohort-benefits/cohort-benefit.service";
 
 export type BillingAuditLogger = (input: {
   workspaceId: string;
@@ -51,7 +51,7 @@ export class BillingService {
     private readonly provider: BillingProvider,
     private readonly catalog: DodoProductCatalog,
     private readonly audit: BillingAuditLogger = noopAudit,
-    private readonly cohortBenefits?: CohortBenefitActivationPort,
+    private readonly cohortBenefits?: CohortBenefitActivationPort | CohortBenefitBillingPort,
   ) {}
 
   async createCheckout(input: { workspaceId: string; plan: BillingPlan; interval: BillingInterval; returnUrl?: string; idempotencyKey?: string }): Promise<{ checkoutUrl: string; checkoutReference: string }> {
@@ -77,6 +77,13 @@ export class BillingService {
     }
     const reservation = await this.repository.reserveCheckout({ workspaceId: input.workspaceId, checkoutReference: reference, plan: input.plan, interval: input.interval });
     if (reservation.checkout_url) return { checkoutUrl: reservation.checkout_url, checkoutReference: reference };
+    const discountCodes = this.cohortBenefits && "prepareCheckoutDiscount" in this.cohortBenefits
+      ? await this.cohortBenefits.prepareCheckoutDiscount({
+          workspaceId: input.workspaceId,
+          billingInterval: input.interval,
+          productIds: Object.values(this.catalog).map((candidate) => candidate.providerProductId),
+        }).then((code) => code ? [code] : undefined)
+      : undefined;
     const checkout = await this.provider.createCheckout({
       workspaceId: input.workspaceId,
       internalPlan: input.plan,
@@ -85,6 +92,7 @@ export class BillingService {
       providerCustomerId: await this.repository.getProviderCustomerId(input.workspaceId),
       returnUrl: input.returnUrl,
       checkoutReference: reference,
+      discountCodes,
     });
     await this.repository.completeCheckout(reservation.id, checkout);
     await this.audit({ workspaceId: input.workspaceId, action: "billing.checkout_initiated", targetType: "billing_checkout_requests", targetId: reservation.id, metadata: { internal_plan: input.plan, billing_interval: input.interval } });
@@ -195,7 +203,15 @@ export class BillingService {
     const changer = this.provider.changeSubscription;
     if (!changer) throw new AppError("CONFLICT", "This billing provider requires a replacement checkout to change plans.");
     const mapping = productFor(this.catalog, plan, interval);
-    await changer.call(this.provider, { providerSubscriptionId: subscription.provider_subscription_id, providerProductId: mapping.providerProductId, billingInterval: interval });
+    const discountCodes = this.cohortBenefits && "preparePlanChangeDiscount" in this.cohortBenefits
+      ? await this.cohortBenefits.preparePlanChangeDiscount({
+          workspaceId,
+          billingInterval: interval,
+          productIds: Object.values(this.catalog).map((candidate) => candidate.providerProductId),
+          nextBillingAt: subscription.current_period_end ?? new Date().toISOString(),
+        })
+      : undefined;
+    await changer.call(this.provider, { providerSubscriptionId: subscription.provider_subscription_id, providerProductId: mapping.providerProductId, billingInterval: interval, discountCodes });
     await this.audit({ workspaceId, action: "billing.plan_change_requested", targetType: "subscriptions", targetId: subscription.id, metadata: { requested_plan: plan, billing_interval: interval } });
   }
 

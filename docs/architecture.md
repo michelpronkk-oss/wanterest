@@ -5020,11 +5020,28 @@ computed with PostgreSQL calendar-month arithmetic. Activation and webhook proce
 entitlement uniqueness constraint and provider event key. Resubscribe/upgrade/downgrade preserves the first
 activation window.
 
-**Provider capability gap.** The current Dodo adapter exposes products and subscriptions but no supported
-coupon/discount operation. V1 therefore persists truthful internal eligibility and activation state and
-reports provider discount status as unsupported until a reviewed Dodo adapter contract exists. It does not
-send invented checkout fields, claim that Dodo applied a discount, change prices, or create public coupon
-codes. Checkout remains the existing server-resolved product flow.
+**Dodo enforcement adapter.** The server uses the pinned official `dodopayments` TypeScript SDK. The
+adapter creates opaque percentage discounts in basis points, restricts them to the four configured paid
+Wanterest products, attaches entitlement/workspace/policy metadata, and pre-applies the code to an
+authorized checkout with discount-code entry disabled. Provider customer-specific attachment is not
+assumed: the SDK supports a `specific` eligibility mode, but the current adapter does not call an
+unverified customer-attachment operation. Server-side workspace membership and entitlement validation
+remain the authorization boundary.
+
+**Billing-cycle enforcement.** Wanterest remains authoritative for `activated_at`, `expires_at`, policy,
+status, and workspace ownership. Dodo's `subscription_cycles` is the finite recurring enforcement:
+Founding is 24 monthly or 2 annual cycles; Early 100 is 12 monthly or 1 annual cycle. A cycle is
+eligible when its billing-cycle start/charge occurs before the internal calendar expiry. A prepaid annual
+cycle is not split at the calendar boundary. Dodo `expires_at` is an additional redemption guard only;
+the system does not rely on it to detach an already-attached recurring discount.
+
+**Provider binding history.** `workspace_cohort_benefit_provider_bindings` is a private, workspace-scoped
+history of Dodo discount IDs/codes, interval, percentage, cycle limit, and replacement status. A monthly
+to annual or annual to monthly plan change computes future billing anchors from the original internal
+expiry, creates/reuses an idempotent replacement binding, and explicitly replaces the Dodo discount set.
+Expired or revoked benefits explicitly send an empty discount set on plan change. Neither checkout nor a
+plan change resets the benefit clock, and cancellation/resubscription uses the original expiry. Provider
+bindings are enforcement metadata, never the authority for eligibility.
 
 **Security and read model.** Entitlement state is server-written through service-role RPCs. Anonymous and
 ordinary authenticated clients cannot enumerate, insert, update, or delete benefit data; authenticated
@@ -5034,8 +5051,8 @@ browser, policy/cohort/discount/expiry values are accepted from the browser, and
 audited operation.
 
 **Future seam and rollout.** 13A.5 can use the atomic assignment wrapper and the server-only benefit service;
-there is no new public admission route. A future provider-capability change must be separately reviewed and
-must preserve policy versioning, webhook idempotency, tenant isolation, and the distinction between cohort
-benefits and plan capabilities. Production validation for this phase is a human-approved fixture/contract
-pass followed by one controlled paid-subscription event replay against a workspace with an intentionally
-non-production cohort fixture; no production Dodo discount mutation is part of this implementation.
+there is no new public admission route. The adapter contract and provider-binding migration are validated
+with mocked SDK responses and local billing-cycle tests; Dodo test-mode validation is optional and never
+uses live mode. Production validation for this phase is a human-approved fixture/contract pass followed by
+one controlled paid-subscription event replay against a workspace with an intentionally non-production
+cohort fixture. No production Dodo discount mutation is part of this implementation.

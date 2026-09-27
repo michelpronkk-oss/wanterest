@@ -79,6 +79,7 @@ function provider() {
     apiKey: trimmedOrUndefined(env.DODO_PAYMENTS_API_KEY) ?? "webhook-only",
     webhookSecret,
     baseUrl: resolveDodoBaseUrl(env),
+    environment: env.DODO_PAYMENTS_ENVIRONMENT,
     catalog: getDodoProductCatalog(),
   });
 }
@@ -216,7 +217,8 @@ async function service(actorUserId?: string) {
         }, client);
       }
     : undefined;
-  return new BillingService(repository, provider(), catalog, audit, createCohortBenefitService(createSupabaseCohortBenefitRepository(client)));
+  const billingProvider = provider();
+  return new BillingService(repository, billingProvider, catalog, audit, createCohortBenefitService(createSupabaseCohortBenefitRepository(client), billingProvider));
 }
 
 export async function createCheckoutCommand(input: unknown) {
