@@ -29,6 +29,17 @@ import {
   type GitHubRequestMetadata,
 } from "./github.schemas";
 import { normalizeGitHubItem } from "./github.normalizer";
+import {
+  createGitHubDepthMetrics,
+  evaluateGitHubDepth,
+  GITHUB_DEPTH_MAX_COMMENT_PAGES,
+  GITHUB_DEPTH_MAX_COMMENTS_PER_THREAD,
+  GITHUB_DEPTH_MAX_THREADS_PER_PAGE,
+  GITHUB_DEPTH_VERSION,
+  githubUpdatedQualifier,
+  isGitHubAutomatedAuthor,
+  isGitHubWithinWindow,
+} from "./github-depth";
 
 type GitHubAdapterOptions = GitHubClientOptions & { clock?: () => Date };
 
@@ -52,7 +63,8 @@ function issueQuery(request: SourceDiscoveryRequest, metadata: GitHubRequestMeta
   if (metadata.repository) qualifiers.push(`repo:${metadata.repository}`);
   else if (metadata.owner) qualifiers.push(`user:${metadata.owner}`);
   else if (metadata.org) qualifiers.push(`org:${metadata.org}`);
-  return `${request.query} ${qualifiers.join(" ")}`.trim();
+  const updated = githubUpdatedQualifier(request.windowStart);
+  return [request.query, ...qualifiers, updated].filter(Boolean).join(" ").trim();
 }
 
 function discussionQuery(request: SourceDiscoveryRequest, metadata: GitHubRequestMetadata): string {
@@ -61,7 +73,8 @@ function discussionQuery(request: SourceDiscoveryRequest, metadata: GitHubReques
   if (metadata.repository) qualifiers.push(`repo:${metadata.repository}`);
   else if (metadata.owner) qualifiers.push(`user:${metadata.owner}`);
   else if (metadata.org) qualifiers.push(`org:${metadata.org}`);
-  return `${request.query} ${qualifiers.join(" ")}`.trim();
+  const updated = githubUpdatedQualifier(request.windowStart);
+  return [request.query, ...qualifiers, updated].filter(Boolean).join(" ").trim();
 }
 
 function localDiscussionMatch(discussion: z.infer<typeof githubDiscussionNodeSchema>, request: SourceDiscoveryRequest, metadata: GitHubRequestMetadata): boolean {
@@ -80,6 +93,11 @@ function localDiscussionMatch(discussion: z.infer<typeof githubDiscussionNodeSch
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message.slice(0, 200) : "provider error";
+}
+
+function depthEnabled(metadata: GitHubRequestMetadata): boolean {
+  const extended = metadata as GitHubRequestMetadata & { queryPlanVersion?: unknown };
+  return metadata.depthPolicyVersion === GITHUB_DEPTH_VERSION || extended.queryPlanVersion === "query_planning_v8";
 }
 
 export class GitHubSourceAdapter implements SourceAdapter {
@@ -115,6 +133,27 @@ export class GitHubSourceAdapter implements SourceAdapter {
     let rejected = 0;
     let rateLimit: RateLimitMetadata | undefined;
     const items: RawSourceItemEnvelope[] = [];
+    const seenExternalIds = new Set<string>();
+    const useDepth = depthEnabled(metadata);
+    const depthMetrics = createGitHubDepthMetrics();
+    let expandedDepthRoots = 0;
+    const appendItem = (item: RawSourceItemEnvelope, isComment = false): boolean => {
+      if (seenExternalIds.has(item.externalId)) {
+        if (useDepth && isComment) depthMetrics.duplicateCommentsSkipped += 1;
+        return false;
+      }
+      seenExternalIds.add(item.externalId);
+      items.push(item);
+      if (useDepth && isComment) depthMetrics.commentsPersisted += 1;
+      return true;
+    };
+    const pageResult = (nextCursor?: string): SourceDiscoveryPage => ({
+      items,
+      ...(nextCursor ? { nextCursor } : {}),
+      rateLimit,
+      ...(useDepth ? { providerMetrics: { githubDepthV1: depthMetrics } } : {}),
+      diagnostics: { accepted: items.length, rejected, messages },
+    });
     if (metadata.contentType === "issues" || metadata.contentType === "all") {
       const page = request.cursor ? decodeGitHubIssuesCursor(request.cursor) : 1;
       const search = await this.client.searchIssues({ query: issueQuery(request, metadata), limit: request.limit, page });
@@ -131,37 +170,69 @@ export class GitHubSourceAdapter implements SourceAdapter {
             : `issue ${index} rejected: malformed GitHub issue (${issue.error.issues[0]?.path.join(".") || "unknown field"})`);
           continue;
         }
+        if (!isGitHubWithinWindow({ updatedAt: issue.data.updated_at, windowStart: request.windowStart, windowEnd: request.windowEnd })) {
+          if (useDepth) depthMetrics.rootsOutsideRefreshWindow += 1;
+          continue;
+        }
         const repo = repositoryFromIssue(issue.data, metadata);
         const externalId = `github:issue:${repo.id ?? (repo.owner && repo.name ? `${repo.owner}/${repo.name}` : "unknown")}:${issue.data.number}`;
-        items.push(this.envelope(issue.data, externalId, request, metadata, {
+        const root = this.envelope(issue.data, externalId, request, metadata, {
           itemType: "issue",
           rootExternalId: externalId,
           repository: repo.owner && repo.name ? `${repo.owner}/${repo.name}` : null,
           repositoryId: repo.id ?? null,
           page,
-        }));
-        if ((request.expandThreads || metadata.includeComments) && metadata.maxComments > 0 && repo.owner && repo.name) {
+        });
+        appendItem(root);
+        if (useDepth) depthMetrics.rootsSeen += 1;
+        const eligibility = useDepth ? evaluateGitHubDepth({
+          title: issue.data.title,
+          body: issue.data.body,
+          authorType: issue.data.user?.type,
+          labels: issue.data.labels?.map((label) => label.name),
+          commentsAvailable: (issue.data.comments ?? 0) > 0,
+        }) : null;
+        const legacyExpansion = request.expandThreads || metadata.includeComments;
+        const shouldExpand = metadata.maxComments > 0 && repo.owner && repo.name && (useDepth ? eligibility?.eligible === true : legacyExpansion);
+        if (useDepth && !eligibility?.eligible) depthMetrics.ineligibleRoots += 1;
+        if (useDepth && eligibility?.eligible && expandedDepthRoots >= GITHUB_DEPTH_MAX_THREADS_PER_PAGE) {
+          depthMetrics.expansionCapSkips += 1;
+          continue;
+        }
+        if (shouldExpand && repo.owner && repo.name) {
+          if (useDepth) {
+            expandedDepthRoots += 1;
+            depthMetrics.eligibleRoots += 1;
+            depthMetrics.expandedRoots += 1;
+          }
           let commentsForIssue = 0;
-          for (let commentPage = 1; commentPage <= metadata.maxCommentPages && commentsForIssue < metadata.maxComments; commentPage += 1) {
+          const commentLimit = useDepth ? Math.min(metadata.maxComments, GITHUB_DEPTH_MAX_COMMENTS_PER_THREAD) : metadata.maxComments;
+          const commentPages = useDepth ? Math.min(metadata.maxCommentPages, GITHUB_DEPTH_MAX_COMMENT_PAGES) : metadata.maxCommentPages;
+          const perPage = useDepth ? Math.min(6, commentLimit) : commentLimit;
+          for (let commentPage = 1; commentPage <= commentPages && commentsForIssue < commentLimit; commentPage += 1) {
             try {
-              const comments = await this.client.getIssueComments(repo.owner, repo.name, issue.data.number, commentPage, metadata.maxComments);
+              if (useDepth) depthMetrics.commentRequests += 1;
+              const comments = await this.client.getIssueComments(repo.owner, repo.name, issue.data.number, commentPage, perPage);
               rateLimit = comments.rateLimit;
               rejected += comments.rejected;
+              if (useDepth) depthMetrics.commentsReturned += comments.comments.length;
               if (comments.rejected > 0) messages.push(`comments for ${externalId} contained ${comments.rejected} malformed item(s)`);
               for (const comment of comments.comments) {
-                if (commentsForIssue >= metadata.maxComments) break;
+                if (commentsForIssue >= commentLimit) break;
                 const parsedComment = comment;
                 const commentId = parsedComment && typeof parsedComment === "object" && "id" in parsedComment && typeof parsedComment.id === "number" ? parsedComment.id : undefined;
                 if (!commentId) { rejected += 1; messages.push(`comments for ${externalId} contained a malformed item`); continue; }
-                items.push(this.envelope(comment, `github:issue_comment:${commentId}`, request, metadata, {
+                const commentAuthorType = parsedComment && typeof parsedComment === "object" && "user" in parsedComment && parsedComment.user && typeof parsedComment.user === "object" && "type" in parsedComment.user && typeof parsedComment.user.type === "string" ? parsedComment.user.type : null;
+                if (useDepth && isGitHubAutomatedAuthor(commentAuthorType)) { depthMetrics.commentsDroppedFromIneligibleRoots += 1; continue; }
+                const added = appendItem(this.envelope(comment, `github:issue_comment:${commentId}`, request, metadata, {
                   itemType: "issue_comment",
                   rootExternalId: externalId,
                   repository: `${repo.owner}/${repo.name}`,
                   repositoryId: repo.id ?? null,
                   parentIssueNumber: issue.data.number,
                   page: commentPage,
-                }));
-                commentsForIssue += 1;
+                }), true);
+                if (added) commentsForIssue += 1;
               }
               if (!comments.hasNextPage) break;
             } catch (error) {
@@ -174,16 +245,17 @@ export class GitHubSourceAdapter implements SourceAdapter {
         }
       }
       const nextCursor = metadata.contentType === "issues" && search.nextPage ? encodeGitHubIssuesCursor(search.nextPage) : undefined;
-      if (metadata.contentType === "issues") {
-        return { items, nextCursor, rateLimit, diagnostics: { accepted: items.length, rejected, messages } };
-      }
+      if (metadata.contentType === "issues") return pageResult(nextCursor);
       if (search.nextPage) messages.push("combined GitHub discovery is bounded to the first issue page; use contentType=issues for cursors");
     }
 
     if (metadata.contentType === "discussions" || metadata.contentType === "all") {
       const after = request.cursor ? decodeGitHubDiscussionsCursor(request.cursor) : undefined;
       try {
-          const discussions = await this.client.listDiscussions(discussionQuery(request, metadata), request.limit, after, metadata.includeComments || request.expandThreads ? metadata.maxComments : 0);
+          const legacyExpansion = metadata.includeComments || request.expandThreads;
+          const commentFirst = useDepth ? Math.min(metadata.maxComments, GITHUB_DEPTH_MAX_COMMENTS_PER_THREAD) : legacyExpansion ? metadata.maxComments : 0;
+          const discussions = await this.client.listDiscussions(discussionQuery(request, metadata), request.limit, after, commentFirst);
+          if (useDepth && commentFirst > 0) depthMetrics.commentRequests += 1;
           rateLimit = discussions.rateLimit;
           const parsed = discussions.response as { search: { nodes: unknown[] } };
           for (const [index, value] of parsed.search.nodes.entries()) {
@@ -193,35 +265,64 @@ export class GitHubSourceAdapter implements SourceAdapter {
               messages.push(`discussion ${index} rejected: ${discussion.success && discussion.data.repository?.isPrivate === true ? "private repositories are not supported" : "malformed or outside query scope"}`);
               continue;
             }
+            if (!isGitHubWithinWindow({ updatedAt: discussion.data.updatedAt, windowStart: request.windowStart, windowEnd: request.windowEnd })) {
+              if (useDepth) depthMetrics.rootsOutsideRefreshWindow += 1;
+              continue;
+            }
             const externalId = `github:discussion:${discussion.data.id}`;
-            items.push(this.envelope(discussion.data, externalId, request, metadata, {
+            appendItem(this.envelope(discussion.data, externalId, request, metadata, {
               itemType: "discussion",
               rootExternalId: externalId,
               repository: discussion.data.repository?.nameWithOwner ?? metadata.repository ?? null,
               repositoryId: discussion.data.repository?.id ?? null,
             }));
-            if ((request.expandThreads || metadata.includeComments) && discussion.data.comments) {
-              for (const commentValue of discussion.data.comments.nodes) {
+            if (useDepth) depthMetrics.rootsSeen += 1;
+            const comments = discussion.data.comments;
+            if (useDepth) depthMetrics.commentsReturned += comments?.nodes.length ?? 0;
+            const eligibility = useDepth ? evaluateGitHubDepth({
+              title: discussion.data.title,
+              body: discussion.data.body,
+              authorType: discussion.data.author?.__typename,
+              commentsAvailable: Boolean(comments?.nodes.length),
+            }) : null;
+            if (useDepth && !eligibility?.eligible) {
+              depthMetrics.ineligibleRoots += 1;
+              depthMetrics.commentsDroppedFromIneligibleRoots += comments?.nodes.length ?? 0;
+            }
+            const shouldExpand = Boolean(comments && (useDepth ? eligibility?.eligible : legacyExpansion));
+            if (useDepth && eligibility?.eligible && expandedDepthRoots >= GITHUB_DEPTH_MAX_THREADS_PER_PAGE) {
+              depthMetrics.expansionCapSkips += 1;
+              depthMetrics.commentsDroppedFromIneligibleRoots += comments?.nodes.length ?? 0;
+              continue;
+            }
+            if (shouldExpand && comments) {
+              if (useDepth) {
+                expandedDepthRoots += 1;
+                depthMetrics.eligibleRoots += 1;
+                depthMetrics.expandedRoots += 1;
+              }
+              for (const commentValue of comments.nodes) {
                 const comment = githubDiscussionCommentNodeSchema.safeParse(commentValue);
                 if (!comment.success) { rejected += 1; messages.push(`comments for ${externalId} contained a malformed item`); continue; }
-                items.push(this.envelope(comment.data, `github:discussion_comment:${comment.data.id}`, request, metadata, {
+                if (useDepth && isGitHubAutomatedAuthor(comment.data.author?.__typename)) { depthMetrics.commentsDroppedFromIneligibleRoots += 1; continue; }
+                appendItem(this.envelope(comment.data, `github:discussion_comment:${comment.data.id}`, request, metadata, {
                   itemType: "discussion_comment",
                   rootExternalId: externalId,
                   repository: discussion.data.repository?.nameWithOwner ?? metadata.repository ?? null,
                   repositoryId: discussion.data.repository?.id ?? null,
-                }));
+                }), true);
               }
-              if (discussion.data.comments.pageInfo.hasNextPage) messages.push(`comments for ${externalId} bounded at ${metadata.maxComments}`);
+              if (comments.pageInfo.hasNextPage) messages.push(`comments for ${externalId} bounded at ${metadata.maxComments}`);
             }
           }
           const nextCursor = metadata.contentType === "discussions" && discussions.hasNextPage && discussions.endCursor ? encodeGitHubDiscussionsCursor(discussions.endCursor) : undefined;
-          return { items, nextCursor, rateLimit, diagnostics: { accepted: items.length, rejected, messages } };
+          return pageResult(nextCursor);
         } catch (error) {
           if (metadata.contentType === "discussions") throw error;
           messages.push(`GitHub discussions unavailable: ${errorMessage(error)}`);
       }
     }
-    return { items, rateLimit, diagnostics: { accepted: items.length, rejected, messages } };
+    return pageResult();
   }
 
   normalize(raw: RawSourceItemEnvelope): SourceItemCandidate {
@@ -263,6 +364,7 @@ export class GitHubSourceAdapter implements SourceAdapter {
         includeComments: metadata.includeComments || request.expandThreads,
         maxComments: metadata.maxComments,
         maxCommentPages: metadata.maxCommentPages,
+        depthPolicyVersion: depthEnabled(metadata) ? GITHUB_DEPTH_VERSION : null,
         authenticated: this.authenticated,
       },
       cursorContext: context,
@@ -274,3 +376,4 @@ export class GitHubSourceAdapter implements SourceAdapter {
 export const githubSourceAdapter = new GitHubSourceAdapter();
 export { GitHubClient } from "./github.client";
 export { normalizeGitHubItem } from "./github.normalizer";
+export * from "./github-depth";

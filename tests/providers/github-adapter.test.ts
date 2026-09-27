@@ -3,6 +3,7 @@ import type { JsonObject } from "../../src/server/db/database.helpers";
 
 import {
   githubDiscussionComment,
+  githubDiscussion,
   githubDiscussionsResponse,
   githubIssue,
   githubIssueComment,
@@ -12,6 +13,7 @@ import {
   GitHubSourceAdapter,
   normalizeGitHubItem,
 } from "../../src/server/providers/source/github";
+import { evaluateGitHubDepth } from "../../src/server/providers/source/github/github-depth";
 
 function response(value: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json", ...headers } });
@@ -119,6 +121,57 @@ describe("GitHub source adapter", () => {
     expect(page.diagnostics.messages.join(" ")).toContain("malformed");
   });
 
+  it("applies GitHub Depth V1 only to demand-like public threads and records bounded telemetry", async () => {
+    const humanComment = { ...githubIssueComment, id: 7002, user: { ...githubIssueComment.user, id: 10, login: "bob", type: "User" } };
+    const automatedIssue = { ...githubIssue, id: 103, number: 43, title: "Automated dependency update", user: { ...githubIssue.user, type: "Bot" }, labels: [{ name: "dependencies" }] };
+    const technicalIssue = { ...githubIssue, id: 104, number: 44, title: "Refactor export internals", body: "Implementation detail only.", comments: 1 };
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response({ ...githubIssueSearchResponse, items: [githubIssue, automatedIssue, technicalIssue] }))
+      .mockResolvedValueOnce(response([humanComment]));
+    const adapter = new GitHubSourceAdapter({ fetchImpl });
+
+    const page = await adapter.discover({
+      query: "export",
+      limit: 3,
+      expandThreads: false,
+      requestMetadata: { contentType: "issues", queryPlanVersion: "query_planning_v8", maxComments: 12 },
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(page.items.map((item) => item.externalId)).toEqual(["github:issue:9001:42", "github:issue_comment:7002", "github:issue:9001:43", "github:issue:9001:44"]);
+    expect(page.providerMetrics).toMatchObject({ githubDepthV1: { policyVersion: "github_depth_v1", rootsSeen: 3, eligibleRoots: 1, expandedRoots: 1, commentRequests: 1, commentsReturned: 1, commentsPersisted: 1, ineligibleRoots: 2 } });
+  });
+
+  it("deduplicates depth comments, caps root expansions, and preserves refresh-window identity", async () => {
+    const humanComment = { ...githubIssueComment, id: 7010, user: { ...githubIssueComment.user, id: 11, login: "carol", type: "User" } };
+    const roots = [42, 43, 44, 45].map((number, index) => ({ ...githubIssue, id: 200 + index, number, title: `Need export improvement ${number}`, updated_at: "2026-09-20T09:00:00.000Z", comments: 1 }));
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response({ ...githubIssueSearchResponse, items: roots }))
+      .mockImplementation(async () => response([humanComment, humanComment]));
+    const adapter = new GitHubSourceAdapter({ fetchImpl });
+
+    const page = await adapter.discover({
+      query: "export",
+      limit: 4,
+      expandThreads: false,
+      windowStart: "2026-09-20T00:00:00.000Z",
+      windowEnd: "2026-09-21T00:00:00.000Z",
+      requestMetadata: { contentType: "issues", depthPolicyVersion: "github_depth_v1", maxComments: 12 },
+    });
+    const searchRequest = new URL(String(fetchImpl.mock.calls[0]?.[0]));
+
+    expect(searchRequest.searchParams.get("q")).toContain("updated:>=2026-09-20");
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(page.items.filter((item) => item.externalId === "github:issue_comment:7010")).toHaveLength(1);
+    expect(page.providerMetrics).toMatchObject({ githubDepthV1: { rootsSeen: 4, eligibleRoots: 3, expandedRoots: 3, expansionCapSkips: 1, duplicateCommentsSkipped: 5 } });
+  });
+
+  it("keeps the depth gate deterministic for adversarial GitHub thread shapes", () => {
+    expect(evaluateGitHubDepth({ title: "Dependency release", body: "Automated update", authorType: "Bot", labels: ["dependencies"], commentsAvailable: true })).toMatchObject({ eligible: false, reason: "automation" });
+    expect(evaluateGitHubDepth({ title: "Refactor internals", body: "No user request here", authorType: "User", commentsAvailable: true })).toMatchObject({ eligible: false, reason: "not_demand_like" });
+    expect(evaluateGitHubDepth({ title: "We need export filters", body: "Please preserve the selected filters.", authorType: "User", commentsAvailable: true })).toMatchObject({ eligible: true, reason: "eligible" });
+  });
+
   it("lists repository discussions through GraphQL with bounded comments and cursor mapping", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response(githubDiscussionsResponse));
     const adapter = new GitHubSourceAdapter({ fetchImpl, token: "test-token" });
@@ -132,6 +185,23 @@ describe("GitHub source adapter", () => {
     expect(page.items.map((item) => item.externalId)).toEqual(["github:discussion:D_kwDOdiscussion5", "github:discussion_comment:DC_kwDOfirstcomment"]);
     expect(page.nextCursor).toMatch(/^github:v1:discussions:/);
     expect(page.rateLimit).toMatchObject({ provider: "github-graphql", mode: "authenticated" });
+  });
+
+  it("applies the same depth gate to Discussions while keeping the GraphQL request bounded", async () => {
+    const discussion = {
+      ...githubDiscussion,
+      body: "We need an export workflow that preserves filters.",
+      comments: { nodes: [{ ...githubDiscussionComment, author: { ...githubDiscussionComment.author, __typename: "User" } }], pageInfo: { hasNextPage: false, endCursor: null } },
+    };
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response({ data: { search: { nodes: [discussion], pageInfo: { hasNextPage: false, endCursor: null } } } }));
+    const adapter = new GitHubSourceAdapter({ fetchImpl, token: "test-token" });
+
+    const page = await adapter.discover({ query: "export", limit: 1, expandThreads: false, requestMetadata: { contentType: "discussions", depthPolicyVersion: "github_depth_v1", maxComments: 20 } });
+    const requestBody = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body));
+
+    expect(requestBody.variables.commentFirst).toBe(12);
+    expect(page.items.map((item) => item.externalId)).toEqual(["github:discussion:D_kwDOdiscussion5", "github:discussion_comment:DC_kwDOfirstcomment"]);
+    expect(page.providerMetrics).toMatchObject({ githubDepthV1: { rootsSeen: 1, eligibleRoots: 1, expandedRoots: 1, commentRequests: 1, commentsPersisted: 1 } });
   });
 
   it("normalizes discussions when GraphQL authors have no location", () => {

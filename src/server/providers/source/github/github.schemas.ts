@@ -161,6 +161,7 @@ export const githubRequestMetadataSchema = z.object({
   maxComments: z.number().int().min(0).max(50).default(20),
   maxCommentPages: z.number().int().min(1).max(2).default(2),
   discussionCategory: z.string().trim().max(100).optional(),
+  depthPolicyVersion: z.literal("github_depth_v1").optional(),
 }).passthrough();
 
 export type GitHubRequestMetadata = z.infer<typeof githubRequestMetadataSchema>;
