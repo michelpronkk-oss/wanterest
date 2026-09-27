@@ -335,28 +335,6 @@ begin
 end;
 $$;
 
-create or replace function public.verify_waitlist_application_with_referral(
-  p_verification_token_hash text,
-  p_policy_key text,
-  p_threshold integer
-)
-returns public.waitlist_applications
-language plpgsql
-security definer
-set search_path = public, auth
-as $$
-declare
-  v_application public.waitlist_applications;
-begin
-  if not public.is_service_role() then
-    raise exception using errcode = '42501', message = 'waitlist_referral_service_role_required';
-  end if;
-  select * into v_application from public.verify_waitlist_application(p_verification_token_hash);
-  perform public.process_waitlist_referral_verification(v_application.id, p_policy_key, p_threshold);
-  return v_application;
-end;
-$$;
-
 create or replace function public.invalidate_waitlist_referral(
   p_referral_id uuid,
   p_reason text,
@@ -457,14 +435,12 @@ revoke all on function public.ensure_waitlist_referral_identity(uuid) from publi
 revoke all on function public.submit_waitlist_application_with_referral(text, text, text, text, text, text, text, text, timestamptz, text, text, text, text, text, text, text, text, boolean, text) from public, anon, authenticated;
 revoke all on function public.process_waitlist_referral_verification(uuid, text, integer) from public, anon, authenticated;
 revoke all on function public.get_waitlist_referral_status(uuid) from public, anon, authenticated;
-revoke all on function public.verify_waitlist_application_with_referral(text, text, integer) from public, anon, authenticated;
 revoke all on function public.invalidate_waitlist_referral(uuid, text, uuid) from public, anon, authenticated;
 revoke all on function public.revoke_waitlist_priority_access(uuid, text, uuid) from public, anon, authenticated;
 grant execute on function public.ensure_waitlist_referral_identity(uuid) to service_role;
 grant execute on function public.submit_waitlist_application_with_referral(text, text, text, text, text, text, text, text, timestamptz, text, text, text, text, text, text, text, text, boolean, text) to service_role;
 grant execute on function public.process_waitlist_referral_verification(uuid, text, integer) to service_role;
 grant execute on function public.get_waitlist_referral_status(uuid) to service_role;
-grant execute on function public.verify_waitlist_application_with_referral(text, text, integer) to service_role;
 grant execute on function public.invalidate_waitlist_referral(uuid, text, uuid) to service_role;
 grant execute on function public.revoke_waitlist_priority_access(uuid, text, uuid) to service_role;
 

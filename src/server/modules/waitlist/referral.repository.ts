@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { AppError } from "@/server/lib/errors";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
-import type { PriorityAccessStatus } from "./referral.policy";
+import { priorityReferralPolicy, type PriorityAccessStatus } from "./referral.policy";
 
 export type RawWaitlistReferralStatus = {
   referralCode: string | null;
@@ -14,6 +14,7 @@ export type RawWaitlistReferralStatus = {
 };
 
 export type WaitlistReferralRepository = {
+  processVerification(applicationId: string): Promise<void>;
   getStatus(applicationId: string): Promise<RawWaitlistReferralStatus>;
   invalidate(referralId: string, reason: string, actorUserId?: string | null): Promise<void>;
   revokePriority(applicationId: string, reason: string, actorUserId?: string | null): Promise<void>;
@@ -45,6 +46,14 @@ function status(row: RawRecord): RawWaitlistReferralStatus {
 
 export function createSupabaseWaitlistReferralRepository(client: SupabaseClient = serviceClient()): WaitlistReferralRepository {
   return {
+    async processVerification(applicationId) {
+      const { error } = await client.rpc("process_waitlist_referral_verification", {
+        p_referred_application_id: applicationId,
+        p_policy_key: priorityReferralPolicy.policyKey,
+        p_threshold: priorityReferralPolicy.threshold,
+      });
+      if (error) throw new AppError("INTERNAL_ERROR", "Referral verification processing failed.", 500, { providerMessage: error.message });
+    },
     async getStatus(applicationId) {
       const { data, error } = await client.rpc("get_waitlist_referral_status", { p_application_id: applicationId });
       return status(unwrap(data as RawRecord | null, error));

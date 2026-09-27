@@ -94,6 +94,13 @@ export class WaitlistService {
     const parsed = waitlistVerificationTokenSchema.safeParse(token);
     if (!parsed.success) throw new AppError("VALIDATION_ERROR", "This verification link is invalid or expired.", 422);
     const application = await this.repository.verify(tokenHash(parsed.data));
+    if (this.referralRepository) {
+      try {
+        await this.referralRepository.processVerification(application.id);
+      } catch {
+        this.log("referral_processing_unavailable");
+      }
+    }
     this.log("verification_succeeded");
     const delivery = await this.emailProvider.send({ to: application.email, subject: "Your Wanterest Early Access request is verified", text: `Your Wanterest Early Access request is verified. Your Early Access number is #${String(application.earlyAccessNumber).padStart(4, "0")}. Waitlist membership does not grant dashboard access.`, html: `<p>Your Wanterest Early Access request is verified.</p><p>Your Early Access number is <strong>#${String(application.earlyAccessNumber).padStart(4, "0")}</strong>.</p><p>Waitlist membership does not grant dashboard access.</p>` });
     if (!delivery.ok) this.log("verification_success_email_unavailable");

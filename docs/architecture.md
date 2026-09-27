@@ -5078,7 +5078,8 @@ application. `waitlist_referrals` stores one first-writer-wins relationship per 
 `pending`, `verified`, or `invalidated` status. `waitlist_priority_access` stores the current server-only
 granted/revoked state, while `waitlist_referral_events` is append-only audit history for identity creation,
 attribution, verification, invalidation, and priority changes. Migration is additive and performs no backfill;
-the transactionally coupled verification wrapper creates the identity when an applicant verifies.
+the existing verification RPC commits first; a separate idempotent continuation creates the identity and processes
+referral credit after verification.
 
 **Attribution and verification.** The waitlist submission wrapper takes a bounded referral code and locks the
 normalized email key before deciding whether the application is new. A pre-existing application cannot be
