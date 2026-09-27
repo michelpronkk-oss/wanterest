@@ -43,12 +43,13 @@ function req(overrides: { query?: string; limit?: number; requestMetadata?: Reco
   return sourceDiscoveryRequestSchema.parse({ query: "export", limit: 5, ...overrides });
 }
 
-function discoveryPage(overrides: Partial<{ rawSourceItemIds: string[]; rawInserted: number; nextCursor: string | undefined; diagnostics: string[] }> = {}) {
+function discoveryPage(overrides: Partial<{ rawSourceItemIds: string[]; rawInserted: number; nextCursor: string | undefined; diagnostics: string[]; providerMetrics: Record<string, unknown> }> = {}) {
   return {
     rawSourceItemIds: overrides.rawSourceItemIds ?? [],
     rawInserted: overrides.rawInserted ?? 0,
     diagnostics: overrides.diagnostics ?? [],
     nextCursor: overrides.nextCursor,
+    ...(overrides.providerMetrics ? { providerMetrics: overrides.providerMetrics } : {}),
   };
 }
 
@@ -182,6 +183,31 @@ describe("ingestPublicPartition (Stage 2A shared public-ingestion boundary)", ()
 
     expect(result.failedQueryCount).toBeUndefined();
     expect(result.queryTelemetry[0]?.executionStatus).toBe("completed_zero_results");
+  });
+
+  it("retains GitHub Depth V1 metrics through the public-ingestion result seam", async () => {
+    const githubDepthV1 = {
+      policyVersion: "github_depth_v1",
+      rootsSeen: 1,
+      eligibleRoots: 1,
+      ineligibleRoots: 0,
+      expandedRoots: 1,
+      expansionCapSkips: 0,
+      commentRequests: 1,
+      commentsReturned: 1,
+      commentsPersisted: 1,
+      duplicateCommentsSkipped: 0,
+      commentsDroppedFromIneligibleRoots: 0,
+      rootsOutsideRefreshWindow: 0,
+    };
+    discoverSourceMock.mockResolvedValueOnce(discoveryPage({ rawSourceItemIds: ["root", "comment"], rawInserted: 2, providerMetrics: { githubDepthV1 } }));
+    replayDetailedMock.mockResolvedValueOnce(replayResult({ normalizedSourceItemIds: ["root", "comment"], canonicalizedConversationIds: ["thread-1"] }));
+
+    const result = await ingestPublicPartition({ sourceKey: "github", requests: [req({ requestMetadata: { queryPlanVersion: "query_planning_v8" } })], traceId: "trace-1" });
+
+    expect(result.providerMetrics).toEqual({ githubDepthV1 });
+    expect(result.itemsReturned).toBe(2);
+    expect(result.conversationIds).toEqual(["thread-1"]);
   });
 });
 

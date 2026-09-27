@@ -139,7 +139,7 @@ describe("GitHub source adapter", () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(page.items.map((item) => item.externalId)).toEqual(["github:issue:9001:42", "github:issue_comment:7002", "github:issue:9001:43", "github:issue:9001:44"]);
-    expect(page.providerMetrics).toMatchObject({ githubDepthV1: { policyVersion: "github_depth_v1", rootsSeen: 3, eligibleRoots: 1, expandedRoots: 1, commentRequests: 1, commentsReturned: 1, commentsPersisted: 1, ineligibleRoots: 2 } });
+    expect(page.providerMetrics).toMatchObject({ githubDepthV1: { policyVersion: "github_depth_v1", rootsSeen: 3, eligibleRoots: 1, expandedRoots: 1, commentRequests: 1, commentsReturned: 1, commentsPersisted: 1, ineligibleRoots: 2, commentsDroppedFromIneligibleRoots: 0, duplicateCommentsSkipped: 0, expansionCapSkips: 0, rootsOutsideRefreshWindow: 0 } });
   });
 
   it("deduplicates depth comments, caps root expansions, and preserves refresh-window identity", async () => {

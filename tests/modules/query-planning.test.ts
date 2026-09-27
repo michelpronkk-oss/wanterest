@@ -320,6 +320,7 @@ describe("Query Planning v1", () => {
       language_context: null,
       cost_hint: "free_low",
       metadata: {
+        planner_version: "query_planning_v8",
         provider_context: {
           category: "project management software",
           product_name: "Linear",
@@ -339,6 +340,8 @@ describe("Query Planning v1", () => {
       maxPages: 1,
       githubPainRetrievalV1: compiled,
     });
+
+    expect(request.requestMetadata.queryPlanVersion).toBe("query_planning_v8");
     expect(compiled.providerQuery).not.toContain("Linear");
     expect(compiled.providerQuery).not.toContain("Jira");
     expect(compiled.booleanOperatorCount).toBe(3);

@@ -25,8 +25,11 @@ export type SourceQueryExecutionInput = {
  */
 export function toSourceDiscoveryRequest(input: SourceQueryExecutionInput): SourceDiscoveryRequest {
   const { sourcePlan, query } = input;
+  const plannerVersion = query.metadata.planner_version === "query_planning_v8"
+    ? query.metadata.planner_version
+    : queryPlanningVersion;
   const metadata: Record<string, unknown> = {
-    queryPlanVersion: queryPlanningVersion,
+    queryPlanVersion: plannerVersion,
     queryPlanId: query.query_id,
     semanticQuery: query.query_text,
     queryFamily: query.query_family,
