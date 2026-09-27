@@ -44,6 +44,10 @@ describe("13A.2B cohort benefit migration contract", () => {
     expect(providerMigration).toContain("foreign key (workspace_id, entitlement_id)");
     expect(providerMigration).toContain("billing_interval text not null check (billing_interval in ('monthly', 'annual'))");
     expect(providerMigration).toContain("cycle_limit integer not null check (cycle_limit > 0)");
+    expect(providerMigration).toContain("provider_customer_id text");
+    expect(providerMigration).toContain("p_provider_customer_id text");
+    expect(providerMigration).toContain('customer-specific discount is attached only to the authoritative workspace billing customer');
+    expect(providerMigration).toContain("grant execute on function public.upsert_workspace_cohort_benefit_provider_binding(uuid, uuid, text, text, text, text, text, integer, integer) to service_role");
     expect(providerMigration).toMatch(/revoke all on public\.workspace_cohort_benefit_provider_bindings from public, anon, authenticated/i);
     expect(providerMigration).toMatch(/grant all on public\.workspace_cohort_benefit_provider_bindings to service_role/i);
     expect(providerMigration).toContain("status = 'superseded'");

@@ -5022,11 +5022,18 @@ activation window.
 
 **Dodo enforcement adapter.** The server uses the pinned official `dodopayments` TypeScript SDK. The
 adapter creates opaque percentage discounts in basis points, restricts them to the four configured paid
-Wanterest products, attaches entitlement/workspace/policy metadata, and pre-applies the code to an
-authorized checkout with discount-code entry disabled. Provider customer-specific attachment is not
-assumed: the SDK supports a `specific` eligibility mode, but the current adapter does not call an
-unverified customer-attachment operation. Server-side workspace membership and entitlement validation
-remain the authorization boundary.
+Wanterest products, sets `customer_eligibility = specific`, and attaches exactly the authoritative Dodo
+customer for the workspace. The SDK 2.52.0 exposes the eligibility field but not the documented customer
+attachment resource, so the adapter uses one isolated authenticated `POST /discounts/{id}/customers`
+call with the same idempotency discipline. The code is then pre-applied to an authorized checkout with
+discount-code entry disabled. Workspace membership, the server-owned customer mapping, and entitlement
+validation remain the authorization boundary; an opaque code alone grants no eligibility.
+
+**Discount abuse limits.** `usage_limit` and `per_customer_usage_limit` are intentionally omitted. Dodo
+documents both fields, but the current contract does not establish that a redemption-count limit composes
+with recurring `subscription_cycles` without prematurely blocking legitimate renewals or replacement
+discounts. Customer-specific eligibility is the primary restriction; finite subscription cycles remain the
+provider enforcement bound.
 
 **Billing-cycle enforcement.** Wanterest remains authoritative for `activated_at`, `expires_at`, policy,
 status, and workspace ownership. Dodo's `subscription_cycles` is the finite recurring enforcement:
@@ -5036,7 +5043,7 @@ cycle is not split at the calendar boundary. Dodo `expires_at` is an additional 
 the system does not rely on it to detach an already-attached recurring discount.
 
 **Provider binding history.** `workspace_cohort_benefit_provider_bindings` is a private, workspace-scoped
-history of Dodo discount IDs/codes, interval, percentage, cycle limit, and replacement status. A monthly
+history of Dodo discount IDs/codes, authoritative customer ID, interval, percentage, cycle limit, and replacement status. A monthly
 to annual or annual to monthly plan change computes future billing anchors from the original internal
 expiry, creates/reuses an idempotent replacement binding, and explicitly replaces the Dodo discount set.
 Expired or revoked benefits explicitly send an empty discount set on plan change. Neither checkout nor a

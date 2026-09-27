@@ -54,7 +54,7 @@ export class BillingService {
     private readonly cohortBenefits?: CohortBenefitActivationPort | CohortBenefitBillingPort,
   ) {}
 
-  async createCheckout(input: { workspaceId: string; plan: BillingPlan; interval: BillingInterval; returnUrl?: string; idempotencyKey?: string }): Promise<{ checkoutUrl: string; checkoutReference: string }> {
+  async createCheckout(input: { workspaceId: string; plan: BillingPlan; interval: BillingInterval; customerEmail?: string | null; returnUrl?: string; idempotencyKey?: string }): Promise<{ checkoutUrl: string; checkoutReference: string }> {
     const mapping = productFor(this.catalog, input.plan, input.interval);
     const reference = checkoutReference(input.workspaceId, input.plan, input.interval, input.idempotencyKey);
     const active = this.checkoutInflight.get(reference);
@@ -64,7 +64,7 @@ export class BillingService {
     try { return await operation; } finally { this.checkoutInflight.delete(reference); }
   }
 
-  private async createCheckoutOnce(input: { workspaceId: string; plan: BillingPlan; interval: BillingInterval; returnUrl?: string }, providerProductId: string, reference: string) {
+  private async createCheckoutOnce(input: { workspaceId: string; plan: BillingPlan; interval: BillingInterval; customerEmail?: string | null; returnUrl?: string }, providerProductId: string, reference: string) {
     const current = await this.repository.getCurrentSubscription(input.workspaceId);
     const currentPlan = resolveInternalPlan(current ? { internalPlan: current.internal_plan, status: current.status } : null);
     if (currentPlan !== "free") {
@@ -77,11 +77,26 @@ export class BillingService {
     }
     const reservation = await this.repository.reserveCheckout({ workspaceId: input.workspaceId, checkoutReference: reference, plan: input.plan, interval: input.interval });
     if (reservation.checkout_url) return { checkoutUrl: reservation.checkout_url, checkoutReference: reference };
+    let providerCustomerId = await this.repository.getProviderCustomerId(input.workspaceId);
+    if (!providerCustomerId && this.cohortBenefits && "prepareCheckoutDiscount" in this.cohortBenefits) {
+      const email = input.customerEmail?.trim();
+      const creator = this.provider.createCustomer;
+      if (!email || !creator) throw new AppError("CONFLICT", "A trusted billing customer is required before starting checkout.");
+      const customer = await creator.call(this.provider, {
+        email,
+        name: `Wanterest workspace ${input.workspaceId}`,
+        workspaceId: input.workspaceId,
+        idempotencyKey: `customer:${input.workspaceId}`,
+      });
+      await this.repository.saveProviderCustomer({ workspaceId: input.workspaceId, providerCustomerId: customer.providerCustomerId, email: customer.email });
+      providerCustomerId = customer.providerCustomerId;
+    }
     const discountCodes = this.cohortBenefits && "prepareCheckoutDiscount" in this.cohortBenefits
       ? await this.cohortBenefits.prepareCheckoutDiscount({
           workspaceId: input.workspaceId,
           billingInterval: input.interval,
           productIds: Object.values(this.catalog).map((candidate) => candidate.providerProductId),
+          providerCustomerId: providerCustomerId ?? "",
         }).then((code) => code ? [code] : undefined)
       : undefined;
     const checkout = await this.provider.createCheckout({
@@ -89,7 +104,7 @@ export class BillingService {
       internalPlan: input.plan,
       billingInterval: input.interval,
       providerProductId,
-      providerCustomerId: await this.repository.getProviderCustomerId(input.workspaceId),
+      providerCustomerId,
       returnUrl: input.returnUrl,
       checkoutReference: reference,
       discountCodes,
@@ -203,11 +218,13 @@ export class BillingService {
     const changer = this.provider.changeSubscription;
     if (!changer) throw new AppError("CONFLICT", "This billing provider requires a replacement checkout to change plans.");
     const mapping = productFor(this.catalog, plan, interval);
+    const providerCustomerId = await this.repository.getProviderCustomerId(workspaceId);
     const discountCodes = this.cohortBenefits && "preparePlanChangeDiscount" in this.cohortBenefits
       ? await this.cohortBenefits.preparePlanChangeDiscount({
           workspaceId,
           billingInterval: interval,
           productIds: Object.values(this.catalog).map((candidate) => candidate.providerProductId),
+          providerCustomerId: providerCustomerId ?? "",
           nextBillingAt: subscription.current_period_end ?? new Date().toISOString(),
         })
       : undefined;

@@ -66,12 +66,13 @@ describe("13A.2B provider discount orchestration", () => {
         calls.push(input);
         return { providerDiscountId: "dsc_founder", code: "OPAQUE123", amountBasisPoints: input.amountBasisPoints, restrictedTo: input.productIds, subscriptionCycles: input.subscriptionCycles };
       },
+      attachDiscountCustomer: async () => {},
     }, () => new Date("2027-01-01T00:00:00.000Z"));
 
-    expect(await service.prepareCheckoutDiscount({ workspaceId, billingInterval: "monthly", productIds: ["pro-m", "pro-y", "growth-m", "growth-y"] })).toBe("OPAQUE123");
-    expect(await service.prepareCheckoutDiscount({ workspaceId, billingInterval: "monthly", productIds: ["pro-m", "pro-y", "growth-m", "growth-y"] })).toBe("OPAQUE123");
+    expect(await service.prepareCheckoutDiscount({ workspaceId, billingInterval: "monthly", productIds: ["pro-m", "pro-y", "growth-m", "growth-y"], providerCustomerId: "cus_workspace_a" })).toBe("OPAQUE123");
+    expect(await service.prepareCheckoutDiscount({ workspaceId, billingInterval: "monthly", productIds: ["pro-m", "pro-y", "growth-m", "growth-y"], providerCustomerId: "cus_workspace_a" })).toBe("OPAQUE123");
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ amountBasisPoints: 3000, subscriptionCycles: 24, expiresAt: null, idempotencyKey: `wanterest:cohort-benefit:${entitlementId}:monthly:24` });
+    expect(calls[0]).toMatchObject({ amountBasisPoints: 3000, providerCustomerId: "cus_workspace_a", subscriptionCycles: 24, expiresAt: null, idempotencyKey: `wanterest:cohort-benefit:${entitlementId}:monthly:24` });
     expect(getBinding()).toMatchObject({ billingInterval: "monthly", cycleLimit: 24, discountPercent: 30 });
   });
 
@@ -83,18 +84,34 @@ describe("13A.2B provider discount orchestration", () => {
         request = input;
         return { providerDiscountId: "dsc_annual", code: "OPAQUE456", amountBasisPoints: input.amountBasisPoints, restrictedTo: input.productIds, subscriptionCycles: input.subscriptionCycles };
       },
+      attachDiscountCustomer: async () => {},
     }, () => new Date("2027-07-01T00:00:00.000Z"));
 
-    expect(await service.preparePlanChangeDiscount({ workspaceId, billingInterval: "annual", productIds: ["pro-m", "pro-y"], nextBillingAt: "2027-08-01T00:00:00.000Z" })).toEqual(["OPAQUE456"]);
+    expect(await service.preparePlanChangeDiscount({ workspaceId, billingInterval: "annual", productIds: ["pro-m", "pro-y"], providerCustomerId: "cus_workspace_a", nextBillingAt: "2027-08-01T00:00:00.000Z" })).toEqual(["OPAQUE456"]);
     expect(request).toMatchObject({ amountBasisPoints: 3000, subscriptionCycles: 2, expiresAt: "2029-01-01T00:00:00.000Z" });
+  });
+
+  it("creates Early 100 at exactly 15% and 1500 basis points", async () => {
+    const { repo } = repository(model("eligible", { policyKey: "early_100_v1", discountPercent: 15, durationMonths: 12 }));
+    let request: Record<string, unknown> | undefined;
+    const service = new CohortBenefitService(repo, {
+      createDiscount: async (input) => {
+        request = input;
+        return { providerDiscountId: "dsc_early", code: "EARLY123", amountBasisPoints: input.amountBasisPoints, restrictedTo: input.productIds, subscriptionCycles: input.subscriptionCycles };
+      },
+      attachDiscountCustomer: async () => {},
+    });
+
+    await service.prepareCheckoutDiscount({ workspaceId, billingInterval: "monthly", productIds: ["pro-m"], providerCustomerId: "cus_workspace_a" });
+    expect(request).toMatchObject({ amountBasisPoints: 1500, subscriptionCycles: 12 });
   });
 
   it("does not create provider discounts for expired or revoked benefits", async () => {
     for (const status of ["expired", "revoked"] as const) {
       const { repo } = repository(model(status));
       let calls = 0;
-      const service = new CohortBenefitService(repo, { createDiscount: async () => { calls += 1; return { providerDiscountId: "unused", code: "UNUSED", amountBasisPoints: 3000, restrictedTo: [], subscriptionCycles: 1 }; } });
-      expect(await service.prepareCheckoutDiscount({ workspaceId, billingInterval: "monthly", productIds: ["pro-m"] })).toBeNull();
+      const service = new CohortBenefitService(repo, { createDiscount: async () => { calls += 1; return { providerDiscountId: "unused", code: "UNUSED", amountBasisPoints: 3000, restrictedTo: [], subscriptionCycles: 1 }; }, attachDiscountCustomer: async () => {} });
+      expect(await service.prepareCheckoutDiscount({ workspaceId, billingInterval: "monthly", productIds: ["pro-m"], providerCustomerId: "cus_workspace_a" })).toBeNull();
       expect(calls).toBe(0);
     }
   });
@@ -108,10 +125,11 @@ describe("13A.2B provider discount orchestration", () => {
         await new Promise((resolve) => setTimeout(resolve, 1));
         return { providerDiscountId: "dsc_concurrent", code: "OPAQUE789", amountBasisPoints: input.amountBasisPoints, restrictedTo: input.productIds, subscriptionCycles: input.subscriptionCycles };
       },
+      attachDiscountCustomer: async () => {},
     });
     const results = await Promise.all([
-      service.prepareCheckoutDiscount({ workspaceId, billingInterval: "monthly", productIds: ["pro-m"] }),
-      service.prepareCheckoutDiscount({ workspaceId, billingInterval: "monthly", productIds: ["pro-m"] }),
+      service.prepareCheckoutDiscount({ workspaceId, billingInterval: "monthly", productIds: ["pro-m"], providerCustomerId: "cus_workspace_a" }),
+      service.prepareCheckoutDiscount({ workspaceId, billingInterval: "monthly", productIds: ["pro-m"], providerCustomerId: "cus_workspace_a" }),
     ]);
     expect(results).toEqual(["OPAQUE789", "OPAQUE789"]);
     expect(new Set(keys)).toEqual(new Set([`wanterest:cohort-benefit:${entitlementId}:monthly:24`]));

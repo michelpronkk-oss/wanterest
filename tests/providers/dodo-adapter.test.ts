@@ -30,6 +30,7 @@ describe("Dodo SDK adapter", () => {
           code: "OPAQUE123",
           amount: 3000,
           type: "percentage",
+          customer_eligibility: "specific",
           restricted_to: ["prod_pro_monthly", "prod_pro_annual"],
           subscription_cycles: 24,
           preserve_on_plan_change: false,
@@ -41,6 +42,7 @@ describe("Dodo SDK adapter", () => {
     const discount = await provider.createDiscount({
       amountBasisPoints: 3000,
       productIds: ["prod_pro_monthly", "prod_pro_annual"],
+      providerCustomerId: "cus_workspace_a",
       subscriptionCycles: 24,
       metadata: { wanterest_entitlement_id: "ent-1" },
       idempotencyKey: "wanterest:discount:ent-1:monthly:24",
@@ -48,8 +50,36 @@ describe("Dodo SDK adapter", () => {
 
     expect(discount).toMatchObject({ providerDiscountId: "dsc_founder", code: "OPAQUE123", amountBasisPoints: 3000, subscriptionCycles: 24 });
     expect(requests[0]).toMatchObject({ url: "https://test.dodopayments.com/discounts" });
-    expect(requests[0].body).toMatchObject({ amount: 3000, type: "percentage", restricted_to: ["prod_pro_monthly", "prod_pro_annual"], subscription_cycles: 24, preserve_on_plan_change: false });
+    expect(requests[0].body).toMatchObject({ amount: 3000, type: "percentage", customer_eligibility: "specific", restricted_to: ["prod_pro_monthly", "prod_pro_annual"], subscription_cycles: 24, preserve_on_plan_change: false });
+    expect(requests[0].body).not.toHaveProperty("usage_limit");
+    expect(requests[0].body).not.toHaveProperty("per_customer_usage_limit");
     expect(requests[0].headers.get("idempotency-key")).toBe("wanterest:discount:ent-1:monthly:24");
+  });
+
+  it("creates an authoritative customer and attaches only that customer to a specific discount", async () => {
+    const requests: Array<{ url: string; body: Record<string, unknown>; headers: Headers }> = [];
+    const provider = new DodoBillingProvider({
+      apiKey: "test-key",
+      webhookSecret,
+      baseUrl: "https://test.dodopayments.com",
+      catalog,
+      fetcher: async (url, init) => {
+        requests.push({ url: String(url), body: init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {}, headers: new Headers(init?.headers) });
+        if (String(url).endsWith("/customers")) return json({ customer_id: "cus_workspace_a", email: "owner@example.test", name: "Wanterest workspace" });
+        if (String(url).includes("/discounts/dsc_specific/customers")) return new Response(null, { status: 204 });
+        return json({ discount_id: "dsc_specific", code: "SPECIFIC123", amount: 1500, type: "percentage", customer_eligibility: "specific", restricted_to: ["prod_pro_monthly"], subscription_cycles: 12, preserve_on_plan_change: false, metadata: {} });
+      },
+    });
+
+    const customer = await provider.createCustomer({ email: "owner@example.test", name: "Wanterest workspace", workspaceId: "workspace-a", idempotencyKey: "customer:workspace-a" });
+    await provider.createDiscount({ amountBasisPoints: 1500, productIds: ["prod_pro_monthly"], providerCustomerId: customer.providerCustomerId, subscriptionCycles: 12, metadata: {}, idempotencyKey: "discount:workspace-a" });
+    await provider.attachDiscountCustomer("dsc_specific", customer.providerCustomerId);
+
+    expect(requests[0].body).toMatchObject({ email: "owner@example.test", name: "Wanterest workspace", metadata: { wanterest_workspace_id: "workspace-a" } });
+    expect(requests[1].body).toMatchObject({ amount: 1500, customer_eligibility: "specific", restricted_to: ["prod_pro_monthly"] });
+    expect(requests[2]).toMatchObject({ url: "https://test.dodopayments.com/discounts/dsc_specific/customers" });
+    expect(requests[2].body).toEqual({ customer_id: "cus_workspace_a" });
+    expect(requests[2].headers.get("idempotency-key")).toBe("discount-customer:dsc_specific:cus_workspace_a");
   });
 
   it("pre-applies a server-selected code and disables arbitrary checkout code entry", async () => {

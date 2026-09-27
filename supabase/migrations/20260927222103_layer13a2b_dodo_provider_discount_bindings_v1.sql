@@ -9,6 +9,7 @@ create table if not exists public.workspace_cohort_benefit_provider_bindings (
   provider text not null check (provider = 'dodo'),
   provider_discount_id text not null check (char_length(trim(provider_discount_id)) between 1 and 200),
   provider_discount_code text not null check (char_length(trim(provider_discount_code)) between 1 and 200),
+  provider_customer_id text check (provider_customer_id is null or char_length(trim(provider_customer_id)) between 1 and 300),
   billing_interval text not null check (billing_interval in ('monthly', 'annual')),
   cycle_limit integer not null check (cycle_limit > 0),
   discount_percent smallint not null check (discount_percent between 1 and 100),
@@ -21,6 +22,10 @@ create table if not exists public.workspace_cohort_benefit_provider_bindings (
   foreign key (workspace_id, entitlement_id)
     references public.workspace_cohort_benefit_entitlements (workspace_id, id) on delete restrict
 );
+
+alter table public.workspace_cohort_benefit_provider_bindings
+  add column if not exists provider_customer_id text
+  check (provider_customer_id is null or char_length(trim(provider_customer_id)) between 1 and 300);
 
 create unique index if not exists workspace_cohort_benefit_provider_active_idx
   on public.workspace_cohort_benefit_provider_bindings (entitlement_id, billing_interval)
@@ -39,6 +44,7 @@ create or replace function public.upsert_workspace_cohort_benefit_provider_bindi
   p_provider text,
   p_provider_discount_id text,
   p_provider_discount_code text,
+  p_provider_customer_id text,
   p_billing_interval text,
   p_cycle_limit integer,
   p_discount_percent integer
@@ -66,6 +72,7 @@ begin
      or p_billing_interval not in ('monthly', 'annual')
      or p_provider_discount_id is null
      or p_provider_discount_code is null
+     or p_provider_customer_id is null
      or p_cycle_limit is null or p_cycle_limit < 1
      or p_discount_percent is null or p_discount_percent not between 1 and 100 then
     raise exception using errcode = '22023', message = 'workspace_cohort_benefit_provider_binding_invalid';
@@ -100,15 +107,16 @@ begin
 
   insert into public.workspace_cohort_benefit_provider_bindings (
     workspace_id, entitlement_id, provider, provider_discount_id, provider_discount_code,
-    billing_interval, cycle_limit, discount_percent, status, superseded_at, last_synced_at
+    provider_customer_id, billing_interval, cycle_limit, discount_percent, status, superseded_at, last_synced_at
   ) values (
     p_workspace_id, p_entitlement_id, p_provider, trim(p_provider_discount_id), trim(p_provider_discount_code),
-    p_billing_interval, p_cycle_limit, p_discount_percent, 'active', null, timezone('utc', now())
+    trim(p_provider_customer_id), p_billing_interval, p_cycle_limit, p_discount_percent, 'active', null, timezone('utc', now())
   )
   on conflict (provider, provider_discount_id) do update set
     workspace_id = excluded.workspace_id,
     entitlement_id = excluded.entitlement_id,
     provider_discount_code = excluded.provider_discount_code,
+    provider_customer_id = excluded.provider_customer_id,
     billing_interval = excluded.billing_interval,
     cycle_limit = excluded.cycle_limit,
     discount_percent = excluded.discount_percent,
@@ -141,8 +149,8 @@ begin
 end;
 $$;
 
-revoke all on function public.upsert_workspace_cohort_benefit_provider_binding(uuid, uuid, text, text, text, text, integer, integer) from public, anon, authenticated;
-grant execute on function public.upsert_workspace_cohort_benefit_provider_binding(uuid, uuid, text, text, text, text, integer, integer) to service_role;
+revoke all on function public.upsert_workspace_cohort_benefit_provider_binding(uuid, uuid, text, text, text, text, text, integer, integer) from public, anon, authenticated;
+grant execute on function public.upsert_workspace_cohort_benefit_provider_binding(uuid, uuid, text, text, text, text, text, integer, integer) to service_role;
 
-comment on table public.workspace_cohort_benefit_provider_bindings is 'Server-private Dodo discount bindings; Wanterest entitlement terms and calendar expiry remain authoritative.';
+comment on table public.workspace_cohort_benefit_provider_bindings is 'Server-private Dodo discount bindings; each customer-specific discount is attached only to the authoritative workspace billing customer. Wanterest entitlement terms and calendar expiry remain authoritative.';
 comment on column public.workspace_cohort_benefit_provider_bindings.cycle_limit is 'Finite provider billing cycles whose billing-cycle start is eligible under the current binding.';

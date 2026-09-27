@@ -23,6 +23,8 @@ export class FixtureBillingProvider implements BillingProvider {
   readonly checkoutInputs = new Map<string, CheckoutRequest>();
   readonly changeInputs = new Map<string, { providerSubscriptionId: string; providerProductId: string; billingInterval: BillingInterval; discountCodes?: string[] }>();
   readonly subscriptions = new Map<string, ProviderSubscription>();
+  readonly customers = new Map<string, { providerCustomerId: string; email: string }>();
+  readonly discountCustomers = new Map<string, string>();
   private eventCounter = 0;
   private readonly verifier: DodoBillingProvider;
 
@@ -56,6 +58,20 @@ export class FixtureBillingProvider implements BillingProvider {
     const subscription = this.subscriptions.get(providerSubscriptionId);
     if (!subscription) throw new Error("fixture_subscription_not_found");
     return clone(subscription);
+  }
+
+  async createCustomer(input: { email: string; name: string; workspaceId: string; idempotencyKey: string }): Promise<{ providerCustomerId: string; email: string }> {
+    const existing = this.customers.get(input.workspaceId);
+    if (existing) return existing;
+    const customer = { providerCustomerId: `cus_fixture_${input.workspaceId}`, email: input.email };
+    this.customers.set(input.workspaceId, customer);
+    return customer;
+  }
+
+  async attachDiscountCustomer(providerDiscountId: string, providerCustomerId: string): Promise<void> {
+    const existing = this.discountCustomers.get(providerDiscountId);
+    if (existing && existing !== providerCustomerId) throw new Error("fixture_discount_customer_conflict");
+    this.discountCustomers.set(providerDiscountId, providerCustomerId);
   }
 
   async cancelSubscription(providerSubscriptionId: string): Promise<ProviderSubscription | null> {

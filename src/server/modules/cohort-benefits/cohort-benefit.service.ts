@@ -17,11 +17,13 @@ export type CohortBenefitProviderPort = {
   createDiscount(input: {
     amountBasisPoints: number;
     productIds: string[];
+    providerCustomerId: string;
     expiresAt?: string | null;
     subscriptionCycles: number;
     metadata: Record<string, string | number | boolean>;
     idempotencyKey: string;
   }): Promise<{ providerDiscountId: string; code: string; amountBasisPoints: number; restrictedTo: string[]; subscriptionCycles?: number | null }>;
+  attachDiscountCustomer(providerDiscountId: string, providerCustomerId: string): Promise<void>;
 };
 
 export type PaidBenefitActivationInput = {
@@ -41,6 +43,7 @@ export type CohortBenefitBillingPort = CohortBenefitActivationPort & {
     workspaceId: string;
     billingInterval: BillingInterval;
     productIds: string[];
+    providerCustomerId: string;
     now?: string;
     nextBillingAt?: string;
   }): Promise<string | null>;
@@ -48,6 +51,7 @@ export type CohortBenefitBillingPort = CohortBenefitActivationPort & {
     workspaceId: string;
     billingInterval: BillingInterval;
     productIds: string[];
+    providerCustomerId: string;
     nextBillingAt: string;
     now?: string;
   }): Promise<string[]>;
@@ -103,6 +107,7 @@ export class CohortBenefitService implements CohortBenefitActivationPort {
     workspaceId: string;
     billingInterval: BillingInterval;
     productIds: string[];
+    providerCustomerId: string;
     now?: string;
     nextBillingAt?: string;
   }): Promise<string | null> {
@@ -112,6 +117,7 @@ export class CohortBenefitService implements CohortBenefitActivationPort {
     const now = input.now ?? this.clock().toISOString();
     const entitlementId = await this.repository.getEntitlementId(input.workspaceId);
     if (!entitlementId) return null;
+    if (!input.providerCustomerId.trim()) throw new AppError("CONFLICT", "A trusted Dodo customer is required before applying a cohort benefit.");
     const cycles = benefit.benefit.status === "active" && benefit.benefit.expiresAt
       ? getRemainingEligibleDiscountCycles({
           activatedAt: benefit.benefit.activatedAt ?? now,
@@ -130,6 +136,7 @@ export class CohortBenefitService implements CohortBenefitActivationPort {
       expiresAt: benefit.benefit.status === "active" ? benefit.benefit.expiresAt : null,
       billingInterval: input.billingInterval,
       productIds: input.productIds,
+      providerCustomerId: input.providerCustomerId,
       cycles,
     });
   }
@@ -138,6 +145,7 @@ export class CohortBenefitService implements CohortBenefitActivationPort {
     workspaceId: string;
     billingInterval: BillingInterval;
     productIds: string[];
+    providerCustomerId: string;
     nextBillingAt: string;
     now?: string;
   }): Promise<string[]> {
@@ -147,6 +155,7 @@ export class CohortBenefitService implements CohortBenefitActivationPort {
     const now = input.now ?? this.clock().toISOString();
     const entitlementId = await this.repository.getEntitlementId(input.workspaceId);
     if (!entitlementId) return [];
+    if (!input.providerCustomerId.trim()) throw new AppError("CONFLICT", "A trusted Dodo customer is required before applying a cohort benefit.");
     const cycles = getRemainingEligibleDiscountCycles({
       activatedAt: benefit.benefit.activatedAt,
       expiresAt: benefit.benefit.expiresAt,
@@ -163,6 +172,7 @@ export class CohortBenefitService implements CohortBenefitActivationPort {
       expiresAt: benefit.benefit.expiresAt,
       billingInterval: input.billingInterval,
       productIds: input.productIds,
+      providerCustomerId: input.providerCustomerId,
       cycles,
     });
     return [code];
@@ -176,6 +186,7 @@ export class CohortBenefitService implements CohortBenefitActivationPort {
     expiresAt: string | null;
     billingInterval: BillingInterval;
     productIds: string[];
+    providerCustomerId: string;
     cycles: number;
   }): Promise<string> {
     const existing = await this.repository.getProviderBinding({
@@ -183,10 +194,11 @@ export class CohortBenefitService implements CohortBenefitActivationPort {
       entitlementId: input.entitlementId,
       billingInterval: input.billingInterval,
     });
-    if (existing && existing.status === "active" && existing.cycleLimit === input.cycles && existing.discountPercent === input.discountPercent) return existing.providerDiscountCode;
+    if (existing && existing.status === "active" && existing.cycleLimit === input.cycles && existing.discountPercent === input.discountPercent && existing.providerCustomerId === input.providerCustomerId) return existing.providerDiscountCode;
     const discount = await this.provider!.createDiscount({
       amountBasisPoints: input.discountPercent * 100,
       productIds: input.productIds,
+      providerCustomerId: input.providerCustomerId,
       expiresAt: input.expiresAt,
       subscriptionCycles: input.cycles,
       metadata: {
@@ -197,12 +209,14 @@ export class CohortBenefitService implements CohortBenefitActivationPort {
       },
       idempotencyKey: `wanterest:cohort-benefit:${input.entitlementId}:${input.billingInterval}:${input.cycles}`,
     });
+    await this.provider!.attachDiscountCustomer(discount.providerDiscountId, input.providerCustomerId);
     return (await this.repository.upsertProviderBinding({
       workspaceId: input.workspaceId,
       entitlementId: input.entitlementId,
       provider: "dodo",
       providerDiscountId: discount.providerDiscountId,
       providerDiscountCode: discount.code,
+      providerCustomerId: input.providerCustomerId,
       billingInterval: input.billingInterval,
       cycleLimit: input.cycles,
       discountPercent: input.discountPercent,

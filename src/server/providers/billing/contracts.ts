@@ -46,9 +46,17 @@ export type ProviderDiscountSnapshot = {
   metadata: Record<string, string | number | boolean>;
 };
 
+export type ProviderCustomerCreateRequest = {
+  email: string;
+  name: string;
+  workspaceId: string;
+  idempotencyKey: string;
+};
+
 export type ProviderDiscountCreateRequest = {
   amountBasisPoints: number;
   productIds: string[];
+  providerCustomerId: string;
   expiresAt?: string | null;
   subscriptionCycles: number;
   metadata: Record<string, string | number | boolean>;
@@ -93,7 +101,9 @@ export interface BillingProvider {
   createCheckout(input: CheckoutRequest): Promise<CheckoutResult>;
   createPortalSession?(providerCustomerId: string, returnUrl?: string): Promise<PortalSessionResult>;
   getSubscription(providerSubscriptionId: string): Promise<ProviderSubscription>;
+  createCustomer?(input: ProviderCustomerCreateRequest): Promise<{ providerCustomerId: string; email: string }>;
   createDiscount?(input: ProviderDiscountCreateRequest): Promise<ProviderDiscountSnapshot>;
+  attachDiscountCustomer?(providerDiscountId: string, providerCustomerId: string): Promise<void>;
   getDiscount?(providerDiscountId: string): Promise<ProviderDiscountSnapshot>;
   deleteDiscount?(providerDiscountId: string): Promise<void>;
   cancelSubscription(providerSubscriptionId: string): Promise<ProviderSubscription | null>;

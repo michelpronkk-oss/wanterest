@@ -70,6 +70,7 @@ export type CohortBenefitProviderBinding = {
   provider: "dodo";
   providerDiscountId: string;
   providerDiscountCode: string;
+  providerCustomerId: string | null;
   billingInterval: BillingInterval;
   cycleLimit: number;
   discountPercent: number;
@@ -161,6 +162,7 @@ export function createSupabaseCohortBenefitRepository(client: Client = createSup
         p_provider: input.provider,
         p_provider_discount_id: input.providerDiscountId,
         p_provider_discount_code: input.providerDiscountCode,
+        p_provider_customer_id: input.providerCustomerId,
         p_billing_interval: input.billingInterval,
         p_cycle_limit: input.cycleLimit,
         p_discount_percent: input.discountPercent,
@@ -178,7 +180,7 @@ export function createSupabaseCohortBenefitRepository(client: Client = createSup
 function mapProviderBinding(raw: Record<string, unknown>): CohortBenefitProviderBinding {
   const billingInterval = raw.billing_interval === "annual" ? "annual" : raw.billing_interval === "monthly" ? "monthly" : null;
   const status = raw.status === "active" || raw.status === "superseded" || raw.status === "expired" || raw.status === "revoked" ? raw.status : null;
-  if (!billingInterval || !status || typeof raw.id !== "string" || typeof raw.workspace_id !== "string" || typeof raw.entitlement_id !== "string" || raw.provider !== "dodo" || typeof raw.provider_discount_id !== "string" || typeof raw.provider_discount_code !== "string" || typeof raw.cycle_limit !== "number" || typeof raw.discount_percent !== "number" || typeof raw.created_at !== "string" || typeof raw.last_synced_at !== "string") {
+  if (!billingInterval || !status || typeof raw.id !== "string" || typeof raw.workspace_id !== "string" || typeof raw.entitlement_id !== "string" || raw.provider !== "dodo" || typeof raw.provider_discount_id !== "string" || typeof raw.provider_discount_code !== "string" || (raw.provider_customer_id !== null && typeof raw.provider_customer_id !== "string") || typeof raw.cycle_limit !== "number" || typeof raw.discount_percent !== "number" || typeof raw.created_at !== "string" || typeof raw.last_synced_at !== "string") {
     throw new AppError("INTERNAL_ERROR", "Stored cohort benefit provider binding is invalid.");
   }
   return {
@@ -188,6 +190,7 @@ function mapProviderBinding(raw: Record<string, unknown>): CohortBenefitProvider
     provider: "dodo",
     providerDiscountId: raw.provider_discount_id,
     providerDiscountCode: raw.provider_discount_code,
+    providerCustomerId: typeof raw.provider_customer_id === "string" ? raw.provider_customer_id : null,
     billingInterval,
     cycleLimit: raw.cycle_limit,
     discountPercent: raw.discount_percent,

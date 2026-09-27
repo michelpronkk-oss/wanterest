@@ -234,7 +234,7 @@ export async function createCheckoutCommand(input: unknown) {
     assertDodoBillingConfigured();
     // The browser may request a plan/cadence, but it never chooses a redirect
     // destination. Keep checkout returns on the fixed billing surface.
-    return await (await service(user.id)).createCheckout({ workspaceId, plan: parsed.data.plan, interval, returnUrl: CHECKOUT_RETURN_URL, idempotencyKey: parsed.data.idempotencyKey });
+    return await (await service(user.id)).createCheckout({ workspaceId, plan: parsed.data.plan, interval, customerEmail: user.email, returnUrl: CHECKOUT_RETURN_URL, idempotencyKey: parsed.data.idempotencyKey });
   } catch (error) {
     throw translateBillingError(error, { workspaceId, plan: parsed.data.plan, interval }, "BILLING_PRODUCT_INVALID");
   }

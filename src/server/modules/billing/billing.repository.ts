@@ -57,6 +57,7 @@ export type BillingRepository = {
   findWorkspaceByProviderSubscriptionId(providerSubscriptionId: string): Promise<string | null>;
   findWorkspaceByProviderCustomerId(providerCustomerId: string): Promise<string | null>;
   getProviderCustomerId(workspaceId: string): Promise<string | null>;
+  saveProviderCustomer(input: { workspaceId: string; providerCustomerId: string; email: string }): Promise<void>;
   getOverview(workspaceId: string): Promise<BillingOverview>;
 };
 
@@ -219,6 +220,22 @@ export class InMemoryBillingRepository implements BillingRepository {
     return this.customers.get(workspaceId)?.provider_customer_id ?? null;
   }
 
+  async saveProviderCustomer(input: { workspaceId: string; providerCustomerId: string; email: string }): Promise<void> {
+    const existing = this.customers.get(input.workspaceId);
+    const owner = [...this.customers.values()].find((row) => row.provider_customer_id === input.providerCustomerId);
+    if (owner && owner.workspace_id !== input.workspaceId) throw new AppError("FORBIDDEN", "Billing customer association does not match.");
+    this.customers.set(input.workspaceId, {
+      id: existing?.id ?? createId(),
+      workspace_id: input.workspaceId,
+      provider: "dodo",
+      provider_customer_id: input.providerCustomerId,
+      email: input.email,
+      status: "active",
+      created_at: existing?.created_at ?? now(),
+      updated_at: now(),
+    });
+  }
+
   async getOverview(workspaceId: string): Promise<BillingOverview> {
     this.seedWorkspace(workspaceId);
     const current = this.revisions.get(workspaceId)?.at(-1);
@@ -341,6 +358,17 @@ export class SupabaseBillingRepository implements BillingRepository {
     const response = await this.client.from("billing_customers").select("provider_customer_id").eq("workspace_id", workspaceId).eq("provider", "dodo").maybeSingle();
     if (response.error) throw repositoryError("Billing customer could not be loaded.", response.error);
     return response.data?.provider_customer_id ?? null;
+  }
+
+  async saveProviderCustomer(input: { workspaceId: string; providerCustomerId: string; email: string }): Promise<void> {
+    const response = await this.client.from("billing_customers").upsert({
+      workspace_id: input.workspaceId,
+      provider: "dodo",
+      provider_customer_id: input.providerCustomerId,
+      email: input.email,
+      status: "active",
+    }, { onConflict: "workspace_id,provider" });
+    if (response.error) throw repositoryError("Billing customer could not be saved.", response.error);
   }
 
   async getOverview(workspaceId: string): Promise<BillingOverview> {

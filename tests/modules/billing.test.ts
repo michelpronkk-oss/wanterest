@@ -415,12 +415,29 @@ describe("Phase 6 billing", () => {
       preparePlanChangeDiscount: async () => ["OPAQUE456"],
     });
 
-    await billing.createCheckout({ workspaceId, plan: "pro", interval: "monthly" });
+    await billing.createCheckout({ workspaceId, plan: "pro", interval: "monthly", customerEmail: "owner@example.test" });
     expect([...provider.checkoutInputs.values()][0]?.discountCodes).toEqual(["OPAQUE123"]);
 
     await billing.processVerifiedEvent(workspaceId, await provider.emit("sub-plan-change", "active"));
     await billing.changePlan(workspaceId, "growth", "annual");
     expect(provider.changeInputs.get("sub-plan-change")?.discountCodes).toEqual(["OPAQUE456"]);
+  });
+
+  it("creates and persists one authoritative Dodo customer before preparing a cohort discount", async () => {
+    const repository = new InMemoryBillingRepository();
+    const provider = new FixtureBillingProvider(catalog, () => new Date("2027-01-01T00:00:00.000Z"));
+    let preparedCustomerId: string | undefined;
+    const billing = new BillingService(repository, provider, catalog, undefined, {
+      activateFromSuccessfulPaidSubscription: async () => ({ status: "already_active" }),
+      prepareCheckoutDiscount: async (input) => { preparedCustomerId = input.providerCustomerId; return "OPAQUE123"; },
+      preparePlanChangeDiscount: async () => [],
+    });
+
+    await billing.createCheckout({ workspaceId, plan: "pro", interval: "monthly", customerEmail: "owner@example.test" });
+
+    expect(preparedCustomerId).toBe(`cus_fixture_${workspaceId}`);
+    expect(await repository.getProviderCustomerId(workspaceId)).toBe(`cus_fixture_${workspaceId}`);
+    expect([...provider.checkoutInputs.values()][0]?.providerCustomerId).toBe(`cus_fixture_${workspaceId}`);
   });
 
   it("ignores browser-supplied cohort policy and provider discount fields", () => {
@@ -431,6 +448,7 @@ describe("Phase 6 billing", () => {
       discountPercent: 100,
       durationMonths: 1,
       discountCode: "PUBLIC-CODE",
+      providerCustomerId: "attacker-customer",
     });
     expect(parsed).toEqual({ plan: "pro", cadence: "monthly" });
   });
