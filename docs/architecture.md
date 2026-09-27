@@ -4997,3 +4997,45 @@ is attached in this phase; future versioned cohort benefits must remain separate
 changing identity. 13A.3 may add priority access without adding it to the permanent cohort enum. 13A.4
 may build a curated public Founder Pass/Wall projection, and 13A.5 may call the server-only assignment
 seam after a real admission decision; neither is implemented here.
+
+### 13A.2B — Cohort Benefits & Billing Entitlements V1 (`cohort_benefits_billing_v1`) — FEATURE BRANCH
+
+**Boundary and identity.** Cohort identity and commercial benefit state are separate objects. The immutable
+`workspace_cohort_memberships` row is never edited to represent a discount, and the existing normalized
+`plan_catalog`/`workspace_entitlements` capability authority remains unchanged. V1 adds one mutable,
+workspace-scoped `workspace_cohort_benefit_entitlements` row plus append-only
+`workspace_cohort_benefit_events`. The entitlement snapshots its policy key, percentage, and calendar-month
+duration so a later policy version cannot rewrite a prior grant.
+
+**Policies.** `founding_25_v1` is 30% for 24 calendar months and `early_100_v1` is 15% for 12 calendar
+months. Both are eligible at cohort admission and activate once on the first authoritative successful paid
+subscription. Assignment uses a database wrapper around the existing allocator so identity and eligibility
+are granted in one transaction. No existing memberships are backfilled by this migration.
+
+**Billing activation.** Verified Dodo webhooks and read-only reconciliation first pass through the existing
+normalized subscription boundary. Only a resulting paid `active` subscription invokes the benefit activation
+port; checkout creation, trial, free, `past_due`, cancellation, plan changes, and retries do not reset
+activation or expiry. `activated_at` is the provider event/reconciliation timestamp and `expires_at` is
+computed with PostgreSQL calendar-month arithmetic. Activation and webhook processing are idempotent by the
+entitlement uniqueness constraint and provider event key. Resubscribe/upgrade/downgrade preserves the first
+activation window.
+
+**Provider capability gap.** The current Dodo adapter exposes products and subscriptions but no supported
+coupon/discount operation. V1 therefore persists truthful internal eligibility and activation state and
+reports provider discount status as unsupported until a reviewed Dodo adapter contract exists. It does not
+send invented checkout fields, claim that Dodo applied a discount, change prices, or create public coupon
+codes. Checkout remains the existing server-resolved product flow.
+
+**Security and read model.** Entitlement state is server-written through service-role RPCs. Anonymous and
+ordinary authenticated clients cannot enumerate, insert, update, or delete benefit data; authenticated
+workspace members can read only their own bounded read model through `get_workspace_cohort_benefit`, which
+checks membership. Benefit events are service-only and append-only. No service-role credential reaches the
+browser, policy/cohort/discount/expiry values are accepted from the browser, and revocation is an internal
+audited operation.
+
+**Future seam and rollout.** 13A.5 can use the atomic assignment wrapper and the server-only benefit service;
+there is no new public admission route. A future provider-capability change must be separately reviewed and
+must preserve policy versioning, webhook idempotency, tenant isolation, and the distinction between cohort
+benefits and plan capabilities. Production validation for this phase is a human-approved fixture/contract
+pass followed by one controlled paid-subscription event replay against a workspace with an intentionally
+non-production cohort fixture; no production Dodo discount mutation is part of this implementation.
