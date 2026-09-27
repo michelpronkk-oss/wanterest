@@ -4956,3 +4956,44 @@ Founder Pass, invite acceptance, or dashboard access is implemented here. Intern
 provide bounded pagination/filtering and guarded transition calls, but there is no existing repository-wide
 internal-admin identity convention, so no public admin route is exposed until that authorization boundary is
 approved.
+
+### 13A.2 — Cohort & Membership Identity V1 (`cohort_membership_identity_v1`) — FEATURE BRANCH
+
+**Purpose and boundary.** 13A.2 records permanent launch provenance for a workspace at the controlled
+admission seam. It does not grant access, change a subscription, assign a benefit, or reinterpret the
+waitlist. The existing `waitlist_applications.early_access_number` remains an independent pre-access
+identity; Early Access #0001 is never converted into Founding #01 automatically.
+
+**Workspace-level identity.** `workspace_cohort_memberships` has at most one immutable identity per
+workspace. The only cohort values are `founding_25` and `early_100`, with namespace-local ranges of
+1–25 and 1–100. `assigned_at`, the optional verified waitlist provenance link, and the optional original
+admission principal are historical context; membership changes, owner changes, inactivity, archival, and
+reactivation do not alter the cohort identity. There is no per-user cohort number.
+
+**Admission order and allocator.** Founding seats are allocated 1 through 25, then Early 100 seats 1
+through 100. Later admissions receive `no_special_cohort`; there is no overflow or wraparound. PostgreSQL
+locks both rows of `workspace_cohort_allocation_state` in a fixed order inside the authoritative
+service-role function. It inserts the membership, advances exactly one state row, and appends the
+`membership_assigned` event in the same transaction. A rollback therefore restores the seat. The allocator
+never uses `MAX(number) + 1`, application-side counts, or a shared Early Access sequence.
+
+**Idempotency and permanence.** The assignment function returns an existing workspace identity on retry,
+rejects conflicting waitlist provenance, and uses unique workspace, cohort/number, and source-application
+constraints as database backstops. Membership and event rows are protected by database triggers against
+normal update/delete. Workspace deletion is currently blocked by the membership foreign key, so a number
+cannot be reclaimed or reused; user and waitlist linkage can be nulled by their existing deletion rules.
+No transfer or merge operation exists.
+
+**Audit and privacy.** `workspace_cohort_membership_events` is append-only and records only the controlled
+assignment event plus non-secret assignment metadata. The membership and allocator tables are RLS-enabled,
+private to service-role access, and have no browser table grants. Authenticated members receive only the
+safe `get_workspace_cohort_identity` read model through a membership-checked server function; it exposes
+cohort, number, limit, display identity, assignment time, and separate workspace status, not waitlist
+tokens or private application fields. There is no public assignment endpoint or global enumeration path.
+
+**Read model and future seams.** The typed server contract supplies `Founding 25` or `Early 100`, the
+namespace-local number, limit, assignment time, and independent workspace activity state. No benefit policy
+is attached in this phase; future versioned cohort benefits must remain separate and changeable without
+changing identity. 13A.3 may add priority access without adding it to the permanent cohort enum. 13A.4
+may build a curated public Founder Pass/Wall projection, and 13A.5 may call the server-only assignment
+seam after a real admission decision; neither is implemented here.
