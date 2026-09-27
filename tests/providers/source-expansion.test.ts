@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ProductHuntSourceAdapter } from "../../src/server/providers/source/product-hunt";
-import { deriveStackExchangeFeatureRecency, StackExchangeSourceAdapter } from "../../src/server/providers/source/stack-exchange";
+import { deriveStackExchangeFeatureRecency, evaluateStackExchangeDepth, selectStackExchangeAnswers, selectStackExchangeComments, StackExchangeSourceAdapter, STACK_EXCHANGE_DEPTH_VERSION } from "../../src/server/providers/source/stack-exchange";
 import { PublicWebSourceAdapter } from "../../src/server/providers/source/public-web";
 import { G2SourceAdapter } from "../../src/server/providers/source/g2";
 import { g2TargetFingerprint } from "../../src/server/providers/source/g2/product-resolution";
@@ -54,6 +54,64 @@ describe("Source Expansion v1 adapters", () => {
     expect(candidate.externalId).toBe("stackoverflow:99");
     expect(candidate.body).toContain("simpler issue tracker");
     expect(candidate.metadata).toMatchObject({ sourceCategory: "developer_discussion", site: "stackoverflow", acceptedAnswerId: 100 });
+  });
+
+  it("applies deterministic Stack Exchange depth eligibility and bounded message selection", () => {
+    expect(evaluateStackExchangeDepth({ title: "Linear regression with alternative method", answerCount: 2, commentCount: 2 })).toMatchObject({ eligible: false });
+    expect(evaluateStackExchangeDepth({ title: "How do I install a Jira plugin?", body: "Plugin exception and stack trace", answerCount: 2, commentCount: 2 })).toMatchObject({ eligible: false });
+    expect(evaluateStackExchangeDepth({ title: "What are alternatives to Jira?", body: "We need a simpler project management workflow.", answerCount: 2, commentCount: 2, tags: ["project-management"] })).toMatchObject({ eligible: true });
+    const answers = selectStackExchangeAnswers({ acceptedAnswerId: 10, maxAnswers: 3, answers: [
+      { answer_id: 12, question_id: 1, creation_date: 3, score: 100 },
+      { answer_id: 10, question_id: 1, creation_date: 2, score: 1, is_accepted: true },
+      { answer_id: 11, question_id: 1, creation_date: 1, score: 50 },
+      { answer_id: 13, question_id: 1, creation_date: 4, score: 2 },
+    ] });
+    expect(answers.map((answer) => answer.answer_id)).toEqual([10, 12, 11]);
+    expect(selectStackExchangeComments({ maxComments: 2, comments: [
+      { comment_id: 2, post_id: 1, creation_date: 2, score: 0, body: "Thanks" },
+      { comment_id: 1, post_id: 1, creation_date: 1, score: 2, body: "We need an alternative." },
+      { comment_id: 1, post_id: 1, creation_date: 1, score: 2, body: "duplicate" },
+    ] }).map((comment) => comment.comment_id)).toEqual([1]);
+  });
+
+  it("expands one eligible question into one canonical thread with bounded answers and comments", async () => {
+    const question = { question_id: 123, title: "What are alternatives to Jira?", body: "We need a simpler project management workflow.", link: "https://stackoverflow.com/questions/123/example", creation_date: 1_758_284_800, last_activity_date: 1_758_284_900, score: 4, answer_count: 2, comment_count: 2, accepted_answer_id: 101, tags: ["project-management"] };
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/search/advanced")) return response({ items: [question], has_more: false, quota_remaining: 299 });
+      if (url.pathname.endsWith("/questions/123/answers")) return response({ items: [
+        { answer_id: 101, question_id: 123, body: "The accepted alternative.", link: "https://stackoverflow.com/a/101", creation_date: 1_758_284_910, score: 1, is_accepted: true },
+        { answer_id: 102, question_id: 123, body: "Another workflow tool.", link: "https://stackoverflow.com/a/102", creation_date: 1_758_284_911, score: 8 },
+      ], has_more: false, quota_remaining: 298 });
+      if (url.pathname.endsWith("/questions/123/comments")) return response({ items: [
+        { comment_id: 201, post_id: 123, body: "We need an alternative.", creation_date: 1_758_284_912, score: 1 },
+        { comment_id: 202, post_id: 123, body: "Thanks", creation_date: 1_758_284_913, score: 0 },
+      ], has_more: false, quota_remaining: 297 });
+      if (url.pathname.endsWith("/answers/101;102/comments")) return response({ items: [
+        { comment_id: 301, post_id: 101, body: "This solves the workflow need.", creation_date: 1_758_284_914, score: 1 },
+        { comment_id: 302, post_id: 102, body: "noise", creation_date: 1_758_284_915, score: 0 },
+      ], has_more: false, quota_remaining: 296 });
+      throw new Error(`unexpected URL ${url}`);
+    });
+    const adapter = new StackExchangeSourceAdapter({ fetchImpl, baseUrl: "https://se.test/2.3", clock: () => new Date("2026-09-24T12:00:00.000Z") });
+    const page = await adapter.discover({ query: "Jira alternative", limit: 1, expandThreads: false, requestMetadata: { queryPlanVersion: "query_planning_v8", depthPolicyVersion: STACK_EXCHANGE_DEPTH_VERSION } });
+    expect(page.providerMetrics).toMatchObject({ stackExchangeDepthV1: { policyVersion: STACK_EXCHANGE_DEPTH_VERSION, searchRoots: 1, depthEligible: 1, depthExpanded: 1, answersLoaded: 2, answersPersisted: 2, commentsLoaded: 4, commentsPersisted: 2, depthRequests: 3 } });
+    expect(page.items.map((item) => item.externalId)).toEqual(["stackoverflow:123", "stack-exchange:answer:101", "stack-exchange:answer:102", "stack-exchange:question-comment:201", "stack-exchange:answer-comment:301"]);
+    const candidates = page.items.map((item) => adapter.normalize(item));
+    expect(new Set(candidates.map((candidate) => candidate.externalConversationId))).toEqual(new Set(["stackoverflow:123"]));
+    expect(candidates.find((candidate) => candidate.externalId.endsWith(":101"))?.metadata).toMatchObject({ providerType: "answer", accepted: true, parentQuestionId: "stackoverflow:123" });
+    expect(candidates.find((candidate) => candidate.externalId.includes("answer-comment:301"))?.metadata).toMatchObject({ messageType: "answer_comment", parentAnswerId: "stackoverflow:answer:101" });
+  });
+
+  it("skips Stack Exchange depth for roots outside an incremental refresh window", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      if (String(input).includes("/search/advanced")) return response({ items: [{ question_id: 55, title: "What are alternatives to Jira?", body: "Need a workflow tool.", link: "https://stackoverflow.com/questions/55/example", creation_date: 1_600_000_000, last_activity_date: 1_600_000_000, answer_count: 1, comment_count: 1 }], has_more: false });
+      throw new Error("depth request should have been skipped");
+    });
+    const adapter = new StackExchangeSourceAdapter({ fetchImpl, baseUrl: "https://se.test/2.3" });
+    const page = await adapter.discover({ query: "alternative", limit: 1, expandThreads: false, requestMetadata: { queryPlanVersion: "query_planning_v8", refreshWindowStart: "2026-01-01T00:00:00.000Z" } });
+    expect(page.providerMetrics).toMatchObject({ stackExchangeDepthV1: { searchRoots: 1, refreshSkips: 1, depthRequests: 0 } });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("adds one execution-time 24-month boundary only to feature-demand searches", async () => {

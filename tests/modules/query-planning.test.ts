@@ -395,6 +395,43 @@ describe("Query Planning v1", () => {
     expect(gitlab.requestMetadata).toMatchObject({ maxProjects: 2, maxIssuesPerProject: 5, maxNotesPerIssue: 4, includeDiscussions: true, maxPages: 2, providerQuery: "Jira alternative" });
   });
 
+  it("propagates Stack Exchange V2 depth metadata only for query planning v8", () => {
+    const query: QueryPlanQuery = {
+      query_id: "qp-stack-depth",
+      query_family: "alternative_search",
+      demand_surface: "alternative_search",
+      competitor_specific: false,
+      intent_type: "comparison_intent",
+      query_text: "alternatives to Jira",
+      normalized_query: "alternatives to Jira",
+      source_key: "stack-exchange",
+      priority: "medium",
+      confidence: 0.9,
+      candidate_budget: 6,
+      reason_codes: [],
+      reason_summary: "Stack Exchange depth contract",
+      concept_keys: [],
+      competitor_refs: [],
+      alternative_refs: [],
+      geo_context: null,
+      language_context: null,
+      cost_hint: "free_low",
+      metadata: { planner_version: "query_planning_v8" },
+    };
+    const sourcePlan = { source_key: "stack-exchange" } as QueryPlanSource;
+    expect(toSourceDiscoveryRequest({ sourcePlan, query, maxPages: 3 }).requestMetadata).toMatchObject({
+      queryPlanVersion: "query_planning_v8",
+      stackExchangeV2: true,
+      depthPolicyVersion: "stack_exchange_depth_v1",
+      maxDepthRootsPerPage: 3,
+      maxAnswersPerQuestion: 3,
+      maxQuestionComments: 3,
+      maxAnswerComments: 2,
+      maxDepthRequests: 12,
+    });
+    expect(toSourceDiscoveryRequest({ sourcePlan, query: { ...query, metadata: { planner_version: "query_planning_v7" } }, maxPages: 3 }).requestMetadata.stackExchangeV2).toBeUndefined();
+  });
+
   it("provides a network-free dry-run", async () => {
     const plan = await buildFixturePlan(0);
     const output = formatQueryPlanDryRun(plan);

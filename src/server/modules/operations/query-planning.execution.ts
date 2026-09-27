@@ -125,6 +125,16 @@ export function toSourceDiscoveryRequest(input: SourceQueryExecutionInput): Sour
   } else if (sourcePlan.source_key === "stack-exchange") {
     metadata.site = "stackoverflow";
     metadata.maxPages = Math.min(2, Math.max(1, input.maxPages));
+    if (plannerVersion === "query_planning_v8") {
+      metadata.stackExchangeV2 = true;
+      metadata.depthPolicyVersion = "stack_exchange_depth_v1";
+      metadata.maxDepthRootsPerPage = 3;
+      metadata.maxAnswersPerQuestion = 3;
+      metadata.maxQuestionComments = 3;
+      metadata.maxAnswerComments = 2;
+      metadata.maxDepthPages = 2;
+      metadata.maxDepthRequests = 12;
+    }
   } else if (sourcePlan.source_key === "g2" || sourcePlan.source_key === "trustpilot") {
     metadata.reviewImport = true;
     if (sourcePlan.source_key === "g2") {

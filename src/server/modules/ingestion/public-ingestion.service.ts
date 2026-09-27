@@ -295,6 +295,24 @@ export type PublicIngestionInput = {
 
 export type PublicIngestionResult = SourceExecutionResult;
 
+export function mergeProviderMetrics(target: Record<string, unknown>, incoming: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(incoming)) {
+    const existing = target[key];
+    if (existing && value && typeof existing === "object" && !Array.isArray(existing) && typeof value === "object" && !Array.isArray(value)
+      && typeof (existing as Record<string, unknown>).policyVersion === "string" && typeof (value as Record<string, unknown>).policyVersion === "string") {
+      const merged: Record<string, unknown> = { ...(existing as Record<string, unknown>) };
+      for (const [field, next] of Object.entries(value as Record<string, unknown>)) {
+        merged[field] = typeof next === "number" && typeof merged[field] === "number" ? (merged[field] as number) + next : next;
+      }
+      target[key] = merged;
+    } else if (typeof value === "number" && typeof existing === "number") {
+      target[key] = existing + value;
+    } else {
+      target[key] = value;
+    }
+  }
+}
+
 /**
  * Executes provider discovery plus the existing raw -> normalized -> canonical
  * replay for one source. This is the single canonical public-ingestion
@@ -377,7 +395,8 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
         queryRawInserted += discovery.rawInserted;
         diagnostics.push(...discovery.diagnostics);
         if (discovery.resolutions) resolutions.push(...discovery.resolutions);
-        const replay = await ingestion.replayDetailed({ rawSourceItemIds: discovery.rawSourceItemIds, normalizationVersion: `${input.sourceKey}-v1`, canonicalizationVersion: "canonical-v1", limit: 100 });
+        const normalizationVersion = input.sourceKey === "stack-exchange" && metadata.stackExchangeV2 === true ? "stack-exchange-v2" : `${input.sourceKey}-v1`;
+        const replay = await ingestion.replayDetailed({ rawSourceItemIds: discovery.rawSourceItemIds, normalizationVersion, canonicalizationVersion: "canonical-v1", limit: 100 });
         normalizedSourceItemIds.push(...replay.normalizedSourceItemIds);
         normalizedItems += replay.normalizedSourceItemIds.length;
         pagesCompleted += 1;
@@ -388,10 +407,7 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
         if (typeof metadata.rateLimitRemaining === "number") rateLimitRemaining = metadata.rateLimitRemaining;
         if (typeof discovery.estimatedCost === "number") { estimatedCost = (estimatedCost ?? 0) + discovery.estimatedCost; queryCost = (queryCost ?? 0) + discovery.estimatedCost; }
         if (typeof discovery.rateLimit?.remaining === "number") rateLimitRemaining = discovery.rateLimit.remaining;
-        if (discovery.providerMetrics) for (const [key, value] of Object.entries(discovery.providerMetrics)) {
-          if (typeof value === "number" && typeof providerMetrics[key] === "number") providerMetrics[key] = (providerMetrics[key] as number) + value;
-          else providerMetrics[key] = value;
-        }
+        if (discovery.providerMetrics) mergeProviderMetrics(providerMetrics, discovery.providerMetrics);
         cursor = discovery.nextCursor;
         if (!cursor) break;
         continuations += 1;

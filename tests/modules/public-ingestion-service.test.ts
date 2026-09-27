@@ -36,7 +36,7 @@ vi.mock("@/server/modules/ingestion/market-partition.repository", () => ({
   MarketPartitionRepository: vi.fn().mockImplementation(() => ({ ensure: ensurePartitionMock })),
 }));
 
-const { ingestPublicPartition } = await import("../../src/server/modules/ingestion/public-ingestion.service");
+const { ingestPublicPartition, mergeProviderMetrics } = await import("../../src/server/modules/ingestion/public-ingestion.service");
 const { sourceDiscoveryRequestSchema } = await import("../../src/server/providers/source/contracts");
 
 function req(overrides: { query?: string; limit?: number; requestMetadata?: Record<string, unknown> } = {}) {
@@ -208,6 +208,21 @@ describe("ingestPublicPartition (Stage 2A shared public-ingestion boundary)", ()
     expect(result.providerMetrics).toEqual({ githubDepthV1 });
     expect(result.itemsReturned).toBe(2);
     expect(result.conversationIds).toEqual(["thread-1"]);
+  });
+
+  it("merges Stack Exchange depth telemetry across pages and selects V2 replay", async () => {
+    const first = { policyVersion: "stack_exchange_depth_v1", searchRoots: 1, depthEligible: 1, depthExpanded: 1, depthRequests: 3, commentsLoaded: 2, commentsPersisted: 1, dropped: 0, deduplicated: 0, refreshSkips: 0, quotaSkips: 0, answersLoaded: 2, answersPersisted: 2 };
+    const second = { ...first, searchRoots: 1, depthRequests: 2, commentsLoaded: 1, commentsPersisted: 1, answersLoaded: 1, answersPersisted: 1 };
+    const merged: Record<string, unknown> = {};
+    mergeProviderMetrics(merged, { stackExchangeDepthV1: first });
+    mergeProviderMetrics(merged, { stackExchangeDepthV1: second });
+    expect(merged.stackExchangeDepthV1).toMatchObject({ searchRoots: 2, depthRequests: 5, commentsLoaded: 3, commentsPersisted: 2, answersLoaded: 3, answersPersisted: 3 });
+    discoverSourceMock.mockResolvedValueOnce(discoveryPage({ rawSourceItemIds: ["root"], rawInserted: 1, nextCursor: "next", providerMetrics: { stackExchangeDepthV1: first } }));
+    discoverSourceMock.mockResolvedValueOnce(discoveryPage({ rawSourceItemIds: ["answer"], rawInserted: 1, providerMetrics: { stackExchangeDepthV1: second } }));
+    replayDetailedMock.mockResolvedValue(replayResult({ normalizedSourceItemIds: ["item"], canonicalizedConversationIds: ["thread"] }));
+    const result = await ingestPublicPartition({ sourceKey: "stack-exchange", requests: [req({ requestMetadata: { stackExchangeV2: true, maxPages: 2 } })], traceId: "trace-1" });
+    expect(result.providerMetrics?.stackExchangeDepthV1).toMatchObject({ depthRequests: 5, answersPersisted: 3 });
+    expect(replayDetailedMock.mock.calls[0]?.[0]).toMatchObject({ normalizationVersion: "stack-exchange-v2" });
   });
 });
 
