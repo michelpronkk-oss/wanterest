@@ -43,5 +43,8 @@ describe("13A.3 referral and priority migration contract", () => {
     expect(migration).toContain("where id = v_referral.referrer_application_id for update");
     expect(migration).toContain("unique (waitlist_application_id)");
     expect(migration).toContain("priority-granted:' || v_priority.id::text");
+    expect(migration).toContain("status = 'invalidated'");
+    expect(migration).toContain("verified_referral_invalidated");
+    expect(migration).toContain("priority-revoked:' || v_priority.id::text || ':invalidation:'");
   });
 });

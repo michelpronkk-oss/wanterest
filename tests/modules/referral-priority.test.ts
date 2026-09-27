@@ -122,4 +122,41 @@ describe("referral and priority waitlist integration", () => {
     expect(grantEvents).toBe(1);
   });
 
+  it("keeps a failed third-referral continuation pending until retry", () => {
+    const verified = new Set(["B", "C"]);
+    let continuationFailures = 1;
+    let grantEvents = 0;
+    let priorityGranted = false;
+    const continueReferral = (referred: string) => {
+      if (continuationFailures > 0) { continuationFailures -= 1; throw new Error("continuation_failed"); }
+      verified.add(referred);
+      if (verified.size >= 3 && !priorityGranted) { priorityGranted = true; grantEvents += 1; }
+    };
+
+    expect(() => continueReferral("D")).toThrow("continuation_failed");
+    expect(verified.size).toBe(2);
+    expect(priorityGranted).toBe(false);
+    continueReferral("D");
+    continueReferral("D");
+    expect(verified.size).toBe(3);
+    expect(grantEvents).toBe(1);
+  });
+
+  it("revokes after invalidation and permits a later regrant without deleting history", () => {
+    const verified = new Set(["B", "C", "D"]);
+    let priorityGranted = true;
+    let grantEvents = 1;
+
+    verified.delete("D");
+    if (verified.size < 3) priorityGranted = false;
+    expect(verified.size).toBe(2);
+    expect(priorityGranted).toBe(false);
+
+    verified.add("E");
+    if (verified.size >= 3 && !priorityGranted) { priorityGranted = true; grantEvents += 1; }
+    expect(verified.size).toBe(3);
+    expect(priorityGranted).toBe(true);
+    expect(grantEvents).toBe(2);
+  });
+
 });
