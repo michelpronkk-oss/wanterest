@@ -135,6 +135,21 @@ export function toSourceDiscoveryRequest(input: SourceQueryExecutionInput): Sour
       metadata.maxDepthPages = 2;
       metadata.maxDepthRequests = 12;
     }
+  } else if (sourcePlan.source_key === "discourse") {
+    metadata.maxPages = Math.min(2, Math.max(1, input.maxPages));
+    if (plannerVersion === "query_planning_v8") {
+      metadata.discourseV1 = true;
+      metadata.depthPolicyVersion = "discourse_depth_v1";
+      metadata.maxDepthTopicsPerPage = 3;
+      metadata.maxPostsPerTopic = 8;
+      metadata.maxDepthPages = 2;
+      metadata.maxDepthRequests = 12;
+      const providerContext = query.metadata.provider_context;
+      if (providerContext && typeof providerContext === "object" && !Array.isArray(providerContext)) {
+        const instance = (providerContext as Record<string, unknown>).discourse_instance;
+        if (typeof instance === "string" && instance.trim()) metadata.discourseInstance = instance.trim();
+      }
+    }
   } else if (sourcePlan.source_key === "g2" || sourcePlan.source_key === "trustpilot") {
     metadata.reviewImport = true;
     if (sourcePlan.source_key === "g2") {

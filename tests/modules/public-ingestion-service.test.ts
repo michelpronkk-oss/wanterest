@@ -224,6 +224,16 @@ describe("ingestPublicPartition (Stage 2A shared public-ingestion boundary)", ()
     expect(result.providerMetrics?.stackExchangeDepthV1).toMatchObject({ depthRequests: 5, answersPersisted: 3 });
     expect(replayDetailedMock.mock.calls[0]?.[0]).toMatchObject({ normalizationVersion: "stack-exchange-v2" });
   });
+
+  it("retains Discourse Depth V1 telemetry and planner metadata through the shared seam", async () => {
+    const discourseDepthV1 = { policyVersion: "discourse_depth_v1", searchRoots: 1, depthEligible: 1, depthExpanded: 1, depthRequests: 1, postsLoaded: 4, postsPersisted: 3, dropped: 1, deduplicated: 0, refreshSkips: 0, rateLimitSkips: 0, capSkips: 0 };
+    discoverSourceMock.mockResolvedValueOnce(discoveryPage({ rawSourceItemIds: ["topic", "reply"], rawInserted: 2, providerMetrics: { discourseDepthV1 } }));
+    replayDetailedMock.mockResolvedValueOnce(replayResult({ normalizedSourceItemIds: ["topic", "reply"], canonicalizedConversationIds: ["discourse-thread"] }));
+    const result = await ingestPublicPartition({ sourceKey: "discourse", requests: [req({ requestMetadata: { queryPlanVersion: "query_planning_v8", discourseV1: true, depthPolicyVersion: "discourse_depth_v1", maxPages: 2 } })], traceId: "trace-1" });
+    expect(result.providerMetrics?.discourseDepthV1).toMatchObject({ depthRequests: 1, postsLoaded: 4, postsPersisted: 3 });
+    expect(discoverSourceMock.mock.calls[0]?.[1]).toMatchObject({ requestMetadata: { queryPlanVersion: "query_planning_v8" } });
+    expect(replayDetailedMock.mock.calls[0]?.[0]).toMatchObject({ normalizationVersion: "discourse-v1" });
+  });
 });
 
 describe("ingestPublicPartition market-partition wiring (Stage 2B, observational)", () => {

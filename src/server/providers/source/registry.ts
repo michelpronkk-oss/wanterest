@@ -12,8 +12,9 @@ import { g2SourceAdapter } from "./g2";
 import { trustpilotSourceAdapter } from "./trustpilot";
 import { youtubeSourceAdapter } from "./youtube";
 import { gitlabSourceAdapter } from "./gitlab";
+import { discourseSourceAdapter } from "./discourse";
 
-export function createSourceRegistry(adapters: SourceAdapter[] = [fixtureSourceAdapter, hackerNewsSourceAdapter, blueskySourceAdapter, redditSourceAdapter, githubSourceAdapter, xSourceAdapter, productHuntSourceAdapter, stackExchangeSourceAdapter, publicWebSourceAdapter, g2SourceAdapter, trustpilotSourceAdapter, youtubeSourceAdapter, gitlabSourceAdapter]) {
+export function createSourceRegistry(adapters: SourceAdapter[] = [fixtureSourceAdapter, hackerNewsSourceAdapter, blueskySourceAdapter, redditSourceAdapter, githubSourceAdapter, xSourceAdapter, productHuntSourceAdapter, stackExchangeSourceAdapter, publicWebSourceAdapter, g2SourceAdapter, trustpilotSourceAdapter, youtubeSourceAdapter, gitlabSourceAdapter, discourseSourceAdapter]) {
   return new Map(adapters.map((adapter) => [adapter.key, adapter]));
 }
 

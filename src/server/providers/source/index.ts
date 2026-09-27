@@ -13,6 +13,7 @@ export type { G2ProductMapping, G2ProductMappings, G2ProductResolutionTarget } f
 export { trustpilotSourceAdapter, TrustpilotSourceAdapter } from "./trustpilot";
 export { youtubeSourceAdapter, YouTubeSourceAdapter } from "./youtube";
 export { gitlabSourceAdapter, GitLabSourceAdapter } from "./gitlab";
+export { discourseSourceAdapter, DiscourseSourceAdapter, normalizeDiscourseInstance, cleanDiscourseContent, evaluateDiscourseDepth, selectDiscoursePosts, DISCOURSE_DEPTH_VERSION } from "./discourse";
 export { sourceRuntimeConfigurations, getSourceRuntimeConfiguration } from "./runtime";
 export { normalizeReviewRecord, stableReviewExternalId } from "./reviews";
 export {

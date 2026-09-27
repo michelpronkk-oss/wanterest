@@ -112,6 +112,14 @@ describe("deriveMarketPartitionIdentity", () => {
     expect(a.eligible && b.eligible && a.partitionKey !== b.partitionKey).toBe(true);
   });
 
+  it("keeps Discourse instances in the public partition identity", () => {
+    const request = (instance: string) => sourceDiscoveryRequestSchema.parse({ query: "planning workflow", limit: 6, requestMetadata: { discourseInstance: instance, depthPolicyVersion: "discourse_depth_v1", maxPostsPerTopic: 8 } });
+    const a = deriveMarketPartitionIdentity({ sourceKey: "discourse", request: request("https://one.example.test") });
+    const b = deriveMarketPartitionIdentity({ sourceKey: "discourse", request: request("https://two.example.test") });
+    expect(a.eligible && b.eligible && a.partitionKey !== b.partitionKey).toBe(true);
+    if (a.eligible) expect(a.retrievalSpec.params).toEqual({ discourseInstance: "https://one.example.test" });
+  });
+
   it("changes when the executed provider expression changes", () => {
     const a = deriveMarketPartitionIdentity({ sourceKey: "x", request: xRequest({ providerQuery: "Jira alternative -is:retweet" }) });
     const b = deriveMarketPartitionIdentity({ sourceKey: "x", request: xRequest({ providerQuery: "Linear alternative -is:retweet" }) });
@@ -162,7 +170,7 @@ describe("deriveMarketPartitionIdentity", () => {
   });
 
   it("marks every currently eligible source as eligible", () => {
-    for (const sourceKey of ["x", "github", "reddit", "bluesky", "stack-exchange", "youtube", "gitlab", "product-hunt"]) {
+    for (const sourceKey of ["x", "github", "reddit", "bluesky", "stack-exchange", "discourse", "youtube", "gitlab", "product-hunt"]) {
       const identity = deriveMarketPartitionIdentity({ sourceKey, request: xRequest() });
       expect(identity.eligible, `${sourceKey} should be eligible`).toBe(true);
     }

@@ -39,7 +39,7 @@ export class SourceControlService {
 }
 
 export type SourceAvailability = { sourceKey: string; configured: boolean; state: SourceControlState; reason?: string };
-const expansionAvailability: SourceAvailability[] = ["product-hunt", "stack-exchange", "public-web", "g2", "trustpilot", "youtube", "gitlab"].map((sourceKey) => {
+const expansionAvailability: SourceAvailability[] = ["product-hunt", "stack-exchange", "public-web", "g2", "trustpilot", "youtube", "gitlab", "discourse"].map((sourceKey) => {
   const runtime = getSourceRuntimeConfiguration(sourceKey);
   return { sourceKey, configured: runtime.configured, state: runtime.configured ? "enabled" : "disabled", reason: runtime.reason };
 });

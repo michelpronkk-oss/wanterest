@@ -58,6 +58,7 @@ const PARAM_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
   reddit: ["subreddit", "community", "sort", "time", "excludeNsfw", "commentSort"],
   bluesky: ["lang", "langs", "sort", "tag"],
   "stack-exchange": ["site", "sites"],
+  discourse: ["discourseInstance", "discourseInstances"],
   youtube: ["includeReplies"],
   gitlab: ["includeDiscussions"],
   "product-hunt": ["includeComments"],

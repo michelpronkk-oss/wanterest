@@ -66,7 +66,7 @@ async function buildPlan(index: number, sourceStates = allHealthy(), rotationSee
 
 describe("Source Routing v1", () => {
   it("exposes centralized provider-neutral capabilities for every initial source", () => {
-    expect(Object.keys(sourceRoutingCapabilityProfiles).sort()).toEqual(["bluesky", "github", "gitlab", "hacker-news", "reddit", "x", "fixture", "product-hunt", "stack-exchange", "public-web", "g2", "trustpilot", "youtube"].sort());
+    expect(Object.keys(sourceRoutingCapabilityProfiles).sort()).toEqual(["bluesky", "github", "gitlab", "hacker-news", "reddit", "x", "fixture", "product-hunt", "stack-exchange", "discourse", "public-web", "g2", "trustpilot", "youtube"].sort());
     for (const profile of Object.values(sourceRoutingCapabilityProfiles)) {
       expect(profile.cost_class).toBeTruthy();
       expect(profile.supports_problem_discussion).toBeGreaterThanOrEqual(0);

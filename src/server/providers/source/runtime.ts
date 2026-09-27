@@ -32,6 +32,10 @@ export function getSourceRuntimeConfiguration(sourceKey: string): SourceRuntimeC
       return present(process.env.GITLAB_TOKEN)
         ? { sourceKey, configured: true, reason: "token_configured" }
         : { sourceKey, configured: false, reason: "missing_credentials" };
+    case "discourse":
+      return present(process.env.DISCOURSE_BASE_URL)
+        ? { sourceKey, configured: true, reason: "public_instance_configured" }
+        : { sourceKey, configured: false, reason: "public_instance_missing" };
     default:
       return { sourceKey, configured: true, reason: "provider_available" };
   }
@@ -51,4 +55,5 @@ export const sourceRuntimeConfigurations = [
   "trustpilot",
   "youtube",
   "gitlab",
+  "discourse",
 ].map(getSourceRuntimeConfiguration);

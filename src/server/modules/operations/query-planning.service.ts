@@ -95,6 +95,7 @@ const sourceFamilyPolicy: Record<string, { allowed: QueryFamily[]; maxQueries?: 
   bluesky: { allowed: ["pain", "recommendation", "switching", "comparison", "category_discovery"], maxQueries: 2 },
   "product-hunt": { allowed: ["recommendation", "alternative_search", "comparison", "feature_requirement", "pain", "category_discovery"], maxQueries: 3 },
   "stack-exchange": { allowed: ["pain", "feature_requirement", "jtbd", "switching", "alternative_search", "comparison", "objection"], maxQueries: 4 },
+  discourse: { allowed: ["pain", "feature_requirement", "jtbd", "switching", "alternative_search", "comparison", "recommendation", "objection", "desired_outcome"], maxQueries: 3 },
   "public-web": { allowed: ["switching", "alternative_search", "recommendation", "comparison", "pain", "feature_requirement", "objection", "desired_outcome", "category_discovery"], maxQueries: 2 },
   g2: { allowed: ["alternative_search", "comparison", "recommendation", "feature_requirement", "pain", "objection"], maxQueries: 3 },
   trustpilot: { allowed: ["recommendation", "alternative_search", "comparison", "pain", "objection", "feature_requirement"], maxQueries: 2 },

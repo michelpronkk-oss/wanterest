@@ -21,8 +21,8 @@ const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, v
 const round = (value: number) => Math.round(clamp(value) * 1000) / 1000;
 
 const businessTypeBase: Record<string, Record<string, number>> = {
-  b2b_saas: { "hacker-news": 0.68, github: 0.58, gitlab: 0.5, reddit: 0.84, x: 0.72, bluesky: 0.45, "stack-exchange": 0.42, "product-hunt": 0.5, g2: 0.62, trustpilot: 0.42, youtube: 0.58, "public-web": 0.3 },
-  developer_tool: { "hacker-news": 0.88, github: 0.94, gitlab: 0.9, reddit: 0.78, x: 0.74, bluesky: 0.38, "stack-exchange": 0.88, "product-hunt": 0.4, g2: 0.48, trustpilot: 0.2, youtube: 0.62, "public-web": 0.28 },
+  b2b_saas: { "hacker-news": 0.68, github: 0.58, gitlab: 0.5, reddit: 0.84, x: 0.72, bluesky: 0.45, "stack-exchange": 0.42, discourse: 0.58, "product-hunt": 0.5, g2: 0.62, trustpilot: 0.42, youtube: 0.58, "public-web": 0.3 },
+  developer_tool: { "hacker-news": 0.88, github: 0.94, gitlab: 0.9, reddit: 0.78, x: 0.74, bluesky: 0.38, "stack-exchange": 0.88, discourse: 0.84, "product-hunt": 0.4, g2: 0.48, trustpilot: 0.2, youtube: 0.62, "public-web": 0.28 },
   consumer_software: { "hacker-news": 0.2, github: 0.12, gitlab: 0.08, reddit: 0.86, x: 0.82, bluesky: 0.55, "stack-exchange": 0.12, "product-hunt": 0.7, g2: 0.22, trustpilot: 0.68, youtube: 0.78, "public-web": 0.32 },
   ecommerce: { "hacker-news": 0.1, github: 0.05, gitlab: 0.03, reddit: 0.9, x: 0.82, bluesky: 0.45, "stack-exchange": 0.08, "product-hunt": 0.48, g2: 0.18, trustpilot: 0.82, youtube: 0.65, "public-web": 0.35 },
   marketplace: { "hacker-news": 0.45, github: 0.3, gitlab: 0.22, reddit: 0.88, x: 0.84, bluesky: 0.5, "stack-exchange": 0.15, "product-hunt": 0.55, g2: 0.3, trustpilot: 0.7, youtube: 0.68, "public-web": 0.38 },
@@ -74,6 +74,7 @@ function initialScore(sourceKey: string, identity: ReturnType<typeof effectiveId
     if (sourceKey === "stack-exchange") score += 0.05;
     if (sourceKey === "g2") score += 0.04;
     if (sourceKey === "youtube") score += 0.03;
+    if (sourceKey === "discourse") score += 0.04;
   }
   if (identity.deliveryModel === "physical_product") {
     if (sourceKey === "reddit" || sourceKey === "x") score += 0.08;
@@ -84,10 +85,12 @@ function initialScore(sourceKey: string, identity: ReturnType<typeof effectiveId
     if (sourceKey === "github") score += 0.2;
     if (sourceKey === "hacker-news") score += 0.15;
     if (sourceKey === "stack-exchange") score += 0.18;
+    if (sourceKey === "discourse") score += 0.1;
   } else if (identity.technicalOrientation === "medium") {
     if (sourceKey === "github") score += 0.1;
     if (sourceKey === "hacker-news") score += 0.05;
     if (sourceKey === "stack-exchange") score += 0.08;
+    if (sourceKey === "discourse") score += 0.05;
   } else if (identity.technicalOrientation === "low") {
     if (sourceKey === "github") score -= 0.12;
     if (sourceKey === "hacker-news") score -= 0.06;
@@ -97,7 +100,7 @@ function initialScore(sourceKey: string, identity: ReturnType<typeof effectiveId
   const profile = input.demandProfile;
   const technicalAudience = Boolean(profile && hasStructuredTerm([...profile.target_customer_types, ...profile.buyer_roles, ...profile.end_user_types], ["developer", "engineer", "technical", "api", "software"]));
   const consumerAudience = identity.businessType === "consumer_software" || identity.businessModel === "b2c" || Boolean(profile && hasStructuredTerm([...profile.target_customer_types, ...profile.end_user_types], ["consumer", "individual", "household"]));
-  if (technicalAudience && (sourceKey === "github" || sourceKey === "gitlab" || sourceKey === "hacker-news" || sourceKey === "stack-exchange")) score += sourceKey === "github" || sourceKey === "gitlab" ? 0.08 : sourceKey === "stack-exchange" ? 0.08 : 0.05;
+  if (technicalAudience && (sourceKey === "github" || sourceKey === "gitlab" || sourceKey === "hacker-news" || sourceKey === "stack-exchange" || sourceKey === "discourse")) score += sourceKey === "github" || sourceKey === "gitlab" ? 0.08 : sourceKey === "stack-exchange" ? 0.08 : sourceKey === "discourse" ? 0.06 : 0.05;
   if (consumerAudience && (sourceKey === "reddit" || sourceKey === "x" || sourceKey === "product-hunt" || sourceKey === "trustpilot" || sourceKey === "youtube")) score += 0.04;
 
   const intents = new Set(profile?.buying_intents.map((intent) => intent.intent_type) ?? []);
@@ -152,7 +155,7 @@ function initialScore(sourceKey: string, identity: ReturnType<typeof effectiveId
 }
 
 function availability(state: SourceRoutingSourceState | undefined): { availabilityStatus: SourceRoutingAvailabilityStatus; healthStatus: SourceRoutingRoute["health_status"] } {
-  const optionalUnavailable = ["trustpilot", "youtube", "gitlab"].includes(state?.sourceKey ?? "");
+  const optionalUnavailable = ["trustpilot", "youtube", "gitlab", "discourse"].includes(state?.sourceKey ?? "");
   if (!state || !state.configured) return { availabilityStatus: optionalUnavailable ? "unavailable" : "not_configured", healthStatus: optionalUnavailable ? "unknown" : state?.healthStatus ?? "unknown" };
   const controlState = state.controlState.toLowerCase();
   if (controlState === "paused") return { availabilityStatus: "paused", healthStatus: state.healthStatus ?? "unknown" };
@@ -167,7 +170,7 @@ function reasonCodes(sourceKey: string, score: number, identity: ReturnType<type
   const profile = input.demandProfile;
   const technical = identity.technicalOrientation === "high" || identity.technicalOrientation === "medium" || Boolean(profile && hasStructuredTerm([...profile.target_customer_types, ...profile.buyer_roles, ...profile.end_user_types], ["developer", "engineer", "technical", "api", "software"]));
   if (technical && (sourceKey === "github" || sourceKey === "gitlab")) codes.push("DEVELOPER_AUDIENCE_MATCH");
-  if (technical && (sourceKey === "github" || sourceKey === "gitlab" || sourceKey === "hacker-news" || sourceKey === "stack-exchange")) codes.push("TECHNICAL_DISCUSSION_MATCH");
+  if (technical && (sourceKey === "github" || sourceKey === "gitlab" || sourceKey === "hacker-news" || sourceKey === "stack-exchange" || sourceKey === "discourse")) codes.push("TECHNICAL_DISCUSSION_MATCH");
   const intents = new Set(profile?.buying_intents.map((intent) => intent.intent_type) ?? []);
   if (intents.has("switching_intent") || intents.has("alternative_search") || intents.has("renewal_reconsideration")) codes.push("SWITCHING_INTENT_MATCH");
   if (intents.has("recommendation_request")) codes.push("RECOMMENDATION_INTENT_MATCH");
@@ -193,12 +196,12 @@ function reasonSummary(codes: SourceRoutingReasonCode[]): string {
 
 function defaultCap(sourceKey: string, scanMode: SourceRoutingScanMode): { maxCandidates: number; maxPages: number } {
   if (scanMode === "onboarding" || scanMode === "baseline") return { maxCandidates: sourceKey === "x" ? 10 : ["product-hunt", "g2", "trustpilot", "youtube"].includes(sourceKey) ? 4 : 5, maxPages: 1 };
-  return { maxCandidates: sourceKey === "x" ? 25 : ["product-hunt", "g2", "trustpilot", "youtube", "gitlab"].includes(sourceKey) ? 10 : 25, maxPages: sourceKey === "x" || sourceKey === "product-hunt" || sourceKey === "g2" || sourceKey === "trustpilot" || sourceKey === "youtube" || sourceKey === "gitlab" ? 1 : 3 };
+  return { maxCandidates: sourceKey === "x" ? 25 : ["product-hunt", "g2", "trustpilot", "youtube", "gitlab"].includes(sourceKey) ? 10 : 25, maxPages: sourceKey === "x" || sourceKey === "product-hunt" || sourceKey === "g2" || sourceKey === "trustpilot" || sourceKey === "youtube" || sourceKey === "gitlab" || sourceKey === "discourse" ? 2 : 3 };
 }
 
 function minimumCandidateBudget(route: SourceRoutingRoute, scanMode: SourceRoutingScanMode): number {
   if (scanMode === "manual" || scanMode === "manual_refresh" || scanMode === "manual_deep") {
-    return ({ x: 6, github: 8, gitlab: 8, youtube: 6, "hacker-news": 4, bluesky: 6, "stack-exchange": 6, "product-hunt": 4, g2: 4, trustpilot: 4, "public-web": 2 } as Record<string, number>)[route.source_key] ?? 1;
+    return ({ x: 6, github: 8, gitlab: 8, youtube: 6, "hacker-news": 4, bluesky: 6, "stack-exchange": 6, discourse: 6, "product-hunt": 4, g2: 4, trustpilot: 4, "public-web": 2 } as Record<string, number>)[route.source_key] ?? 1;
   }
   if (scanMode !== "onboarding" && scanMode !== "baseline") return 1;
   return route.source_key === "x" ? 10 : 5;
