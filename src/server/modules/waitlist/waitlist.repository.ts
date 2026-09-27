@@ -59,6 +59,7 @@ export type WaitlistRepository = {
     utmContent: string | null;
     utmTerm: string | null;
     referrerCategory: string | null;
+    referralCode?: string | null;
     marketingConsent: boolean;
   }): Promise<WaitlistSubmissionRecord>;
   verify(verificationTokenHash: string): Promise<WaitlistApplication>;
@@ -110,17 +111,17 @@ function unwrap<T>(data: T | null, error: { message?: string } | null): T {
 export function createSupabaseWaitlistRepository(client: SupabaseClient = serviceClient()): WaitlistRepository {
   return {
     async submit(input) {
-      const { data, error } = await client.rpc("submit_waitlist_application", {
+      const { data, error } = await client.rpc("submit_waitlist_application_with_referral", {
         p_email: input.email, p_normalized_email: input.normalizedEmail, p_first_name: input.firstName, p_company_name: input.companyName,
         p_company_website: input.companyWebsite, p_role_title: input.roleTitle, p_use_case: input.useCase, p_verification_token_hash: input.verificationTokenHash,
         p_verification_expires_at: input.verificationExpiresAt, p_status_token_hash: input.statusTokenHash, p_source: input.source, p_utm_source: input.utmSource,
         p_utm_medium: input.utmMedium, p_utm_campaign: input.utmCampaign, p_utm_content: input.utmContent, p_utm_term: input.utmTerm, p_referrer_category: input.referrerCategory,
-        p_marketing_consent: input.marketingConsent,
+        p_marketing_consent: input.marketingConsent, p_referral_code: input.referralCode ?? null,
       });
       return application(unwrap(data as RawWaitlistApplication | null, error));
     },
     async verify(verificationTokenHash) {
-      const { data, error } = await client.rpc("verify_waitlist_application", { p_verification_token_hash: verificationTokenHash });
+      const { data, error } = await client.rpc("verify_waitlist_application_with_referral", { p_verification_token_hash: verificationTokenHash });
       return application(unwrap(data as RawWaitlistApplication | null, error));
     },
     async getByStatusToken(statusTokenHash) {

@@ -6,6 +6,8 @@ import { AppError } from "@/server/lib/errors";
 import { enforceRateLimit, type RateLimitStore } from "@/server/modules/operations/rate-limit";
 import { getEmailProvider, type EmailProvider } from "@/server/providers/email";
 import { SITE_ORIGIN } from "@/shared/config/site";
+import { priorityReadModel } from "./referral.policy";
+import { createSupabaseWaitlistReferralRepository, type WaitlistReferralRepository } from "./referral.repository";
 import { waitlistApplicationInputSchema, waitlistStatusTokenSchema, waitlistVerificationTokenSchema } from "./waitlist.schemas";
 import { createSupabaseWaitlistRepository, type WaitlistApplication, type WaitlistRepository } from "./waitlist.repository";
 
@@ -16,6 +18,7 @@ export type WaitlistServiceDeps = {
   repository?: WaitlistRepository;
   emailProvider?: EmailProvider;
   rateLimitStore?: RateLimitStore;
+  referralRepository?: WaitlistReferralRepository;
   now?: () => Date;
   randomToken?: () => string;
 };
@@ -37,6 +40,7 @@ export class WaitlistService {
   private readonly repository: WaitlistRepository;
   private readonly emailProvider: EmailProvider;
   private readonly rateLimitStore?: RateLimitStore;
+  private readonly referralRepository?: WaitlistReferralRepository;
   private readonly now: () => Date;
   private readonly randomToken: () => string;
 
@@ -44,6 +48,7 @@ export class WaitlistService {
     this.repository = deps.repository ?? createSupabaseWaitlistRepository();
     this.emailProvider = deps.emailProvider ?? getEmailProvider();
     this.rateLimitStore = deps.rateLimitStore;
+    this.referralRepository = deps.referralRepository ?? (deps.repository ? undefined : createSupabaseWaitlistReferralRepository());
     this.now = deps.now ?? (() => new Date());
     this.randomToken = deps.randomToken ?? newToken;
   }
@@ -68,6 +73,7 @@ export class WaitlistService {
       email: input.email.trim(), normalizedEmail, firstName: input.firstName.trim(), companyName: input.companyName.trim(), companyWebsite: optional(input.companyWebsite), roleTitle: optional(input.roleTitle), useCase: input.useCase.trim(),
       verificationTokenHash: tokenHash(verificationToken), verificationExpiresAt: new Date(this.now().getTime() + VERIFICATION_TTL_MS).toISOString(), statusTokenHash: tokenHash(statusToken),
       source: optional(input.source), utmSource: optional(input.utmSource), utmMedium: optional(input.utmMedium), utmCampaign: optional(input.utmCampaign), utmContent: optional(input.utmContent), utmTerm: optional(input.utmTerm), referrerCategory: optional(input.referrerCategory), marketingConsent: input.marketingConsent,
+      referralCode: optional(input.referralCode),
     });
     if (submitted.emailVerificationStatus === "verified") {
       this.log("duplicate_idempotent");
@@ -100,6 +106,19 @@ export class WaitlistService {
     return this.repository.getByStatusToken(tokenHash(parsed.data));
   }
 
+  async statusWithReferral(token: string, requestOrigin = SITE_ORIGIN): Promise<{ application: WaitlistApplication; referral: ReturnType<typeof priorityReadModel> | null }> {
+    const application = await this.status(token);
+    if (!this.referralRepository || application.emailVerificationStatus !== "verified") return { application, referral: null };
+    try {
+      const raw = await this.referralRepository.getStatus(application.id);
+      const shareUrl = raw.referralCode ? new URL(`/r/${encodeURIComponent(raw.referralCode)}`, requestOrigin).toString() : null;
+      return { application, referral: priorityReadModel(raw, shareUrl) };
+    } catch {
+      this.log("referral_status_unavailable");
+      return { application, referral: null };
+    }
+  }
+
   async withdraw(token: string): Promise<WaitlistApplication> {
     const parsed = waitlistStatusTokenSchema.safeParse(token);
     if (!parsed.success) throw new AppError("NOT_FOUND", "Waitlist status is unavailable.");
@@ -110,6 +129,16 @@ export class WaitlistService {
 
   async listForReview(filter: Parameters<WaitlistRepository["listForReview"]>[0]) { return this.repository.listForReview(filter); }
   async transitionForReview(input: Parameters<WaitlistRepository["transitionForReview"]>[0]) { return this.repository.transitionForReview(input); }
+
+  async invalidateReferral(referralId: string, reason: string, actorUserId?: string | null): Promise<void> {
+    if (!this.referralRepository) throw new AppError("CONFLICT", "Referral administration is unavailable.");
+    await this.referralRepository.invalidate(referralId, reason, actorUserId);
+  }
+
+  async revokePriorityAccess(applicationId: string, reason: string, actorUserId?: string | null): Promise<void> {
+    if (!this.referralRepository) throw new AppError("CONFLICT", "Priority administration is unavailable.");
+    await this.referralRepository.revokePriority(applicationId, reason, actorUserId);
+  }
 
   private log(event: string) { console.info("[waitlist]", { event }); }
 }

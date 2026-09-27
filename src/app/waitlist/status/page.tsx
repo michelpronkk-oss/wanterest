@@ -10,8 +10,9 @@ export default async function WaitlistStatusPage() {
   const cookieStore = await cookies();
   const token = cookieStore.get(WAITLIST_STATUS_COOKIE)?.value ?? "";
   if (!token) return <StatusUnavailable />;
-  const application = await loadStatus(token);
-  if (!application) return <StatusUnavailable />;
+  const status = await loadStatus(token);
+  if (!status) return <StatusUnavailable />;
+  const { application, referral } = status;
   return (
     <main className="waitlist-status-page">
       <div className="waitlist-status-card">
@@ -24,15 +25,21 @@ export default async function WaitlistStatusPage() {
           <div><dt>Submitted</dt><dd>{new Date(application.createdAt).toLocaleDateString("en", { dateStyle: "medium", timeZone: "UTC" })}</dd></div>
           <div><dt>Company</dt><dd>{application.companyName}</dd></div>
         </dl>
+        {referral ? <section aria-label="Referral progress">
+          <div className="marketing-content-eyebrow">PRIORITY ACCESS</div>
+          <p className="waitlist-status-intro">{referral.priorityUnlocked ? "Priority Access unlocked." : `${referral.verifiedCount} of ${referral.threshold} verified referrals`}</p>
+          {!referral.priorityUnlocked ? <p className="waitlist-status-footnote">{referral.remainingCount} more verified referral{referral.remainingCount === 1 ? "" : "s"} to unlock Priority Access.</p> : null}
+          {referral.shareUrl ? <p className="waitlist-status-footnote"><a href={referral.shareUrl}>{referral.shareUrl}</a></p> : null}
+        </section> : null}
         {application.status !== "withdrawn" && application.status !== "declined" ? <WaitlistWithdrawButton /> : null}
-        <p className="waitlist-status-footnote">Early Access numbers are historical identities, not permissions. Founding 25 and Early 100 are separate future cohorts.</p>
+        <p className="waitlist-status-footnote">Early Access numbers are historical identities, not permissions. Priority Access is a waitlist state, not a guaranteed invite, product access, cohort, or billing benefit.</p>
       </div>
     </main>
   );
 }
 
 async function loadStatus(token: string) {
-  try { return await createWaitlistService().status(token); } catch { return null; }
+  try { return await createWaitlistService().statusWithReferral(token); } catch { return null; }
 }
 
 function formatStatus(status: string) { return status.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()); }

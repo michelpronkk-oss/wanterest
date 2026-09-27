@@ -21,6 +21,7 @@ export function WaitlistForm() {
       const response = await fetch("/api/waitlist", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
         firstName: form.get("firstName"), email: form.get("email"), companyName: form.get("companyName"), companyWebsite: form.get("companyWebsite"), roleTitle: form.get("roleTitle"), useCase: form.get("useCase"), marketingConsent,
         honeypot: form.get("website"), source: value("source") || "waitlist", utmSource: value("utm_source"), utmMedium: value("utm_medium"), utmCampaign: value("utm_campaign"), utmContent: value("utm_content"), utmTerm: value("utm_term"), referrerCategory: document.referrer ? "external" : "direct",
+        referralCode: value("ref"),
       }) });
       if (!response.ok) throw new Error("submit_failed");
       setState("success");

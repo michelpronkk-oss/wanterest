@@ -30,11 +30,13 @@ export const waitlistApplicationInputSchema = z.object({
   utmContent: boundedOptionalText(160),
   utmTerm: boundedOptionalText(160),
   referrerCategory: boundedOptionalText(120),
+  referralCode: z.string().regex(/^[A-Za-z0-9_-]{32,80}$/).optional().or(z.literal("")),
 }).strict();
 
 export const waitlistStatusTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{40,160}$/);
 export const waitlistVerificationTokenSchema = waitlistStatusTokenSchema;
 export const waitlistApplicationIdSchema = z.string().uuid();
+export const waitlistReferralCodeSchema = z.string().regex(/^[A-Za-z0-9_-]{32,80}$/);
 
 export const waitlistReviewListSchema = z.object({
   status: z.enum(waitlistStatuses).optional(),
