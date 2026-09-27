@@ -4681,3 +4681,73 @@ change is part of this decision.
 `candidate_selection_v3`, `maxEvaluations=15`, `signal_qualification_v1_7`, qualification thresholds,
 `semantic_reasoning_router_v2`, Evidence Fidelity, semantic output/retry persistence, signal lifecycle, clusters,
 all existing adapter semantics, and global scan budgets remain unchanged.
+
+### 12A.3E — DEV/Forem Public Articles (`devto_public_v1`) — APPROVED ARCHITECTURE
+
+**Coverage decision.** The current registry already covers developer issues and discussions (GitHub,
+Stack Exchange, and the credential-gated GitLab adapter), short-form public conversation (Bluesky, X,
+Reddit), launch/review surfaces, Hacker News, and curated Discourse. The missing low-cost surface is
+public practitioner writing and article discussion: a useful article may contain a workflow complaint,
+tool-selection comparison, migration experience, or feature requirement that does not appear as an issue
+or short post. DEV/Forem is selected for this phase because its public keyword search and public threaded
+comment endpoint provide that surface without a new credential, paid API, or scraper. The initial runtime
+target is the public `https://dev.to` instance. Generic Forem-instance discovery is not included.
+
+**Candidate decisions.** GitLab is deferred because the existing bounded project/issue/discussion adapter
+requires `GITLAB_TOKEN`; no new production credential is authorized. Reddit is deferred because the current
+OAuth adapter requires `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT`, and this phase
+does not add credentials or policy workarounds. Bluesky is retained as an existing public source and is not
+counted as a new 3E implementation. DEV/Forem is selected. A separate fifth source is not assessed.
+
+**Discovery and depth.** DEV search uses `GET /api/articles/search?q=...` with a literal planner query,
+at most two pages, and at most the existing per-query candidate limit. Search results are public article
+records; the adapter does not crawl feeds, tags, authors, or linked articles. When the normal request
+metadata opts into `devto_depth_v1`, only articles with a positive provider comment count and deterministic
+demand-bearing title/description/body context are eligible for one bounded `GET /api/comments?a_id=...`
+request. At most four articles per search page are expanded, at most eight comments are retained per
+article, and the adapter makes no more than one comment request per eligible article. The existing source
+and global query/candidate/evaluation budgets remain authoritative.
+
+**Noise and eligibility.** Article search is retrieval, not qualification. The adapter preserves article
+title, description, tags, body when present, author, provider timestamps, and provider counts so downstream
+candidate selection and Evidence Fidelity can distinguish practitioner demand from tutorials, generic SEO,
+vendor launch content, or self-promotion. It does not broaden matching or promote a comment to an independent
+conversation. Deterministic depth eligibility requires non-empty demand/workflow/alternative/recommendation/
+feature/migration language in the article's searchable context; comments are retained as context only.
+
+**Identity and provenance.** A public DEV article is keyed as
+`devto:<normalized-instance>:article:<article-id>`. A comment is keyed as
+`devto:<normalized-instance>:comment:<id-code>` and carries the article key as
+`externalConversationId`. The normalized instance is mandatory, numeric article IDs are never used without
+the instance, and mutable usernames are not author identity when a provider user ID is available. Each
+message retains provider type, author identity, parent comment ID when supplied, source URL, and its own
+provider timestamp. One article plus comments remains one canonical public conversation.
+
+**Temporal, dedupe, and refresh semantics.** `published_at`, `created_at`, `edited_at`, and
+`last_comment_at` remain provider timestamps; capture time is stored separately and cannot make an old
+article current. Search pagination uses a stable `page:<n>` cursor. Repeated queries dedupe article and
+comment envelopes by the instance-scoped identities, and refresh windows are applied locally to article and
+comment timestamps. The adapter never fetches a second page or comment tree beyond the explicit bounds.
+
+**Source Health and telemetry.** Requests use the existing public HTTP adapter path with a bounded timeout,
+one retry for retryable failures, `Retry-After`/rate-limit metadata, and isolated source failure behavior.
+The adapter emits nested `devToV1` metrics: `searchResults`, `articlesAccepted`, `articlesDropped`,
+`depthEligible`, `depthExpanded`, `depthRequests`, `commentsLoaded`, `commentsPersisted`, `dropped`,
+`deduplicated`, `refreshSkips`, and `rateLimitSkips`. The existing ingestion path persists these metrics
+without a schema change. `query.metadata.planner_version` is copied to
+`requestMetadata.queryPlanVersion`; provider-specific syntax remains in the execution seam.
+
+**Tenancy and validation.** Raw provider payloads, normalized public items, canonical conversations, and
+provenance remain globally reusable. Product matches, evaluations, qualification, ranking, signals, and
+interpretation remain workspace-private. No migration, RLS change, environment change, production retrieval,
+or production scan is part of this decision. Fixtures cover common-word collisions, Linear-as-a-word,
+alternative-method wording, technical/debugging noise, vendor/launch content, repost-like duplicates,
+genuine workflow pain, feature requirements, switching/comparison discussion, historical timestamps,
+multiple authors, nested comments, repeated-query dedupe, and cross-product public reuse. Focused adapter,
+identity, provenance, planner-propagation, rate-limit, refresh, telemetry, ingestion, candidate, and
+Evidence Fidelity tests are required before this phase is ready for production validation.
+
+**Frozen.** `query_planning_v8`, Retrieval Precision V1, Source Health V1, `candidate_selection_v3`,
+`maxEvaluations=15`, `signal_qualification_v1_7`, qualification thresholds, semantic reasoning and
+Evidence Fidelity, all existing source/depth semantics, lifecycle and cluster behavior, public/private
+boundaries, and global scan budgets remain unchanged.
