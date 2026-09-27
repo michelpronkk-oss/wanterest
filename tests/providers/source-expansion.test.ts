@@ -58,8 +58,11 @@ describe("Source Expansion v1 adapters", () => {
 
   it("applies deterministic Stack Exchange depth eligibility and bounded message selection", () => {
     expect(evaluateStackExchangeDepth({ title: "Linear regression with alternative method", answerCount: 2, commentCount: 2 })).toMatchObject({ eligible: false });
+    expect(evaluateStackExchangeDepth({ title: "What is an alternative method for this calculation?", answerCount: 2, commentCount: 2 })).toMatchObject({ eligible: false });
     expect(evaluateStackExchangeDepth({ title: "How do I install a Jira plugin?", body: "Plugin exception and stack trace", answerCount: 2, commentCount: 2 })).toMatchObject({ eligible: false });
     expect(evaluateStackExchangeDepth({ title: "What are alternatives to Jira?", body: "We need a simpler project management workflow.", answerCount: 2, commentCount: 2, tags: ["project-management"] })).toMatchObject({ eligible: true });
+    expect(evaluateStackExchangeDepth({ title: "Historical project management recommendation", body: "Which workflow tool would you recommend?", answerCount: 1, commentCount: 1, tags: ["project-management"] })).toMatchObject({ eligible: true });
+    expect(evaluateStackExchangeDepth({ title: "What tool should our bot use?", body: "We need an automated workflow.", answerCount: 2, commentCount: 2, ownerType: "bot" })).toMatchObject({ eligible: false });
     const answers = selectStackExchangeAnswers({ acceptedAnswerId: 10, maxAnswers: 3, answers: [
       { answer_id: 12, question_id: 1, creation_date: 3, score: 100 },
       { answer_id: 10, question_id: 1, creation_date: 2, score: 1, is_accepted: true },
