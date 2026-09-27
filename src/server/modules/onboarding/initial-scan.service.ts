@@ -43,7 +43,7 @@ import { FixtureConversationAnalysisEngine, FixtureProductMatchingEngine } from 
 import { ensureEngineVersion } from "@/server/modules/observability/engine.repository";
 import { getTraceId } from "@/server/lib/request-context";
 import { buildSourceRoutingPlan, selectExecutableSourceRoutes, type SourceRoutingPlan, type SourceRoutingHealthStatus } from "@/server/modules/operations/source-routing.index";
-import { buildQueryPlanV8, githubPainRetrievalDiagnostics, toSourceDiscoveryRequest, type GithubPainQueryCompilation, type QueryPlan, type QueryPlanningInput } from "@/server/modules/operations/query-planning.index";
+import { buildQueryPlanV8, githubPainRetrievalDiagnostics, toSourceDiscoveryRequestsForPlan, type GithubPainQueryCompilation, type QueryPlan, type QueryPlanningInput } from "@/server/modules/operations/query-planning.index";
 import { hnAlgoliaSearchEnabled } from "@/server/modules/ingestion/market-partition-refresh.policy";
 import { supplyPartitionSeedingEnabled } from "@/server/modules/operations/supply-partition-seeding.policy";
 import { seedSupplyPartitionsForScan } from "@/server/modules/operations/supply-partition-seeding.service";
@@ -58,6 +58,7 @@ import { aggregateSourceHealthV1, sourceHealthV1Schema, type SourceHealthPlanned
 import { sourceDiscoveryRequestSchema, type SourceDiscoveryRequest } from "@/server/providers/source/contracts";
 import { g2MappingsFromSourceFilters, type G2ProductMapping, type G2ProductResolutionTarget } from "@/server/providers/source/g2/product-resolution";
 import { getSourceRuntimeConfiguration } from "@/server/providers/source/runtime";
+import { hasSelectableDiscourseInstanceSupply } from "@/server/providers/source/discourse/instance-supply";
 import { rebuildDemandIntelligenceForScan, type DemandRebuildResult } from "@/server/modules/demand-intelligence/demand.orchestration";
 import { generateActionsForScan, type ActionGenerationForScanResult } from "@/server/modules/actions/action.orchestration";
 import { scanCandidateReviewSchema, sourceScanResultSchema, type ScanCandidateReview, type ScanMode, type ScanProgress, type SourceScanResult } from "@/server/modules/operations/product-demand-scan.schemas";
@@ -1243,7 +1244,15 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
         const route = routeBySource.get(sourceKey);
         const query = sourceKey === "bluesky" || sourceKey === "reddit" || sourceKey === "x" ? [product.name, ...queryTerms.slice(0, 5)].join(" ").slice(0, 180) : undefined;
         const sourcePlan = queryPlanBySource.get(sourceKey);
-        const plannedRequests = sourcePlan?.queries.length && route ? sourcePlan.queries.map((plannedQuery) => toSourceDiscoveryRequest({ sourcePlan, query: plannedQuery, maxPages: route.max_pages, hnAlgoliaSearchEnabled: hnAlgoliaSearchEnabled() })) : [];
+        const plannedRequests = sourcePlan?.queries.length && route
+          ? toSourceDiscoveryRequestsForPlan({ sourcePlan, maxPages: route.max_pages, hnAlgoliaSearchEnabled: hnAlgoliaSearchEnabled() })
+          : [];
+        const discourseRegistryConfigured = sourceKey === "discourse" && hasSelectableDiscourseInstanceSupply();
+        if (sourceKey === "discourse" && discourseRegistryConfigured && !plannedRequests.length) {
+          sourceResults.push({ sourceKey, planned: true, executed: false, status: "skipped", queryCount: 0, candidateBudget: 0, itemsReturned: 0, rawItems: 0, normalizedItems: 0, warnings: ["No relevant healthy Discourse instance matched the planned query."], errorCode: null, rateLimitRemaining: null, estimatedCost: null });
+          diagnostics.push({ sourceKey, state: "skipped", message: "No relevant healthy Discourse instance matched the planned query." });
+          continue;
+        }
         const fallbackLimit = Math.min(route?.max_candidates ?? 5, sourceKey === "x" ? configuredX.maxPostsPerScan : 100);
         const fallbackRequest = sourceKey === "x"
           ? { limit: fallbackLimit, query, requestMetadata: { maxResults: fallbackLimit, maxPages: route?.max_pages ?? 1, maxBillablePostsPerDiscovery: fallbackLimit } }

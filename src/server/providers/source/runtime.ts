@@ -1,3 +1,5 @@
+import { hasSelectableDiscourseInstanceSupply } from "./discourse/instance-supply";
+
 export type SourceRuntimeConfiguration = {
   sourceKey: string;
   configured: boolean;
@@ -33,9 +35,12 @@ export function getSourceRuntimeConfiguration(sourceKey: string): SourceRuntimeC
         ? { sourceKey, configured: true, reason: "token_configured" }
         : { sourceKey, configured: false, reason: "missing_credentials" };
     case "discourse":
-      return present(process.env.DISCOURSE_BASE_URL)
-        ? { sourceKey, configured: true, reason: "public_instance_configured" }
+      {
+        const registryConfigured = hasSelectableDiscourseInstanceSupply();
+        return registryConfigured || present(process.env.DISCOURSE_BASE_URL)
+          ? { sourceKey, configured: true, reason: registryConfigured ? "public_instance_registry_configured" : "public_instance_configured" }
         : { sourceKey, configured: false, reason: "public_instance_missing" };
+      }
     default:
       return { sourceKey, configured: true, reason: "provider_available" };
   }

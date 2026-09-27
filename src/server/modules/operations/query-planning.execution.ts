@@ -2,6 +2,7 @@ import { sourceDiscoveryRequestSchema, type SourceDiscoveryRequest } from "../..
 import { X_PROVIDER_MIN_RESULTS } from "../../providers/source/x/x.cost";
 import { compileXQuery } from "../../providers/source/x/x.query";
 import { HACKER_NEWS_SEARCH_V2_VERSION } from "../../providers/source/hacker-news";
+import { DISCOURSE_INSTANCE_SUPPLY_VERSION, DISCOURSE_MAX_QUERIES_PER_INSTANCE, selectDiscourseInstances } from "../../providers/source/discourse/instance-supply";
 import { queryPlanningVersion, type QueryPlanQuery, type QueryPlanSource } from "./query-planning.schemas";
 import { compileGithubPainQuery } from "./github-query-compilation";
 
@@ -196,4 +197,66 @@ export function toSourceDiscoveryRequest(input: SourceQueryExecutionInput): Sour
     query: query.query_text,
     requestMetadata: metadata,
   });
+}
+
+/**
+ * Expands one planner query into the bounded, globally selected Discourse
+ * instance requests. Non-Discourse sources retain the exact one-request
+ * execution path. The direct singular helper above remains the compatibility
+ * path for tests, refresh rebuilds, and explicitly configured local adapter
+ * calls; production planner execution uses this expansion so every selected
+ * instance is explicit in request metadata and market-partition identity.
+ */
+export function toSourceDiscoveryRequests(input: SourceQueryExecutionInput): SourceDiscoveryRequest[] {
+  const request = toSourceDiscoveryRequest(input);
+  if (input.sourcePlan.source_key !== "discourse") return [request];
+
+  const providerContext = input.query.metadata.provider_context;
+  const context = providerContext && typeof providerContext === "object" && !Array.isArray(providerContext)
+    ? providerContext as Record<string, unknown>
+    : undefined;
+  const selected = selectDiscourseInstances({
+    query: {
+      queryText: input.query.query_text,
+      normalizedQuery: input.query.normalized_query,
+      queryFamily: input.query.query_family,
+      demandSurface: input.query.demand_surface,
+      conceptKeys: input.query.concept_keys,
+      providerContext: context,
+    },
+  });
+
+  return selected.map((instance) => sourceDiscoveryRequestSchema.parse({
+    ...request,
+    requestMetadata: {
+      ...(request.requestMetadata ?? {}),
+      discourseInstance: instance.baseUrl,
+      discourseInstanceKey: instance.key,
+      discourseInstanceSupplyVersion: DISCOURSE_INSTANCE_SUPPLY_VERSION,
+      discourseInstanceSelectionScore: instance.selectionScore,
+    },
+  }));
+}
+
+/** Expands a full source plan while preserving a per-instance query ceiling. */
+export function toSourceDiscoveryRequestsForPlan(input: {
+  sourcePlan: QueryPlanSource;
+  maxPages: number;
+  hnAlgoliaSearchEnabled?: boolean;
+}): SourceDiscoveryRequest[] {
+  if (input.sourcePlan.source_key !== "discourse") {
+    return input.sourcePlan.queries.map((query) => toSourceDiscoveryRequest({ sourcePlan: input.sourcePlan, query, maxPages: input.maxPages, hnAlgoliaSearchEnabled: input.hnAlgoliaSearchEnabled }));
+  }
+  const counts = new Map<string, number>();
+  const requests: SourceDiscoveryRequest[] = [];
+  for (const query of input.sourcePlan.queries) {
+    for (const request of toSourceDiscoveryRequests({ sourcePlan: input.sourcePlan, query, maxPages: input.maxPages, hnAlgoliaSearchEnabled: input.hnAlgoliaSearchEnabled })) {
+      const instance = typeof request.requestMetadata?.discourseInstance === "string" ? request.requestMetadata.discourseInstance : "unknown";
+      const count = counts.get(instance) ?? 0;
+      if (count >= DISCOURSE_MAX_QUERIES_PER_INSTANCE) continue;
+      counts.set(instance, count + 1);
+      requests.push(request);
+    }
+  }
+  return requests;
 }

@@ -4586,13 +4586,39 @@ adapter over the existing public-ingestion port. It must not crawl an entire for
 Discourse installations share identity, API behavior, categories, tags, or authentication requirements.
 
 **Discovery and instance configuration.** V8 supplies intent/concept language; it does not change planner
-semantics. The adapter searches an explicitly configured public instance through `GET /search.json?q=...&page=N`
-and hydrates bounded topic hits through `GET /t/{slug}/{topic_id}.json`. An instance is selected from request
-metadata (`discourseInstance` or `discourseInstances`) or the server-only `DISCOURSE_BASE_URL` fallback. Only
-HTTPS origins with a normalized base path are accepted. Public instances require no credential; optional
-instance authentication is not introduced in this phase. Search pagination is bounded and topic hydration is
-performed only within the depth budget. No latest/category/tag feed crawl, related-topic crawl, edit-history
-crawl, or linked-topic crawl is included.
+semantics. The adapter searches a selected public instance through
+`GET /search.json?q=...&page=N` and hydrates bounded topic hits through
+`GET /t/{slug}/{topic_id}.json`. Production selection uses the global, server-owned
+`discourse_instance_supply_v1` registry: each curated entry contains a normalized HTTPS base URL, enabled and
+public-access flags, semantic/category/topic tags, optional language, and conservative health state. Selection
+is deterministic from the query's existing category, audience, concept, and query text; only relevant healthy
+entries are selected, with a hard per-query instance cap. The selected base URL is written to request metadata
+(`discourseInstance`) before the existing adapter is called. The registry is infrastructure configuration, not
+workspace/product data, and never accepts arbitrary tenant-supplied URLs. The server-only `DISCOURSE_BASE_URL`
+fallback remains available for local/dev and direct adapter compatibility, but production planner execution does
+not depend on one global instance. Only HTTPS origins with a normalized base path are accepted. Public instances
+require no credential; optional instance authentication is not introduced in this phase. Search pagination is
+bounded and topic hydration is performed only within the depth budget. No latest/category/tag feed crawl,
+related-topic crawl, edit-history crawl, or linked-topic crawl is included.
+
+**Instance supply and health.** The initial registry is intentionally a small curated seed set, including the
+public `https://forum.obsidian.md` instance for generic productivity, workflow, and knowledge-management
+discussions; it is not a Linear-specific community and is not crawled during configuration. The registry's
+enabled/public/health gates prevent disabled, inaccessible, degraded, or blocked entries from being selected.
+The existing source-health snapshot remains source-level because its key is `(source_key, environment)` and does
+not represent per-instance state; no misleading per-instance row is synthesized. Adapter failures remain
+isolated to the selected request and the existing source-health aggregation remains unchanged. Future registry
+expansion may consume reviewed observed links, admin-approved instances, or high-confidence discovery, but
+autonomous web-wide instance discovery is explicitly out of scope.
+
+**Partition and budget semantics.** Each selected instance produces a normal source request and therefore a
+normal global `market_partition_identity_v1` partition whose retrieval parameters include the normalized
+`discourseInstance`. Different instances never collapse, while repeated product/workspace queries for the same
+instance reuse the same global public partition and canonical conversation identity. Expansion is bounded at two
+relevant instances per planner query and three planner queries per selected instance, then remains subject to the
+existing source/query caps; no global scan budget, Discourse depth cap, or query-planning policy is increased.
+Discourse is not added to autonomous background partition seeding in this amendment; any future refresh eligibility
+must be an explicit architecture decision.
 
 **Canonical thread and identity.** One Discourse topic is one global public conversation. The topic identity is
 `discourse:<normalized-instance>:topic:<topic-id>`. A retained post identity is

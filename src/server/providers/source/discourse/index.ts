@@ -445,3 +445,12 @@ export {
   evaluateDiscourseDepth,
   selectDiscoursePosts,
 } from "./discourse-depth";
+
+export {
+  DISCOURSE_INSTANCE_REGISTRY_V1,
+  DISCOURSE_INSTANCE_SUPPLY_VERSION,
+  DISCOURSE_MAX_INSTANCES_PER_QUERY,
+  DISCOURSE_MAX_QUERIES_PER_INSTANCE,
+  hasSelectableDiscourseInstanceSupply,
+  selectDiscourseInstances,
+} from "./instance-supply";
