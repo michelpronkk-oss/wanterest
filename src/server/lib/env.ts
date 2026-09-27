@@ -113,6 +113,10 @@ const serverEnvSchema = publicEnvSchema.extend({
   // shadow is only active for explicitly allowlisted workspaces.
   CROSS_PRODUCT_ROUTING_MODE: z.enum(["off", "shadow"]).optional(),
   CROSS_PRODUCT_ROUTING_WORKSPACE_IDS: optionalServerString,
+  // Layer 12A.5: zero-sum adaptive query-slot allocation. Defaults off;
+  // non-off modes are only active for explicitly allowlisted workspaces.
+  ADAPTIVE_ALLOCATOR_MODE: z.enum(["off", "shadow", "active"]).optional(),
+  ADAPTIVE_ALLOCATOR_WORKSPACE_IDS: optionalServerString,
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
@@ -187,6 +191,8 @@ export function getServerEnv(): ServerEnv {
     SUPPLY_PARTITION_SEEDING_ENABLED: process.env.SUPPLY_PARTITION_SEEDING_ENABLED,
     CROSS_PRODUCT_ROUTING_MODE: process.env.CROSS_PRODUCT_ROUTING_MODE,
     CROSS_PRODUCT_ROUTING_WORKSPACE_IDS: process.env.CROSS_PRODUCT_ROUTING_WORKSPACE_IDS,
+    ADAPTIVE_ALLOCATOR_MODE: process.env.ADAPTIVE_ALLOCATOR_MODE,
+    ADAPTIVE_ALLOCATOR_WORKSPACE_IDS: process.env.ADAPTIVE_ALLOCATOR_WORKSPACE_IDS,
   });
 }
 

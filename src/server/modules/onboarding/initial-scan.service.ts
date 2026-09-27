@@ -44,6 +44,8 @@ import { ensureEngineVersion } from "@/server/modules/observability/engine.repos
 import { getTraceId } from "@/server/lib/request-context";
 import { buildSourceRoutingPlan, selectExecutableSourceRoutes, type SourceRoutingPlan, type SourceRoutingHealthStatus } from "@/server/modules/operations/source-routing.index";
 import { buildQueryPlanV8, githubPainRetrievalDiagnostics, toSourceDiscoveryRequestsForPlan, type GithubPainQueryCompilation, type QueryPlan, type QueryPlanningInput } from "@/server/modules/operations/query-planning.index";
+import { prepareAdaptiveAllocator } from "@/server/modules/operations/adaptive-allocator.service";
+import { adaptiveAllocatorTelemetrySchema, type AdaptiveAllocatorTelemetry } from "@/server/modules/operations/adaptive-allocator.schemas";
 import { hnAlgoliaSearchEnabled } from "@/server/modules/ingestion/market-partition-refresh.policy";
 import { supplyPartitionSeedingEnabled } from "@/server/modules/operations/supply-partition-seeding.policy";
 import { seedSupplyPartitionsForScan } from "@/server/modules/operations/supply-partition-seeding.service";
@@ -97,6 +99,7 @@ const scanResultSchema = z.object({
   candidateSelection: z.object({ version: z.string(), availableCount: z.number().int().nonnegative(), postDedupCandidateCount: z.number().int().nonnegative(), selectedCount: z.number().int().nonnegative(), maxEvaluations: z.number().int().nonnegative(), availableBySource: z.record(z.string(), z.number().int().nonnegative()), selectedBySource: z.record(z.string(), z.number().int().nonnegative()), availableBySurface: z.record(z.string(), z.number().int().nonnegative()), selectedBySurface: z.record(z.string(), z.number().int().nonnegative()), suppressedDuplicateCount: z.number().int().nonnegative(), suppressedLowQualityCount: z.number().int().nonnegative(), suppressedByReason: z.record(z.string(), z.number().int().nonnegative()), evaluationCapDiagnostics: z.object({ availableCount: z.number().int().nonnegative(), evaluatedCount: z.number().int().nonnegative(), suppressedCount: z.number().int().nonnegative(), suppressedBySource: z.record(z.string(), z.number().int().nonnegative()), suppressedBySurface: z.record(z.string(), z.number().int().nonnegative()), suppressedScoreRange: z.object({ min: z.number(), max: z.number() }).nullable(), suppressedCandidates: z.array(z.object({ conversationId: z.string(), source: z.string(), surfaces: z.array(z.string()), score: z.number(), reason: z.string(), queryPlanIds: z.array(z.string()) })).max(100) }), selected: z.array(z.object({ conversationId: z.string(), source: z.string(), surface: z.string(), surfaces: z.array(z.string()), score: z.number(), reason: z.string() })) }).optional(),
   qualification: z.object({ version: z.string(), thresholdVersion: z.string(), candidateCount: z.number().int().nonnegative(), qualifiedCount: z.number().int().nonnegative(), highConfidenceCount: z.number().int().nonnegative(), weakCount: z.number().int().nonnegative(), rejectedCount: z.number().int().nonnegative(), rejectionReasonDistribution: z.record(z.string(), z.number().int().nonnegative()), intentDistribution: z.record(z.string(), z.number().int().nonnegative()), averageDemandQuality: z.number().min(0).max(1), averageConfidence: z.number().min(0).max(1) }).optional(),
   semanticReasoningShadow: z.object({ routerVersion: z.string(), promptSchemaVersion: z.string(), enabled: z.boolean(), maxNewProviderCallsPerScan: z.number().int().nonnegative(), deterministicOnlyCount: z.number().int().nonnegative(), rejectWithoutLlmCount: z.number().int().nonnegative(), llmRequestedCount: z.number().int().nonnegative(), cacheHitCount: z.number().int().nonnegative(), scheduledForLlmCount: z.number().int().nonnegative(), budgetSkippedCount: z.number().int().nonnegative(), llmExecutedCount: z.number().int().nonnegative(), providerSuccessCount: z.number().int().nonnegative(), providerFailureCount: z.number().int().nonnegative(), schemaFailureCount: z.number().int().nonnegative(), evidenceFailureCount: z.number().int().nonnegative(), conflictBlockCount: z.number().int().nonnegative(), claimSkippedCount: z.number().int().nonnegative(), inputTokens: z.number().int().nonnegative(), outputTokens: z.number().int().nonnegative(), reasoningLatencyMs: z.number().int().nonnegative(), reasoningCostUsd: z.number().nonnegative().nullable(), shadowComparisonCount: z.number().int().nonnegative(), noChangeCount: z.number().int().nonnegative(), wouldStrengthenCount: z.number().int().nonnegative(), wouldWeakenCount: z.number().int().nonnegative(), wouldBecomeQualifiedCount: z.number().int().nonnegative(), wouldBecomeUnqualifiedCount: z.number().int().nonnegative(), directionChangeCount: z.number().int().nonnegative(), targetChangeCount: z.number().int().nonnegative(), actualQualifiedCountAmongCompared: z.number().int().nonnegative(), shadowQualifiedCountAmongCompared: z.number().int().nonnegative() }).optional(),
+  adaptiveAllocator: adaptiveAllocatorTelemetrySchema.optional(),
   queryYield: z.unknown().optional(),
   sourceHealthV1: sourceHealthV1Schema.optional(),
   githubRetrievalPrecision: z.object({
@@ -1211,6 +1214,25 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
   const scanProvenance: ScanDiscoveryProvenance[] = [];
   const queryYieldTelemetry: QueryYieldTelemetry[] = [];
   const githubPainRetrievalV1: GithubPainQueryCompilation[] = [];
+  let adaptiveAllocatorTelemetry: AdaptiveAllocatorTelemetry | null = null;
+  if (queryPlan && queryPlanningInput) {
+    const adaptiveAllocator = await prepareAdaptiveAllocator({
+      client,
+      workspaceId: product.workspace_id,
+      productId: product.id,
+      plan: queryPlan,
+      sourceStates,
+      rotationSeed: options.idempotencyKey ?? job.id,
+      env: process.env,
+    });
+    queryPlan = adaptiveAllocator.plan;
+    adaptiveAllocatorTelemetry = adaptiveAllocator.telemetry;
+    diagnostics.push({
+      sourceKey: "adaptive-allocator",
+      state: adaptiveAllocatorTelemetry.errors.length ? "warning" : "complete",
+      message: JSON.stringify({ mode: adaptiveAllocatorTelemetry.mode, queriesShifted: adaptiveAllocatorTelemetry.queriesShifted, historyRowsRead: adaptiveAllocatorTelemetry.historyRowsRead, warnings: adaptiveAllocatorTelemetry.warnings, errors: adaptiveAllocatorTelemetry.errors }).slice(0, 800),
+    });
+  }
   const queryPlanBySource = new Map((queryPlan?.source_plans ?? []).map((source) => [source.source_key, source]));
   const g2ProductMappings = sourceKeys.includes("g2") ? await loadG2ProductMappings(client, product) : {};
 
@@ -1557,6 +1579,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       ...(candidateResult.qualification ? { qualification: candidateResult.qualification } : {}),
       ...(candidateResult.semanticReasoningShadow ? { semanticReasoningShadow: candidateResult.semanticReasoningShadow } : {}),
       ...(crossProductRoutingShadow ? { crossProductRoutingShadow } : {}),
+      ...(adaptiveAllocatorTelemetry ? { adaptiveAllocator: adaptiveAllocatorTelemetry } : {}),
       ...(routingPlan ? {
         routing: {
           version: routingPlan.version,

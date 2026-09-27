@@ -21,3 +21,6 @@ export * from "./cross-product-routing.schemas";
 export * from "./cross-product-routing.service";
 export * from "./cross-product-routing.config";
 export * from "./cross-product-routing-shadow.service";
+export * from "./adaptive-allocator.config";
+export * from "./adaptive-allocator.schemas";
+export * from "./adaptive-allocator.policy";
