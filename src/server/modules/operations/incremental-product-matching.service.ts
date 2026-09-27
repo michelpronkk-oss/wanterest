@@ -13,6 +13,9 @@ import { deterministicUuid } from "@/server/modules/ingestion/hash";
 import { signalSupplyTelemetryFor, type SignalSupplyTelemetryWriter } from "./signal-supply-telemetry";
 import { supplyPartitionSeedingEnabled } from "./supply-partition-seeding.policy";
 import { interestAsArtifact, SupplyPartitionInterestRepository } from "./supply-partition-interest.repository";
+import { crossProductRoutingShadowEnabled } from "./cross-product-routing.config";
+import { runCrossProductRoutingShadowForRefresh } from "./cross-product-routing-runtime.service";
+import type { CrossProductRoutingTelemetry } from "./cross-product-routing.schemas";
 import {
   INCREMENTAL_MATCH_INTEREST_WINDOW_MS,
   INCREMENTAL_MATCH_MAX_EVALUATIONS_PER_PRODUCT,
@@ -71,6 +74,8 @@ export type IncrementalMatchingDependencies = {
    * the same selection policy and provenance validation.
    */
   partitionInterests?: Pick<SupplyPartitionInterestRepository, "listActive"> | null;
+  /** Layer 12A.4: explicit shadow-only routing seam; it never runs unless allowlisted. */
+  routingShadow?: (input: { workspaceIds: string[]; products: ProductRow[]; conversationIds: string[] }) => Promise<CrossProductRoutingTelemetry | null>;
 };
 
 export type ProductIncrementalMatchResult = {
@@ -111,6 +116,7 @@ export type IncrementalPartitionMatchOutcome = {
   skipped: Array<{ workspaceId: string; productId: string; reason: string }>;
   products: ProductIncrementalMatchResult[];
   totals: { candidateConversations: number; evaluations: number; signals: number; productsWithNewEvidence: number };
+  routingShadow?: CrossProductRoutingTelemetry | null;
   durationMs: number;
 };
 
@@ -125,6 +131,7 @@ function defaultDependencies(): IncrementalMatchingDependencies {
     rebuildDemand: rebuildDemandIntelligenceForScan,
     generateActions: generateActionsForScan,
     now: () => new Date(),
+    routingShadow: (input) => runCrossProductRoutingShadowForRefresh({ client, env: process.env, ...input }),
   };
 }
 
@@ -320,6 +327,14 @@ export async function matchRefreshedPartitionIncrementally(
     : [];
   const interest = selectInterestedProducts([...artifacts, ...explicitInterests], deps.maxProducts ?? INCREMENTAL_MATCH_MAX_PRODUCTS_PER_REFRESH);
 
+  let routingShadow: CrossProductRoutingTelemetry | null = null;
+  if (deps.routingShadow && interest.selected.some((item) => crossProductRoutingShadowEnabled(process.env, item.workspaceId))) {
+    const products = (await Promise.all(interest.selected.map(async (item) => {
+      try { return await deps.loadProduct(item.workspaceId, item.productId); } catch { return null; }
+    }))).filter((product): product is ProductRow => Boolean(product));
+    routingShadow = await deps.routingShadow({ workspaceIds: [...new Set(interest.selected.map((item) => item.workspaceId))], products, conversationIds });
+  }
+
   const products: ProductIncrementalMatchResult[] = [];
   for (const interestedProduct of interest.selected) {
     products.push(await matchOneProduct({ deps, interest: interestedProduct, refreshJobRunId: input.refreshJobRunId, partitionKey, sourceKey: stored.data.sourceKey, conversationIds, normalizedSourceItemIds, traceId: input.traceId }));
@@ -348,6 +363,7 @@ export async function matchRefreshedPartitionIncrementally(
       signals: products.reduce((sum, product) => sum + product.signals, 0),
       productsWithNewEvidence: products.filter((product) => product.candidateCount > 0).length,
     },
+    ...(routingShadow ? { routingShadow } : {}),
     durationMs: Date.now() - startedAt,
   };
   await deps.repository.completeJob(fanoutJob.id, {

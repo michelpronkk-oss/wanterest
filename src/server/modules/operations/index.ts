@@ -17,3 +17,7 @@ export * from "./read-first-intelligence.config";
 export * from "./read-first-intelligence.schemas";
 export { ReadFirstIntelligenceService } from "./read-first-intelligence.service";
 export type { ReadFirstDependencies, ReadFirstIntelligenceRepository, ReadFirstPersistedState, ReadFirstProductIntelligence, ReadFirstProductKey, ReadFirstRefreshEnqueuer } from "./read-first-intelligence.service";
+export * from "./cross-product-routing.schemas";
+export * from "./cross-product-routing.service";
+export * from "./cross-product-routing.config";
+export * from "./cross-product-routing-shadow.service";
