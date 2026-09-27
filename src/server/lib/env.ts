@@ -109,6 +109,10 @@ const serverEnvSchema = publicEnvSchema.extend({
   // schema). enabled=true with an absent/empty allowlist fails closed as
   // disabled for every workspace; an empty allowlist is never global enablement.
   EVIDENCE_FIDELITY_GROUNDING_ENABLED: z.enum(["true", "false"]).optional(),
+  // Layer 12A.4: deterministic cross-product routing observation. Defaults off;
+  // shadow is only active for explicitly allowlisted workspaces.
+  CROSS_PRODUCT_ROUTING_MODE: z.enum(["off", "shadow"]).optional(),
+  CROSS_PRODUCT_ROUTING_WORKSPACE_IDS: optionalServerString,
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
@@ -181,6 +185,8 @@ export function getServerEnv(): ServerEnv {
     EXPERIMENT_MEASUREMENT_ENABLED: process.env.EXPERIMENT_MEASUREMENT_ENABLED,
     SIGNAL_SUPPLY_TELEMETRY_ENABLED: process.env.SIGNAL_SUPPLY_TELEMETRY_ENABLED,
     SUPPLY_PARTITION_SEEDING_ENABLED: process.env.SUPPLY_PARTITION_SEEDING_ENABLED,
+    CROSS_PRODUCT_ROUTING_MODE: process.env.CROSS_PRODUCT_ROUTING_MODE,
+    CROSS_PRODUCT_ROUTING_WORKSPACE_IDS: process.env.CROSS_PRODUCT_ROUTING_WORKSPACE_IDS,
   });
 }
 

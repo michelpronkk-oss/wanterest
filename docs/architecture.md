@@ -4751,3 +4751,57 @@ Evidence Fidelity tests are required before this phase is ready for production v
 `maxEvaluations=15`, `signal_qualification_v1_7`, qualification thresholds, semantic reasoning and
 Evidence Fidelity, all existing source/depth semantics, lifecycle and cluster behavior, public/private
 boundaries, and global scan budgets remain unchanged.
+
+### 12A.4 — Cross-Product Routing V1 (`cross_product_routing_v1`) — APPROVED DEVELOPMENT ARCHITECTURE
+
+**Routing boundary.** The routing unit is the global canonical `conversations` row, not an individual
+reply, raw payload, or provider result. Its stable public identity and content hash form the evidence
+fingerprint; source-item and evidence-provenance links remain the authoritative path back to provider
+evidence. A conversation is therefore routed once per product-profile/version identity and can be reused
+without another provider request.
+
+**Current-path validation.** Public adapters write `raw_source_items`, normalization writes global
+`source_items`, and canonicalization writes global `conversations` plus
+`conversation_source_items`. Current product scans then use `market_partition_interests`/
+`query_yield_artifacts` to select interested products, `selectScanCandidates` to apply the bounded
+candidate-selection contract, and `IntelligenceService.matchProduct` to create the private
+`product_matches`/immutable evaluations before the unchanged qualification, ranking, and signal path.
+The existing incremental fanout cap is 20 products per refreshed partition and the frozen per-product
+evaluation cap remains 15. 12A.4 does not replace that path or increase either cap.
+
+**Profile contract.** `product_routing_profile_v1` is a deterministic projection of the existing product
+name and current Demand Profile V2 routing fields: category, audience, pains, jobs, outcomes, feature
+demands, comparison terms, alternatives, and known competitors. It is versioned and fingerprinted from
+stable configuration only. Workspace/product identifiers scope the private edge; no other workspace's
+profile or conclusion is included in a global public object.
+
+**Deterministic stages.** V1 performs bounded lexical/entity and category/JTBD overlap routing, with
+explicit direct-product, category, and competitor route types. Common-word guards reject mathematical or
+generic uses such as “linear regression”, “alternative method”, and “Jira plugin development” unless
+product context is present. Candidates are ordered by route score, route type, workspace/product identity,
+and conversation identity, then capped deterministically at the existing 20-product fanout ceiling.
+Stage-C semantic routing is deferred: V1 must first measure deterministic misses and extras, and it must
+not add provider/model calls to a shadow pass.
+
+**Private durable edges.** A new additive `product_routing_edges` table records only workspace/product-
+scoped route decisions and shadow outcomes. Its idempotency key is canonical conversation + product +
+routing version + evidence/profile fingerprints. RLS exposes rows only to workspace members; `anon` has
+no access, and server processing uses explicit service-role grants. The table is operational routing
+state, not signal lifecycle and not a replacement for `product_matches` or immutable evaluations.
+
+**Shadow mode.** `CROSS_PRODUCT_ROUTING_MODE=shadow` is an explicit, allowlisted, fail-closed mode. It
+calculates the new routes, compares them with the existing bounded interest set, persists route telemetry,
+and never starts extra evaluations, rankings, signals, provider retrieval, or semantic calls. Default mode
+is off. Existing product scans and incremental matching remain behaviorally unchanged while shadow data is
+measured.
+
+**Measurement and rollout.** Shadow telemetry records profiles considered, deterministic prefilter matches,
+direct/category/competitor routes, candidate products, cap skips, routes created/reused, downstream route
+rejections, evaluations, and old-routing misses/extras. The next rollout is migration/code deployment,
+health verification, shadow-only scan, comparison review, and only then a separately approved bounded
+fanout. No production migration or deployment is part of this development task.
+
+**Frozen.** `query_planning_v8`, all provider/depth semantics, Retrieval Precision V1, Source Health V1,
+`candidate_selection_v3`, `maxEvaluations=15`, `signal_qualification_v1_7`, qualification thresholds,
+semantic routing v2, Evidence Fidelity, lifecycle, clustering, actions, experiments, and global budgets
+remain unchanged.
