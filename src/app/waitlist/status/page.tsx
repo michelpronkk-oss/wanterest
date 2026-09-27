@@ -1,13 +1,15 @@
 import { createWaitlistService } from "@/server/modules/waitlist";
-import { waitlistStatusTokenSchema } from "@/server/modules/waitlist";
+import { cookies } from "next/headers";
+
 import { WaitlistWithdrawButton } from "@/components/waitlist/waitlist-withdraw-button";
+import { WAITLIST_STATUS_COOKIE } from "@/server/modules/waitlist/waitlist.session";
 
 export const dynamic = "force-dynamic";
 
-export default async function WaitlistStatusPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const query = await searchParams;
-  const token = typeof query.token === "string" ? query.token : "";
-  if (!waitlistStatusTokenSchema.safeParse(token).success) return <StatusUnavailable />;
+export default async function WaitlistStatusPage() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(WAITLIST_STATUS_COOKIE)?.value ?? "";
+  if (!token) return <StatusUnavailable />;
   const application = await loadStatus(token);
   if (!application) return <StatusUnavailable />;
   return (
@@ -22,7 +24,7 @@ export default async function WaitlistStatusPage({ searchParams }: { searchParam
           <div><dt>Submitted</dt><dd>{new Date(application.createdAt).toLocaleDateString("en", { dateStyle: "medium", timeZone: "UTC" })}</dd></div>
           <div><dt>Company</dt><dd>{application.companyName}</dd></div>
         </dl>
-        {application.status !== "withdrawn" && application.status !== "declined" ? <WaitlistWithdrawButton token={token} /> : null}
+        {application.status !== "withdrawn" && application.status !== "declined" ? <WaitlistWithdrawButton /> : null}
         <p className="waitlist-status-footnote">Early Access numbers are historical identities, not permissions. Founding 25 and Early 100 are separate future cohorts.</p>
       </div>
     </main>

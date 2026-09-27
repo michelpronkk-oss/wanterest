@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 
 vi.mock("server-only", () => ({}));
 
@@ -66,5 +67,17 @@ describe("waitlist service", () => {
     const service = new WaitlistService({ repository: repo, emailProvider: emailProvider() });
     await expect(service.status("0000000000000000000000000000000000000000000000000000000000000001")).resolves.toMatchObject({ id: application().id });
     await expect(service.status("1")).rejects.toBeInstanceOf(AppError);
+  });
+
+  it("keeps status credentials server-only after verification", async () => {
+    const statusPage = readFileSync("src/app/waitlist/status/page.tsx", "utf8");
+    const verifyRoute = readFileSync("src/app/waitlist/verify/route.ts", "utf8");
+    const withdrawRoute = readFileSync("src/app/api/waitlist/withdraw/route.ts", "utf8");
+    const withdrawButton = readFileSync("src/components/waitlist/waitlist-withdraw-button.tsx", "utf8");
+    expect(statusPage).toContain("WAITLIST_STATUS_COOKIE");
+    expect(statusPage).not.toContain("searchParams");
+    expect(verifyRoute).toContain('response.headers.set("referrer-policy", "no-referrer")');
+    expect(withdrawRoute).toContain("WAITLIST_STATUS_COOKIE");
+    expect(withdrawButton).not.toContain("token");
   });
 });

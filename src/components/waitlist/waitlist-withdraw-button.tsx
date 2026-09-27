@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 
-export function WaitlistWithdrawButton({ token }: { token: string }) {
+export function WaitlistWithdrawButton() {
   const [state, setState] = useState<"idle" | "confirm" | "sending" | "done">("idle");
   async function withdraw() {
     setState("sending");
-    const response = await fetch("/api/waitlist/withdraw", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }) });
+    const response = await fetch("/api/waitlist/withdraw", { method: "POST" });
     setState(response.ok ? "done" : "idle");
   }
   if (state === "done") return <p className="waitlist-withdrawn" role="status">Your request has been withdrawn. Your historical Early Access number remains reserved.</p>;
