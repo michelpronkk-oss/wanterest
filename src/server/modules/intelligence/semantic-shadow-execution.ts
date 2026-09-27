@@ -2,6 +2,7 @@ import type { StructuredLlmProvider } from "../../providers/llm/contracts";
 import { toStructuredJsonSchema } from "../../providers/llm/json-schema";
 import { conversationMarketReasoningSchema, type ConversationMarketReasoning, type MarketContext } from "./signal-qualification.schemas";
 import { mergeValidatedShadowReasoning, SEMANTIC_REASONING_PROMPT_VERSION, SEMANTIC_REASONING_ROUTER_VERSION, validateShadowReasoningEvidence } from "./semantic-reasoning-router";
+import { normalizeSemanticReasoningOutput } from "./semantic-output-normalizer";
 import type { ShadowPlanItem, SemanticShadowPlanningCandidate } from "./semantic-shadow-planning";
 import type { ShadowReasoningInsert, ShadowReasoningKey } from "./semantic-shadow-reasoning.repository";
 
@@ -159,22 +160,28 @@ export async function executeScheduledSemanticShadowReasoning(input: {
       diagnostics.reasoningLatencyMs += latencyMs;
       diagnostics.inputTokens += inputTokens;
       diagnostics.outputTokens += outputTokens;
-      const parsed = conversationMarketReasoningSchema.safeParse(response.value);
+      const normalization = normalizeSemanticReasoningOutput({ value: response.value, sourceText: candidate.promptContext.conversation.normalizedText });
+      if (normalization.diagnostics.blockingReason) {
+        diagnostics.schemaFailureCount += 1;
+        await input.persistence.insertImmutable(persistenceInput({ key, plan, candidate, status: "schema_failed", llmReasoning: response.value, validatedReasoning: null, mergedReasoning: null, evidenceValidation: { status: "normalization_failed", normalization: normalization.diagnostics }, provider: response.provider, model: response.model, inputTokens, outputTokens, latencyMs, errorCode: "NORMALIZATION_UNSAFE" }));
+        continue;
+      }
+      const parsed = conversationMarketReasoningSchema.safeParse(normalization.value);
       if (!parsed.success) {
         diagnostics.schemaFailureCount += 1;
-        await input.persistence.insertImmutable(persistenceInput({ key, plan, candidate, status: "schema_failed", llmReasoning: response.value, validatedReasoning: null, mergedReasoning: null, evidenceValidation: { status: "schema_failed" }, provider: response.provider, model: response.model, inputTokens, outputTokens, latencyMs, errorCode: "SCHEMA_INVALID" }));
+        await input.persistence.insertImmutable(persistenceInput({ key, plan, candidate, status: "schema_failed", llmReasoning: response.value, validatedReasoning: null, mergedReasoning: null, evidenceValidation: { status: "schema_failed", normalization: normalization.diagnostics }, provider: response.provider, model: response.model, inputTokens, outputTokens, latencyMs, errorCode: "SCHEMA_INVALID" }));
         continue;
       }
       const validated = validateShadowReasoningEvidence({ reasoning: parsed.data, sourceText: candidate.promptContext.conversation.normalizedText });
       if (!validated.reasoning) {
         diagnostics.evidenceFailureCount += 1;
-        await input.persistence.insertImmutable(persistenceInput({ key, plan, candidate, status: "evidence_failed", llmReasoning: parsed.data, validatedReasoning: null, mergedReasoning: null, evidenceValidation: { status: "evidence_failed", droppedClaims: validated.droppedClaims }, provider: response.provider, model: response.model, inputTokens, outputTokens, latencyMs, errorCode: "EVIDENCE_UNSUPPORTED" }));
+        await input.persistence.insertImmutable(persistenceInput({ key, plan, candidate, status: "evidence_failed", llmReasoning: response.value, validatedReasoning: null, mergedReasoning: null, evidenceValidation: { status: "evidence_failed", droppedClaims: validated.droppedClaims, normalization: normalization.diagnostics }, provider: response.provider, model: response.model, inputTokens, outputTokens, latencyMs, errorCode: "EVIDENCE_UNSUPPORTED" }));
         continue;
       }
       const merged = mergeValidatedShadowReasoning({ deterministic: candidate.deterministic, validated: validated.reasoning });
       diagnostics.providerSuccessCount += 1;
       if (merged.conflictBlocked) diagnostics.conflictBlockCount += 1;
-      await input.persistence.insertImmutable(persistenceInput({ key, plan, candidate, status: "success", llmReasoning: parsed.data, validatedReasoning: validated.reasoning, mergedReasoning: merged.merged, evidenceValidation: { status: "validated", droppedClaims: validated.droppedClaims, conflictBlocked: merged.conflictBlocked }, provider: response.provider, model: response.model, inputTokens, outputTokens, latencyMs }));
+      await input.persistence.insertImmutable(persistenceInput({ key, plan, candidate, status: "success", llmReasoning: response.value, validatedReasoning: validated.reasoning, mergedReasoning: merged.merged, evidenceValidation: { status: "validated", droppedClaims: validated.droppedClaims, conflictBlocked: merged.conflictBlocked, normalization: normalization.diagnostics }, provider: response.provider, model: response.model, inputTokens, outputTokens, latencyMs }));
     } catch (error) {
       diagnostics.providerFailureCount += 1;
       const latencyMs = Date.now() - startedAt;

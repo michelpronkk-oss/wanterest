@@ -92,6 +92,36 @@ describe("semantic shadow execution", () => {
     expect(evidence.store.rows[0]).toMatchObject({ execution_status: "evidence_failed", error_code: "EVIDENCE_UNSUPPORTED", merged_shadow_reasoning: null });
   });
 
+  it("persists raw overlong provider evidence while storing only the normalized canonical artifact", async () => {
+    const longSource = "JIRA Alternatives for Websphere " + "source evidence ".repeat(60);
+    const base = candidate("production-89", { promptContext: { ...candidate().promptContext, conversation: { title: null, body: longSource, normalizedText: longSource } } });
+    const result = await execute({ candidates: [base], plans: [plan("production-89")], provider: provider(reasoning({ evidence_spans: [{ text: longSource, confidence: 0.9 }] })) });
+    const row = result.store.rows[0];
+    const rawText = (row?.llm_reasoning as { evidence_spans: Array<{ text: string }> }).evidence_spans[0]?.text;
+    const validatedText = (row?.validated_reasoning as { evidence_spans: Array<{ text: string }> }).evidence_spans[0]?.text;
+    expect(row).toMatchObject({ execution_status: "success", evidence_validation: { status: "validated", normalization: { evidenceSpansTruncated: 1 } } });
+    expect(rawText.length).toBeGreaterThan(500);
+    expect(validatedText.length).toBe(500);
+    expect(row?.merged_shadow_reasoning).toMatchObject({ evidence_spans: [{ text: validatedText }] });
+  });
+
+  it("drops an invalid relationship candidate without broadening persisted canonical values", async () => {
+    const result = await execute({ provider: provider(reasoning({ relationship_candidates: [
+      { entity_name: "Jira", relationship_type: "direct_competitor", confidence: 0.9, evidence_count: 1 },
+      { entity_name: "Jira", relationship_type: "technical_alternative", confidence: 0.9, evidence_count: 1 } as never,
+    ] })) });
+    expect(result.store.rows[0]).toMatchObject({ execution_status: "success", evidence_validation: { normalization: { relationshipCandidatesDropped: 1 } } });
+    expect(result.store.rows[0]?.validated_reasoning).toMatchObject({ relationship_candidates: [{ relationship_type: "direct_competitor" }] });
+    expect(JSON.stringify(result.store.rows[0]?.merged_shadow_reasoning)).not.toContain("technical_alternative");
+  });
+
+  it("fails closed for a sole invalid relationship required by a third-party conclusion", async () => {
+    const result = await execute({ provider: provider(reasoning({ demand_target_type: "third_party_product", relationship_candidates: [
+      { entity_name: "Unknown", relationship_type: "technical_alternative", confidence: 0.9, evidence_count: 1 } as never,
+    ] })) });
+    expect(result.store.rows[0]).toMatchObject({ execution_status: "schema_failed", error_code: "NORMALIZATION_UNSAFE", validated_reasoning: null, merged_shadow_reasoning: null, evidence_validation: { status: "normalization_failed", normalization: { blockingReason: "unsafe_relationship_candidate" } } });
+  });
+
   it("isolates a provider exception and continues with the next scheduled candidate", async () => {
     const model = sequencedProvider(new Error("timeout"), reasoning());
     const result = await execute({ provider: model, candidates: [candidate("one"), candidate("two")], plans: [plan("one"), plan("two")] });
