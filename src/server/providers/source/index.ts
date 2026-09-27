@@ -14,6 +14,8 @@ export { trustpilotSourceAdapter, TrustpilotSourceAdapter } from "./trustpilot";
 export { youtubeSourceAdapter, YouTubeSourceAdapter } from "./youtube";
 export { gitlabSourceAdapter, GitLabSourceAdapter } from "./gitlab";
 export { discourseSourceAdapter, DiscourseSourceAdapter, normalizeDiscourseInstance, cleanDiscourseContent, evaluateDiscourseDepth, selectDiscoursePosts, DISCOURSE_DEPTH_VERSION } from "./discourse";
+export { devtoSourceAdapter, DevtoSourceAdapter, DevtoClient, normalizeDevtoInstance, DEVTO_DEPTH_VERSION } from "./devto";
+export type { DevtoClientOptions } from "./devto";
 export { sourceRuntimeConfigurations, getSourceRuntimeConfiguration } from "./runtime";
 export { normalizeReviewRecord, stableReviewExternalId } from "./reviews";
 export {

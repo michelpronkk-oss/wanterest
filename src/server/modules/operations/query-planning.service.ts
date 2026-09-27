@@ -101,6 +101,7 @@ const sourceFamilyPolicy: Record<string, { allowed: QueryFamily[]; maxQueries?: 
   trustpilot: { allowed: ["recommendation", "alternative_search", "comparison", "pain", "objection", "feature_requirement"], maxQueries: 2 },
   youtube: { allowed: ["alternative_search", "comparison", "switching", "recommendation", "pain", "feature_requirement", "objection"], maxQueries: 3 },
   gitlab: { allowed: ["feature_requirement", "pain", "switching", "alternative_search", "comparison", "jtbd", "objection"], maxQueries: 4 },
+  devto: { allowed: ["pain", "recommendation", "switching", "alternative_search", "comparison", "feature_requirement", "jtbd"], maxQueries: 2 },
 };
 
 const clamp = (value: number) => Math.max(0, Math.min(1, value));

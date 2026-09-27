@@ -21,16 +21,16 @@ const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, v
 const round = (value: number) => Math.round(clamp(value) * 1000) / 1000;
 
 const businessTypeBase: Record<string, Record<string, number>> = {
-  b2b_saas: { "hacker-news": 0.68, github: 0.58, gitlab: 0.5, reddit: 0.84, x: 0.72, bluesky: 0.45, "stack-exchange": 0.42, discourse: 0.58, "product-hunt": 0.5, g2: 0.62, trustpilot: 0.42, youtube: 0.58, "public-web": 0.3 },
-  developer_tool: { "hacker-news": 0.88, github: 0.94, gitlab: 0.9, reddit: 0.78, x: 0.74, bluesky: 0.38, "stack-exchange": 0.88, discourse: 0.84, "product-hunt": 0.4, g2: 0.48, trustpilot: 0.2, youtube: 0.62, "public-web": 0.28 },
-  consumer_software: { "hacker-news": 0.2, github: 0.12, gitlab: 0.08, reddit: 0.86, x: 0.82, bluesky: 0.55, "stack-exchange": 0.12, "product-hunt": 0.7, g2: 0.22, trustpilot: 0.68, youtube: 0.78, "public-web": 0.32 },
-  ecommerce: { "hacker-news": 0.1, github: 0.05, gitlab: 0.03, reddit: 0.9, x: 0.82, bluesky: 0.45, "stack-exchange": 0.08, "product-hunt": 0.48, g2: 0.18, trustpilot: 0.82, youtube: 0.65, "public-web": 0.35 },
-  marketplace: { "hacker-news": 0.45, github: 0.3, gitlab: 0.22, reddit: 0.88, x: 0.84, bluesky: 0.5, "stack-exchange": 0.15, "product-hunt": 0.55, g2: 0.3, trustpilot: 0.7, youtube: 0.68, "public-web": 0.38 },
-  service_business: { "hacker-news": 0.1, github: 0.03, gitlab: 0.02, reddit: 0.62, x: 0.68, bluesky: 0.38, "stack-exchange": 0.08, "product-hunt": 0.28, g2: 0.12, trustpilot: 0.72, youtube: 0.62, "public-web": 0.35 },
-  local_business: { "hacker-news": 0.03, github: 0.02, gitlab: 0.01, reddit: 0.55, x: 0.48, bluesky: 0.28, "stack-exchange": 0.03, "product-hunt": 0.18, g2: 0.08, trustpilot: 0.78, youtube: 0.55, "public-web": 0.45 },
-  agency: { "hacker-news": 0.42, github: 0.2, gitlab: 0.16, reddit: 0.68, x: 0.82, bluesky: 0.5, "stack-exchange": 0.22, "product-hunt": 0.5, g2: 0.38, trustpilot: 0.5, youtube: 0.62, "public-web": 0.35 },
-  media_content: { "hacker-news": 0.2, github: 0.02, gitlab: 0.01, reddit: 0.74, x: 0.9, bluesky: 0.72, "stack-exchange": 0.05, "product-hunt": 0.48, g2: 0.08, trustpilot: 0.4, youtube: 0.9, "public-web": 0.4 },
-  other: { "hacker-news": 0.25, github: 0.2, gitlab: 0.16, reddit: 0.55, x: 0.55, bluesky: 0.35, "stack-exchange": 0.18, "product-hunt": 0.35, g2: 0.2, trustpilot: 0.35, youtube: 0.55, "public-web": 0.3 },
+  b2b_saas: { "hacker-news": 0.68, github: 0.58, gitlab: 0.5, reddit: 0.84, x: 0.72, bluesky: 0.45, devto: 0.62, "stack-exchange": 0.42, discourse: 0.58, "product-hunt": 0.5, g2: 0.62, trustpilot: 0.42, youtube: 0.58, "public-web": 0.3 },
+  developer_tool: { "hacker-news": 0.88, github: 0.94, gitlab: 0.9, reddit: 0.78, x: 0.74, bluesky: 0.38, devto: 0.76, "stack-exchange": 0.88, discourse: 0.84, "product-hunt": 0.4, g2: 0.48, trustpilot: 0.2, youtube: 0.62, "public-web": 0.28 },
+  consumer_software: { "hacker-news": 0.2, github: 0.12, gitlab: 0.08, reddit: 0.86, x: 0.82, bluesky: 0.55, devto: 0.32, "stack-exchange": 0.12, "product-hunt": 0.7, g2: 0.22, trustpilot: 0.68, youtube: 0.78, "public-web": 0.32 },
+  ecommerce: { "hacker-news": 0.1, github: 0.05, gitlab: 0.03, reddit: 0.9, x: 0.82, bluesky: 0.45, devto: 0.25, "stack-exchange": 0.08, "product-hunt": 0.48, g2: 0.18, trustpilot: 0.82, youtube: 0.65, "public-web": 0.35 },
+  marketplace: { "hacker-news": 0.45, github: 0.3, gitlab: 0.22, reddit: 0.88, x: 0.84, bluesky: 0.5, devto: 0.4, "stack-exchange": 0.15, "product-hunt": 0.55, g2: 0.3, trustpilot: 0.7, youtube: 0.68, "public-web": 0.38 },
+  service_business: { "hacker-news": 0.1, github: 0.03, gitlab: 0.02, reddit: 0.62, x: 0.68, bluesky: 0.38, devto: 0.3, "stack-exchange": 0.08, "product-hunt": 0.28, g2: 0.12, trustpilot: 0.72, youtube: 0.62, "public-web": 0.35 },
+  local_business: { "hacker-news": 0.03, github: 0.02, gitlab: 0.01, reddit: 0.55, x: 0.48, bluesky: 0.28, devto: 0.12, "stack-exchange": 0.03, "product-hunt": 0.18, g2: 0.08, trustpilot: 0.78, youtube: 0.55, "public-web": 0.45 },
+  agency: { "hacker-news": 0.42, github: 0.2, gitlab: 0.16, reddit: 0.68, x: 0.82, bluesky: 0.5, devto: 0.52, "stack-exchange": 0.22, "product-hunt": 0.5, g2: 0.38, trustpilot: 0.5, youtube: 0.62, "public-web": 0.35 },
+  media_content: { "hacker-news": 0.2, github: 0.02, gitlab: 0.01, reddit: 0.74, x: 0.9, bluesky: 0.72, devto: 0.42, "stack-exchange": 0.05, "product-hunt": 0.48, g2: 0.08, trustpilot: 0.4, youtube: 0.9, "public-web": 0.4 },
+  other: { "hacker-news": 0.25, github: 0.2, gitlab: 0.16, reddit: 0.55, x: 0.55, bluesky: 0.35, devto: 0.35, "stack-exchange": 0.18, "product-hunt": 0.35, g2: 0.2, trustpilot: 0.35, youtube: 0.55, "public-web": 0.3 },
 };
 
 const costFactor: Record<SourceRoutingCapabilityProfile["cost_class"], number> = {
@@ -75,6 +75,7 @@ function initialScore(sourceKey: string, identity: ReturnType<typeof effectiveId
     if (sourceKey === "g2") score += 0.04;
     if (sourceKey === "youtube") score += 0.03;
     if (sourceKey === "discourse") score += 0.04;
+    if (sourceKey === "devto") score += 0.04;
   }
   if (identity.deliveryModel === "physical_product") {
     if (sourceKey === "reddit" || sourceKey === "x") score += 0.08;
@@ -100,7 +101,7 @@ function initialScore(sourceKey: string, identity: ReturnType<typeof effectiveId
   const profile = input.demandProfile;
   const technicalAudience = Boolean(profile && hasStructuredTerm([...profile.target_customer_types, ...profile.buyer_roles, ...profile.end_user_types], ["developer", "engineer", "technical", "api", "software"]));
   const consumerAudience = identity.businessType === "consumer_software" || identity.businessModel === "b2c" || Boolean(profile && hasStructuredTerm([...profile.target_customer_types, ...profile.end_user_types], ["consumer", "individual", "household"]));
-  if (technicalAudience && (sourceKey === "github" || sourceKey === "gitlab" || sourceKey === "hacker-news" || sourceKey === "stack-exchange" || sourceKey === "discourse")) score += sourceKey === "github" || sourceKey === "gitlab" ? 0.08 : sourceKey === "stack-exchange" ? 0.08 : sourceKey === "discourse" ? 0.06 : 0.05;
+  if (technicalAudience && (sourceKey === "github" || sourceKey === "gitlab" || sourceKey === "hacker-news" || sourceKey === "stack-exchange" || sourceKey === "discourse" || sourceKey === "devto")) score += sourceKey === "github" || sourceKey === "gitlab" ? 0.08 : sourceKey === "stack-exchange" ? 0.08 : sourceKey === "discourse" || sourceKey === "devto" ? 0.06 : 0.05;
   if (consumerAudience && (sourceKey === "reddit" || sourceKey === "x" || sourceKey === "product-hunt" || sourceKey === "trustpilot" || sourceKey === "youtube")) score += 0.04;
 
   const intents = new Set(profile?.buying_intents.map((intent) => intent.intent_type) ?? []);
@@ -108,7 +109,7 @@ function initialScore(sourceKey: string, identity: ReturnType<typeof effectiveId
     if (sourceKey === "reddit" || sourceKey === "x" || sourceKey === "trustpilot" || sourceKey === "g2") score += 0.08;
     if (sourceKey === "hacker-news") score += 0.03;
     if (sourceKey === "product-hunt") score += 0.02;
-    if ((sourceKey === "github" || sourceKey === "gitlab") && technicalAudience) score += 0.04;
+    if ((sourceKey === "github" || sourceKey === "gitlab" || sourceKey === "devto") && technicalAudience) score += 0.04;
     if (sourceKey === "g2") score += 0.05;
     if (capability) score += capability.supports_switching_intent * 0.02;
   }
@@ -127,13 +128,13 @@ function initialScore(sourceKey: string, identity: ReturnType<typeof effectiveId
   if (intents.has("comparison_intent")) {
     if (sourceKey === "reddit" || sourceKey === "x") score += 0.08;
     if (sourceKey === "hacker-news") score += 0.04;
-    if ((sourceKey === "github" || sourceKey === "gitlab") && technicalAudience) score += 0.03;
+    if ((sourceKey === "github" || sourceKey === "gitlab" || sourceKey === "devto") && technicalAudience) score += 0.03;
     if (capability) score += capability.supports_competitor_comparison * 0.02;
   }
-  if ((profile?.pains.length ?? 0) > 0) score += ({ reddit: 0.05, x: 0.04, bluesky: 0.03, "hacker-news": 0.03, github: technicalAudience ? 0.04 : 0, gitlab: technicalAudience ? 0.04 : 0, youtube: 0.03 }[sourceKey] ?? 0);
+  if ((profile?.pains.length ?? 0) > 0) score += ({ reddit: 0.05, x: 0.04, bluesky: 0.03, devto: 0.03, "hacker-news": 0.03, github: technicalAudience ? 0.04 : 0, gitlab: technicalAudience ? 0.04 : 0, youtube: 0.03 }[sourceKey] ?? 0);
   if ((profile?.jobs_to_be_done.length ?? 0) > 0 && capability) score += capability.supports_problem_discussion * 0.02;
-  if ((profile?.feature_demands.length ?? 0) > 0) score += ({ github: technicalAudience ? 0.05 : 0, gitlab: technicalAudience ? 0.05 : 0, reddit: 0.03, x: 0.03, youtube: 0.03 }[sourceKey] ?? 0);
-  if ((profile?.known_competitors.length ?? 0) > 0 || (profile?.alternative_solutions.length ?? 0) > 0) score += ({ reddit: 0.03, x: 0.03, "hacker-news": 0.02, "product-hunt": 0.02, g2: 0.05, trustpilot: 0.03, youtube: 0.05, gitlab: technicalAudience ? 0.03 : 0, "public-web": 0.02 }[sourceKey] ?? 0);
+  if ((profile?.feature_demands.length ?? 0) > 0) score += ({ github: technicalAudience ? 0.05 : 0, gitlab: technicalAudience ? 0.05 : 0, devto: technicalAudience ? 0.03 : 0, reddit: 0.03, x: 0.03, youtube: 0.03 }[sourceKey] ?? 0);
+  if ((profile?.known_competitors.length ?? 0) > 0 || (profile?.alternative_solutions.length ?? 0) > 0) score += ({ reddit: 0.03, x: 0.03, devto: 0.02, "hacker-news": 0.02, "product-hunt": 0.02, g2: 0.05, trustpilot: 0.03, youtube: 0.05, gitlab: technicalAudience ? 0.03 : 0, "public-web": 0.02 }[sourceKey] ?? 0);
 
   if (identity.locationDependency >= 0.8 || identity.marketScope === "local") {
     if (sourceKey === "hacker-news" || sourceKey === "github" || sourceKey === "stack-exchange") return 0;
@@ -170,7 +171,7 @@ function reasonCodes(sourceKey: string, score: number, identity: ReturnType<type
   const profile = input.demandProfile;
   const technical = identity.technicalOrientation === "high" || identity.technicalOrientation === "medium" || Boolean(profile && hasStructuredTerm([...profile.target_customer_types, ...profile.buyer_roles, ...profile.end_user_types], ["developer", "engineer", "technical", "api", "software"]));
   if (technical && (sourceKey === "github" || sourceKey === "gitlab")) codes.push("DEVELOPER_AUDIENCE_MATCH");
-  if (technical && (sourceKey === "github" || sourceKey === "gitlab" || sourceKey === "hacker-news" || sourceKey === "stack-exchange" || sourceKey === "discourse")) codes.push("TECHNICAL_DISCUSSION_MATCH");
+  if (technical && (sourceKey === "github" || sourceKey === "gitlab" || sourceKey === "hacker-news" || sourceKey === "stack-exchange" || sourceKey === "discourse" || sourceKey === "devto")) codes.push("TECHNICAL_DISCUSSION_MATCH");
   const intents = new Set(profile?.buying_intents.map((intent) => intent.intent_type) ?? []);
   if (intents.has("switching_intent") || intents.has("alternative_search") || intents.has("renewal_reconsideration")) codes.push("SWITCHING_INTENT_MATCH");
   if (intents.has("recommendation_request")) codes.push("RECOMMENDATION_INTENT_MATCH");
@@ -195,13 +196,13 @@ function reasonSummary(codes: SourceRoutingReasonCode[]): string {
 }
 
 function defaultCap(sourceKey: string, scanMode: SourceRoutingScanMode): { maxCandidates: number; maxPages: number } {
-  if (scanMode === "onboarding" || scanMode === "baseline") return { maxCandidates: sourceKey === "x" ? 10 : ["product-hunt", "g2", "trustpilot", "youtube"].includes(sourceKey) ? 4 : 5, maxPages: 1 };
-  return { maxCandidates: sourceKey === "x" ? 25 : ["product-hunt", "g2", "trustpilot", "youtube", "gitlab"].includes(sourceKey) ? 10 : 25, maxPages: sourceKey === "x" || sourceKey === "product-hunt" || sourceKey === "g2" || sourceKey === "trustpilot" || sourceKey === "youtube" || sourceKey === "gitlab" || sourceKey === "discourse" ? 2 : 3 };
+  if (scanMode === "onboarding" || scanMode === "baseline") return { maxCandidates: sourceKey === "x" ? 10 : ["product-hunt", "g2", "trustpilot", "youtube", "devto"].includes(sourceKey) ? 4 : 5, maxPages: 1 };
+  return { maxCandidates: sourceKey === "x" ? 25 : ["product-hunt", "g2", "trustpilot", "youtube", "gitlab", "devto"].includes(sourceKey) ? 10 : 25, maxPages: sourceKey === "x" || sourceKey === "product-hunt" || sourceKey === "g2" || sourceKey === "trustpilot" || sourceKey === "youtube" || sourceKey === "gitlab" || sourceKey === "discourse" || sourceKey === "devto" ? 2 : 3 };
 }
 
 function minimumCandidateBudget(route: SourceRoutingRoute, scanMode: SourceRoutingScanMode): number {
   if (scanMode === "manual" || scanMode === "manual_refresh" || scanMode === "manual_deep") {
-    return ({ x: 6, github: 8, gitlab: 8, youtube: 6, "hacker-news": 4, bluesky: 6, "stack-exchange": 6, discourse: 6, "product-hunt": 4, g2: 4, trustpilot: 4, "public-web": 2 } as Record<string, number>)[route.source_key] ?? 1;
+    return ({ x: 6, github: 8, gitlab: 8, devto: 6, youtube: 6, "hacker-news": 4, bluesky: 6, "stack-exchange": 6, discourse: 6, "product-hunt": 4, g2: 4, trustpilot: 4, "public-web": 2 } as Record<string, number>)[route.source_key] ?? 1;
   }
   if (scanMode !== "onboarding" && scanMode !== "baseline") return 1;
   return route.source_key === "x" ? 10 : 5;

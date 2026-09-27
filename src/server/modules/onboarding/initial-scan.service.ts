@@ -1242,7 +1242,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
           continue;
         }
         const route = routeBySource.get(sourceKey);
-        const query = sourceKey === "bluesky" || sourceKey === "reddit" || sourceKey === "x" ? [product.name, ...queryTerms.slice(0, 5)].join(" ").slice(0, 180) : undefined;
+        const query = sourceKey === "bluesky" || sourceKey === "reddit" || sourceKey === "x" || sourceKey === "devto" ? [product.name, ...queryTerms.slice(0, 5)].join(" ").slice(0, 180) : undefined;
         const sourcePlan = queryPlanBySource.get(sourceKey);
         const plannedRequests = sourcePlan?.queries.length && route
           ? toSourceDiscoveryRequestsForPlan({ sourcePlan, maxPages: route.max_pages, hnAlgoliaSearchEnabled: hnAlgoliaSearchEnabled() })

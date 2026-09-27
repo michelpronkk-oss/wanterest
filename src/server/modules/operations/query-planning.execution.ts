@@ -151,6 +151,14 @@ export function toSourceDiscoveryRequest(input: SourceQueryExecutionInput): Sour
         if (typeof instance === "string" && instance.trim()) metadata.discourseInstance = instance.trim();
       }
     }
+  } else if (sourcePlan.source_key === "devto") {
+    metadata.maxPages = Math.min(2, Math.max(1, input.maxPages));
+    metadata.devToV1 = true;
+    metadata.depthPolicyVersion = "devto_depth_v1";
+    metadata.maxArticlesToExpand = 4;
+    metadata.maxCommentsPerArticle = 8;
+    metadata.includeComments = true;
+    metadata.topDays = 365;
   } else if (sourcePlan.source_key === "g2" || sourcePlan.source_key === "trustpilot") {
     metadata.reviewImport = true;
     if (sourcePlan.source_key === "g2") {
