@@ -24,3 +24,4 @@ export * from "./cross-product-routing-shadow.service";
 export * from "./adaptive-allocator.config";
 export * from "./adaptive-allocator.schemas";
 export * from "./adaptive-allocator.policy";
+export * from "./natural-yield-validation.schemas";
