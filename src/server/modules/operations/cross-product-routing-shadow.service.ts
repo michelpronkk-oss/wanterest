@@ -17,14 +17,20 @@ export type CrossProductRoutingShadowResult = {
 function emptyTelemetry(): CrossProductRoutingTelemetry {
   return {
     routingVersion: "cross_product_routing_v1",
+    shadowInvoked: true,
     evidenceSeen: 0,
+    conversationsExamined: 0,
     routingProfilesConsidered: 0,
     deterministicPrefilterMatches: 0,
     directRoutes: 0,
     categoryRoutes: 0,
     competitorRoutes: 0,
+    noRouteDecisions: 0,
+    candidateProductsBeforeCap: 0,
+    candidateProductsAfterCap: 0,
     candidateProducts: 0,
     capSkips: 0,
+    conversationCapSkips: 0,
     routesCreated: 0,
     routesReused: 0,
     routesRejectedDownstream: 0,
@@ -45,7 +51,7 @@ export async function runCrossProductRoutingShadow(input: CrossProductRoutingSha
       existingProductIds: input.existingProductIdsByConversation.get(evidence.conversationId),
     });
     routes.push(...result.routes);
-    for (const key of ["evidenceSeen", "routingProfilesConsidered", "deterministicPrefilterMatches", "directRoutes", "categoryRoutes", "competitorRoutes", "candidateProducts", "capSkips"] as const) telemetry[key] += result.telemetry[key];
+    for (const key of ["evidenceSeen", "conversationsExamined", "routingProfilesConsidered", "deterministicPrefilterMatches", "directRoutes", "categoryRoutes", "competitorRoutes", "noRouteDecisions", "candidateProductsBeforeCap", "candidateProductsAfterCap", "candidateProducts", "capSkips", "conversationCapSkips"] as const) telemetry[key] += result.telemetry[key];
     const comparison = compareCrossProductRouting({ existingProductIds: input.existingProductIdsByConversation.get(evidence.conversationId) ?? new Set(), routes: result.routes });
     telemetry.routeMissShadow += comparison.routeMissShadow;
     telemetry.routeExtraShadow += comparison.routeExtraShadow;

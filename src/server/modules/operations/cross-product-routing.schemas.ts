@@ -59,14 +59,20 @@ export type CrossProductRoute = {
 
 export type CrossProductRoutingTelemetry = {
   routingVersion: typeof crossProductRoutingVersion;
+  shadowInvoked: boolean;
   evidenceSeen: number;
+  conversationsExamined: number;
   routingProfilesConsidered: number;
   deterministicPrefilterMatches: number;
   directRoutes: number;
   categoryRoutes: number;
   competitorRoutes: number;
+  noRouteDecisions: number;
+  candidateProductsBeforeCap: number;
+  candidateProductsAfterCap: number;
   candidateProducts: number;
   capSkips: number;
+  conversationCapSkips: number;
   routesCreated: number;
   routesReused: number;
   routesRejectedDownstream: number;
@@ -74,3 +80,27 @@ export type CrossProductRoutingTelemetry = {
   routeExtraShadow: number;
   semanticCalls: number;
 };
+
+export const crossProductRoutingTelemetrySchema = z.object({
+  routingVersion: z.literal(crossProductRoutingVersion),
+  shadowInvoked: z.boolean(),
+  evidenceSeen: z.number().int().nonnegative(),
+  conversationsExamined: z.number().int().nonnegative(),
+  routingProfilesConsidered: z.number().int().nonnegative(),
+  deterministicPrefilterMatches: z.number().int().nonnegative(),
+  directRoutes: z.number().int().nonnegative(),
+  categoryRoutes: z.number().int().nonnegative(),
+  competitorRoutes: z.number().int().nonnegative(),
+  noRouteDecisions: z.number().int().nonnegative(),
+  candidateProductsBeforeCap: z.number().int().nonnegative(),
+  candidateProductsAfterCap: z.number().int().nonnegative(),
+  candidateProducts: z.number().int().nonnegative(),
+  capSkips: z.number().int().nonnegative(),
+  conversationCapSkips: z.number().int().nonnegative(),
+  routesCreated: z.number().int().nonnegative(),
+  routesReused: z.number().int().nonnegative(),
+  routesRejectedDownstream: z.number().int().nonnegative(),
+  routeMissShadow: z.number().int().nonnegative(),
+  routeExtraShadow: z.number().int().nonnegative(),
+  semanticCalls: z.number().int().nonnegative(),
+});

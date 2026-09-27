@@ -1,11 +1,16 @@
 import "server-only";
 
 import type { ProductRow } from "@/server/db/database.helpers";
+import { listProducts } from "@/server/modules/products/product.repository";
+import { isActiveProduct } from "@/server/modules/products/product-lifecycle";
+import type { Database } from "@/server/db/database.types";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { CrossProductRoutingRepository } from "./cross-product-routing.repository";
 import { crossProductRoutingShadowEnabled } from "./cross-product-routing.config";
 import { profileInputFromDemandProfile } from "./cross-product-routing.service";
 import { runCrossProductRoutingShadow } from "./cross-product-routing-shadow.service";
 import type { CrossProductRoutingTelemetry, ProductRoutingProfile, PublicRoutingEvidence } from "./cross-product-routing.schemas";
+import { CROSS_PRODUCT_ROUTING_MAX_CONVERSATIONS } from "./cross-product-routing.schemas";
 
 type QueryResult<T> = { data: T[] | null; error: { message?: string } | null };
 type Query = { select(columns: string): Query; eq(field: string, value: unknown): Query; in(field: string, values: unknown[]): Query; order(field: string, options: { ascending: boolean }): Query; limit(count: number): Promise<QueryResult<Record<string, unknown>>>; maybeSingle(): Promise<{ data: Record<string, unknown> | null; error: { message?: string } | null }> };
@@ -33,17 +38,21 @@ async function routingProfile(client: Client, product: ProductRow): Promise<Prod
   });
 }
 
-export async function runCrossProductRoutingShadowForRefresh(input: {
+export async function runCrossProductRoutingShadowForConversations(input: {
   client: unknown;
   workspaceIds: string[];
   products: ProductRow[];
   conversationIds: string[];
   env?: Record<string, string | undefined>;
+  existingProductIdsByConversation?: Map<string, Set<string>>;
+  existingProductIdsUseAllProfiles?: boolean;
 }): Promise<CrossProductRoutingTelemetry | null> {
   const products = input.products.filter((product) => input.workspaceIds.includes(product.workspace_id));
   if (!products.some((product) => crossProductRoutingShadowEnabled(input.env, product.workspace_id)) || !products.length || !input.conversationIds.length) return null;
   const client = input.client as Client;
-  const conversationQuery = await client.from("conversations").select("id,content_hash,title,body,published_at,primary_source_item_id").in("id", [...new Set(input.conversationIds)].slice(0, 50)).limit(50);
+  const uniqueConversationIds = [...new Set(input.conversationIds)].sort();
+  const conversationIds = uniqueConversationIds.slice(0, CROSS_PRODUCT_ROUTING_MAX_CONVERSATIONS);
+  const conversationQuery = await client.from("conversations").select("id,content_hash,title,body,published_at,primary_source_item_id").in("id", conversationIds).limit(CROSS_PRODUCT_ROUTING_MAX_CONVERSATIONS);
   if (conversationQuery.error) throw rowError("Conversations could not be loaded for cross-product routing", conversationQuery.error);
   const conversations = (conversationQuery.data ?? []) as Array<Record<string, unknown>>;
   const sourceIds = conversations.map((row) => row.primary_source_item_id).filter((value): value is string => typeof value === "string");
@@ -53,11 +62,44 @@ export async function runCrossProductRoutingShadowForRefresh(input: {
   const evidence: PublicRoutingEvidence[] = conversations.map((row) => ({ conversationId: String(row.id), contentHash: String(row.content_hash), title: typeof row.title === "string" ? row.title : null, body: String(row.body ?? ""), sourceKey: sourceById.get(String(row.primary_source_item_id)) ?? "unknown", publishedAt: typeof row.published_at === "string" ? row.published_at : null }));
   const profiles = (await Promise.all(products.filter((product) => crossProductRoutingShadowEnabled(input.env, product.workspace_id)).map((product) => routingProfile(client, product)))).filter((profile): profile is ProductRoutingProfile => Boolean(profile));
   if (!profiles.length) return null;
-  const existing = new Map(evidence.map((item) => [item.conversationId, new Set(profiles.map((profile) => profile.productId))]));
+  const existing = input.existingProductIdsByConversation ?? (input.existingProductIdsUseAllProfiles
+    ? new Map(evidence.map((item) => [item.conversationId, new Set(profiles.map((profile) => profile.productId))]))
+    : new Map(evidence.map((item) => [item.conversationId, new Set<string>()])));
   const repository = new CrossProductRoutingRepository(input.client);
   const result = await runCrossProductRoutingShadow({ evidence, profiles, existingProductIdsByConversation: existing, persist: async (route) => {
     const edge = await repository.upsertEdge(route);
     return edge.wasExisting ? "reused" : "created";
   }});
+  result.telemetry.conversationCapSkips = Math.max(0, uniqueConversationIds.length - conversationIds.length);
   return result.telemetry;
+}
+
+export async function runCrossProductRoutingShadowForNormalScan(input: {
+  client: unknown;
+  product: ProductRow;
+  conversationIds: string[];
+  env?: Record<string, string | undefined>;
+}): Promise<CrossProductRoutingTelemetry | null> {
+  if (!crossProductRoutingShadowEnabled(input.env, input.product.workspace_id)) return null;
+  const products = (await listProducts(input.client as SupabaseClient<Database>, input.product.workspace_id)).filter(isActiveProduct);
+  const conversationIds = [...new Set(input.conversationIds)].sort();
+  const existing = new Map(conversationIds.map((conversationId) => [conversationId, new Set([input.product.id])]));
+  return runCrossProductRoutingShadowForConversations({
+    client: input.client,
+    workspaceIds: [input.product.workspace_id],
+    products,
+    conversationIds,
+    env: input.env,
+    existingProductIdsByConversation: existing,
+  });
+}
+
+export async function runCrossProductRoutingShadowForRefresh(input: {
+  client: unknown;
+  workspaceIds: string[];
+  products: ProductRow[];
+  conversationIds: string[];
+  env?: Record<string, string | undefined>;
+}): Promise<CrossProductRoutingTelemetry | null> {
+  return runCrossProductRoutingShadowForConversations({ ...input, existingProductIdsUseAllProfiles: true });
 }

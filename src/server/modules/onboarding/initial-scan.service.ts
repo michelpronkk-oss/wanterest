@@ -61,6 +61,9 @@ import { getSourceRuntimeConfiguration } from "@/server/providers/source/runtime
 import { hasSelectableDiscourseInstanceSupply } from "@/server/providers/source/discourse/instance-supply";
 import { rebuildDemandIntelligenceForScan, type DemandRebuildResult } from "@/server/modules/demand-intelligence/demand.orchestration";
 import { generateActionsForScan, type ActionGenerationForScanResult } from "@/server/modules/actions/action.orchestration";
+import { crossProductRoutingShadowEnabled } from "@/server/modules/operations/cross-product-routing.config";
+import { runCrossProductRoutingShadowForNormalScan } from "@/server/modules/operations/cross-product-routing-runtime.service";
+import { crossProductRoutingTelemetrySchema, type CrossProductRoutingTelemetry } from "@/server/modules/operations/cross-product-routing.schemas";
 import { scanCandidateReviewSchema, sourceScanResultSchema, type ScanCandidateReview, type ScanMode, type ScanProgress, type SourceScanResult } from "@/server/modules/operations/product-demand-scan.schemas";
 import { initialScanIdempotencyKey, isActiveProductDemandScanJob, PRODUCT_DEMAND_SCAN_JOB_TYPE, shouldRefreshDerivedIntelligence } from "@/server/modules/operations/product-demand-scan.identity";
 import { reconcileActiveProductDemandScanJobs, reconcileProductDemandScanJob } from "@/server/modules/operations/product-demand-scan.recovery";
@@ -195,6 +198,7 @@ const scanResultSchema = z.object({
     categoryAnchors: z.array(z.string()).max(8),
   })).max(20).optional(),
   candidateReviews: z.array(scanCandidateReviewSchema).max(100).optional(),
+  crossProductRoutingShadow: crossProductRoutingTelemetrySchema.optional(),
 });
 
 export type InitialScanResult = z.infer<typeof scanResultSchema>;
@@ -1301,6 +1305,17 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
     if (!sources.length || !conversationIds.length) throw new AppError("CONFLICT", "No usable source results were available for the first scan.");
 
     await setScanJob(client, job.id, { status: "running", phase: "analyzing", scanMode, progress: { stage: "processing", percent: 65, currentLabel: "Processing conversations" } });
+    let crossProductRoutingShadow: CrossProductRoutingTelemetry | null = null;
+    if (crossProductRoutingShadowEnabled(process.env, product.workspace_id)) {
+      try {
+        crossProductRoutingShadow = await runCrossProductRoutingShadowForNormalScan({ client, product, conversationIds: [...new Set(conversationIds)].sort(), env: process.env });
+        diagnostics.push({ sourceKey: "cross-product-routing-shadow", state: crossProductRoutingShadow ? "complete" : "skipped", message: crossProductRoutingShadow ? JSON.stringify(crossProductRoutingShadow).slice(0, 800) : "No eligible product routing profiles were available." });
+      } catch (error) {
+        diagnostics.push({ sourceKey: "cross-product-routing-shadow", state: "warning", message: `Shadow routing skipped: ${safeSummary(error)}` });
+      }
+    } else {
+      diagnostics.push({ sourceKey: "cross-product-routing-shadow", state: "skipped", message: "Shadow routing is disabled or the workspace is not allowlisted." });
+    }
     let candidateResult: CandidateProcessingResult;
     const newSignalEvaluationIds: string[] = [];
     if (options.candidateExecutor) {
@@ -1541,6 +1556,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       ...(candidateResult.candidateSelection ? { candidateSelection: candidateResult.candidateSelection } : {}),
       ...(candidateResult.qualification ? { qualification: candidateResult.qualification } : {}),
       ...(candidateResult.semanticReasoningShadow ? { semanticReasoningShadow: candidateResult.semanticReasoningShadow } : {}),
+      ...(crossProductRoutingShadow ? { crossProductRoutingShadow } : {}),
       ...(routingPlan ? {
         routing: {
           version: routingPlan.version,
