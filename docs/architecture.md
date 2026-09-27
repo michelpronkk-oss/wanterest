@@ -5063,3 +5063,46 @@ with mocked SDK responses and local billing-cycle tests; Dodo test-mode validati
 uses live mode. Production validation for this phase is a human-approved fixture/contract pass followed by
 one controlled paid-subscription event replay against a workspace with an intentionally non-production
 cohort fixture. No production Dodo discount mutation is part of this implementation.
+
+### 13A.3 — Referral & Priority Engine V1 (`priority_referral_v1`) — FEATURE BRANCH
+
+**Boundary and policy.** 13A.3 is a pre-admission waitlist growth loop. A verified waitlist applicant may
+share one opaque referral identity; a referred application earns credit only after its own 13A.1 email
+verification succeeds. `priority_referral_v1` is the single application policy definition with a threshold of
+three valid verified referrals. Priority Access is a categorical waitlist/access-queue state, not a cohort,
+invite, account, workspace, subscription, product permission, or billing benefit. Early Access numbering and
+13A.2/13A.2B state remain independent.
+
+**Durable model.** `waitlist_referral_identities` stores one immutable, high-entropy public code per verified
+application. `waitlist_referrals` stores one first-writer-wins relationship per referred application with
+`pending`, `verified`, or `invalidated` status. `waitlist_priority_access` stores the current server-only
+granted/revoked state, while `waitlist_referral_events` is append-only audit history for identity creation,
+attribution, verification, invalidation, and priority changes. Migration is additive and performs no backfill;
+the transactionally coupled verification wrapper creates the identity when an applicant verifies.
+
+**Attribution and verification.** The waitlist submission wrapper takes a bounded referral code and locks the
+normalized email key before deciding whether the application is new. A pre-existing application cannot be
+retroactively attributed or stolen. A valid new attribution is pending; the referral-verification RPC changes
+it to verified exactly once and recalculates the referrer's valid count. Self-referrals, duplicate referred
+emails, invalid codes, and unverified referrers receive no credit. Existing UTM/referrer fields remain generic
+marketing attribution and are not overloaded.
+
+**Concurrency and revocation.** Database uniqueness, transaction locks, idempotent RPCs, and append-only event
+keys protect concurrent identity creation, attribution, verification, third-referral priority grants, and
+invalidations. Invalidating a verified referral reduces the effective count and automatically revokes granted
+Priority Access when the threshold is no longer met; all grant/revoke history remains. Revocation and
+invalidation are server-only internal seams and never modify Early Access, cohort, workspace, or billing state.
+
+**Public/private boundary.** `/r/[code]` validates only the opaque code shape, applies fixed same-site
+`/waitlist` routing, preserves a small allowlisted UTM set, and never reveals whether the code exists. The
+waitlist form submits the dedicated referral code separately from UTM attribution. The private status page
+uses the existing status-token cookie and exposes only Early Access number, share URL, verified count, policy
+threshold, remaining count, and categorical Priority status. No public route can read referrer identity,
+email, Early Access number, status, or count, and a referral code is never an authentication credential.
+
+**Security and rollout.** Referral tables have RLS enabled, no direct anonymous/authenticated table grants,
+and service-role-only mutation/read RPCs. Rate limiting, same-origin checks, honeypot protection, and generic
+duplicate submission responses remain owned by 13A.1. No IP/device fingerprinting, fraud vendor, Dodo call,
+email, cohort assignment, workspace creation, or product scan is introduced. 13A.5 may consume the read-only
+`priorityUnlocked`, `priorityGrantedAt`, and `verifiedCount` seam when admission is later designed; 13B.1 may
+consume the same status/share fields for cards without changing attribution authority.
