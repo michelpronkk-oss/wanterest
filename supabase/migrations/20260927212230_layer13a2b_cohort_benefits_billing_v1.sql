@@ -25,8 +25,8 @@ create table if not exists public.workspace_cohort_benefit_entitlements (
     references public.subscriptions (workspace_id, id) on delete set null,
   check (expires_at is null or activated_at is not null),
   check (expires_at is null or expires_at > activated_at),
-  check (status = 'eligible' or activated_at is not null),
-  check (status = 'eligible' or expires_at is not null)
+  check (status in ('eligible', 'revoked') or activated_at is not null),
+  check (status in ('eligible', 'revoked') or expires_at is not null)
 );
 
 create index if not exists workspace_cohort_benefit_entitlements_status_idx

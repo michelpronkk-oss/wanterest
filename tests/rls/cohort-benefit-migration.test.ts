@@ -13,6 +13,8 @@ describe("13A.2B cohort benefit migration contract", () => {
     expect(migration).toContain("unique (workspace_id)");
     expect(migration).toContain("policy_key text not null");
     expect(migration).toContain("duration_months smallint not null");
+    expect(migration).toContain("status in ('eligible', 'revoked') or activated_at is not null");
+    expect(migration).toContain("status in ('eligible', 'revoked') or expires_at is not null");
   });
 
   it("denies browser mutation and exposes only membership-checked read access", () => {
