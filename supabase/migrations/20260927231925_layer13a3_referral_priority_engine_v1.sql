@@ -254,7 +254,7 @@ declare
   v_count integer;
 begin
   if not public.is_service_role() then raise exception using errcode = '42501', message = 'waitlist_referral_service_role_required'; end if;
-  if p_policy_key is distinct from 'priority_referral_v1' or p_threshold is distinct from 3 then
+  if p_policy_key is null or char_length(trim(p_policy_key)) not between 1 and 120 or p_threshold is null or p_threshold < 1 then
     raise exception using errcode = '22023', message = 'waitlist_priority_policy_invalid';
   end if;
   select * into v_referred from public.waitlist_applications where id = p_referred_application_id;
@@ -335,7 +335,11 @@ begin
 end;
 $$;
 
-create or replace function public.verify_waitlist_application_with_referral(p_verification_token_hash text)
+create or replace function public.verify_waitlist_application_with_referral(
+  p_verification_token_hash text,
+  p_policy_key text,
+  p_threshold integer
+)
 returns public.waitlist_applications
 language plpgsql
 security definer
@@ -348,7 +352,7 @@ begin
     raise exception using errcode = '42501', message = 'waitlist_referral_service_role_required';
   end if;
   select * into v_application from public.verify_waitlist_application(p_verification_token_hash);
-  perform public.process_waitlist_referral_verification(v_application.id, 'priority_referral_v1', 3);
+  perform public.process_waitlist_referral_verification(v_application.id, p_policy_key, p_threshold);
   return v_application;
 end;
 $$;
@@ -453,14 +457,14 @@ revoke all on function public.ensure_waitlist_referral_identity(uuid) from publi
 revoke all on function public.submit_waitlist_application_with_referral(text, text, text, text, text, text, text, text, timestamptz, text, text, text, text, text, text, text, text, boolean, text) from public, anon, authenticated;
 revoke all on function public.process_waitlist_referral_verification(uuid, text, integer) from public, anon, authenticated;
 revoke all on function public.get_waitlist_referral_status(uuid) from public, anon, authenticated;
-revoke all on function public.verify_waitlist_application_with_referral(text) from public, anon, authenticated;
+revoke all on function public.verify_waitlist_application_with_referral(text, text, integer) from public, anon, authenticated;
 revoke all on function public.invalidate_waitlist_referral(uuid, text, uuid) from public, anon, authenticated;
 revoke all on function public.revoke_waitlist_priority_access(uuid, text, uuid) from public, anon, authenticated;
 grant execute on function public.ensure_waitlist_referral_identity(uuid) to service_role;
 grant execute on function public.submit_waitlist_application_with_referral(text, text, text, text, text, text, text, text, timestamptz, text, text, text, text, text, text, text, text, boolean, text) to service_role;
 grant execute on function public.process_waitlist_referral_verification(uuid, text, integer) to service_role;
 grant execute on function public.get_waitlist_referral_status(uuid) to service_role;
-grant execute on function public.verify_waitlist_application_with_referral(text) to service_role;
+grant execute on function public.verify_waitlist_application_with_referral(text, text, integer) to service_role;
 grant execute on function public.invalidate_waitlist_referral(uuid, text, uuid) to service_role;
 grant execute on function public.revoke_waitlist_priority_access(uuid, text, uuid) to service_role;
 

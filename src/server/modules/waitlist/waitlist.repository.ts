@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { AppError } from "@/server/lib/errors";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
+import { priorityReferralPolicy } from "./referral.policy";
 import type { WaitlistStatus } from "./waitlist.schemas";
 
 export type WaitlistApplication = {
@@ -121,7 +122,7 @@ export function createSupabaseWaitlistRepository(client: SupabaseClient = servic
       return application(unwrap(data as RawWaitlistApplication | null, error));
     },
     async verify(verificationTokenHash) {
-      const { data, error } = await client.rpc("verify_waitlist_application_with_referral", { p_verification_token_hash: verificationTokenHash });
+      const { data, error } = await client.rpc("verify_waitlist_application_with_referral", { p_verification_token_hash: verificationTokenHash, p_policy_key: priorityReferralPolicy.policyKey, p_threshold: priorityReferralPolicy.threshold });
       return application(unwrap(data as RawWaitlistApplication | null, error));
     },
     async getByStatusToken(statusTokenHash) {
