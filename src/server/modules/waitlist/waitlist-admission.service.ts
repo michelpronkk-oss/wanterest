@@ -16,6 +16,7 @@ import {
   type WaitlistAdmissionStatus,
 } from "./waitlist-admission.schemas";
 import { createSupabaseWaitlistAdmissionRepository, type WaitlistAdmissionRepository } from "./waitlist-admission.repository";
+import { invitationEmail } from "./waitlist-emails";
 
 const TOKEN_BYTES = 32;
 
@@ -41,7 +42,6 @@ export type WaitlistAdmissionServiceDeps = {
 
 function tokenHash(token: string): string { return createHash("sha256").update(token).digest("hex"); }
 function newToken(): string { return randomBytes(TOKEN_BYTES).toString("base64url"); }
-function escapeHtml(value: string): string { return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character); }
 
 function origin(value: string): string {
   try {
@@ -82,9 +82,12 @@ export class WaitlistAdmissionService {
     } satisfies InviteEmailPayload;
     const message = {
       to: invite.recipientEmail,
-      subject: "Your Wanterest invitation",
-      text: `Hi ${emailPayload.firstName},\n\nYour Wanterest invitation for ${emailPayload.companyName} is ready:\n${inviteUrl}\n\nThis invite expires on ${invite.expiresAt} and can be used once.\n`,
-      html: `<p>Hi ${escapeHtml(emailPayload.firstName)},</p><p>Your Wanterest invitation for ${escapeHtml(emailPayload.companyName)} is ready.</p><p><a href="${escapeHtml(inviteUrl)}">Accept your Wanterest invitation</a></p><p>This invite expires on ${escapeHtml(invite.expiresAt)} and can be used once.</p>`,
+      ...invitationEmail({
+        firstName: emailPayload.firstName,
+        companyName: emailPayload.companyName,
+        inviteUrl,
+        expiresAt: emailPayload.expiresAt,
+      }),
     };
     const delivery = options.sendEmail ? await this.emailProvider.send(message) : null;
     return { invite, rawToken, emailPayload, delivery };

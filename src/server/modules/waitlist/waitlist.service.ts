@@ -9,6 +9,7 @@ import { SITE_ORIGIN } from "@/shared/config/site";
 import { priorityReadModel } from "./referral.policy";
 import { createSupabaseWaitlistReferralRepository, type WaitlistReferralRepository } from "./referral.repository";
 import { createSupabaseWaitlistAdmissionRepository, type WaitlistAdmissionRepository } from "./waitlist-admission.repository";
+import { earlyAccessVerificationEmail, earlyAccessVerifiedEmail } from "./waitlist-emails";
 import type { WaitlistAdmissionStatus } from "./waitlist-admission.schemas";
 import { waitlistApplicationInputSchema, waitlistStatusTokenSchema, waitlistVerificationTokenSchema } from "./waitlist.schemas";
 import { createSupabaseWaitlistRepository, type WaitlistApplication, type WaitlistRepository } from "./waitlist.repository";
@@ -37,7 +38,6 @@ function tokenHash(token: string): string { return createHash("sha256").update(t
 function newToken(): string { return randomBytes(TOKEN_BYTES).toString("base64url"); }
 function emailHash(normalizedEmail: string): string { return createHash("sha256").update(normalizedEmail).digest("hex"); }
 function optional(value: string | undefined): string | null { return value?.trim() || null; }
-function escapeHtml(value: string): string { return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character); }
 
 export class WaitlistService {
   private readonly repository: WaitlistRepository;
@@ -84,11 +84,16 @@ export class WaitlistService {
       this.log("duplicate_idempotent");
       return { accepted: true, message: "received", verificationDelivery: "not_required" };
     }
+    const verificationUrl = new URL("/waitlist/verify", requestOrigin);
+    verificationUrl.searchParams.set("token", verificationToken);
+    verificationUrl.searchParams.set("status", statusToken);
     const delivery = await this.emailProvider.send({
       to: submitted.email,
-      subject: "Confirm your Wanterest Early Access request",
-      text: `Hi ${submitted.firstName},\n\nConfirm your Wanterest Early Access request here:\n${requestOrigin}/waitlist/verify?token=${encodeURIComponent(verificationToken)}&status=${encodeURIComponent(statusToken)}\n\nYour Early Access number is finalized only after verification. Waitlist membership does not grant dashboard access.\n`,
-      html: `<p>Hi ${escapeHtml(submitted.firstName)},</p><p>Confirm your Wanterest Early Access request:</p><p><a href="${requestOrigin}/waitlist/verify?token=${encodeURIComponent(verificationToken)}&status=${encodeURIComponent(statusToken)}">Confirm Early Access request</a></p><p>Your Early Access number is finalized only after verification. Waitlist membership does not grant dashboard access.</p>`,
+      ...earlyAccessVerificationEmail({
+        firstName: submitted.firstName,
+        verificationUrl: verificationUrl.toString(),
+        expiresInHours: VERIFICATION_TTL_MS / (60 * 60 * 1000),
+      }),
     });
     if (delivery.ok) this.log("verification_sent");
     else this.log("verification_unavailable");
@@ -107,7 +112,21 @@ export class WaitlistService {
       }
     }
     this.log("verification_succeeded");
-    const delivery = await this.emailProvider.send({ to: application.email, subject: "Your Wanterest Early Access request is verified", text: `Your Wanterest Early Access request is verified. Your Early Access number is #${String(application.earlyAccessNumber).padStart(4, "0")}. Waitlist membership does not grant dashboard access.`, html: `<p>Your Wanterest Early Access request is verified.</p><p>Your Early Access number is <strong>#${String(application.earlyAccessNumber).padStart(4, "0")}</strong>.</p><p>Waitlist membership does not grant dashboard access.</p>` });
+    // The database transaction assigns this permanent number. Never invent a
+    // fallback identity in a user-facing email if that invariant is violated.
+    const earlyAccessNumber = application.earlyAccessNumber;
+    if (earlyAccessNumber === null || !Number.isSafeInteger(earlyAccessNumber) || earlyAccessNumber < 1) {
+      this.log("verification_identity_unavailable");
+      return application;
+    }
+
+    const delivery = await this.emailProvider.send({
+      to: application.email,
+      ...earlyAccessVerifiedEmail({
+        firstName: application.firstName,
+        earlyAccessNumber,
+      }),
+    });
     if (!delivery.ok) this.log("verification_success_email_unavailable");
     return application;
   }
