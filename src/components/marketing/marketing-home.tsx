@@ -45,6 +45,8 @@ export function MarketingHome({ accessState }: { accessState: HomepageAccessStat
  * Hand-authored, not randomized: fixed positions/timings keep server and client markup
  * identical (no hydration mismatch) and keep the field intentional rather than noisy.
  * Each dot sits in the left/right margins of the hero, never behind the centered copy column.
+ * Six dots, two lime-tinted: this field marks an unrecognized visitor, so it never shows once
+ * someone is already known (submitted, verified, invited, or a member) — see its render site.
  */
 type SignalDot = {
   x: number;
@@ -55,28 +57,15 @@ type SignalDot = {
   dy: number;
   delay: number;
   duration: number;
-  desktopOnly?: boolean;
 };
 
 const SIGNAL_DOTS: SignalDot[] = [
-  // Visible at every width — pinned to the far corners/margins, clear of stacked mobile content.
   { x: 6, y: 8, size: 5, tone: "neutral", dx: 4, dy: -3, delay: 0, duration: 13 },
   { x: 92, y: 10, size: 6, tone: "accent", dx: -4, dy: 3, delay: 2, duration: 15 },
   { x: 8, y: 88, size: 4, tone: "accent", dx: 3, dy: -4, delay: 1, duration: 14 },
   { x: 90, y: 90, size: 5, tone: "neutral", dx: -3, dy: 4, delay: 3, duration: 12 },
   { x: 4, y: 45, size: 4, tone: "neutral", dx: 4, dy: 4, delay: 1.6, duration: 16 },
-  { x: 95, y: 48, size: 5, tone: "accent", dx: -4, dy: -4, delay: 2.6, duration: 15 },
-  // Desktop only (≥1024px) — fills out the side margins once there's room beside the column.
-  { x: 14, y: 18, size: 6, tone: "accent", dx: 6, dy: -8, delay: 0.4, duration: 11, desktopOnly: true },
-  { x: 20, y: 30, size: 5, tone: "neutral", dx: -6, dy: 7, delay: 1.8, duration: 13, desktopOnly: true },
-  { x: 12, y: 42, size: 8, tone: "accent", dx: 6, dy: 9, delay: 2.4, duration: 10, desktopOnly: true },
-  { x: 22, y: 60, size: 4, tone: "neutral", dx: -7, dy: -6, delay: 0.8, duration: 14, desktopOnly: true },
-  { x: 16, y: 74, size: 7, tone: "accent", dx: 5, dy: -8, delay: 3.2, duration: 12, desktopOnly: true },
-  { x: 84, y: 18, size: 5, tone: "neutral", dx: -6, dy: -7, delay: 1.2, duration: 13, desktopOnly: true },
-  { x: 79, y: 30, size: 6, tone: "accent", dx: 7, dy: 6, delay: 2.8, duration: 11, desktopOnly: true },
-  { x: 87, y: 44, size: 4, tone: "neutral", dx: -5, dy: 8, delay: 0.6, duration: 15, desktopOnly: true },
-  { x: 80, y: 62, size: 9, tone: "accent", dx: 6, dy: -9, delay: 2, duration: 10, desktopOnly: true },
-  { x: 85, y: 76, size: 5, tone: "neutral", dx: -6, dy: 6, delay: 3.4, duration: 13, desktopOnly: true },
+  { x: 95, y: 48, size: 5, tone: "neutral", dx: -4, dy: -4, delay: 2.6, duration: 15 },
 ];
 
 /** Quiet drifting points standing in for individual demand signals — replaces reliance on a single glow. */
@@ -86,7 +75,7 @@ function HeroSignalField() {
       {SIGNAL_DOTS.map((dot, index) => (
         <span
           key={index}
-          className={`marketing-hero-dot is-${dot.tone}${dot.desktopOnly ? " is-desktop-only" : ""}`}
+          className={`marketing-hero-dot is-${dot.tone}`}
           style={
             {
               left: `${dot.x}%`,
@@ -105,29 +94,16 @@ function HeroSignalField() {
   );
 }
 
+/** True only for a visitor nobody has a record of yet — the state the signal-dot field marks. */
+function isUnrecognizedVisitor(accessState: HomepageAccessState): boolean {
+  return accessState.primaryAction === "REQUEST_ACCESS" || accessState.primaryAction === "START_FREE";
+}
+
 function Hero({ accessState }: { accessState: HomepageAccessState }) {
   return (
     <header className="marketing-hero">
       <div className="marketing-hero-bg" aria-hidden="true" />
-      <HeroSignalField />
-      <div className="marketing-hero-sides" aria-hidden="true">
-        <div className="marketing-hero-side is-left">
-          <span>
-            REAL
-            <br />
-            PEOPLE.
-          </span>
-          <i />
-        </div>
-        <div className="marketing-hero-side is-right">
-          <i />
-          <span>
-            REAL
-            <br />
-            DEMAND.
-          </span>
-        </div>
-      </div>
+      {isUnrecognizedVisitor(accessState) ? <HeroSignalField /> : null}
       <div className="marketing-hero-inner">
         <div className="marketing-eyebrow-pill">
           <span className="marketing-eyebrow-pill-dot" />
@@ -138,7 +114,12 @@ function Hero({ accessState }: { accessState: HomepageAccessState }) {
           <br className="marketing-hero-title-break" />
           wants next.
         </h1>
-        <p className="marketing-hero-sub">Wanterest finds buying intent, unmet needs, and demand shifts in real public conversations—with the evidence attached.</p>
+        <p className="marketing-hero-sub">
+          <ResponsiveText
+            full="Wanterest finds buying intent, unmet needs and demand shifts in real public conversations, with the evidence attached."
+            short="Buying intent, unmet needs and demand shifts, found in real public conversations."
+          />
+        </p>
         <PrimaryAccessAction accessState={accessState} />
         <p className="marketing-hero-note">Evidence attached to every finding. No manufactured activity.</p>
         <div className="marketing-hero-proof-row">
@@ -152,15 +133,27 @@ function Hero({ accessState }: { accessState: HomepageAccessState }) {
   );
 }
 
+const LISTENING_SOURCES = [
+  { key: "reddit", label: "Reddit" },
+  { key: "hacker-news", label: "Hacker News" },
+  { key: "bluesky", label: "Bluesky" },
+  { key: "x", label: "X" },
+  { key: "github", label: "GitHub" },
+] as const;
+
+/** The logos that are true: the real public sources Wanterest reads — never a customer/logo strip. */
 function EvidenceStrip() {
   return (
     <div className="marketing-logo-strip">
       <div className="marketing-logo-strip-inner">
-        <div className="marketing-logo-strip-caption">EVIDENCE-FIRST MARKET INTELLIGENCE</div>
+        <div className="marketing-logo-strip-caption">WHERE WANTEREST LISTENS</div>
         <div className="marketing-logo-row">
-          <div className="marketing-logo-mark">Public conversations</div>
-          <div className="marketing-logo-mark">Qualified intent</div>
-          <div className="marketing-logo-mark">Source-linked findings</div>
+          {LISTENING_SOURCES.map((source) => (
+            <div className="marketing-source-strip-item" key={source.key}>
+              <SourceBrandIcon sourceKey={source.key} size={22} decorative />
+              <span>{source.label}</span>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -620,7 +613,8 @@ function FinalCta({ accessState }: { accessState: HomepageAccessState }) {
 }
 
 function PrimaryAccessAction({ accessState, compact = false }: { accessState: HomepageAccessState; compact?: boolean }) {
-  if (accessState.primaryAction === "START_FREE") return <ScanForm compact={compact} ctaVariant={compact ? "accent" : "ink"} />;
+  if (accessState.primaryAction === "START_FREE") return <ScanForm compact={compact} ctaVariant={compact ? "accent" : "ink"} variant="scan" />;
+  if (accessState.primaryAction === "REQUEST_ACCESS") return <ScanForm compact={compact} ctaVariant={compact ? "accent" : "ink"} variant="request" />;
   const href = `${APP_ORIGIN}${accessState.primaryActionHref}`;
   const label = {
     REQUEST_ACCESS: "Request access",

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 
-import { startUrlForSite } from "./links";
+import { requestAccessUrlForSite, startUrlForSite } from "./links";
 
 const TYPING_EXAMPLES = ["linear.app", "notion.so", "figma.com", "yourcompany.io"];
 
@@ -46,17 +46,23 @@ function useTypingPlaceholder(defaultText: string, enabled: boolean): string {
   return display;
 }
 
-export function ScanForm({ compact = false, ctaVariant = "ink" }: { compact?: boolean; ctaVariant?: "ink" | "accent" }) {
+/**
+ * "scan" drives the existing OPEN-mode entry (public signup, via /start). "request" is the
+ * WAITLIST/INVITE_ONLY entry: same URL field, but it hands off to /waitlist with the site
+ * prefilled instead of implying instant product access — see the design note this replaces
+ * ("'Scan my website' reads as a site audit, and implies instant access").
+ */
+export function ScanForm({ compact = false, ctaVariant = "ink", variant = "scan" }: { compact?: boolean; ctaVariant?: "ink" | "accent"; variant?: "scan" | "request" }) {
   const [site, setSite] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const defaultPlaceholder = compact ? "yourcompany.com" : "yourwebsite.com";
+  const defaultPlaceholder = compact || variant === "request" ? "yourcompany.com" : "yourwebsite.com";
   const placeholder = useTypingPlaceholder(defaultPlaceholder, site.length === 0);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
       setError(null);
-      window.location.href = startUrlForSite(site);
+      window.location.href = variant === "request" ? requestAccessUrlForSite(site) : startUrlForSite(site);
     } catch {
       setError("Enter a valid public website, like linear.app.");
     }
@@ -80,7 +86,7 @@ export function ScanForm({ compact = false, ctaVariant = "ink" }: { compact?: bo
         aria-describedby={error ? "marketing-site-error" : undefined}
       />
       <button type="submit" className={`marketing-cta${compact ? " is-compact" : ""}${ctaVariant === "accent" ? " is-accent" : ""}`}>
-        Scan my website →
+        {variant === "request" ? "Request access →" : "Scan my website →"}
       </button>
       {error ? <p id="marketing-site-error" className="marketing-scan-error" role="alert">{error}</p> : null}
     </form>

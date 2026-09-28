@@ -13,6 +13,14 @@ export function startUrlForSite(site: string): string {
   return url.toString();
 }
 
+/** Prefills the waitlist form's company-website field from the homepage's request-access entry point. */
+export function requestAccessUrlForSite(site: string): string {
+  const normalized = normalizePublicWebsiteUrl(site);
+  const url = new URL("/waitlist", runtimeAppOrigin());
+  url.searchParams.set("website", normalized);
+  return url.toString();
+}
+
 export function loginUrlForSite(site?: string | null): string {
   const url = new URL(APP_LOGIN_URL);
   if (site) url.searchParams.set("website", site);

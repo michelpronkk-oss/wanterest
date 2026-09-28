@@ -1365,11 +1365,6 @@ body {
 .marketing-hero-dot { position: absolute; border-radius: 50%; opacity: 0.4; transform: translate3d(0, 0, 0); box-shadow: 0 0 0 1px rgba(17, 17, 16, 0.1); }
 .marketing-hero-dot.is-accent { background: var(--color-accent); box-shadow: 0 0 0 1px rgba(17, 17, 16, 0.14); }
 .marketing-hero-dot.is-neutral { background: var(--color-ink-secondary); }
-.marketing-hero-dot.is-desktop-only { display: none; }
-
-@media (min-width: 1024px) {
-  .marketing-hero-dot.is-desktop-only { display: block; }
-}
 
 @media (prefers-reduced-motion: no-preference) {
   .marketing-hero-dot { animation-name: marketing-hero-dot-drift; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
@@ -1381,13 +1376,8 @@ body {
 }
 
 @media (max-width: 640px) {
-  .marketing-hero-dot { opacity: 0.3; }
-  .marketing-hero-dot:not(.is-desktop-only) { animation-duration: 18s !important; }
+  .marketing-hero-dot { opacity: 0.3; animation-duration: 18s !important; }
 }
-
-/* Hero side microcopy: decorative only, wide-desktop only (≥1280px — narrower desktop widths
-   don't have room beside the centered 880px column without colliding with it). */
-.marketing-hero-sides { display: none; }
 
 /* Scan form */
 .marketing-scan-form { display: flex; gap: 12px; width: 100%; max-width: 540px; flex-wrap: wrap; }
@@ -1408,9 +1398,9 @@ body {
   /* Hero + logo strip together land exactly on the fold: the fold wrapper is at least one
      viewport tall (minus the sticky nav). Hero keeps its natural, unchanged internal layout —
      margin-top/bottom:auto centers it as a whole block in the leftover space instead of
-     stretching it, which would misalign its absolutely-positioned bg ellipse and side labels.
-     The logo strip has no auto margin of its own, so it simply lands flush at the fold's
-     bottom edge once Hero's two equal auto-margins have split the remaining space. */
+     stretching it, which would misalign its absolutely-positioned bg ellipse. The logo strip
+     has no auto margin of its own, so it simply lands flush at the fold's bottom edge once
+     Hero's two equal auto-margins have split the remaining space. */
   .marketing-fold { display: flex; flex-direction: column; min-height: calc(100vh - 71px); min-height: calc(100svh - 71px); }
   .marketing-hero { margin-top: auto; margin-bottom: auto; overflow: hidden; }
   .marketing-hero-title-break { display: block; }
@@ -1429,29 +1419,6 @@ body {
   }
 }
 
-/* Side microcopy: wide desktop only — narrower desktop widths don't have room beside the
-   centered 880px column without colliding with it. Vertically centered in the same top/bottom
-   band regardless of exact hero height, matching the source design's technique. */
-@media (min-width: 1280px) {
-  .marketing-hero-sides {
-    display: flex;
-    position: absolute;
-    top: 118px;
-    left: 0;
-    right: 0;
-    bottom: 120px;
-    max-width: 1400px;
-    margin: 0 auto;
-    align-items: center;
-    justify-content: space-between;
-    z-index: 1;
-    pointer-events: none;
-  }
-  .marketing-hero-side { display: flex; align-items: center; gap: 10px; font-size: 11px; font-weight: 700; letter-spacing: 0.14em; color: var(--color-ink-faint); line-height: 1.5; white-space: nowrap; }
-  .marketing-hero-side.is-left { text-align: right; }
-  .marketing-hero-side i { display: block; width: 60px; height: 1px; background: var(--color-ink-faint); font-style: normal; flex-shrink: 0; }
-}
-
 /* Logo strip */
 .marketing-logo-strip { padding: 40px 24px 48px; text-align: center; }
 .marketing-logo-strip-inner { max-width: 1400px; margin: 0 auto; border-top: 1px solid var(--color-border); padding-top: 28px; }
@@ -1461,10 +1428,8 @@ body {
 @media (min-width: 1024px) {
   .marketing-logo-row { justify-content: space-between; gap: 24px; }
 }
-.marketing-logo-mark { display: flex; align-items: center; gap: 8px; font-size: 19px; font-weight: 700; font-family: var(--font-sora), sans-serif; opacity: 0.7; }
-.marketing-logo-mark-box { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 1.5px solid currentColor; border-radius: 3px; font-size: 11px; font-weight: 800; flex-shrink: 0; }
-.marketing-logo-mark-fill { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; background: currentColor; font-size: 11px; flex-shrink: 0; }
-.marketing-logo-mark-dot { display: inline-flex; width: 16px; height: 16px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.marketing-source-strip-item { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; color: var(--color-ink-muted); }
+.marketing-source-strip-item .source-brand-icon, .marketing-source-strip-item .source-brand-fallback { opacity: 0.85; }
 
 /* Product proof strip — the single definitive process section (merged with the former
    "How it works" 3-step explanation), nested inside a standard .marketing-section, so it no
