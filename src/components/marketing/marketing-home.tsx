@@ -7,7 +7,6 @@ import { SourceBrandIcon } from "@/components/ui/source-brand-icon";
 import { BeyondSignalsTabs } from "./beyond-signals";
 import { DifferenceSection } from "./difference";
 import { Faq } from "./faq";
-import { HeroWave } from "./hero-wave";
 import { APP_START_URL } from "./links";
 import { MarketingFooter } from "./marketing-footer";
 import { MarketingNav } from "./marketing-nav";
@@ -139,7 +138,6 @@ function Hero({ accessState }: { accessState: HomepageAccessState }) {
           <p className="marketing-hero-proof">Built for builders, marketers, and product teams who need the source behind every signal.</p>
         </div>
       </div>
-      <HeroWave />
     </header>
   );
 }

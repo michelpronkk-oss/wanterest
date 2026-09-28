@@ -1565,7 +1565,6 @@ body {
 .marketing-hero-title-break, .marketing-hero-title-break-mobile { display: none; }
 .marketing-hero-sub { font-size: 18px; color: var(--color-ink-muted); line-height: 1.55; max-width: 460px; margin: 0 0 40px; font-weight: 400; }
 .marketing-hero-note { font-size: 12.5px; color: var(--color-ink-faint); margin-top: 18px; letter-spacing: 0.01em; line-height: 1.5; }
-.marketing-hero-wave { display: none; }
 
 /* Hero audience row: illustrative local avatars, overlapping, then a "who this is for"
    statement — never a customer/endorsement claim. */
@@ -2015,55 +2014,61 @@ body {
   .marketing-nav-actions { gap: 10px; }
   .marketing-nav-signin { display: none; }
 
-  /* Hero: one deliberate above-the-fold composition. min-height is a floor (svh accounts for
-     mobile browser chrome) so short content never lets the next section peek through — the
-     type scale, gaps, and wave below carry the real sizing so that floor rarely has to add
-     dead space of its own. Extra slack from the floor lands below the wave via flex-start. */
-  /* Hero: one compact, deliberate first fold — badge, headline, sub, form, note and the
-     audience row read as a single block, and the source strip follows directly after the
-     wave instead of being pushed below an artificial full-viewport floor. */
-  .marketing-hero { position: relative; justify-content: flex-start; padding: 36px 20px 104px; }
-  .marketing-eyebrow-pill { margin-bottom: 20px; padding: 7px 14px; gap: 8px; }
-  .marketing-eyebrow-pill-text { font-size: 10.5px; letter-spacing: 0.18em; }
-  .marketing-hero-title { font-size: clamp(38px, 11.4vw, 46px); line-height: 1.02; letter-spacing: -0.035em; margin-bottom: 14px; }
-  .marketing-hero-sub { font-size: 16px; line-height: 1.5; color: var(--color-ink-secondary); max-width: 320px; margin-bottom: 26px; }
-  /* Mobile headline reads as three deliberate lines: "Know what / your market / wants next." */
+  /* Nav: quieter CTA so the hero, not the chrome, carries the first fold */
+  .marketing-cta-nav { padding: 8px 14px; font-size: 13px; border-radius: 9px; }
+
+  /* Hero: one composition on an 8px rhythm — chip → headline → lede → form → note →
+     audience row — with whitespace doing the separating instead of decoration. No wave, no
+     viewport-height floor: the source strip follows the hero on its own hairline. */
+  .marketing-hero { position: relative; justify-content: flex-start; padding: 40px 20px 44px; }
+  .marketing-eyebrow-pill { margin-bottom: 20px; padding: 6px 12px; gap: 7px; }
+  .marketing-eyebrow-pill-dot { width: 5px; height: 5px; }
+  .marketing-eyebrow-pill-text { font-size: 10px; letter-spacing: 0.16em; }
+
+  /* Headline: ~35–40px across 375–430px (31px floor at 320px), three set lines
+     "Know what / your market / wants next.", tight tracking like the Early Access H1s. */
+  .marketing-hero-title { font-size: clamp(31px, 9.4vw, 40px); line-height: 1.03; letter-spacing: -0.04em; margin-bottom: 14px; }
   .marketing-hero-title-break, .marketing-hero-title-break-mobile { display: block; }
+  .marketing-hero-sub { font-size: 15.5px; line-height: 1.55; color: var(--color-ink-secondary); max-width: 310px; margin-bottom: 28px; }
   .marketing-hero-sub, .marketing-hero-note, .marketing-hero-proof { text-wrap: balance; }
-  .marketing-hero-note { margin-top: 12px; font-size: 11.5px; max-width: 300px; }
-  .marketing-hero-proof-row { gap: 12px; margin-top: 26px; }
-  .marketing-hero-avatar { width: 28px; height: 28px; margin-left: -8px; }
-  .marketing-hero-proof-divider { height: 28px; }
-  .marketing-hero-proof { font-size: 12px; line-height: 1.45; max-width: 220px; }
 
-  /* Scan form: stacked full-width rows read as native mobile, not a squeezed desktop row */
-  .marketing-scan-form { flex-direction: column; gap: 10px; }
+  /* Form: a flat, precise pair — hairline field, solid ink button, no drop shadows. Input
+     text stays 16px so iOS never zooms on focus; both controls are 52px tall. */
+  .marketing-scan-form { flex-direction: column; gap: 8px; max-width: 400px; }
   .marketing-scan-input, .marketing-scan-form .marketing-cta { width: 100%; }
+  .marketing-scan-input { padding: 15px 44px 15px 18px; border-radius: 12px; border-color: rgba(17, 17, 16, 0.12); font-size: 16px; box-shadow: 0 1px 2px rgba(17, 17, 16, 0.04); }
+  .marketing-scan-input:focus { border-color: var(--color-ink); box-shadow: 0 0 0 4px rgba(17, 17, 16, 0.06); outline: none; }
+  .marketing-scan-form .marketing-cta { padding: 15px 20px; border-radius: 12px; font-size: 15px; box-shadow: none; }
+  .marketing-scan-form .marketing-cta:hover { transform: none; box-shadow: none; opacity: 0.9; }
+  .marketing-scan-form .marketing-cta:focus-visible { outline: 2px solid var(--color-ink); outline-offset: 2px; }
 
-  /* Comfortable 54px tap targets without the stack feeling heavy */
-  .marketing-scan-input { padding-top: 16px; padding-bottom: 16px; }
-  .marketing-scan-form .marketing-cta { padding-top: 16px; padding-bottom: 16px; }
+  .marketing-hero-note { margin-top: 14px; font-size: 11.5px; line-height: 1.5; max-width: 300px; }
 
-  /* Source strip sits right under the hero, not detached below a gap */
-  .marketing-logo-strip { padding: 4px 20px 40px; }
-  .marketing-logo-strip-inner { padding-top: 24px; }
+  /* Audience row: avatars and copy centred as one unit, copy measured to three short lines. */
+  .marketing-hero-proof-row { gap: 12px; margin-top: 32px; }
+  .marketing-hero-avatar { width: 26px; height: 26px; margin-left: -7px; }
+  .marketing-hero-proof-divider { height: 26px; }
+  .marketing-hero-proof { font-size: 11.5px; line-height: 1.45; max-width: 196px; }
+
+  /* Signal field: a single lime point in the top margin — atmosphere, not noise. The lower
+     points would crowd the audience row on a narrow column. */
+  .marketing-hero-dot.is-neutral, .marketing-hero-dot.is-accent ~ .marketing-hero-dot.is-accent { display: none; }
+
+  /* Source strip continues directly under the hero on its own hairline */
+  .marketing-logo-strip { padding: 0 20px 40px; }
+  .marketing-logo-strip-inner { padding-top: 28px; }
   .marketing-logo-strip-caption { margin-bottom: 18px; }
+  .marketing-logo-row { gap: 14px 28px; }
 
   /* Understated link icon inside the URL field — background-image so no markup changes and
      desktop stays untouched. Right-aligned so it never sits under the typed/typewriter-
      animated text, which always starts from the left edge. */
   .marketing-scan-input {
-    padding-right: 46px;
     background-repeat: no-repeat;
-    background-position: right 18px center;
-    background-size: 17px 17px;
+    background-position: right 16px center;
+    background-size: 16px 16px;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a3a399' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/%3E%3Cpath d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'/%3E%3C/svg%3E");
   }
-
-  /* Wave: decorative bottom-of-hero transition, sized into the hero's own bottom padding so it
-     never overlaps real content. JS (hero-wave.tsx) fades/lifts it on scroll; this is the
-     static resting state and the only styling reduced-motion visitors ever see. */
-  .marketing-hero-wave { display: block; position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 96px; transition: opacity 0.1s linear, transform 0.1s linear; pointer-events: none; }
 
   /* Section rhythm: denser padding/margins throughout */
   .marketing-section { padding: 64px 20px 56px; }
