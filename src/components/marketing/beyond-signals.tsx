@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+
+import { BarsIcon, DocumentIcon, SparkleIcon } from "./proof-icons";
 
 type TabKey = "map" | "gap" | "drift" | "actions";
 
@@ -44,25 +46,26 @@ export function BeyondSignalsTabs() {
   );
 }
 
-function PreviewIntro({ title, body }: { title: string; body: string }) {
+function PanelHead({ icon, eyebrow, title }: { icon: ReactNode; eyebrow: string; title: string }) {
   return (
-    <div className="ui-card ui-card-pad-lg" style={{ marginBottom: 16 }}>
-      <div className="ui-section-label">Illustrative view</div>
-      <h3 style={{ margin: "8px 0", fontSize: 20 }}>{title}</h3>
-      <p style={{ margin: 0, color: "var(--color-ink-muted)", lineHeight: 1.55 }}>{body}</p>
+    <div className="marketing-beyond-panel-head">
+      <span className="marketing-beyond-panel-icon">{icon}</span>
+      <div>
+        <div className="marketing-beyond-panel-eyebrow">{eyebrow}</div>
+        <h3 className="marketing-beyond-panel-title">{title}</h3>
+      </div>
+      <span className="marketing-beyond-panel-badge">Illustrative view</span>
     </div>
   );
 }
 
-function EvidenceRows({ rows }: { rows: Array<[string, string]> }) {
+function PanelRows({ rows }: { rows: Array<[string, string]> }) {
   return (
-    <div className="marketing-competitor-metrics">
+    <div className="marketing-beyond-panel-rows">
       {rows.map(([title, body]) => (
-        <div className="marketing-competitor-metric" key={title}>
-          <div className="marketing-competitor-metric-copy">
-            <strong>{title}</strong>
-            <span>{body}</span>
-          </div>
+        <div className="marketing-beyond-panel-row" key={title}>
+          <strong>{title}</strong>
+          <span>{body}</span>
         </div>
       ))}
     </div>
@@ -72,8 +75,9 @@ function EvidenceRows({ rows }: { rows: Array<[string, string]> }) {
 function MapPreview() {
   return (
     <div>
-      <PreviewIntro title="Make recurring language inspectable." body="Signals can be grouped into themes while each theme keeps its supporting observations and qualification context attached." />
-      <EvidenceRows rows={[
+      <PanelHead icon={<BarsIcon />} eyebrow="DEMAND MAP" title="Make recurring language inspectable." />
+      <p className="marketing-beyond-panel-body">Signals can be grouped into themes while each theme keeps its supporting observations and qualification context attached.</p>
+      <PanelRows rows={[
         ["Theme", "A bounded grouping of related observations."],
         ["Evidence", "Source references and observation periods remain inspectable."],
         ["Confidence", "Shown only when the underlying intelligence supports it."],
@@ -85,8 +89,9 @@ function MapPreview() {
 function GapPreview() {
   return (
     <div>
-      <PreviewIntro title="See where context is missing." body="Demand Gap compares supported market observations with the product context supplied by the workspace. It does not invent market size or coverage percentages." />
-      <EvidenceRows rows={[
+      <PanelHead icon={<DocumentIcon />} eyebrow="DEMAND GAP" title="See where context is missing." />
+      <p className="marketing-beyond-panel-body">Demand Gap compares supported market observations with the product context supplied by the workspace. It does not invent market size or coverage percentages.</p>
+      <PanelRows rows={[
         ["Observed need", "What the supporting conversations actually describe."],
         ["Product context", "What the current product information makes clear."],
         ["Open question", "What still needs validation before action."],
@@ -98,8 +103,9 @@ function GapPreview() {
 function DriftPreview() {
   return (
     <div>
-      <PreviewIntro title="Keep change tied to a time window." body="Demand Drift distinguishes a supported change in the selected evidence window from a claim about the whole market." />
-      <EvidenceRows rows={[
+      <PanelHead icon={<SparkleIcon />} eyebrow="DEMAND DRIFT" title="Keep change tied to a time window." />
+      <p className="marketing-beyond-panel-body">Demand Drift distinguishes a supported change in the selected evidence window from a claim about the whole market.</p>
+      <PanelRows rows={[
         ["Rising", "A supported change in observed language."],
         ["Cooling", "A supported decrease or loss of currentness."],
         ["Uncertain", "Insufficient or conflicting evidence stays qualified."],

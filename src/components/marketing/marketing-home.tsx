@@ -1,3 +1,4 @@
+import Image from "next/image";
 import type { CSSProperties } from "react";
 
 import type { HomepageAccessState } from "@/server/modules/access";
@@ -11,6 +12,7 @@ import { APP_START_URL } from "./links";
 import { MarketingFooter } from "./marketing-footer";
 import { MarketingNav } from "./marketing-nav";
 import { PricingSection } from "./pricing";
+import { BarsIcon, DocumentIcon, SparkleIcon } from "./proof-icons";
 import { ProofSignalCard } from "./proof-signal-card";
 import { QualificationSection } from "./qualification";
 import { Reveal } from "./reveal";
@@ -122,10 +124,17 @@ function Hero({ accessState }: { accessState: HomepageAccessState }) {
         </p>
         <PrimaryAccessAction accessState={accessState} />
         <p className="marketing-hero-note">Evidence attached to every finding. No manufactured activity.</p>
+        {/* Illustrative avatars, not customer photos — aria-hidden, and the claim below is a
+            "who this is for" statement, never "these are our users." */}
         <div className="marketing-hero-proof-row">
-          <span className="marketing-hero-proof-label">PUBLIC SIGNALS</span>
+          <div className="marketing-hero-avatars" aria-hidden="true">
+            <span className="marketing-hero-avatar"><Image src="/avatars/avatar-01.png" alt="" width={36} height={36} /></span>
+            <span className="marketing-hero-avatar"><Image src="/avatars/avatar-02.png" alt="" width={36} height={36} /></span>
+            <span className="marketing-hero-avatar"><Image src="/avatars/avatar-03.png" alt="" width={36} height={36} /></span>
+            <span className="marketing-hero-avatar"><Image src="/avatars/avatar-04.png" alt="" width={36} height={36} /></span>
+          </div>
           <span className="marketing-hero-proof-divider" aria-hidden="true" />
-          <p className="marketing-hero-proof">For builders, marketers, and product teams that need the source behind the signal.</p>
+          <p className="marketing-hero-proof">Built for builders, marketers, and product teams who need the evidence behind every signal.</p>
         </div>
       </div>
       <HeroWave />
@@ -157,34 +166,6 @@ function EvidenceStrip() {
         </div>
       </div>
     </div>
-  );
-}
-
-function DocumentIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M4 2h5l3 3v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" stroke="var(--color-ink-secondary)" strokeWidth="1.4" strokeLinejoin="round" />
-      <path d="M5.5 8.5h5M5.5 11h3.5" stroke="var(--color-ink-secondary)" strokeWidth="1.4" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function BarsIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <rect x="2" y="8" width="3" height="6" rx="0.8" fill="var(--color-ink-secondary)" />
-      <rect x="6.5" y="4.5" width="3" height="9.5" rx="0.8" fill="var(--color-ink-secondary)" />
-      <rect x="11" y="1.5" width="3" height="12.5" rx="0.8" fill="var(--color-ink-secondary)" />
-    </svg>
-  );
-}
-
-function SparkleIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 16 16" fill="var(--color-accent)" aria-hidden="true">
-      <path d="M8 1.5c.35 2.6 1.4 3.65 4 4a.15.15 0 0 1 0 .3c-2.6.35-3.65 1.4-4 4a.15.15 0 0 1-.3 0c-.35-2.6-1.4-3.65-4-4a.15.15 0 0 1 0-.3c2.6-.35 3.65-1.4 4-4a.15.15 0 0 1 .3 0Z" />
-      <path d="M13 10.2c.18 1.3.7 1.83 2 2 .1.02.1.16 0 .18-1.3.17-1.82.7-2 2-.02.1-.16.1-.18 0-.17-1.3-.7-1.83-2-2a.1.1 0 0 1 0-.18c1.3-.17 1.83-.7 2-2 .02-.1.16-.1.18 0Z" />
-    </svg>
   );
 }
 
@@ -441,6 +422,10 @@ function WhyWanterest() {
   );
 }
 
+/**
+ * A deliberately plain placeholder, not a mocked-up asset: this feature's real visual is being
+ * designed separately. The dashed border reads as "in progress," never as a finished preview.
+ */
 function CompetitorPreview() {
   return (
     <section className="marketing-section is-tight">
@@ -453,57 +438,12 @@ function CompetitorPreview() {
             short="Keep buyer context and uncertainty visible."
           />
         </p>
-        <div className="marketing-competitor-card">
-          <div className="marketing-competitor-kicker"><BarsIcon /> <span>Context intelligence</span></div>
-
-          <div className="marketing-competitor-products">
-            <div className="marketing-competitor-product is-you">
-              <span className="marketing-competitor-dot" />
-              <div>
-                <strong>Observed language</strong>
-                <span>What people actually describe</span>
-              </div>
-            </div>
-            <div className="marketing-competitor-vs" aria-hidden="true">+</div>
-            <div className="marketing-competitor-product is-them">
-              <span className="marketing-competitor-dot" />
-              <div>
-                <strong>Market context</strong>
-                <span>What the evidence can support</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="marketing-competitor-metrics">
-            {[
-              ["Observation", "The original conversation and source remain attached."],
-              ["Interpretation", "Themes, gaps and movement are clearly labeled as derived."],
-              ["Uncertainty", "Unsupported percentages and market-wide claims stay out."],
-            ].map(([title, body]) => (
-              <div className="marketing-competitor-metric" key={title}>
-                <div className="marketing-competitor-metric-copy">
-                  <strong>{title}</strong>
-                  <span>{body}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="marketing-competitor-callout">
-            <span className="marketing-competitor-callout-icon"><LightbulbIcon /></span>
-            <p><strong>Evidence before inference.</strong><span>Wanterest keeps the claim no stronger than the source behind it.</span></p>
-          </div>
+        <div className="marketing-coming-soon-placeholder">
+          <span className="marketing-coming-soon-placeholder-icon"><BarsIcon /></span>
+          <p>Context intelligence is in development. This preview will show buyer language, alternatives, and unmet needs once it ships.</p>
         </div>
       </div>
     </section>
-  );
-}
-
-function LightbulbIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M9 18h6M10 21h4M8.6 14.7a6 6 0 1 1 6.8 0c-.9.7-1.4 1.4-1.4 2.3h-4c0-.9-.5-1.6-1.4-2.3Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }
 
