@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { LogoMark } from "@/components/dashboard/nav-icons";
 import type { AccessMode } from "@/server/modules/access";
+import { getHomepageAccessState, type HomepageAccessState } from "@/server/modules/access";
 import { APP_ORIGIN } from "@/shared/config/site";
 import { APP_LOGIN_URL, APP_START_URL } from "./links";
 
@@ -15,9 +16,20 @@ export const MARKETING_NAV_LINKS: NavLink[] = [
   { label: "Contact", href: "/contact" },
 ];
 
-export function MarketingNav({ links = MARKETING_NAV_LINKS, activeHref, accessMode = "invite_only" }: { links?: NavLink[]; activeHref?: string; accessMode?: AccessMode }) {
-  const primaryHref = accessMode === "open" ? APP_START_URL : `${APP_ORIGIN}/waitlist`;
-  const primaryLabel = accessMode === "open" ? "Start free" : "Request access";
+export function MarketingNav({ links = MARKETING_NAV_LINKS, activeHref, accessMode = "invite_only", accessState }: { links?: NavLink[]; activeHref?: string; accessMode?: AccessMode; accessState?: HomepageAccessState }) {
+  const state = accessState ?? getHomepageAccessState(accessMode);
+  const primaryHref = state.primaryAction === "START_FREE"
+    ? APP_START_URL
+    : `${APP_ORIGIN}${state.primaryActionHref}`;
+  const primaryLabel = {
+    REQUEST_ACCESS: "Request access",
+    START_FREE: "Start free",
+    CHECK_EMAIL: "Check your email",
+    VIEW_STATUS: "View status",
+    VIEW_PRIORITY_STATUS: "View Priority status",
+    ACCEPT_INVITATION: "Accept invitation",
+    OPEN_WANTEREST: "Open Wanterest",
+  }[state.primaryAction];
   return (
     <nav className="marketing-nav">
       <div className="marketing-nav-inner">

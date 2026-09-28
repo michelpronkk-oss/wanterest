@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 
 import { WaitlistWithdrawButton } from "@/components/waitlist/waitlist-withdraw-button";
 import { ShareCardPanel } from "@/components/share-cards/share-card-panel";
+import { MarketingPageShell } from "@/components/marketing/marketing-page-shell";
 import { WAITLIST_STATUS_COOKIE } from "@/server/modules/waitlist/waitlist.session";
 import { getApplicantShareCardsQuery } from "@/server/modules/share-cards";
 
@@ -17,8 +18,9 @@ export default async function WaitlistStatusPage() {
   const shareCards = await getApplicantShareCardsQuery(token).catch(() => []);
   const { application, referral, admission } = status;
   return (
-    <main className="waitlist-status-page">
-      <div className="waitlist-status-card">
+    <MarketingPageShell activeHref="/waitlist">
+      <main className="waitlist-status-page">
+        <div className="waitlist-status-card">
         <div className="marketing-content-eyebrow">YOUR EARLY ACCESS REQUEST</div>
         <h1>{admission?.admissionStatus === "admitted" ? "Your Wanterest access is ready." : "You're on the list."}</h1>
         <p className="waitlist-status-intro">{admission?.admissionStatus === "admitted" ? "Your invitation is complete and your workspace is ready." : "Your request is stored privately. Joining the waitlist does not grant dashboard access."}</p>
@@ -40,8 +42,9 @@ export default async function WaitlistStatusPage() {
         {application.status !== "withdrawn" && application.status !== "declined" ? <WaitlistWithdrawButton /> : null}
         <ShareCardPanel endpoint="/api/share-cards/applicant" initialCards={shareCards} title="Share your access identity" />
         <p className="waitlist-status-footnote">Early Access numbers are historical identities, not permissions. Priority Access is a waitlist state, not a product permission. Cohort identity and workspace access are created only after authoritative admission.</p>
-      </div>
-    </main>
+        </div>
+      </main>
+    </MarketingPageShell>
   );
 }
 
@@ -50,4 +53,17 @@ async function loadStatus(token: string) {
 }
 
 function formatStatus(status: string) { return status.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()); }
-function StatusUnavailable() { return <main className="waitlist-status-page"><div className="waitlist-status-card"><div className="marketing-content-eyebrow">EARLY ACCESS</div><h1>Status unavailable.</h1><p>Use the private status link from your Wanterest email.</p><a className="dashboard-button dashboard-button-primary" href="/waitlist">Back to Early Access</a></div></main>; }
+function StatusUnavailable() {
+  return (
+    <MarketingPageShell activeHref="/waitlist">
+      <main className="waitlist-status-page">
+        <div className="waitlist-status-card">
+          <div className="marketing-content-eyebrow">EARLY ACCESS</div>
+          <h1>Status unavailable.</h1>
+          <p>Use the private status link from your Wanterest email.</p>
+          <a className="dashboard-button dashboard-button-primary" href="/waitlist">Back to Early Access</a>
+        </div>
+      </main>
+    </MarketingPageShell>
+  );
+}

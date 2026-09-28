@@ -44,16 +44,16 @@ export function QualificationSection() {
         <p className="marketing-qualification-subtitle">Popularity doesn&rsquo;t create demand. Intent does.</p>
         <div className="marketing-qualification-grid">
           <article className="marketing-qualification-card">
-            <QualificationMeta likes="500K likes" />
-            <p className="marketing-qualification-quote">&ldquo;HubSpot lol&rdquo;</p>
+            <QualificationMeta likes="Popularity alone" />
+            <p className="marketing-qualification-quote">A visible mention without pain, intent or specificity is not enough.</p>
             <span className="marketing-qualification-tag">NOT A SIGNAL</span>
           </article>
           <article className="marketing-qualification-card is-featured">
-            <QualificationMeta likes="2 likes" />
+            <QualificationMeta likes="Evidence context" />
             <p className="marketing-qualification-quote">
-              &ldquo;Looking for a cheaper <mark>HubSpot</mark> alternative with SSO&rdquo;
+              A conversation with explicit problem and switching context may qualify for review.
             </p>
-            <span className="marketing-qualification-tag is-strong"><SignalIcon /> HIGH-CONFIDENCE SIGNAL</span>
+            <span className="marketing-qualification-tag is-strong"><SignalIcon /> QUALIFIED FOR REVIEW</span>
           </article>
         </div>
       </div>

@@ -22,7 +22,7 @@ describe("13A.6 public access route contracts", () => {
     const home = readFileSync(join(process.cwd(), "src/components/marketing/marketing-home.tsx"), "utf8");
     const nav = readFileSync(join(process.cwd(), "src/components/marketing/marketing-nav.tsx"), "utf8");
     expect(home).toContain("PrimaryAccessAction");
-    expect(home).toContain("accessMode");
+    expect(home).toContain("accessState");
     expect(nav).toContain("accessMode");
     expect(nav).toContain("Request access");
   });

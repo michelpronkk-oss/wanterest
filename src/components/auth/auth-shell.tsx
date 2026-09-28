@@ -23,10 +23,10 @@ export function AuthShell({ eyebrow, children }: { eyebrow: string; children: Re
         <div className="auth-brand-copy">
           <div className="auth-brand-eyebrow">{eyebrow}</div>
           <div className="auth-brand-headline">The demand already exists.</div>
-          <div className="auth-brand-sub">Wanterest just finds it.</div>
+          <div className="auth-brand-sub">Know what your market wants next.</div>
           <div className="auth-brand-proof">
-            <span>REAL CONVERSATIONS</span>
-            <span>QUALIFIED INTENT</span>
+            <span>EVIDENCE ATTACHED</span>
+            <span>PUBLIC CONTEXT</span>
           </div>
         </div>
 
