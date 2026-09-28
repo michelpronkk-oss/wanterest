@@ -74,23 +74,23 @@
 /* Check-your-email — a genuine dedicated, centered screen (/waitlist/check-email), not a state
    nested inside the two-column landing page's form card. No headline, no ladder, no form chrome. */
 .ea-check-email-page { max-width: 1240px; margin: 0 auto; padding: 96px 32px 140px; display: flex; justify-content: center; }
-.ea-check-email { display: grid; gap: 18px; width: 100%; max-width: 620px; padding: 44px; border: 1px solid var(--color-border); border-radius: 18px; background: var(--color-surface); box-shadow: 0 30px 70px -40px rgba(17, 17, 16, 0.25); text-align: left; }
-.ea-check-email-pill { display: inline-flex; align-items: center; gap: 8px; width: fit-content; padding: 6px 13px; border-radius: 20px; background: var(--color-chip); font-size: 12px; font-weight: 600; color: var(--color-ink-secondary); }
+.ea-check-email { display: grid; align-content: start; gap: 20px; width: 100%; max-width: 520px; text-align: left; }
+.ea-check-email-pill { display: inline-flex; align-items: center; gap: 7px; width: fit-content; padding: 4px 10px; border-radius: 20px; background: var(--color-chip); font-size: 11.5px; font-weight: 600; color: var(--color-ink-secondary); }
 .ea-check-email-dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--color-ink-muted); }
-.ea-check-email h1 { margin: 0; font-family: var(--font-archivo), sans-serif; font-weight: 800; font-size: clamp(30px, 4vw, 38px); letter-spacing: -0.03em; }
-.ea-check-email > p { margin: 0; color: var(--color-ink-secondary); font-size: 15px; line-height: 1.6; }
+.ea-check-email h1 { margin: 0; font-family: var(--font-archivo), sans-serif; font-weight: 800; font-size: clamp(34px, 4.4vw, 46px); line-height: 1.06; letter-spacing: -0.035em; }
+.ea-check-email > p { margin: 0; color: var(--color-ink-secondary); font-size: 16px; line-height: 1.6; }
 .ea-check-email-list { display: grid; gap: 0; margin: 0; border-top: 1px solid var(--color-border-soft); }
 .ea-check-email-list div { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--color-border-soft); }
 .ea-check-email-list dt { margin: 0; font-size: 13px; font-weight: 600; color: var(--color-ink); }
 .ea-check-email-list dd { margin: 0; font-size: 12.5px; color: var(--color-ink-faint); text-align: right; }
 .ea-check-email-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.ea-check-email-actions .dashboard-button { min-height: 48px; padding: 0 20px; font-size: 14px; }
 .ea-check-email-note { margin: 0; font-size: 12.5px; color: var(--color-positive); }
-.ea-check-email-recovery { margin: 0; font-size: 13px; color: var(--color-ink-faint); }
-.ea-check-email-recovery a { color: var(--color-ink-secondary); text-decoration: underline; }
+.ea-check-email > p.ea-check-email-recovery { margin: 0; font-size: 13px; color: var(--color-ink-faint); }
+.ea-check-email-recovery a { color: var(--color-ink); text-decoration: underline; text-underline-offset: 3px; }
 
 @media (max-width: 759px) {
   .ea-check-email-page { padding: 56px 20px 88px; }
-  .ea-check-email { padding: 26px; }
   .ea-check-email-actions { flex-direction: column; }
   .ea-check-email-actions .dashboard-button { width: 100%; }
 }
@@ -103,7 +103,7 @@
 .ea-status-chip-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-ink-secondary); }
 .ea-status-chip.is-priority { background: var(--color-accent-tint); color: var(--color-accent-ink); }
 .ea-status-chip.is-priority .ea-status-chip-dot { background: var(--color-positive); }
-.ea-status-chip.is-invite { background: var(--color-ink); color: var(--color-dark-ink); }
+.ea-status-chip.is-invite { background: var(--color-ink); color: var(--color-dark-ink); text-transform: uppercase; letter-spacing: 0.1em; font-size: 11px; }
 .ea-status-chip.is-invite .ea-status-chip-dot { background: var(--color-accent); }
 .ea-status-chip.is-muted { color: var(--color-ink-faint); }
 .ea-status-chip.is-muted .ea-status-chip-dot { background: transparent; border: 1.5px solid var(--color-ink-faint); }
@@ -141,13 +141,122 @@
 .ea-identity-permanent { color: var(--color-ink-faint); font-weight: 500; }
 .ea-identity-number { font-family: var(--font-sora), sans-serif; font-weight: 500; font-size: 46px; line-height: 0.95; letter-spacing: -0.03em; color: #2a2a26; }
 .ea-identity-caption { margin: 10px 0 0; font-size: 12.5px; color: var(--color-ink-faint); line-height: 1.5; }
+.ea-identity-head .ea-status-chip { padding: 4px 10px; font-size: 11px; }
+
+/* Design 05 — "You're verified." identity reveal (/waitlist/verified). */
+.ea-reveal-page { max-width: 1240px; margin: 0 auto; padding: 88px 32px 128px; display: flex; justify-content: center; }
+.ea-reveal { width: 100%; max-width: 560px; display: grid; align-content: start; gap: 18px; }
+.ea-reveal-confirmed { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--color-ink); }
+.ea-reveal h1 { margin: 0; font-family: var(--font-archivo), sans-serif; font-weight: 800; font-size: clamp(34px, 4.4vw, 46px); line-height: 1.06; letter-spacing: -0.035em; }
+.ea-reveal-body { margin: 0 0 6px; max-width: 480px; color: var(--color-ink-secondary); font-size: 16px; line-height: 1.6; }
+.ea-identity-card.is-reveal { padding: 28px; }
+.ea-identity-card.is-reveal .ea-identity-number { font-size: 68px; line-height: 0.9; letter-spacing: -0.04em; margin: 24px 0 24px; }
+.ea-identity-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 0; padding-top: 16px; border-top: 1px solid var(--color-border-soft); }
+.ea-identity-meta dt { font-size: 11.5px; color: var(--color-ink-faint); margin-bottom: 4px; }
+.ea-identity-meta dd { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13.5px; font-weight: 600; color: var(--color-ink); overflow-wrap: anywhere; }
+.ea-identity-status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-ink); flex-shrink: 0; }
+.ea-identity-status-dot.is-priority { background: var(--color-positive); }
+.ea-identity-status-dot.is-invite { background: var(--color-accent); box-shadow: 0 0 0 1px var(--color-ink); }
+.ea-identity-status-dot.is-neutral { background: transparent; border: 1.5px solid var(--color-ink); }
+.ea-reveal-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.ea-reveal-actions .dashboard-button { min-height: 44px; padding: 0 18px; font-size: 14px; }
+.ea-reveal-share:not([hidden]) { display: grid; }
+.ea-next-steps { display: grid; gap: 10px; margin-top: 14px; padding-top: 20px; border-top: 1px solid var(--color-border-soft); }
+.ea-next-steps-label { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-ink-faint); }
+.ea-next-steps-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 13px; }
+.ea-next-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 20px; background: var(--color-accent-tint); color: var(--color-accent-ink); font-size: 12px; font-weight: 600; }
+.ea-next-chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-positive); }
+.ea-next-arrow { color: var(--color-ink-faint); }
+.ea-next-muted { color: var(--color-ink-muted); }
+
+/* Design 06 — reveal motion: card present at 0ms; label fades in by 120ms; number resolves with a
+   6px rise by 420ms (0.45 opacity at 260ms); status settles at 420ms. Opacity + translate only —
+   no scale, glow or lime (reserved for Founding). Reduced motion renders the final frame. */
 @media (prefers-reduced-motion: no-preference) {
-  .ea-identity-head, .ea-identity-number, .ea-identity-caption { animation: ea-identity-reveal 300ms cubic-bezier(.2,.7,.2,1) both; }
-  .ea-identity-head { animation-delay: 0ms; }
-  .ea-identity-number { animation-delay: 120ms; }
-  .ea-identity-caption { animation-delay: 260ms; }
+  .is-reveal .ea-reveal-label { animation: ea-reveal-fade 120ms cubic-bezier(.2,.7,.2,1) both; }
+  .is-reveal .ea-reveal-number { animation: ea-reveal-rise 300ms cubic-bezier(.2,.7,.2,1) 120ms both; }
+  .is-reveal .ea-reveal-meta { animation: ea-reveal-fade 160ms cubic-bezier(.2,.7,.2,1) 260ms both; }
 }
-@keyframes ea-identity-reveal { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes ea-reveal-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ea-reveal-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Private journey shell (design 12): logo + private-link indicator, no nav CTA. */
+.ea-shell { min-height: 100vh; display: flex; flex-direction: column; }
+.ea-shell > main { flex: 1 0 auto; width: 100%; }
+.ea-shell-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 56px; border-bottom: 1px solid var(--color-border); }
+.ea-shell-logo { display: inline-flex; align-items: center; gap: 9px; color: var(--color-ink); text-decoration: none; font-family: var(--font-sora), sans-serif; font-weight: 600; font-size: 16px; letter-spacing: -0.01em; }
+.ea-shell-indicator { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.ea-shell-indicator-dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--color-ink-muted); flex-shrink: 0; }
+.ea-shell-badge { display: none; padding: 5px 11px; border: 1px solid var(--color-border); border-radius: 20px; font-size: 12px; font-weight: 500; color: var(--color-ink-muted); background: var(--color-surface); white-space: nowrap; }
+.ea-shell-links { display: flex; gap: 32px; }
+.ea-shell-links a, .ea-shell-login { color: var(--color-ink-muted); font-size: 14px; font-weight: 500; text-decoration: none; }
+.ea-shell-links a:hover, .ea-shell-login:hover { color: var(--color-ink); }
+.ea-shell-login { color: var(--color-ink); }
+.ea-show-mobile { display: none; }
+.ea-shell-footer { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 28px 56px 36px; border-top: 1px solid var(--color-border); font-size: 12px; color: var(--color-ink-faint); }
+.ea-shell-footer nav { display: flex; gap: 16px; }
+.ea-shell-footer a { color: var(--color-ink-faint); text-decoration: none; }
+.ea-shell-footer a:hover { color: var(--color-ink); }
+
+/* Status chips — tone by dot shape/fill, never colour alone. */
+.ea-status-chip.is-verified .ea-status-chip-dot { background: var(--color-ink); }
+.ea-status-chip.is-neutral .ea-status-chip-dot { background: transparent; border: 1.5px solid var(--color-ink); }
+.ea-status-chip.is-warning { background: var(--color-warning-tint); color: var(--color-warning-ink); }
+.ea-status-chip.is-warning .ea-status-chip-dot { background: var(--color-warning-ink); }
+.ea-status-grid.is-single { grid-template-columns: minmax(0, 600px); justify-content: center; }
+
+/* Design 14 — notices: dot + title + body + text action. Errors are the only filled background. */
+.ea-notice { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border: 1px solid var(--color-border); border-radius: 14px; background: var(--color-surface); }
+.ea-notice-dot { width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--color-ink-muted); flex-shrink: 0; }
+.ea-notice strong { display: block; font-size: 13.5px; color: var(--color-ink); }
+.ea-notice p { margin: 3px 0 0; font-size: 13px; color: var(--color-ink-secondary); line-height: 1.55; }
+.ea-notice-action { margin-top: 8px; }
+.ea-notice.is-positive .ea-notice-dot { background: var(--color-positive); }
+.ea-notice.is-warning .ea-notice-dot { background: var(--color-warning-ink); }
+.ea-notice.is-error { background: #fdf3f0; border-color: rgba(181, 72, 47, 0.18); }
+.ea-notice.is-error .ea-notice-dot { background: var(--color-negative); }
+.ea-text-action { border: 0; background: none; padding: 0; font: inherit; font-size: 13.5px; font-weight: 500; color: var(--color-ink); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.ea-text-action.is-destructive { color: var(--color-negative); text-decoration: none; }
+.ea-text-action:focus-visible { outline: 2px solid var(--color-ink); outline-offset: 3px; border-radius: 4px; }
+
+/* Design 09 — Priority: tinted status band above the kept Early Access number. */
+.ea-priority-card { overflow: hidden; border: 1px solid var(--color-border); border-radius: 18px; background: var(--color-surface); }
+.ea-priority-band { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 22px; background: var(--color-accent-tint); }
+.ea-priority-band strong { display: block; font-family: var(--font-sora), sans-serif; font-weight: 700; font-size: 20px; color: var(--color-accent-ink); }
+.ea-priority-kicker { display: block; font-size: 12px; color: var(--color-accent-ink); margin-bottom: 2px; }
+.ea-priority-kicker.is-muted { color: var(--color-ink-faint); }
+.ea-priority-since { font-size: 12.5px; color: var(--color-positive); white-space: nowrap; }
+.ea-priority-number-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 22px; }
+.ea-priority-number { display: block; font-family: var(--font-sora), sans-serif; font-weight: 500; font-size: 30px; letter-spacing: -0.03em; color: #2a2a26; }
+.ea-priority-note { max-width: 200px; font-size: 12.5px; color: var(--color-ink-faint); text-align: right; }
+
+/* Design 10 — invite details (1.5px ink border) + preview-only cohort explainer. */
+.ea-invite-card { border: 1.5px solid var(--color-ink); border-radius: 18px; background: var(--color-surface); box-shadow: 0 30px 60px -26px rgba(17, 17, 16, 0.25); overflow: hidden; }
+.ea-invite-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin: 0; }
+.ea-invite-grid div { padding: 16px 22px; border-bottom: 1px solid var(--color-border-soft); }
+.ea-invite-grid div:nth-child(odd) { border-right: 1px solid var(--color-border-soft); }
+.ea-invite-grid dt { font-size: 11.5px; color: var(--color-ink-faint); margin-bottom: 4px; }
+.ea-invite-grid dd { margin: 0; font-size: 14px; font-weight: 600; color: var(--color-ink); overflow-wrap: anywhere; }
+.ea-invite-note { margin: 0; padding: 16px 22px; font-size: 13px; line-height: 1.55; color: var(--color-ink-secondary); }
+.ea-cohort-preview { display: grid; gap: 8px; padding: 22px; border: 1px solid var(--color-border-soft); border-radius: 16px; background: var(--color-subtle); }
+.ea-cohort-kicker { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: var(--color-ink-faint); }
+.ea-cohort-preview strong { font-size: 14px; color: var(--color-ink); }
+.ea-cohort-preview p { margin: 0; font-size: 12.5px; color: var(--color-ink-muted); line-height: 1.5; }
+.ea-cohort-badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0; }
+.ea-cohort-footnote { font-size: 11.5px !important; color: var(--color-ink-faint) !important; }
+.ea-admitted-identity { display: flex; justify-content: space-between; gap: 16px; margin: 0; padding: 16px 20px; border: 1px solid var(--color-border); border-radius: 14px; background: var(--color-surface); }
+.ea-admitted-identity span { font-size: 12.5px; color: var(--color-ink-muted); }
+.ea-admitted-identity strong { font-family: var(--font-sora), sans-serif; font-size: 15px; }
+
+/* Referral progress towards Priority (Layer 13A.3). */
+.ea-referral { display: grid; gap: 10px; padding: 20px 22px; border: 1px solid var(--color-border); border-radius: 16px; background: var(--color-surface); }
+.ea-referral-head { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.ea-referral-head span { font-family: var(--font-sora), sans-serif; font-weight: 600; color: var(--color-ink-muted); }
+.ea-referral p { margin: 0; font-size: 13px; color: var(--color-ink-secondary); line-height: 1.55; }
+.ea-copy-link { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.ea-copy-link code { flex: 1 1 220px; min-width: 0; padding: 9px 12px; border: 1px solid var(--color-border); border-radius: 9px; background: var(--color-subtle); font-size: 12.5px; color: var(--color-ink-secondary); overflow-wrap: anywhere; }
+.ea-status-share { display: grid; }
+.ea-check-email-pill.is-verified .ea-check-email-dot { background: var(--color-ink); border-color: var(--color-ink); }
 
 /* Early Access responsive spec: ≥1080px two columns / 760–1079px single column, ladder under
    form / <760px compact, fields stack, actions full-width. */
@@ -174,6 +283,28 @@
   .ea-ledger-line { display: none; }
   .ea-status-details div { flex-direction: column; gap: 2px; }
   .ea-status-details dd { text-align: left; }
+  .ea-hide-mobile { display: none !important; }
+  .ea-shell-header { padding: 16px 20px; }
+  .ea-shell-indicator { display: none; }
+  .ea-shell-badge { display: inline-flex; }
+  .ea-shell-footer { padding: 22px 20px 28px; }
+  .ea-reveal-page { padding: 44px 22px 88px; }
+  .ea-reveal h1 { font-size: 32px; }
+  .ea-identity-card.is-reveal { padding: 22px; }
+  .ea-identity-card.is-reveal .ea-identity-number { font-size: 52px; }
+  .ea-identity-meta { gap: 10px; }
+  .ea-identity-meta dd { font-size: 12.5px; }
+  .ea-show-mobile { display: inline; }
+  .ea-next-steps { display: none; }
+  .ea-shell-links, .ea-shell-login { display: none; }
+  .ea-identity-card.is-reveal .ea-identity-number { margin: 18px 0 20px; }
+  .ea-reveal-actions { flex-direction: column; }
+  .ea-reveal-actions .dashboard-button { width: 100%; min-height: 52px; }
+  .ea-status-main h1 { font-size: 30px; }
+  .ea-invite-grid { grid-template-columns: 1fr; }
+  .ea-invite-grid div:nth-child(odd) { border-right: 0; }
+  .ea-priority-number-row { flex-direction: column; align-items: flex-start; }
+  .ea-priority-note { text-align: left; }
 }
 
 .waitlist-withdraw-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
