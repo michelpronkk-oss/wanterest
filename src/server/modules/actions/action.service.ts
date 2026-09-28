@@ -6,6 +6,7 @@ import { isConceptTriggerType, actionBasisLifecycleStatus, actionFeedbackInputSc
 import { ACTION_PRIORITY_FORMULA_VERSION, FixtureDemandActionEngine, FixtureDemandActionVariantEngine, type DemandActionEngine, type DemandActionVariantEngine } from "./action.engines";
 import type { ActionBasisGuardPayload, ActionClient, ActionRepository } from "./action.repository";
 import type { ActionLiveBasis } from "./concept-action.selector";
+import { measurePerformance } from "../../lib/performance-audit";
 
 export type ActionEntitlementPort = { can(workspaceId: string, capability: "actions_enabled"): Promise<boolean> };
 export type ActionAuditPort = { record(input: { workspaceId: string; actorUserId: string; action: string; targetId: string; metadata?: Record<string, unknown> }): Promise<void> };
@@ -58,6 +59,15 @@ const transitions: Record<ActionStatus, readonly ActionStatus[]> = {
 
 function json(value: unknown): Json { return jsonValueSchema.parse(value); }
 function now(): string { return new Date().toISOString(); }
+function groupByAction<T extends { action_id: string }>(rows: T[]): Map<string, T[]> {
+  const result = new Map<string, T[]>();
+  for (const row of rows) {
+    const bucket = result.get(row.action_id) ?? [];
+    bucket.push(row);
+    result.set(row.action_id, bucket);
+  }
+  return result;
+}
 function clamp(value: number): number { return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0)); }
 
 export class DemandActionService {
@@ -244,8 +254,18 @@ export class DemandActionService {
 
   async listActions(workspaceId: string, productId: string, filters: ActionListFilters = {}): Promise<ActionReadModel[]> {
     const parsed = actionListFiltersSchema.parse(filters);
-    const rows = await this.repository.listActions(workspaceId, productId, parsed);
-    return Promise.all(rows.map((row) => this.readModel(row)));
+    const rows = await measurePerformance("actions.list", () => this.repository.listActions(workspaceId, productId, parsed), (value) => value.length);
+    if (!rows.length) return [];
+    const actionIds = rows.map((row) => row.id);
+    const [variants, feedback, events] = await Promise.all([
+      measurePerformance("actions.variants.batch", () => this.repository.listVariantsForActions(workspaceId, actionIds), (value) => value.length),
+      measurePerformance("actions.feedback.batch", () => this.repository.listFeedbackForActions(workspaceId, actionIds), (value) => value.length),
+      measurePerformance("actions.events.batch", () => this.repository.listEventsForActions(workspaceId, actionIds), (value) => value.length),
+    ]);
+    const variantsByAction = groupByAction(variants);
+    const feedbackByAction = groupByAction(feedback);
+    const eventsByAction = groupByAction(events);
+    return rows.map((row) => this.readModelFromParts(row, variantsByAction.get(row.id) ?? [], feedbackByAction.get(row.id) ?? [], eventsByAction.get(row.id) ?? []));
   }
 
   async regenerateAction(input: ActionGenerationInput, engine: DemandActionEngine, supersedesActionId?: string): Promise<ActionGenerationOutput> {
@@ -262,17 +282,27 @@ export class DemandActionService {
   }
 
   private async readModel(action: ActionRow): Promise<ActionReadModel> {
-    const [variants, feedback, events, feedbackState] = await Promise.all([
+    const [variants, feedback, events] = await Promise.all([
       this.repository.listVariants(action.workspace_id, action.id),
       this.repository.listFeedback(action.workspace_id, action.id),
       this.repository.listEvents(action.workspace_id, action.id),
-      this.getFeedbackState(action.workspace_id, action.id),
     ]);
+    return this.readModelFromParts(action, variants, feedback, events);
+  }
+
+  private readModelFromParts(action: ActionRow, variants: ActionVariantRow[], feedback: ActionFeedbackRow[], events: ActionEventRow[]): ActionReadModel {
     const evidenceContext = action.evidence_context;
     const supportingEvidenceNodeIds = evidenceContext && typeof evidenceContext === "object" && !Array.isArray(evidenceContext) && Array.isArray(evidenceContext.supportingEvidenceNodeIds)
       ? evidenceContext.supportingEvidenceNodeIds.filter((value): value is string => typeof value === "string")
       : [];
-    return { action, variants, feedback, events, evidenceContext, feedbackState, provenance: { actionEvidenceNodeId: action.evidence_node_id, triggerEvidenceNodeId: action.trigger_evidence_node_id, supportingEvidenceNodeIds }, basisLifecycleStatus: actionBasisLifecycleStatus(this.options?.downstreamIntelligenceV2Enabled ?? false), liveBasis: null };
+    return { action, variants, feedback, events, evidenceContext, feedbackState: this.feedbackStateFromRows(feedback), provenance: { actionEvidenceNodeId: action.evidence_node_id, triggerEvidenceNodeId: action.trigger_evidence_node_id, supportingEvidenceNodeIds }, basisLifecycleStatus: actionBasisLifecycleStatus(this.options?.downstreamIntelligenceV2Enabled ?? false), liveBasis: null };
+  }
+
+  private feedbackStateFromRows(feedback: ActionFeedbackRow[]) {
+    const latest = (types: ActionFeedbackType[]) => [...feedback].reverse().map((item) => ({ item, type: actionFeedbackTypeSchema.safeParse(item.feedback_type) })).find((entry) => entry.type.success && types.includes(entry.type.data));
+    const lastParsed = feedback.at(-1) ? actionFeedbackTypeSchema.safeParse(feedback.at(-1)?.feedback_type) : null;
+    const last = lastParsed?.success ? lastParsed.data : null;
+    return { latest: last, useful: latest(["useful", "not_useful"])?.type.data === "useful" ? true : latest(["useful", "not_useful"])?.type.data === "not_useful" ? false : null, saved: latest(["saved"]) ? true : null, dismissed: latest(["dismissed"]) ? true : null };
   }
 
   static inputFingerprint(input: ActionGenerationInput, engineVersion: string): string {

@@ -1,10 +1,13 @@
 import "server-only";
 
+import { cache } from "react";
+
 import { listSignalsQuery } from "@/server/modules/intelligence/commands";
 import { getDemandDriftQuery, getDemandGapQuery } from "@/server/modules/demand-intelligence/commands";
 import { listActionsQuery } from "@/server/modules/actions/commands";
 import { listExperimentsQuery } from "@/server/modules/experiments/commands";
 import { formatPercent, formatRelativeTime, themeLabel } from "./dashboard-utils";
+import { logPerformanceAudit, withPerformanceAudit } from "@/server/lib/performance-audit";
 
 export type InboxItemType = "signal" | "gap" | "drift" | "action" | "experiment";
 
@@ -23,10 +26,17 @@ export type InboxItem = {
 /**
  * Assembles Intelligence Inbox items from data that already exists elsewhere in the product
  * (top signal, top gap, top rising drift, top proposed action, latest completed experiment).
- * There is no notifications table — this recomputes a snapshot on every read, and read/unread
- * state is tracked client-side only (see intelligence-inbox.tsx).
+ * There is no notifications table — this is a request-scoped snapshot, and read/unread state is
+ * tracked client-side only (see intelligence-inbox.tsx). It intentionally remains a small
+ * composition of bounded route reads instead of a universal dashboard query.
  */
-export async function getInboxItems(workspaceId: string, productId: string): Promise<InboxItem[]> {
+export const getInboxItems = cache(async function getInboxItems(workspaceId: string, productId: string): Promise<InboxItem[]> {
+  const result = await withPerformanceAudit("Overview/inbox", () => buildInboxItems(workspaceId, productId));
+  logPerformanceAudit(result.audit);
+  return result.value;
+});
+
+async function buildInboxItems(workspaceId: string, productId: string): Promise<InboxItem[]> {
   const items: InboxItem[] = [];
 
   const results = await Promise.allSettled([

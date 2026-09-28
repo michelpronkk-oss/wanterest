@@ -10,6 +10,8 @@ import { getProductScanState } from "@/components/dashboard/scan-state";
 import { ScanStatusBanner } from "@/components/dashboard/scan-status-banner";
 import { scanResultEmptyBody } from "@/components/dashboard/scan-status.view-model";
 
+const ACTIONS_INITIAL_PAGE_SIZE = 25;
+
 export default async function ActionsPage() {
   const { workspace, product } = await getDashboardContext();
   if (!workspace) {
@@ -32,7 +34,7 @@ export default async function ActionsPage() {
     );
   }
 
-  const actions = await listActionsQuery(workspace.id, product.id, { stale: false });
+  const actions = await listActionsQuery(workspace.id, product.id, { stale: false, limit: ACTIONS_INITIAL_PAGE_SIZE });
   const highCount = actions.filter((item) => item.action.priority_score >= 0.66).length;
   const readyToTestCount = actions.filter((item) => item.action.status === "approved").length;
   const newThisWeek = actions.filter((item) => isWithinLastDays(item.action.created_at, 7)).length;

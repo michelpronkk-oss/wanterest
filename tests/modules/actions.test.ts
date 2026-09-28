@@ -45,6 +45,15 @@ describe("Phase 5 actions", () => {
     expect(output.suppressed).toContain("actions_enabled");
   });
 
+  it("hydrates an Action list with one batch per child collection", async () => {
+    const repository = new InMemoryActionRepository();
+    const service = new DemandActionService(repository);
+    const [action] = (await service.generateActions(input())).actions;
+    const models = await service.listActions(workspaceId, productId, { limit: 25, stale: false });
+    expect(models.map((model) => model.action.id)).toEqual([action.id]);
+    expect(repository.readCounters).toEqual({ variantsBatch: 1, feedbackBatch: 1, eventsBatch: 1 });
+  });
+
   it("ranks evidence deterministically and lowers stale/weak priority", () => {
     const strong = calculateActionPriority({ evidenceStrength: 1, marketWeight: 0.8, gapScore: 0.8, driftStrength: 0, intentStrength: 0.9, opportunityScore: 0.9, confidence: 0.9, freshness: 1 });
     const weak = calculateActionPriority({ evidenceStrength: 0.3, marketWeight: 0.1, gapScore: 0.1, driftStrength: 0, intentStrength: 0.2, opportunityScore: 0.2, confidence: 0.3, freshness: 0.1 });
