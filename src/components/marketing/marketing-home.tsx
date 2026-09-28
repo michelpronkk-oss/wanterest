@@ -57,7 +57,7 @@ function Hero({ accessState }: { accessState: HomepageAccessState }) {
             <span>REAL DEMAND. FOUND.</span>
           </div>
           <h1 className="marketing-hero-headline">Know what buyers want next.</h1>
-          <p className="marketing-hero-lede">Buying intent, unmet needs, and demand shifts — found in real public conversations.</p>
+          <p className="marketing-hero-lede">Buying intent, unmet needs, and demand shifts, found in real public conversations.</p>
           <PrimaryAccessAction accessState={accessState} appearance="hero" />
           <p className="marketing-hero-evidence">Evidence attached to every finding. No manufactured activity.</p>
           {/* Audience fit, not endorsement: the avatars are illustrative (aria-hidden, empty alt) and
