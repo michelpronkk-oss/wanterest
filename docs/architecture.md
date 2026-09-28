@@ -5156,3 +5156,57 @@ but admission never depends on publication. Tests cover no-cohort rejection, bot
 privacy, visibility gaps, stable workspace ownership, inactive workspaces, safe projection fields, slug safety,
 IDOR, spoof resistance, concurrent initialization/slug claims, and immutable membership boundaries. This phase
 does not modify 12A.6 or build final share cards.
+
+### 13A.5 — Invite / Admission / Reveal V1 (`layer13a5_invite_admission_reveal_v1`) — FEATURE BRANCH
+
+**Boundary and state separation.** 13A.1 waitlist status remains unchanged. `approved_for_invite` means only
+that an internal operator may issue an invite; it does not mean that an Auth user, workspace, membership, cohort,
+benefit, or product access exists. Invite state is durable and separate (`issued`, `accepted`, `expired`, `revoked`),
+while admission is represented by the unique `workspace_admissions` row and its `onboarding_status`. Issuing,
+reissuing, expiring, or revoking an invite never reserves a cohort seat or changes Early Access identity.
+
+**Invite persistence and security.** `waitlist_admission_invites` stores only a SHA-256 token hash, one current
+issued invite per waitlist application, seven-day expiry, single-use acceptance, and immutable application linkage.
+Issuing again revokes the prior issued invite and creates one replacement, so there are never two simultaneously
+usable tokens. `waitlist_admission_events` is append-only and records issuance, reissue, revocation, expiry,
+acceptance, and completed admission without raw tokens. Invite and admission tables have RLS enabled, no anon or
+authenticated table grants, and service-role-only RPCs. The public acceptance route moves the raw token immediately
+into a short-lived HttpOnly, SameSite cookie, redirects to a clean URL with `Referrer-Policy: no-referrer`, and
+never places the token in analytics or subsequent browser URLs.
+
+**Authoritative admission transaction.** `accept_waitlist_admission_invite` is the single database operation that
+accepts an active invite for the matching authenticated email and atomically creates the workspace, owner membership,
+free-plan entitlements, cohort assignment plus eligible benefit, private 13A.4 profile when a special cohort is
+assigned, admission row, waitlist conversion linkage, invite acceptance, and audit events. It derives the workspace
+slug from the application company name plus an application-scoped suffix; the browser cannot select workspace owner,
+cohort, cohort number, benefit policy, or public visibility. A failed transaction rolls back all internal state,
+including allocator changes, so retries do not leave seats, benefits, profiles, or accepted invites behind.
+
+**Auth and workspace flow.** Auth user creation remains Supabase Auth's existing client flow and is deliberately
+outside the PostgreSQL transaction. Existing and new users converge at `/invite/complete` after authentication;
+the RPC checks the authoritative Auth email against the verified waitlist email before any workspace write. New-user
+signup and existing-user login preserve the internal completion path through the existing Auth callback. V1 creates
+one new workspace per admitted waitlist application and does not silently attach an unrelated existing workspace.
+The existing `initialize_workspace_entitlements` seam supplies the current free/default access state; admission does
+not create a paid subscription or call Dodo.
+
+**Cohort, benefit, and reveal semantics.** Admission calls the production-proven
+`assign_workspace_cohort_membership_with_benefit` wrapper. Successful admission order, not waitlist number, priority,
+invite order, or signup time, determines Founding 25, Early 100, or no special cohort. Founding and Early benefits
+are recorded as `eligible` and remain unactivated until the existing paid-subscription path runs. A special-cohort
+profile is initialized with both public visibility flags false; private reveal returns the authoritative cohort label,
+number, limit, benefit eligibility, workspace ID, and onboarding state. Private reveal is not publication. Normal
+post-cohort admissions still receive a workspace and access without a public profile or benefit.
+
+**Idempotency and concurrency.** Unique application, invite, admission, and workspace constraints plus row locks
+make repeated acceptance, refreshes, two tabs, and concurrent retries return one admission or a safe conflict. The
+existing fixed-order allocator locks Founding and Early state, preserving contiguous seats across the Founding #25 /
+Early #001 and Early #100 / no-special boundaries. Cohort assignment and benefit grant remain owned by 13A.2 and
+13A.2B; 13A.5 only supplies the admission transaction input.
+
+**Read models and future seams.** The private waitlist status read model distinguishes approval, invite readiness,
+expiry, acceptance, admission, cohort reveal, benefit eligibility, and onboarding without exposing raw tokens. The
+typed admission result is reusable by a later 13A.6 launch-mode gate and a later 13B share-card layer. 13A.6 may
+add an open signup path around the same workspace/admission primitives; 13A.5 does not hardcode a permanent invite-only
+policy. No admin UI, Dodo live call, production invite, production admission, 12A.6 behavior, or share-card rendering
+is part of this implementation.
