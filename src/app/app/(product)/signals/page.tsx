@@ -51,6 +51,7 @@ export default async function SignalsPage({ searchParams }: { searchParams: Sear
     minimumScore,
     from: from || undefined,
     to: to || undefined,
+    query: textQuery,
     limit: SIGNALS_PAGE_SIZE + 1,
     offset: page * SIGNALS_PAGE_SIZE,
   };
@@ -79,11 +80,7 @@ export default async function SignalsPage({ searchParams }: { searchParams: Sear
   const product = context.product;
   const loadedSignals = await listSignalsQuery(workspace.id, product.id, filters);
   const hasNext = loadedSignals.length > SIGNALS_PAGE_SIZE;
-  let signals = loadedSignals.slice(0, SIGNALS_PAGE_SIZE);
-  if (textQuery) {
-    const needle = textQuery.toLowerCase();
-    signals = signals.filter((signal) => signal.excerpt.toLowerCase().includes(needle) || signal.whyItMatters.toLowerCase().includes(needle));
-  }
+  const signals = loadedSignals.slice(0, SIGNALS_PAGE_SIZE);
   const sources = [...new Set(loadedSignals.map((signal) => signal.source))].sort();
   const activeFilterCount = [intentType, sourceKey, lifecycleStatus, minimumScore, from, to, textQuery].filter((value) => value !== undefined && value !== "").length;
   const scanState = activeFilterCount === 0 ? await getProductScanState(workspace.id, product.id, loadedSignals.length > 0) : null;

@@ -80,6 +80,14 @@ describe("Signal lifecycle (dismiss/save)", () => {
     return { service, product, repository, evaluation, ranking, signal, profile };
   }
 
+  it("uses one bounded page and constant-size batch reads for the Signals list", async () => {
+    const { service, product, repository, signal } = await qualifiedSignal();
+    const result = await service.listSignals(product.workspace_id, product.id, { limit: 25 });
+    expect(result.map((row) => row.signalId)).toEqual([signal.id]);
+    expect(repository.readCounters).toEqual({ signalPage: 1, feedbackBatch: 1, evaluationsBatch: 1, conversationsBatch: 1, sourcesBatch: 1, profilesBatch: 1 });
+    expect(await service.listSignals(product.workspace_id, product.id, { limit: 1, query: "manual reporting" })).toHaveLength(1);
+  });
+
   it("excludes dismissed (and archived) signals from the default active view, but includes active and saved", async () => {
     const { service, product, repository, signal } = await qualifiedSignal();
     await repository.updateSignal(signal.id, { lifecycle_status: "dismissed" });

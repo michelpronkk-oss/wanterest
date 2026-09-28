@@ -55,16 +55,37 @@ export interface IntelligenceRepository {
   createRanking(input: MatchRankingInsert): Promise<MatchRankingRow>;
   getSignalByMatch(matchId: string): Promise<SignalRow | null>;
   listSignals(workspaceId: string, productId?: string): Promise<SignalRow[]>;
+  listSignalPage(input: SignalPageInput): Promise<SignalPageRow[]>;
   getSignal(signalId: string): Promise<SignalRow | null>;
   getEvaluationById(evaluationId: string): Promise<ProductMatchEvaluationRow | null>;
+  listEvaluationsByIds(evaluationIds: string[]): Promise<ProductMatchEvaluationRow[]>;
   getRankingById(rankingId: string): Promise<MatchRankingRow | null>;
+  listRankingsByIds(rankingIds: string[]): Promise<MatchRankingRow[]>;
   createSignal(input: SignalInsert): Promise<SignalRow>;
   updateSignal(signalId: string, input: SignalUpdate): Promise<SignalRow>;
   createFeedback(input: MatchFeedbackInsert): Promise<MatchFeedbackRow>;
   listFeedback(signalId: string): Promise<MatchFeedbackRow[]>;
+  listFeedbackBySignalIds(signalIds: string[]): Promise<MatchFeedbackRow[]>;
+  listDemandProfilesByIds(profileIds: string[]): Promise<DemandProfileRow[]>;
   consumeSignalUsage(workspaceId: string, idempotencyKey: string): Promise<void>;
   linkProvenance(input: { derivedEvidenceNodeId: string; sourceEvidenceNodeId: string; relationType: string; weight?: number; ordinal?: number; span?: Json | null; measurement?: Json | null; engineVersionId?: string | null }): Promise<void>;
 }
+
+export type SignalPageInput = {
+  workspaceId: string;
+  productId?: string;
+  lifecycleStatus?: string;
+  intentType?: string;
+  sourceKey?: string;
+  from?: string;
+  to?: string;
+  minimumScore?: number;
+  query?: string;
+  limit: number;
+  offset: number;
+};
+
+export type SignalPageRow = SignalRow & { opportunity_score: number };
 
 type SupabaseIntelligenceClient = SupabaseClient<Database>;
 
@@ -104,18 +125,39 @@ export class SupabaseIntelligenceRepository implements IntelligenceRepository {
   async createMatch(input: ProductMatchInsert) { const id = input.id ?? crypto.randomUUID(); await this.evidence(input.evidence_node_id, "match", input.workspace_id, "product_matches", id); const { data, error } = await this.client.from("product_matches").insert({ ...input, id }).select("*").single(); if (error) { if (error.code === "23505") { const existing = await this.getMatch(input.workspace_id, input.product_id, input.conversation_id); if (existing) return existing; } throw dbError(error, "Product match could not be stored."); } if (!data) throw dbError({ message: "No match returned." }, "Product match could not be stored."); return data; }
   async getEvaluation(productMatchId: string, engineVersionId: string, inputFingerprint: string) { const { data, error } = await this.client.from("product_match_evaluations").select("*").eq("product_match_id", productMatchId).eq("match_engine_version_id", engineVersionId).eq("input_fingerprint", inputFingerprint).maybeSingle(); if (error) throw dbError(error, "Match evaluation could not be loaded."); return data; }
   async getEvaluationById(evaluationId: string) { const { data, error } = await this.client.from("product_match_evaluations").select("*").eq("id", evaluationId).maybeSingle(); if (error) throw dbError(error, "Match evaluation could not be loaded."); return data; }
+  async listEvaluationsByIds(evaluationIds: string[]) { if (!evaluationIds.length) return []; const { data, error } = await this.client.from("product_match_evaluations").select("id, demand_profile_id, match_confidence, evidence").in("id", evaluationIds); if (error) throw dbError(error, "Match evaluations could not be loaded."); return (data ?? []) as unknown as ProductMatchEvaluationRow[]; }
   async createEvaluation(input: ProductMatchEvaluationInsert) { const id = input.id ?? crypto.randomUUID(); await this.evidence(input.evidence_node_id, "match_evaluation", input.workspace_id, "product_match_evaluations", id); const { data, error } = await this.client.from("product_match_evaluations").insert({ ...input, id }).select("*").single(); if (error) { if (error.code === "23505") { const existing = await this.getEvaluation(input.product_match_id, input.match_engine_version_id, input.input_fingerprint); if (existing) return existing; } throw dbError(error, "Match evaluation could not be stored."); } if (!data) throw dbError({ message: "No evaluation returned." }, "Match evaluation could not be stored."); return data; }
   async setCurrentEvaluation(matchId: string, evaluationId: string) { const { error } = await this.client.from("product_matches").update({ current_match_evaluation_id: evaluationId }).eq("id", matchId); if (error) throw dbError(error, "Current match evaluation could not be updated."); }
   async getRanking(evaluationId: string, engineVersionId: string, inputFingerprint: string) { const { data, error } = await this.client.from("match_rankings").select("*").eq("product_match_evaluation_id", evaluationId).eq("ranking_engine_version_id", engineVersionId).eq("input_fingerprint", inputFingerprint).maybeSingle(); if (error) throw dbError(error, "Ranking could not be loaded."); return data; }
   async getRankingById(rankingId: string) { const { data, error } = await this.client.from("match_rankings").select("*").eq("id", rankingId).maybeSingle(); if (error) throw dbError(error, "Ranking could not be loaded."); return data; }
+  async listRankingsByIds(rankingIds: string[]) { if (!rankingIds.length) return []; const { data, error } = await this.client.from("match_rankings").select("id, opportunity_score, evidence_node_id").in("id", rankingIds); if (error) throw dbError(error, "Rankings could not be loaded."); return (data ?? []) as unknown as MatchRankingRow[]; }
   async createRanking(input: MatchRankingInsert) { const id = input.id ?? crypto.randomUUID(); await this.evidence(input.evidence_node_id, "ranking", input.workspace_id, "match_rankings", id); const { data, error } = await this.client.from("match_rankings").insert({ ...input, id }).select("*").single(); if (error) { if (error.code === "23505") { const existing = await this.getRanking(input.product_match_evaluation_id, input.ranking_engine_version_id, input.input_fingerprint); if (existing) return existing; } throw dbError(error, "Ranking could not be stored."); } if (!data) throw dbError({ message: "No ranking returned." }, "Ranking could not be stored."); return data; }
   async getSignalByMatch(matchId: string) { const { data, error } = await this.client.from("signals").select("*").eq("product_match_id", matchId).maybeSingle(); if (error) throw dbError(error, "Signal could not be loaded."); return data; }
   async listSignals(workspaceId: string, productId?: string) { let query = this.client.from("signals").select("id, workspace_id, product_id, product_match_id, product_match_evaluation_id, conversation_id, source_key, canonical_url, published_at, created_at, updated_at, intent_type, excerpt, why_it_matters, tags, buyer_language, pain_themes, lifecycle_status, evidence_node_id, match_ranking_id").eq("workspace_id", workspaceId); if (productId) query = query.eq("product_id", productId); const { data, error } = await query.order("created_at", { ascending: false }); if (error) throw dbError(error, "Signals could not be loaded."); return data ?? []; }
+  async listSignalPage(input: SignalPageInput) {
+    const { data, error } = await this.client.rpc("list_signal_page" as never, {
+      p_workspace_id: input.workspaceId,
+      p_product_id: input.productId ?? null,
+      p_lifecycle_status: input.lifecycleStatus ?? null,
+      p_intent_type: input.intentType ?? null,
+      p_source_key: input.sourceKey ?? null,
+      p_from: input.from ?? null,
+      p_to: input.to ?? null,
+      p_minimum_score: input.minimumScore ?? null,
+      p_query: input.query ?? null,
+      p_limit: input.limit,
+      p_offset: input.offset,
+    } as never);
+    if (error) throw dbError(error, "Signals could not be loaded.");
+    return (data ?? []) as unknown as SignalPageRow[];
+  }
   async getSignal(signalId: string) { const { data, error } = await this.client.from("signals").select("*").eq("id", signalId).maybeSingle(); if (error) throw dbError(error, "Signal could not be loaded."); return data; }
   async createSignal(input: SignalInsert) { const id = input.id ?? crypto.randomUUID(); await this.evidence(input.evidence_node_id, "signal", input.workspace_id, "signals", id); const { data, error } = await this.client.from("signals").insert({ ...input, id }).select("*").single(); if (error || !data) throw dbError(error ?? { message: "No signal returned." }, "Signal could not be stored."); return data; }
   async updateSignal(signalId: string, input: SignalUpdate) { const { data, error } = await this.client.from("signals").update(input).eq("id", signalId).select("*").single(); if (error || !data) throw dbError(error ?? { message: "No signal returned." }, "Signal could not be updated."); return data; }
   async createFeedback(input: MatchFeedbackInsert) { const { data, error } = await this.client.from("match_feedback").insert(input).select("*").single(); if (error || !data) throw dbError(error ?? { message: "No feedback returned." }, "Feedback could not be stored."); return data; }
   async listFeedback(signalId: string) { const { data, error } = await this.client.from("match_feedback").select("*").eq("signal_id", signalId).order("created_at", { ascending: true }); if (error) throw dbError(error, "Feedback could not be loaded."); return data ?? []; }
+  async listFeedbackBySignalIds(signalIds: string[]) { if (!signalIds.length) return []; const { data, error } = await this.client.from("match_feedback").select("signal_id, feedback_type, created_at").in("signal_id", signalIds).order("created_at", { ascending: true }); if (error) throw dbError(error, "Feedback could not be loaded."); return (data ?? []) as unknown as MatchFeedbackRow[]; }
+  async listDemandProfilesByIds(profileIds: string[]) { if (!profileIds.length) return []; const { data, error } = await this.client.from("demand_profiles").select("id, evidence_node_id").in("id", profileIds); if (error) throw dbError(error, "Demand profiles could not be loaded."); return (data ?? []) as unknown as DemandProfileRow[]; }
   async consumeSignalUsage(workspaceId: string, idempotencyKey: string) { const { error } = await this.client.rpc("consume_usage", { p_workspace_id: workspaceId, p_usage_type: "qualified_signal", p_amount: 1, p_idempotency_key: idempotencyKey, p_source_metadata: { phase: "phase3", event: "signal.created" } }); if (error) throw dbError(error, "Signal usage could not be recorded."); }
   async linkProvenance(input: { derivedEvidenceNodeId: string; sourceEvidenceNodeId: string; relationType: string; weight?: number; ordinal?: number; span?: Json | null; measurement?: Json | null; engineVersionId?: string | null }) { const { error } = await this.client.from("evidence_provenance").upsert({ derived_evidence_node_id: input.derivedEvidenceNodeId, source_evidence_node_id: input.sourceEvidenceNodeId, relation_type: input.relationType, weight: input.weight, ordinal: input.ordinal, span: input.span ?? null, measurement: input.measurement ?? null, engine_version_id: input.engineVersionId ?? null }, { onConflict: "derived_evidence_node_id,source_evidence_node_id,relation_type,ordinal", ignoreDuplicates: true }); if (error) throw dbError(error, "Evidence provenance could not be stored."); }
 }
@@ -140,6 +182,7 @@ export class InMemoryIntelligenceRepository implements IntelligenceRepository {
   readonly signals = new Map<string, SignalRow>();
   readonly feedback: MatchFeedbackRow[] = [];
   readonly consumedUsage = new Set<string>();
+  readonly readCounters = { signalPage: 0, feedbackBatch: 0, evaluationsBatch: 0, conversationsBatch: 0, sourcesBatch: 0, profilesBatch: 0 };
   signalsMonthlyLimit = 5;
 
   async getProduct(productId: string) { return this.products.get(productId) ?? null; }
@@ -155,9 +198,9 @@ export class InMemoryIntelligenceRepository implements IntelligenceRepository {
   async createDemandProfile(input: DemandProfileInsert, snapshotInputs: DemandProfileSnapshotInputInsert[]) { const row = { ...input, id: input.id ?? uuid(), model: input.model ?? null, prompt_version: input.prompt_version ?? null, created_at: input.created_at ?? now() } as DemandProfileRow; this.profiles.set(row.id, row); this.profileSnapshotInputs.push(...snapshotInputs); return row; }
   async setCurrentDemandProfile(productId: string, profileId: string) { const product = this.products.get(productId); if (product) this.products.set(productId, { ...product, current_demand_profile_id: profileId, updated_at: now() }); }
   async getConversation(conversationId: string) { return this.conversations.get(conversationId) ?? null; }
-  async listConversations(conversationIds: string[]) { const selected = new Set(conversationIds); return [...this.conversations.values()].filter((row) => selected.has(row.id)); }
+  async listConversations(conversationIds: string[]) { this.readCounters.conversationsBatch += 1; const selected = new Set(conversationIds); return [...this.conversations.values()].filter((row) => selected.has(row.id)); }
   async getSourceItem(sourceItemId: string) { return this.sourceItems.get(sourceItemId) ?? null; }
-  async listSourceItems(sourceItemIds: string[]) { const selected = new Set(sourceItemIds); return [...this.sourceItems.values()].filter((row) => selected.has(row.id)); }
+  async listSourceItems(sourceItemIds: string[]) { this.readCounters.sourcesBatch += 1; const selected = new Set(sourceItemIds); return [...this.sourceItems.values()].filter((row) => selected.has(row.id)); }
   async getConversationAnalysis(conversationId: string, engineVersionId: string, inputFingerprint: string) { return [...this.analyses.values()].find((row) => row.conversation_id === conversationId && row.engine_version_id === engineVersionId && row.input_fingerprint === inputFingerprint) ?? null; }
   async getConversationAnalysisById(analysisId: string) { return this.analyses.get(analysisId) ?? null; }
   async listConversationAnalyses(analysisIds: string[]) { const selected = new Set(analysisIds); return [...this.analyses.values()].filter((row) => selected.has(row.id)); }
@@ -172,13 +215,33 @@ export class InMemoryIntelligenceRepository implements IntelligenceRepository {
   async createRanking(input: MatchRankingInsert) { const timestamp = now(); const row = { ...input, id: input.id ?? uuid(), calculated_at: input.calculated_at ?? timestamp, created_at: input.created_at ?? timestamp } as MatchRankingRow; this.rankings.set(row.id, row); return row; }
   async getSignalByMatch(matchId: string) { return [...this.signals.values()].find((row) => row.product_match_id === matchId) ?? null; }
   async listSignals(workspaceId: string, productId?: string) { return [...this.signals.values()].filter((row) => row.workspace_id === workspaceId && (!productId || row.product_id === productId)); }
+  async listSignalPage(input: SignalPageInput) {
+    this.readCounters.signalPage += 1;
+    const query = input.query?.toLowerCase();
+    const rows = [...this.signals.values()]
+      .filter((row) => row.workspace_id === input.workspaceId && (!input.productId || row.product_id === input.productId))
+      .filter((row) => input.lifecycleStatus ? row.lifecycle_status === input.lifecycleStatus : row.lifecycle_status === "active" || row.lifecycle_status === "saved")
+      .filter((row) => !input.intentType || row.intent_type === input.intentType)
+      .filter((row) => !input.sourceKey || row.source_key === input.sourceKey)
+      .filter((row) => !input.from || (row.published_at ?? row.created_at) >= input.from)
+      .filter((row) => !input.to || (row.published_at ?? row.created_at) <= input.to)
+      .filter((row) => !query || row.excerpt.toLowerCase().includes(query) || row.why_it_matters.toLowerCase().includes(query))
+      .map((row) => ({ row, ranking: this.rankings.get(row.match_ranking_id) }))
+      .filter((item): item is { row: SignalRow; ranking: MatchRankingRow } => Boolean(item.ranking && (input.minimumScore === undefined || item.ranking.opportunity_score >= input.minimumScore)))
+      .sort((a, b) => b.ranking.opportunity_score - a.ranking.opportunity_score || b.row.created_at.localeCompare(a.row.created_at));
+    return rows.slice(input.offset, input.offset + input.limit).map(({ row, ranking }) => ({ ...row, opportunity_score: ranking.opportunity_score }));
+  }
   async getSignal(signalId: string) { return this.signals.get(signalId) ?? null; }
   async getEvaluationById(evaluationId: string) { return this.evaluations.get(evaluationId) ?? null; }
+  async listEvaluationsByIds(evaluationIds: string[]) { this.readCounters.evaluationsBatch += 1; const selected = new Set(evaluationIds); return [...this.evaluations.values()].filter((row) => selected.has(row.id)); }
   async getRankingById(rankingId: string) { return this.rankings.get(rankingId) ?? null; }
+  async listRankingsByIds(rankingIds: string[]) { const selected = new Set(rankingIds); return [...this.rankings.values()].filter((row) => selected.has(row.id)); }
   async createSignal(input: SignalInsert) { const row = { ...input, id: input.id ?? uuid(), lifecycle_status: input.lifecycle_status ?? "active", tags: input.tags ?? [], buyer_language: input.buyer_language ?? [], pain_themes: input.pain_themes ?? [], created_at: input.created_at ?? now(), updated_at: input.updated_at ?? now() } as SignalRow; this.signals.set(row.id, row); return row; }
   async updateSignal(signalId: string, input: SignalUpdate) { const old = this.signals.get(signalId); if (!old) throw new Error("Signal not found."); const row = { ...old, ...input, updated_at: now() }; this.signals.set(signalId, row); return row; }
   async createFeedback(input: MatchFeedbackInsert) { const row = { ...input, id: input.id ?? uuid(), signal_id: input.signal_id ?? null, product_match_evaluation_id: input.product_match_evaluation_id ?? null, reason: input.reason ?? null, metadata: input.metadata ?? {}, created_at: input.created_at ?? now() } as MatchFeedbackRow; this.feedback.push(row); return row; }
   async listFeedback(signalId: string) { return this.feedback.filter((row) => row.signal_id === signalId).sort((a, b) => a.created_at.localeCompare(b.created_at)); }
+  async listFeedbackBySignalIds(signalIds: string[]) { this.readCounters.feedbackBatch += 1; const selected = new Set(signalIds); return this.feedback.filter((row) => row.signal_id !== null && selected.has(row.signal_id)).sort((a, b) => a.created_at.localeCompare(b.created_at)); }
+  async listDemandProfilesByIds(profileIds: string[]) { this.readCounters.profilesBatch += 1; const selected = new Set(profileIds); return [...this.profiles.values()].filter((row) => selected.has(row.id)); }
   async consumeSignalUsage(workspaceId: string, idempotencyKey: string) { const key = `${workspaceId}:${idempotencyKey}`; if (this.consumedUsage.has(key)) return; if ([...this.consumedUsage].filter((value) => value.startsWith(`${workspaceId}:`)).length >= this.signalsMonthlyLimit) throw new Error("usage_limit_exceeded"); this.consumedUsage.add(key); }
   readonly provenance: Array<{ derivedEvidenceNodeId: string; sourceEvidenceNodeId: string; relationType: string; weight?: number; ordinal?: number; span?: Json | null; measurement?: Json | null; engineVersionId?: string | null }> = [];
   async linkProvenance(input: { derivedEvidenceNodeId: string; sourceEvidenceNodeId: string; relationType: string; weight?: number; ordinal?: number; span?: Json | null; measurement?: Json | null; engineVersionId?: string | null }) { if (!this.provenance.some((edge) => edge.derivedEvidenceNodeId === input.derivedEvidenceNodeId && edge.sourceEvidenceNodeId === input.sourceEvidenceNodeId && edge.relationType === input.relationType && edge.ordinal === input.ordinal)) this.provenance.push(input); }

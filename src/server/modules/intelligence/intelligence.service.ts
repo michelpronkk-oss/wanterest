@@ -10,7 +10,8 @@ import type { DemandProfileV2 } from "./demand-profile-v2.schemas";
 import type { DemandProfileV2Engine, DemandProfileV2Hints } from "./demand-profile-v2.engines";
 import { calculateOpportunityScore, freshnessScore, INTENT_STRENGTH, RANKING_FORMULA_VERSION, sourceQuality, type RankingComponents } from "./ranking";
 import type { ConversationAnalysisEngine, DemandProfileEngine, ProductMatchingEngine } from "./engines";
-import type { IntelligenceRepository } from "./intelligence.repository";
+import type { IntelligenceRepository, SignalPageRow } from "./intelligence.repository";
+import { measurePerformance } from "../../lib/performance-audit";
 import { canMaterializeQualifiedSignal, failClosedQualification, qualificationFromEvidence, qualifySignal, qualifySignalWithReasoning, serializeQualification, type SignalQualificationProfile } from "./signal-qualification.service";
 import { isDuplicateSignalContent, inspectSignalContent } from "./signal-quality";
 import type { ConversationMarketReasoning, SignalQualification } from "./signal-qualification.schemas";
@@ -80,6 +81,15 @@ function json(value: unknown): Json { return jsonValueSchema.parse(value); }
 function asStrings(value: Json): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; }
 function normalizeText(value: string): string { return value.replace(/\s+/g, " ").trim(); }
 function metadataObject(value: Json | undefined): Record<string, Json> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, Json> : {}; }
+function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
+  const result = new Map<string, T[]>();
+  for (const item of items) {
+    const bucket = result.get(key(item)) ?? [];
+    bucket.push(item);
+    result.set(key(item), bucket);
+  }
+  return result;
+}
 function snapshotClassificationIdentity(value: Json): string {
   const metadata = metadataObject(value);
   const classification = metadata.business_classification;
@@ -105,6 +115,8 @@ export type SignalFilters = {
   limit?: number;
   /** Offset into the backend-ranked result set. */
   offset?: number;
+  /** Storage-side text search over the two fields already used by the Signals UI. */
+  query?: string;
 };
 export type SignalReadModel = {
   signalId: string; workspaceId: string; productId: string; productMatchId: string; conversationId: string; source: string;
@@ -321,30 +333,49 @@ export class IntelligenceService {
   }
 
   async listSignals(workspaceId: string, productId?: string, filters: SignalFilters = {}): Promise<SignalReadModel[]> {
-    const rows = await this.repository.listSignals(workspaceId, productId);
     const limit = Math.min(Math.max(Math.trunc(filters.limit ?? 50), 1), 100);
     const offset = Math.max(Math.trunc(filters.offset ?? 0), 0);
-    const rankedRows = (await Promise.all(rows.map(async (row) => {
-      // ACTIVE and SAVED are both part of the normal active experience; DISMISSED
-      // and ARCHIVED are not and must never inflate default counts/feeds. An
-      // explicit lifecycleStatus filter (e.g. the Saved page, or ?status=dismissed)
-      // is an exact match against the stored status instead of the default set.
-      if (filters.lifecycleStatus) {
-        if (row.lifecycle_status !== filters.lifecycleStatus) return null;
-      } else if (row.lifecycle_status !== "active" && row.lifecycle_status !== "saved") {
-        return null;
-      }
-      if (filters.intentType && row.intent_type !== filters.intentType) return null;
-      if (filters.sourceKey && row.source_key !== filters.sourceKey) return null;
-      if (filters.from && (row.published_at ?? row.created_at) < filters.from) return null;
-      if (filters.to && (row.published_at ?? row.created_at) > filters.to) return null;
-      const ranking = await this.repository.getRankingById(row.match_ranking_id);
-      if (!ranking || (filters.minimumScore !== undefined && ranking.opportunity_score < filters.minimumScore)) return null;
-      return { row, opportunityScore: ranking.opportunity_score };
-    }))).filter((value): value is { row: import("../../db/database.helpers").SignalRow; opportunityScore: number } => value !== null)
-      .sort((a, b) => b.opportunityScore - a.opportunityScore);
-    const page = rankedRows.slice(offset, offset + limit);
-    return Promise.all(page.map(({ row, opportunityScore }) => this.signalReadModel(row, opportunityScore)));
+    const rows = await measurePerformance("signals.page", () => this.repository.listSignalPage({
+      workspaceId,
+      productId,
+      lifecycleStatus: filters.lifecycleStatus,
+      intentType: filters.intentType,
+      sourceKey: filters.sourceKey,
+      from: filters.from,
+      to: filters.to,
+      minimumScore: filters.minimumScore,
+      query: filters.query,
+      limit,
+      offset,
+    }), (value) => value.length);
+    if (!rows.length) return [];
+
+    const signalIds = rows.map((row) => row.id);
+    const evaluationIds = rows.map((row) => row.product_match_evaluation_id);
+    const conversationIds = rows.map((row) => row.conversation_id);
+    const [feedback, evaluations, conversations] = await Promise.all([
+      measurePerformance("signals.feedback.batch", () => this.repository.listFeedbackBySignalIds(signalIds), (value) => value.length),
+      measurePerformance("signals.evaluations.batch", () => this.repository.listEvaluationsByIds(evaluationIds), (value) => value.length),
+      measurePerformance("signals.conversations.batch", () => this.repository.listConversations(conversationIds), (value) => value.length),
+    ]);
+    const sourceIds = conversations.map((conversation) => conversation.primary_source_item_id);
+    const profileIds = evaluations.map((evaluation) => evaluation.demand_profile_id);
+    const [sources, profiles] = await Promise.all([
+      measurePerformance("signals.sources.batch", () => this.repository.listSourceItems(sourceIds), (value) => value.length),
+      measurePerformance("signals.profiles.batch", () => this.repository.listDemandProfilesByIds(profileIds), (value) => value.length),
+    ]);
+    const feedbackBySignal = groupBy(feedback, (row) => row.signal_id ?? "");
+    const evaluationById = new Map(evaluations.map((row) => [row.id, row]));
+    const conversationById = new Map(conversations.map((row) => [row.id, row]));
+    const sourceById = new Map(sources.map((row) => [row.id, row]));
+    const profileById = new Map(profiles.map((row) => [row.id, row]));
+    return Promise.all(rows.map((row) => this.signalReadModelFromBatch(row, row.opportunity_score, {
+      feedback: feedbackBySignal.get(row.id) ?? [],
+      evaluation: evaluationById.get(row.product_match_evaluation_id) ?? null,
+      conversation: conversationById.get(row.conversation_id) ?? null,
+      source: sourceById.get(conversationById.get(row.conversation_id)?.primary_source_item_id ?? "") ?? null,
+      profile: profileById.get(evaluationById.get(row.product_match_evaluation_id)?.demand_profile_id ?? "") ?? null,
+    })));
   }
 
   async getSignal(workspaceId: string, signalId: string): Promise<SignalReadModel> {
@@ -400,6 +431,43 @@ export class IntelligenceService {
     const savedState = latestState(["saved", "dismissed"]);
     const relevanceState = latestState(["relevant", "not_relevant"]);
     return { signalId: row.id, workspaceId: row.workspace_id, productId: row.product_id, productMatchId: row.product_match_id, conversationId: row.conversation_id, source: row.source_key, canonicalUrl: row.canonical_url, publishedAt: row.published_at, createdAt: row.created_at, intentType: row.intent_type, opportunityScore: opportunityScore ?? (await this.repository.getRankingById(row.match_ranking_id))?.opportunity_score ?? 0, matchPercent: Math.round(((evaluation?.match_confidence ?? 0) * 100)), excerpt: row.excerpt, whyItMatters: row.why_it_matters, tags: asStrings(row.tags), buyerLanguage: asStrings(row.buyer_language), painThemes: asStrings(row.pain_themes), lifecycleStatus: row.lifecycle_status, feedbackState: { saved: savedState === "saved", dismissed: savedState === "dismissed", relevant: relevanceState === "relevant" ? true : relevanceState === "not_relevant" ? false : null, opened: Boolean(latest("opened")), contacted: Boolean(latest("contacted")), converted: Boolean(latest("converted")) }, evidence: { signalEvidenceNodeId: row.evidence_node_id, evaluationId: row.product_match_evaluation_id, rankingId: row.match_ranking_id, conversationEvidenceNodeId: conversation?.evidence_node_id ?? "", sourceItemId: source?.id ?? "", demandProfileEvidenceNodeId: profile?.evidence_node_id ?? "" }, qualification };
+  }
+
+  private async signalReadModelFromBatch(row: SignalPageRow, opportunityScore: number, related: {
+    feedback: import("../../db/database.helpers").MatchFeedbackRow[];
+    evaluation: import("../../db/database.helpers").ProductMatchEvaluationRow | null;
+    conversation: ConversationRow | null;
+    source: SourceItemRow | null;
+    profile: import("../../db/database.helpers").DemandProfileRow | null;
+  }): Promise<SignalReadModel> {
+    const latest = (type: string) => [...related.feedback].reverse().find((event) => event.feedback_type === type);
+    const latestState = (types: string[]) => [...related.feedback].reverse().find((event) => types.includes(event.feedback_type))?.feedback_type;
+    const qualification = related.evaluation ? qualificationFromEvidence(related.evaluation.evidence) : null;
+    const savedState = latestState(["saved", "dismissed"]);
+    const relevanceState = latestState(["relevant", "not_relevant"]);
+    return {
+      signalId: row.id,
+      workspaceId: row.workspace_id,
+      productId: row.product_id,
+      productMatchId: row.product_match_id,
+      conversationId: row.conversation_id,
+      source: row.source_key,
+      canonicalUrl: row.canonical_url,
+      publishedAt: row.published_at,
+      createdAt: row.created_at,
+      intentType: row.intent_type,
+      opportunityScore,
+      matchPercent: Math.round(((related.evaluation?.match_confidence ?? 0) * 100)),
+      excerpt: row.excerpt,
+      whyItMatters: row.why_it_matters,
+      tags: asStrings(row.tags),
+      buyerLanguage: asStrings(row.buyer_language),
+      painThemes: asStrings(row.pain_themes),
+      lifecycleStatus: row.lifecycle_status,
+      feedbackState: { saved: savedState === "saved", dismissed: savedState === "dismissed", relevant: relevanceState === "relevant" ? true : relevanceState === "not_relevant" ? false : null, opened: Boolean(latest("opened")), contacted: Boolean(latest("contacted")), converted: Boolean(latest("converted")) },
+      evidence: { signalEvidenceNodeId: row.evidence_node_id, evaluationId: row.product_match_evaluation_id, rankingId: row.match_ranking_id, conversationEvidenceNodeId: related.conversation?.evidence_node_id ?? "", sourceItemId: related.source?.id ?? "", demandProfileEvidenceNodeId: related.profile?.evidence_node_id ?? "" },
+      qualification,
+    };
   }
 
   async qualificationProfile(product: ProductRow, profile: import("../../db/database.helpers").DemandProfileRow): Promise<SignalQualificationProfile> {
