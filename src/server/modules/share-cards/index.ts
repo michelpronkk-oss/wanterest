@@ -23,6 +23,7 @@ export {
   intelligenceShareCardVariantSchema,
   intelligenceShareCardVariants,
   shareCardKindSchema,
+  shareCardClaimTypeSchema,
 } from "./share-card.schemas";
 export type {
   PublicShareCard,
@@ -37,4 +38,5 @@ export type {
   ShareCardVariant,
   IntelligenceShareCardVariant,
   ShareCardKind,
+  ShareCardClaimType,
 } from "./share-card.schemas";

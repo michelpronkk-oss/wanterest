@@ -11,6 +11,9 @@ export type IntelligenceShareCardVariant = z.infer<typeof intelligenceShareCardV
 export const shareCardKindSchema = z.enum(["identity", "intelligence"]);
 export type ShareCardKind = z.infer<typeof shareCardKindSchema>;
 
+export const shareCardClaimTypeSchema = z.enum(["observation", "interpretation"]);
+export type ShareCardClaimType = z.infer<typeof shareCardClaimTypeSchema>;
+
 export const shareCardToneSchema = z.enum(["neutral", "priority", "founding", "early", "signal", "gap", "drift"]);
 export type ShareCardTone = z.infer<typeof shareCardToneSchema>;
 
@@ -47,12 +50,17 @@ export const shareCardSnapshotSchema = z.object({
   tone: shareCardToneSchema,
   isPermanent: z.boolean(),
   cardKind: shareCardKindSchema.default("identity"),
+  claimType: shareCardClaimTypeSchema.default("observation"),
   claim: z.string().trim().max(320).nullable().default(null),
   evidence: z.string().trim().max(320).nullable().default(null),
+  interpretation: z.string().trim().max(320).nullable().default(null),
   evidenceStrength: z.string().trim().max(120).nullable().default(null),
   contextLabel: z.string().trim().max(120).nullable().default(null),
   freshnessLabel: z.string().trim().max(120).nullable().default(null),
+  observationPeriod: z.string().trim().max(160).nullable().default(null),
+  uncertainty: z.string().trim().max(320).nullable().default(null),
   sourceLabel: z.string().trim().max(120).nullable().default(null),
+  sourceUrl: z.string().url().nullable().default(null),
 }).strict();
 
 // Input-compatible on purpose: identity cards created by 13B.1 do not carry
@@ -80,12 +88,17 @@ export const publicShareCardSchema = z.object({
   tone: shareCardToneSchema,
   isPermanent: z.boolean(),
   cardKind: shareCardKindSchema,
+  claimType: shareCardClaimTypeSchema,
   claim: z.string().nullable(),
   evidence: z.string().nullable(),
+  interpretation: z.string().nullable(),
   evidenceStrength: z.string().nullable(),
   contextLabel: z.string().nullable(),
   freshnessLabel: z.string().nullable(),
+  observationPeriod: z.string().nullable(),
+  uncertainty: z.string().nullable(),
   sourceLabel: z.string().nullable(),
+  sourceUrl: z.string().url().nullable(),
   publishedAt: z.string().datetime({ offset: true }),
   accessMode: z.enum(["waitlist", "invite_only", "open"]),
   ctaLabel: z.string().min(1).max(80),

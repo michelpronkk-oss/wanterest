@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-function record(publicSlug: string, eventType: "opened" | "shared", source: "page" | "x" | "linkedin" | "copy") {
+function record(publicSlug: string, eventType: "opened" | "cta_clicked" | "shared", source: "page" | "x" | "linkedin" | "copy" | "cta") {
   void fetch("/api/share-cards/event", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -14,6 +14,10 @@ function record(publicSlug: string, eventType: "opened" | "shared", source: "pag
 export function ShareCardOpenTracker({ publicSlug }: { publicSlug: string }) {
   useEffect(() => { record(publicSlug, "opened", "page"); }, [publicSlug]);
   return null;
+}
+
+export function ShareCardCtaLink({ publicSlug, href, label }: { publicSlug: string; href: string; label: string }) {
+  return <a className="dashboard-button dashboard-button-primary" href={href} onClick={() => record(publicSlug, "cta_clicked", "cta")}>{label} →</a>;
 }
 
 export function ShareCardPublicActions({ publicSlug, canonicalUrl, title }: { publicSlug: string; canonicalUrl: string; title: string }) {

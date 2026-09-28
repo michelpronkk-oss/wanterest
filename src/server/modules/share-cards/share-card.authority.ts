@@ -27,22 +27,32 @@ function snapshot(input: {
   tone: ShareCardSnapshot["tone"];
   isPermanent: boolean;
   cardKind?: ShareCardSnapshot["cardKind"];
+  claimType?: ShareCardSnapshot["claimType"];
   claim?: string | null;
   evidence?: string | null;
+  interpretation?: string | null;
   evidenceStrength?: string | null;
   contextLabel?: string | null;
   freshnessLabel?: string | null;
+  observationPeriod?: string | null;
+  uncertainty?: string | null;
   sourceLabel?: string | null;
+  sourceUrl?: string | null;
 }): ShareCardSnapshot {
   return {
     ...input,
     cardKind: input.cardKind ?? "identity",
+    claimType: input.claimType ?? "observation",
     claim: input.claim ?? null,
     evidence: input.evidence ?? null,
+    interpretation: input.interpretation ?? null,
     evidenceStrength: input.evidenceStrength ?? null,
     contextLabel: input.contextLabel ?? null,
     freshnessLabel: input.freshnessLabel ?? null,
+    observationPeriod: input.observationPeriod ?? null,
+    uncertainty: input.uncertainty ?? null,
     sourceLabel: input.sourceLabel ?? null,
+    sourceUrl: input.sourceUrl ?? null,
   };
 }
 
@@ -62,6 +72,29 @@ function measurementQuality(value: unknown): string | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const sampleQuality = (value as RawRecord).sampleQuality;
   return typeof sampleQuality === "string" && sampleQuality.trim() ? sampleQuality.trim().slice(0, 120) : null;
+}
+
+function publicUrl(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const url = new URL(value);
+    if (!(["http:", "https:"].includes(url.protocol)) || url.username || url.password) return null;
+    return url.toString().slice(0, 2_000);
+  } catch {
+    return null;
+  }
+}
+
+function sourceLabel(value: unknown): string | null {
+  const raw = text(value);
+  return raw ? raw.split(/[_-]+/u).filter(Boolean).map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`).join(" ") : null;
+}
+
+function periodLabel(start: unknown, end: unknown): string | null {
+  const startDate = typeof start === "string" ? new Date(start) : null;
+  const endDate = typeof end === "string" ? new Date(end) : null;
+  if (!startDate || !endDate || Number.isNaN(startDate.valueOf()) || Number.isNaN(endDate.valueOf())) return null;
+  return `${startDate.toISOString().slice(0, 10)} – ${endDate.toISOString().slice(0, 10)}`;
 }
 
 function applicantCards(applicationId: string, earlyAccessNumber: number, priorityGranted: boolean): ShareCardAuthority[] {
@@ -177,7 +210,7 @@ export function createSupabaseShareCardAuthorityAdapter(): ShareCardAuthorityAda
 
       if (input.variant === "SIGNAL") {
         const { data: signal, error } = await client.from("signals")
-          .select("id,workspace_id,product_id,evidence_node_id,lifecycle_status,source_key,excerpt,why_it_matters,published_at,created_at,product_match_evaluation_id")
+          .select("id,workspace_id,product_id,evidence_node_id,lifecycle_status,source_key,canonical_url,excerpt,why_it_matters,published_at,created_at,product_match_evaluation_id")
           .eq("id", input.sourceId)
           .eq("workspace_id", input.workspaceId)
           .eq("product_id", input.productId)
@@ -207,12 +240,17 @@ export function createSupabaseShareCardAuthorityAdapter(): ShareCardAuthorityAda
             tone: "signal",
             isPermanent: false,
             cardKind: "intelligence",
+            claimType: "observation",
             claim: evidenceText(signal.excerpt),
-            evidence: evidenceText(signal.why_it_matters) ?? evidenceText(signal.excerpt),
+            evidence: evidenceText(signal.excerpt),
+            interpretation: evidenceText(signal.why_it_matters),
             evidenceStrength: decision === "qualified" ? "Qualified match evidence" : `${decision.replace(/^./, (char) => char.toUpperCase())} match evidence`,
             contextLabel: "Current product-scoped observation",
             freshnessLabel: dateLabel(signal.published_at ?? signal.created_at),
-            sourceLabel: text(signal.source_key),
+            observationPeriod: dateLabel(signal.published_at ?? signal.created_at),
+            uncertainty: "One product-scoped conversation signal; not a market-wide estimate.",
+            sourceLabel: sourceLabel(signal.source_key),
+            sourceUrl: publicUrl(signal.canonical_url),
           }),
         };
       }
@@ -226,18 +264,22 @@ export function createSupabaseShareCardAuthorityAdapter(): ShareCardAuthorityAda
           .maybeSingle();
         if (error) throw new AppError("INTERNAL_ERROR", "The demand-gap sharing authority could not be checked.", 500, { providerMessage: error.message });
         if (!gap) throw new AppError("FORBIDDEN", "Only an existing evidence-backed demand gap can be published.");
-        const snapshotRow = await client.from("demand_snapshots").select("period_end").eq("id", gap.demand_snapshot_id).eq("workspace_id", input.workspaceId).eq("product_id", input.productId).maybeSingle();
+        const snapshotRow = await client.from("demand_snapshots").select("period_start,period_end").eq("id", gap.demand_snapshot_id).eq("workspace_id", input.workspaceId).eq("product_id", input.productId).maybeSingle();
         return {
           ownerKind: "workspace", ownerId: input.workspaceId, workspaceId: input.workspaceId, waitlistApplicationId: null,
           variant: input.variant, productId: input.productId, sourceId: input.sourceId, sourceEvidenceNodeId: gap.evidence_node_id,
           snapshot: snapshot({
             displayName: "Wanterest intelligence", headline: "A recorded demand-gap analysis",
             identityLabel: text(gap.concept_key) ?? "Demand gap", identityNumber: null, tone: "gap", isPermanent: false,
-            cardKind: "intelligence", claim: evidenceText(gap.interpretation),
+            cardKind: "intelligence", claimType: "interpretation", claim: evidenceText(gap.interpretation),
             evidence: typeof gap.market_mentions === "number" ? `${gap.market_mentions} mention${gap.market_mentions === 1 ? "" : "s"} recorded in the analyzed snapshot.` : "Recorded in the analyzed demand snapshot.",
+            interpretation: evidenceText(gap.interpretation),
             evidenceStrength: measurementQuality(gap.measurement_metadata) ?? "Evidence-backed snapshot analysis",
             contextLabel: "Product-scoped demand gap · recorded analysis",
-            freshnessLabel: dateLabel(snapshotRow.data?.period_end), sourceLabel: "Wanterest demand analysis",
+            freshnessLabel: dateLabel(snapshotRow.data?.period_end),
+            observationPeriod: periodLabel(snapshotRow.data?.period_start, snapshotRow.data?.period_end),
+            uncertainty: "A recorded product-scoped analysis; not a market-size estimate or independent-episode count.",
+            sourceLabel: "Wanterest demand analysis",
           }),
         };
       }
@@ -250,8 +292,8 @@ export function createSupabaseShareCardAuthorityAdapter(): ShareCardAuthorityAda
         .maybeSingle();
       if (error) throw new AppError("INTERNAL_ERROR", "The demand-drift sharing authority could not be checked.", 500, { providerMessage: error.message });
       if (!drift) throw new AppError("FORBIDDEN", "Only an existing evidence-backed demand drift can be published.");
-      const currentSnapshot = await client.from("demand_snapshots").select("period_end").eq("id", drift.current_snapshot_id).eq("workspace_id", input.workspaceId).eq("product_id", input.productId).maybeSingle();
-      const previousSnapshot = await client.from("demand_snapshots").select("period_end").eq("id", drift.previous_snapshot_id).eq("workspace_id", input.workspaceId).eq("product_id", input.productId).maybeSingle();
+      const currentSnapshot = await client.from("demand_snapshots").select("period_start,period_end").eq("id", drift.current_snapshot_id).eq("workspace_id", input.workspaceId).eq("product_id", input.productId).maybeSingle();
+      const previousSnapshot = await client.from("demand_snapshots").select("period_start,period_end").eq("id", drift.previous_snapshot_id).eq("workspace_id", input.workspaceId).eq("product_id", input.productId).maybeSingle();
       const direction = text(drift.drift_direction) ?? "movement";
       return {
         ownerKind: "workspace", ownerId: input.workspaceId, workspaceId: input.workspaceId, waitlistApplicationId: null,
@@ -259,11 +301,14 @@ export function createSupabaseShareCardAuthorityAdapter(): ShareCardAuthorityAda
         snapshot: snapshot({
           displayName: "Wanterest intelligence", headline: "A recorded demand-movement analysis",
           identityLabel: text(drift.concept_key) ?? "Demand movement", identityNumber: null, tone: "drift", isPermanent: false,
-          cardKind: "intelligence", claim: `${direction.charAt(0).toUpperCase()}${direction.slice(1)} movement was recorded for this concept.`,
+          cardKind: "intelligence", claimType: "interpretation", claim: `${direction.charAt(0).toUpperCase()}${direction.slice(1)} movement was recorded for this concept.`,
           evidence: typeof drift.current_mentions === "number" && typeof drift.previous_mentions === "number" ? `${drift.current_mentions} current mentions versus ${drift.previous_mentions} in the comparison period.` : "Recorded in the comparable demand snapshots.",
+          interpretation: `${direction.charAt(0).toUpperCase()}${direction.slice(1)} movement was recorded for this concept.`,
           evidenceStrength: text(drift.significance) ? `${String(drift.significance).charAt(0).toUpperCase()}${String(drift.significance).slice(1)} comparison evidence` : "Comparable snapshot evidence",
           contextLabel: "Product-scoped demand movement · recorded analysis",
           freshnessLabel: dateLabel(currentSnapshot.data?.period_end) ?? dateLabel(previousSnapshot.data?.period_end),
+          observationPeriod: `${periodLabel(previousSnapshot.data?.period_start, previousSnapshot.data?.period_end) ?? "Previous period"} → ${periodLabel(currentSnapshot.data?.period_start, currentSnapshot.data?.period_end) ?? "Current period"}`,
+          uncertainty: "Comparative movement is not causation, purchase intent, or a forecast.",
           sourceLabel: "Wanterest demand analysis",
         }),
       };

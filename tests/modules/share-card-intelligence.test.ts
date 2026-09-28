@@ -20,12 +20,17 @@ describe("Layer 13B.2 intelligence share-card contracts", () => {
       tone: "signal",
       isPermanent: false,
       cardKind: "intelligence",
+      claimType: "observation",
       claim: "A conversation described a recurring need.",
       evidence: "The supporting excerpt is available.",
+      interpretation: "This is the bounded Wanterest interpretation.",
       evidenceStrength: "Qualified match evidence",
       contextLabel: "Product-scoped observation",
       freshnessLabel: "Observed 2026-09-28",
+      observationPeriod: "2026-09-28",
+      uncertainty: "Not a market-wide estimate.",
       sourceLabel: "Fixture",
+      sourceUrl: "https://example.com/source",
     });
     expect(snapshot).not.toHaveProperty("workspaceId");
     expect(snapshot).not.toHaveProperty("sourceId");

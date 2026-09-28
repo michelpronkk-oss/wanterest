@@ -6,12 +6,17 @@ type ShareCardArtworkData = {
   identityNumber: number | null;
   tone: "neutral" | "priority" | "founding" | "early" | "signal" | "gap" | "drift";
   cardKind?: "identity" | "intelligence";
+  claimType?: "observation" | "interpretation";
   claim?: string | null;
   evidence?: string | null;
+  interpretation?: string | null;
   evidenceStrength?: string | null;
   contextLabel?: string | null;
   freshnessLabel?: string | null;
+  observationPeriod?: string | null;
+  uncertainty?: string | null;
   sourceLabel?: string | null;
+  sourceUrl?: string | null;
 };
 
 export function shareCardIdentity(data: Pick<ShareCardArtworkData, "variant" | "identityNumber">): string {
