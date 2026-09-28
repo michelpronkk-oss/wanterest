@@ -15,6 +15,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ProductLifecycle } from "@/components/dashboard/product-lifecycle";
 import { PlanUsageSummary } from "@/components/dashboard/plan-usage-summary";
 import { UpgradeTrigger } from "@/components/dashboard/upgrade-surface";
+import { ShareCardPanel } from "@/components/share-cards/share-card-panel";
+import { requireUser } from "@/server/modules/auth";
+import { getWorkspaceShareCardsQuery } from "@/server/modules/share-cards";
 
 type BusinessClassification = { business_type?: string; market_scope?: string; primary_category?: string };
 
@@ -23,13 +26,15 @@ export default async function SettingsPage() {
   if (!workspace) {
     return <section className="dashboard-page dashboard-state"><p className="dashboard-eyebrow">Settings</p><h1>Create a workspace first</h1><Link className="dashboard-button dashboard-button-primary" href="/app/setup/workspace">Create workspace</Link></section>;
   }
+  const user = await requireUser();
 
-  const [snapshot, billing, members, scanSummary, activeExperiments] = await Promise.all([
+  const [snapshot, billing, members, scanSummary, activeExperiments, shareCards] = await Promise.all([
     product ? getCurrentProductSnapshotQuery(workspace.id, product.id).catch(() => null) : Promise.resolve(null),
     getBillingOverviewQuery(workspace.id).catch(() => null),
     listWorkspaceMembersQuery(workspace.id).catch(() => []),
     product ? getProductDemandScanSummary(workspace.id, product.id).catch(() => null) : Promise.resolve(null),
     getActiveExperimentsQuery(workspace.id).catch(() => []),
+    getWorkspaceShareCardsQuery(workspace.id, user.id).catch(() => []),
   ]);
 
   const classification = (snapshot?.metadata as { business_classification?: BusinessClassification } | null)?.business_classification ?? null;
@@ -154,13 +159,15 @@ export default async function SettingsPage() {
     </>
   );
 
+  const sharingSection = <ShareCardPanel endpoint={`/api/share-cards/workspace/${encodeURIComponent(workspace.id)}`} initialCards={shareCards} title="Share your permanent identity" />;
+
   return (
     <section className="dashboard-page">
       <header className="dashboard-page-header">
         <p className="dashboard-eyebrow">Settings</p>
         <h1>Settings</h1>
       </header>
-      <SettingsTabs sections={{ general: generalSection, product: productSection, sources: sourcesSection, plan: planSection, team: teamSection }} />
+      <SettingsTabs sections={{ general: generalSection, product: productSection, sources: sourcesSection, plan: planSection, team: teamSection, sharing: sharingSection }} />
     </section>
   );
 }

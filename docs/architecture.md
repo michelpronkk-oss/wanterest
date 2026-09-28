@@ -5263,3 +5263,25 @@ cache. Security-sensitive admission and waitlist endpoints recheck the authorita
 than trusting the CTA or browser state. The typed homepage projection is intentionally small and leaves a
 13B.1 seam for Early Access, Priority, invited, Founding 25, Early 100, and normal-member share-card states;
 image rendering and premium homepage redesign are out of scope.
+
+### 13B.1 — Dynamic Share Card Engine (`layer13b1_dynamic_share_card_engine_v1`) — IMPLEMENTATION BRANCH
+
+13B.1 is an additive, consent-first distribution layer over existing authoritative waitlist, referral,
+admission, cohort, and 13A.4 public-profile state. It does not assign cohorts, verify applications, grant
+Priority, admit workspaces, change access mode, create referral credit, or publish intelligence. Its closed V1
+variant union is `EARLY_ACCESS`, `PRIORITY_ACCESS`, `FOUNDING_25`, and `EARLY_100`; intelligence variants belong
+to 13B.2.
+
+`share_card_publications` is private by default and stores one owner-scoped publication per variant, an opaque
+slug, explicit published/revoked state, a narrow public snapshot, timestamps, and actor metadata. Applicant
+cards require a verified Early Access number; Priority is checked as currently granted. Permanent cohort cards
+require the authoritative membership and reuse the existing 13A.4 `pass_visible` opt-in. Publication never
+auto-upgrades when a more revealing status appears, and revocation removes the public projection without
+deleting audit history. `share_card_events` is append-only, service-role stored, and best-effort.
+
+One typed DTO feeds the private preview, the 1200×630 OG image, the 1080×1350/1080×1080 downloads, and the
+noindex canonical `/share/[slug]` page. The public RPC exposes only allowlisted display fields, dynamically
+rechecks active Priority/pass visibility, and derives the current 13A.6 CTA. It never returns email, auth or
+invite tokens, workspace IDs, internal review state, billing, team data, or intelligence. Public image/page
+routes are dynamic and no-store under Wanterest control; external social caches may retain already-fetched
+previews. Future intelligence-card adapters are reserved for 13B.2/13B.3.

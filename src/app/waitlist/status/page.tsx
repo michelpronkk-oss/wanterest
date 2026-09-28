@@ -2,7 +2,9 @@ import { createWaitlistService } from "@/server/modules/waitlist";
 import { cookies } from "next/headers";
 
 import { WaitlistWithdrawButton } from "@/components/waitlist/waitlist-withdraw-button";
+import { ShareCardPanel } from "@/components/share-cards/share-card-panel";
 import { WAITLIST_STATUS_COOKIE } from "@/server/modules/waitlist/waitlist.session";
+import { getApplicantShareCardsQuery } from "@/server/modules/share-cards";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +14,7 @@ export default async function WaitlistStatusPage() {
   if (!token) return <StatusUnavailable />;
   const status = await loadStatus(token);
   if (!status) return <StatusUnavailable />;
+  const shareCards = await getApplicantShareCardsQuery(token).catch(() => []);
   const { application, referral, admission } = status;
   return (
     <main className="waitlist-status-page">
@@ -35,6 +38,7 @@ export default async function WaitlistStatusPage() {
           {referral.shareUrl ? <p className="waitlist-status-footnote"><a href={referral.shareUrl}>{referral.shareUrl}</a></p> : null}
         </section> : null}
         {application.status !== "withdrawn" && application.status !== "declined" ? <WaitlistWithdrawButton /> : null}
+        <ShareCardPanel endpoint="/api/share-cards/applicant" initialCards={shareCards} title="Share your access identity" />
         <p className="waitlist-status-footnote">Early Access numbers are historical identities, not permissions. Priority Access is a waitlist state, not a product permission. Cohort identity and workspace access are created only after authoritative admission.</p>
       </div>
     </main>
