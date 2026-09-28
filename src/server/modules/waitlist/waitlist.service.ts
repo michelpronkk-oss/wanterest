@@ -8,6 +8,8 @@ import { getEmailProvider, type EmailProvider } from "@/server/providers/email";
 import { SITE_ORIGIN } from "@/shared/config/site";
 import { priorityReadModel } from "./referral.policy";
 import { createSupabaseWaitlistReferralRepository, type WaitlistReferralRepository } from "./referral.repository";
+import { createSupabaseWaitlistAdmissionRepository, type WaitlistAdmissionRepository } from "./waitlist-admission.repository";
+import type { WaitlistAdmissionStatus } from "./waitlist-admission.schemas";
 import { waitlistApplicationInputSchema, waitlistStatusTokenSchema, waitlistVerificationTokenSchema } from "./waitlist.schemas";
 import { createSupabaseWaitlistRepository, type WaitlistApplication, type WaitlistRepository } from "./waitlist.repository";
 
@@ -19,6 +21,7 @@ export type WaitlistServiceDeps = {
   emailProvider?: EmailProvider;
   rateLimitStore?: RateLimitStore;
   referralRepository?: WaitlistReferralRepository;
+  admissionRepository?: WaitlistAdmissionRepository;
   now?: () => Date;
   randomToken?: () => string;
 };
@@ -41,6 +44,7 @@ export class WaitlistService {
   private readonly emailProvider: EmailProvider;
   private readonly rateLimitStore?: RateLimitStore;
   private readonly referralRepository?: WaitlistReferralRepository;
+  private readonly admissionRepository?: WaitlistAdmissionRepository;
   private readonly now: () => Date;
   private readonly randomToken: () => string;
 
@@ -49,6 +53,7 @@ export class WaitlistService {
     this.emailProvider = deps.emailProvider ?? getEmailProvider();
     this.rateLimitStore = deps.rateLimitStore;
     this.referralRepository = deps.referralRepository ?? (deps.repository ? undefined : createSupabaseWaitlistReferralRepository());
+    this.admissionRepository = deps.admissionRepository ?? (deps.repository ? undefined : createSupabaseWaitlistAdmissionRepository());
     this.now = deps.now ?? (() => new Date());
     this.randomToken = deps.randomToken ?? newToken;
   }
@@ -113,16 +118,21 @@ export class WaitlistService {
     return this.repository.getByStatusToken(tokenHash(parsed.data));
   }
 
-  async statusWithReferral(token: string, requestOrigin = SITE_ORIGIN): Promise<{ application: WaitlistApplication; referral: ReturnType<typeof priorityReadModel> | null }> {
+  async statusWithReferral(token: string, requestOrigin = SITE_ORIGIN): Promise<{ application: WaitlistApplication; referral: ReturnType<typeof priorityReadModel> | null; admission?: WaitlistAdmissionStatus | null }> {
     const application = await this.status(token);
-    if (!this.referralRepository || application.emailVerificationStatus !== "verified") return { application, referral: null };
+    let admission: WaitlistAdmissionStatus | null = null;
+    if (this.admissionRepository && application.emailVerificationStatus === "verified") {
+      try { admission = await this.admissionRepository.getStatus(tokenHash(token)); } catch { this.log("admission_status_unavailable"); }
+    }
+    const admissionField = this.admissionRepository ? { admission } : {};
+    if (!this.referralRepository || application.emailVerificationStatus !== "verified") return { application, referral: null, ...admissionField };
     try {
       const raw = await this.referralRepository.getStatus(application.id);
       const shareUrl = raw.referralCode ? new URL(`/r/${encodeURIComponent(raw.referralCode)}`, requestOrigin).toString() : null;
-      return { application, referral: priorityReadModel(raw, shareUrl) };
+      return { application, referral: priorityReadModel(raw, shareUrl), ...admissionField };
     } catch {
       this.log("referral_status_unavailable");
-      return { application, referral: null };
+      return { application, referral: null, ...admissionField };
     }
   }
 

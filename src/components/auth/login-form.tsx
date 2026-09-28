@@ -10,7 +10,7 @@ import { clientAuthErrorMessage } from "@/shared/auth/client-errors";
 import { startPathForWebsite } from "@/shared/config/site";
 import { PasswordField } from "./password-field";
 
-export function LoginForm({ websiteUrl = null, initialError = null }: { websiteUrl?: string | null; initialError?: string | null }) {
+export function LoginForm({ websiteUrl = null, initialError = null, nextPath = null }: { websiteUrl?: string | null; initialError?: string | null; nextPath?: string | null }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -37,7 +37,7 @@ export function LoginForm({ websiteUrl = null, initialError = null }: { websiteU
       return;
     }
 
-    const destination = websiteUrl ? startPathForWebsite(websiteUrl) : "/app";
+    const destination = nextPath ?? (websiteUrl ? startPathForWebsite(websiteUrl) : "/app");
     router.replace(destination);
     router.refresh();
   }
@@ -88,7 +88,7 @@ export function LoginForm({ websiteUrl = null, initialError = null }: { websiteU
         </button>
       </form>
 
-      <p className="auth-switch">New to Wanterest? <Link href={signupPathForSite(websiteUrl)}>Start free</Link></p>
+      <p className="auth-switch">New to Wanterest? <Link href={nextPath ? `/signup?next=${encodeURIComponent(nextPath)}` : signupPathForSite(websiteUrl)}>Start free</Link></p>
     </>
   );
 }

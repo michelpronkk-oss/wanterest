@@ -12,18 +12,21 @@ export default async function WaitlistStatusPage() {
   if (!token) return <StatusUnavailable />;
   const status = await loadStatus(token);
   if (!status) return <StatusUnavailable />;
-  const { application, referral } = status;
+  const { application, referral, admission } = status;
   return (
     <main className="waitlist-status-page">
       <div className="waitlist-status-card">
         <div className="marketing-content-eyebrow">YOUR EARLY ACCESS REQUEST</div>
-        <h1>You&rsquo;re on the list.</h1>
-        <p className="waitlist-status-intro">Your request is stored privately. Joining the waitlist does not grant dashboard access.</p>
+        <h1>{admission?.admissionStatus === "admitted" ? "Your Wanterest access is ready." : "You're on the list."}</h1>
+        <p className="waitlist-status-intro">{admission?.admissionStatus === "admitted" ? "Your invitation is complete and your workspace is ready." : "Your request is stored privately. Joining the waitlist does not grant dashboard access."}</p>
         <dl className="waitlist-status-details">
           <div><dt>Early Access</dt><dd>{application.earlyAccessNumber ? `#${String(application.earlyAccessNumber).padStart(4, "0")}` : "Pending verification"}</dd></div>
           <div><dt>Status</dt><dd>{formatStatus(application.status)}</dd></div>
           <div><dt>Submitted</dt><dd>{new Date(application.createdAt).toLocaleDateString("en", { dateStyle: "medium", timeZone: "UTC" })}</dd></div>
           <div><dt>Company</dt><dd>{application.companyName}</dd></div>
+          {admission?.inviteStatus ? <div><dt>Invitation</dt><dd>{formatStatus(admission.inviteStatus)}</dd></div> : null}
+          {admission?.admissionStatus === "admitted" ? <div><dt>Workspace access</dt><dd>Admitted</dd></div> : null}
+          {admission?.displayIdentity ? <div><dt>Cohort identity</dt><dd>{admission.displayIdentity} · #{String(admission.cohortNumber).padStart(admission.cohort === "founding_25" ? 2 : 3, "0")}</dd></div> : null}
         </dl>
         {referral ? <section aria-label="Referral progress">
           <div className="marketing-content-eyebrow">PRIORITY ACCESS</div>
@@ -32,7 +35,7 @@ export default async function WaitlistStatusPage() {
           {referral.shareUrl ? <p className="waitlist-status-footnote"><a href={referral.shareUrl}>{referral.shareUrl}</a></p> : null}
         </section> : null}
         {application.status !== "withdrawn" && application.status !== "declined" ? <WaitlistWithdrawButton /> : null}
-        <p className="waitlist-status-footnote">Early Access numbers are historical identities, not permissions. Priority Access is a waitlist state, not a guaranteed invite, product access, cohort, or billing benefit.</p>
+        <p className="waitlist-status-footnote">Early Access numbers are historical identities, not permissions. Priority Access is a waitlist state, not a product permission. Cohort identity and workspace access are created only after authoritative admission.</p>
       </div>
     </main>
   );

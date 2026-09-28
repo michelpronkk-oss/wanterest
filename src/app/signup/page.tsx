@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { SignupForm } from "@/components/auth/signup-form";
 import { getCurrentUser } from "@/server/modules/auth";
-import { startPathForWebsite } from "@/shared/config/site";
+import { safeInternalPath, startPathForWebsite } from "@/shared/config/site";
 import { tryNormalizePublicWebsiteUrl } from "@/shared/validation/public-website";
 
 export const dynamic = "force-dynamic";
@@ -20,13 +20,14 @@ export default async function SignupPage({ searchParams }: { searchParams: Searc
   const query = await searchParams;
   const rawWebsite = typeof query.website === "string" ? query.website : null;
   const websiteUrl = tryNormalizePublicWebsiteUrl(rawWebsite);
+  const nextPath = safeInternalPath(typeof query.next === "string" ? query.next : null, startPathForWebsite(websiteUrl));
   const user = await getCurrentUser();
-  if (user) redirect(startPathForWebsite(websiteUrl));
+  if (user) redirect(nextPath);
 
   return (
     <main>
       <AuthShell eyebrow="DEMAND INTELLIGENCE">
-        <SignupForm websiteUrl={websiteUrl} />
+        <SignupForm websiteUrl={websiteUrl} nextPath={nextPath} />
       </AuthShell>
     </main>
   );

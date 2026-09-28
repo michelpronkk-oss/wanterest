@@ -11,7 +11,7 @@ import { loginPathForSite } from "@/components/marketing/links";
 import { authCallbackUrl } from "./auth-callback-url";
 import { PasswordField } from "./password-field";
 
-export function SignupForm({ websiteUrl = null }: { websiteUrl?: string | null }) {
+export function SignupForm({ websiteUrl = null, nextPath = null }: { websiteUrl?: string | null; nextPath?: string | null }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -35,7 +35,7 @@ export function SignupForm({ websiteUrl = null }: { websiteUrl?: string | null }
       const { data, error: authError } = await supabase.auth.signUp({
         email,
         password,
-        options: { emailRedirectTo: authCallbackUrl(startPathForWebsite(websiteUrl), websiteUrl) },
+        options: { emailRedirectTo: authCallbackUrl(nextPath ?? startPathForWebsite(websiteUrl), websiteUrl) },
       });
 
       if (authError) {
@@ -54,7 +54,7 @@ export function SignupForm({ websiteUrl = null }: { websiteUrl?: string | null }
       }
 
       if (data.session) {
-        router.replace(startPathForWebsite(websiteUrl));
+        router.replace(nextPath ?? startPathForWebsite(websiteUrl));
         router.refresh();
         return;
       }
@@ -123,7 +123,7 @@ export function SignupForm({ websiteUrl = null }: { websiteUrl?: string | null }
         </p>
       </form>
 
-      <p className="auth-switch">Already have an account? <Link href={loginPathForSite(websiteUrl)}>Log in</Link></p>
+      <p className="auth-switch">Already have an account? <Link href={nextPath ? `/login?next=${encodeURIComponent(nextPath)}` : loginPathForSite(websiteUrl)}>Log in</Link></p>
     </>
   );
 }

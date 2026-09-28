@@ -5,7 +5,7 @@ import { AuthShell } from "@/components/auth/auth-shell";
 import { LoginForm } from "@/components/auth/login-form";
 import { getCurrentUser } from "@/server/modules/auth";
 import { authCallbackErrorMessage } from "@/shared/auth/callback";
-import { startPathForWebsite } from "@/shared/config/site";
+import { safeInternalPath, startPathForWebsite } from "@/shared/config/site";
 import { tryNormalizePublicWebsiteUrl } from "@/shared/validation/public-website";
 
 export const dynamic = "force-dynamic";
@@ -22,13 +22,14 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
   const rawWebsite = typeof query.website === "string" ? query.website : null;
   const websiteUrl = tryNormalizePublicWebsiteUrl(rawWebsite);
   const callbackError = authCallbackErrorMessage(typeof query.error === "string" ? query.error : null);
+  const nextPath = safeInternalPath(typeof query.next === "string" ? query.next : null, websiteUrl ? startPathForWebsite(websiteUrl) : "/app");
   const user = await getCurrentUser();
-  if (user) redirect(websiteUrl ? startPathForWebsite(websiteUrl) : "/app");
+  if (user) redirect(nextPath);
 
   return (
     <main>
       <AuthShell eyebrow="WELCOME BACK">
-        <LoginForm websiteUrl={websiteUrl} initialError={callbackError} />
+        <LoginForm websiteUrl={websiteUrl} initialError={callbackError} nextPath={nextPath} />
       </AuthShell>
     </main>
   );
