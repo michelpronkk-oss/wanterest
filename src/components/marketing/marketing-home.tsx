@@ -1,5 +1,4 @@
 import Image from "next/image";
-import type { CSSProperties } from "react";
 
 import type { HomepageAccessState } from "@/server/modules/access";
 import { APP_ORIGIN } from "@/shared/config/site";
@@ -9,7 +8,7 @@ import { DifferenceSection } from "./difference";
 import { Faq } from "./faq";
 import { APP_START_URL } from "./links";
 import { MarketingFooter } from "./marketing-footer";
-import { MarketingNav } from "./marketing-nav";
+import { StageNav } from "./marketing-nav";
 import { PricingSection } from "./pricing";
 import { ProofSignalCard } from "./proof-signal-card";
 import { QualificationSection } from "./qualification";
@@ -20,7 +19,6 @@ import { ScanForm } from "./scan-form";
 export function MarketingHome({ accessState }: { accessState: HomepageAccessState }) {
   return (
     <div className="marketing-page">
-      <MarketingNav accessState={accessState} />
       <div className="marketing-fold">
         <Hero accessState={accessState} />
         <EvidenceStrip />
@@ -41,104 +39,125 @@ export function MarketingHome({ accessState }: { accessState: HomepageAccessStat
   );
 }
 
+const HERO_AVATARS = ["/avatars/avatar-01.png", "/avatars/avatar-02.png", "/avatars/avatar-03.png", "/avatars/avatar-04.png"] as const;
+
 /**
- * Hand-authored, not randomized: fixed positions/timings keep server and client markup
- * identical (no hydration mismatch) and keep the field intentional rather than noisy.
- * Each dot sits in the left/right margins of the hero, never behind the centered copy column.
- * Six dots, two lime-tinted: this field marks an unrecognized visitor, so it never shows once
- * someone is already known (submitted, verified, invited, or a member) — see its render site.
+ * Hero v2 (light) — docs: "Wanterest Hero v2.dc.html", sections 03/04. A rounded stone stage on
+ * a white frame holds the nav, the pitch, the one-object CTA and a product window rising out of
+ * a lime base glow. The CTA is the real state-aware access action.
  */
-type SignalDot = {
-  x: number;
-  y: number;
-  size: number;
-  tone: "accent" | "neutral";
-  dx: number;
-  dy: number;
-  delay: number;
-  duration: number;
-};
-
-const SIGNAL_DOTS: SignalDot[] = [
-  { x: 6, y: 8, size: 5, tone: "neutral", dx: 4, dy: -3, delay: 0, duration: 13 },
-  { x: 92, y: 10, size: 6, tone: "accent", dx: -4, dy: 3, delay: 2, duration: 15 },
-  { x: 8, y: 88, size: 4, tone: "accent", dx: 3, dy: -4, delay: 1, duration: 14 },
-  { x: 90, y: 90, size: 5, tone: "neutral", dx: -3, dy: 4, delay: 3, duration: 12 },
-  { x: 4, y: 45, size: 4, tone: "neutral", dx: 4, dy: 4, delay: 1.6, duration: 16 },
-  { x: 95, y: 48, size: 5, tone: "neutral", dx: -4, dy: -4, delay: 2.6, duration: 15 },
-];
-
-/** Quiet drifting points standing in for individual demand signals — replaces reliance on a single glow. */
-function HeroSignalField() {
+function Hero({ accessState }: { accessState: HomepageAccessState }) {
   return (
-    <div className="marketing-hero-signal-field" aria-hidden="true">
-      {SIGNAL_DOTS.map((dot, index) => (
-        <span
-          key={index}
-          className={`marketing-hero-dot is-${dot.tone}`}
-          style={
-            {
-              left: `${dot.x}%`,
-              top: `${dot.y}%`,
-              width: dot.size,
-              height: dot.size,
-              animationDelay: `${dot.delay}s`,
-              animationDuration: `${dot.duration}s`,
-              "--dot-dx": `${dot.dx}px`,
-              "--dot-dy": `${dot.dy}px`,
-            } as CSSProperties
-          }
-        />
-      ))}
+    <header className="marketing-hero-frame">
+      <div className="marketing-hero-stage">
+        <StageNav accessState={accessState} />
+        <div className="marketing-hero-content">
+          <div className="marketing-hero-badge">
+            <span className="marketing-hero-badge-dot" aria-hidden="true" />
+            <span>REAL DEMAND. FOUND.</span>
+          </div>
+          <h1 className="marketing-hero-headline">Know what buyers want next.</h1>
+          <p className="marketing-hero-lede">Buying intent, unmet needs, and demand shifts — found in real public conversations.</p>
+          <PrimaryAccessAction accessState={accessState} appearance="hero" />
+          <p className="marketing-hero-evidence">Evidence attached to every finding. No manufactured activity.</p>
+          {/* Audience fit, not endorsement: the avatars are illustrative (aria-hidden, empty alt) and
+              the copy says who Wanterest is for — never that these people are customers. */}
+          <div className="marketing-hero-audience">
+            <div className="marketing-hero-avatars" aria-hidden="true">
+              {HERO_AVATARS.map((src) => (
+                <span className="marketing-hero-avatar" key={src}><Image src={src} alt="" width={30} height={30} sizes="30px" /></span>
+              ))}
+            </div>
+            <p className="marketing-hero-audience-copy">
+              <ResponsiveText
+                full="Built for builders, marketers, and product teams who need the source behind every signal."
+                short="For teams who need the source behind every signal."
+              />
+            </p>
+          </div>
+        </div>
+        <HeroProductPreview />
+      </div>
+    </header>
+  );
+}
+
+function PreviewSignalCard({ className = "" }: { className?: string }) {
+  return (
+    <div className={`marketing-preview-card${className}`}>
+      <div className="marketing-preview-card-head">
+        <span className="marketing-preview-tag is-ink"><span className="marketing-preview-tag-dot" />SIGNAL</span>
+        <span className="marketing-preview-card-kind">Switching intent</span>
+      </div>
+      <p className="marketing-preview-card-title">Teams keep switching from X to Y because setup is faster.</p>
+      <p className="marketing-preview-quote">“We moved over in an afternoon. The old tool took a quarter to configure.”</p>
+      <div className="marketing-preview-card-foot"><strong>Source attached</strong><span>·</span><span>Observation window</span></div>
     </div>
   );
 }
 
-/** True only for a visitor nobody has a record of yet — the state the signal-dot field marks. */
-function isUnrecognizedVisitor(accessState: HomepageAccessState): boolean {
-  return accessState.primaryAction === "REQUEST_ACCESS" || accessState.primaryAction === "START_FREE";
-}
+const PREVIEW_NAV = ["Home", "Signals", "Saved", "Insights", "Actions"] as const;
 
-const HERO_AVATARS = ["/avatars/avatar-01.png", "/avatars/avatar-02.png", "/avatars/avatar-03.png", "/avatars/avatar-04.png"] as const;
-
-function Hero({ accessState }: { accessState: HomepageAccessState }) {
+/**
+ * Illustrative product window — example content (placeholder "Acme", "X to Y"), not real
+ * customer data, counts or activity. Exposed to assistive tech as one labelled image.
+ * Desktop/tablet: browser-framed Signals view. Mobile: the single Signal card.
+ */
+function HeroProductPreview() {
   return (
-    <header className="marketing-hero">
-      <div className="marketing-hero-bg" aria-hidden="true" />
-      {isUnrecognizedVisitor(accessState) ? <HeroSignalField /> : null}
-      <div className="marketing-hero-inner">
-        <div className="marketing-eyebrow-pill">
-          <span className="marketing-eyebrow-pill-dot" />
-          <span className="marketing-eyebrow-pill-text">REAL DEMAND. FOUND.</span>
+    <div className="marketing-hero-preview-slot" role="img" aria-label="Illustrative preview of the Wanterest Signals view with example Signal, Demand Gap and Demand Drift cards">
+      <div className="marketing-hero-preview" aria-hidden="true">
+        <div className="marketing-preview-chrome">
+          <span /><span /><span />
+          <div className="marketing-preview-url"><span>app.wanterest.com/signals</span></div>
+          <span className="marketing-preview-chrome-spacer" />
         </div>
-        <h1 className="marketing-display-title marketing-hero-title">
-          {"Know what "}
-          <br className="marketing-hero-title-break-mobile" />
-          {"your market "}
-          <br className="marketing-hero-title-break" />
-          wants next.
-        </h1>
-        <p className="marketing-hero-sub">
-          <ResponsiveText
-            full="Wanterest finds buying intent, unmet needs and demand shifts in real public conversations, with the evidence attached."
-            short="Buying intent, unmet needs and demand shifts, found in real public conversations."
-          />
-        </p>
-        <PrimaryAccessAction accessState={accessState} />
-        <p className="marketing-hero-note">Evidence attached to every finding. No manufactured activity.</p>
-        {/* Audience fit, not endorsement: the avatars are illustrative (aria-hidden, empty alt) and
-            the copy says who Wanterest is for — never that these people are customers. */}
-        <div className="marketing-hero-proof-row">
-          <div className="marketing-hero-avatars" aria-hidden="true">
-            {HERO_AVATARS.map((src) => (
-              <span className="marketing-hero-avatar" key={src}><Image src={src} alt="" width={36} height={36} sizes="36px" /></span>
+        <div className="marketing-preview-body">
+          <div className="marketing-preview-sidebar">
+            <div className="marketing-preview-workspace"><span className="marketing-preview-workspace-mark">A</span><span>Acme</span><span className="marketing-preview-workspace-caret">⌄</span></div>
+            {PREVIEW_NAV.map((item) => (
+              <div key={item} className={`marketing-preview-nav-item${item === "Signals" ? " is-active" : ""}`}><span className="marketing-preview-nav-icon" />{item}</div>
             ))}
           </div>
-          <span className="marketing-hero-proof-divider" aria-hidden="true" />
-          <p className="marketing-hero-proof">Built for builders, marketers, and product teams who need the source behind every signal.</p>
+          <div className="marketing-preview-main">
+            <div className="marketing-preview-main-head">
+              <div className="marketing-preview-main-title"><strong>This week&apos;s demand</strong><span>Observation window · last 30 days</span></div>
+              <div className="marketing-preview-segments"><span className="is-active">All</span><span>Signals</span><span>Demand Gap</span><span>Demand Drift</span></div>
+            </div>
+            <div className="marketing-preview-grid">
+              <PreviewSignalCard />
+              <div className="marketing-preview-card">
+                <div className="marketing-preview-card-head">
+                  <span className="marketing-preview-tag">DEMAND GAP</span>
+                  <span className="marketing-preview-card-kind">Unmet need</span>
+                </div>
+                <p className="marketing-preview-card-title">Users want approval workflows without enterprise complexity.</p>
+                <dl className="marketing-preview-gap">
+                  <div><dt>Asked for</dt><dd className="is-strong">Lightweight approvals</dd></div>
+                  <div><dt>Offered</dt><dd>Full enterprise suites</dd></div>
+                </dl>
+                <div className="marketing-preview-card-foot"><strong>Repeated unmet need</strong><span>·</span><span>Qualified demand</span></div>
+              </div>
+              <div className="marketing-preview-card">
+                <div className="marketing-preview-card-head">
+                  <span className="marketing-preview-tag">DEMAND DRIFT</span>
+                  <span className="marketing-preview-card-kind">Trend movement</span>
+                </div>
+                <p className="marketing-preview-card-title">Mentions of AI note-taking are flattening while workflow automation rises.</p>
+                <svg viewBox="0 0 280 44" width="100%" height="44" preserveAspectRatio="none" className="marketing-preview-drift">
+                  <line x1="0" y1="43" x2="280" y2="43" stroke="rgba(17,17,16,0.08)" />
+                  <polyline points="0,14 50,12 100,15 150,17 200,18 240,19 280,19" fill="none" stroke="#a3a399" strokeWidth="1.5" />
+                  <polyline points="0,38 50,36 100,33 150,27 200,21 240,14 280,8" fill="none" stroke="#111110" strokeWidth="2" />
+                  <circle cx="280" cy="8" r="3" fill="#D7FF3D" stroke="#111110" strokeWidth="1.2" />
+                </svg>
+                <div className="marketing-preview-card-foot"><strong>Changing demand</strong><span>·</span><span>Trend movement</span></div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    </header>
+      <PreviewSignalCard className=" is-mobile" />
+    </div>
   );
 }
 
@@ -621,9 +640,9 @@ function FinalCta({ accessState }: { accessState: HomepageAccessState }) {
   );
 }
 
-function PrimaryAccessAction({ accessState, compact = false }: { accessState: HomepageAccessState; compact?: boolean }) {
-  if (accessState.primaryAction === "START_FREE") return <ScanForm compact={compact} ctaVariant={compact ? "accent" : "ink"} variant="scan" />;
-  if (accessState.primaryAction === "REQUEST_ACCESS") return <ScanForm compact={compact} ctaVariant={compact ? "accent" : "ink"} variant="request" />;
+function PrimaryAccessAction({ accessState, compact = false, appearance = "default" }: { accessState: HomepageAccessState; compact?: boolean; appearance?: "default" | "hero" }) {
+  if (accessState.primaryAction === "START_FREE") return <ScanForm compact={compact} ctaVariant={compact ? "accent" : "ink"} variant="scan" appearance={appearance} />;
+  if (accessState.primaryAction === "REQUEST_ACCESS") return <ScanForm compact={compact} ctaVariant={compact ? "accent" : "ink"} variant="request" appearance={appearance} />;
   const href = `${APP_ORIGIN}${accessState.primaryActionHref}`;
   const label = {
     REQUEST_ACCESS: "Request access",
@@ -633,5 +652,6 @@ function PrimaryAccessAction({ accessState, compact = false }: { accessState: Ho
     ACCEPT_INVITATION: "Accept invitation",
     OPEN_WANTEREST: "Open Wanterest",
   }[accessState.primaryAction];
+  if (appearance === "hero") return <a className="marketing-hero-submit is-standalone" href={href}>{label}<span className="marketing-hero-arrow" aria-hidden="true">→</span></a>;
   return <a className={`marketing-cta${compact ? " is-compact" : ""}${compact ? " is-accent" : ""}`} href={href}>{label} →</a>;
 }
