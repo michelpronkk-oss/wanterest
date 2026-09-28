@@ -2,6 +2,7 @@ export {
   getApplicantShareCardsQuery,
   getPublicShareCardQuery,
   getWorkspaceShareCardsQuery,
+  getWorkspaceIntelligenceShareCardQuery,
   mutateApplicantShareCardCommand,
   mutateWorkspaceShareCardCommand,
   recordShareCardEventCommand,
@@ -19,6 +20,9 @@ export {
   shareCardToneSchema,
   shareCardVariantSchema,
   shareCardVariants,
+  intelligenceShareCardVariantSchema,
+  intelligenceShareCardVariants,
+  shareCardKindSchema,
 } from "./share-card.schemas";
 export type {
   PublicShareCard,
@@ -31,4 +35,6 @@ export type {
   ShareCardSnapshot,
   ShareCardTone,
   ShareCardVariant,
+  IntelligenceShareCardVariant,
+  ShareCardKind,
 } from "./share-card.schemas";

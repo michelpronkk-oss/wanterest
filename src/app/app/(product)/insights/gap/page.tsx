@@ -4,10 +4,14 @@ import { InsightsDataEmptyState, InsightsScopeEmptyState } from "@/components/da
 import { GapPageBody } from "@/components/dashboard/gap-sections";
 import { demandGapV2Headline, GapV2List } from "@/components/dashboard/downstream-v2-sections";
 import { HistoricalEvidenceSection } from "@/components/dashboard/demand-map-concepts";
+import { IntelligenceShareCardAction } from "@/components/share-cards/intelligence-share-card-action";
+import { getWorkspaceIntelligenceShareCardQuery } from "@/server/modules/share-cards";
+import { requireUser } from "@/server/modules/auth";
 
 export default async function DemandGapPage() {
   const { workspace, product } = await getDashboardContext();
   if (!workspace || !product) return <InsightsScopeEmptyState workspace={workspace} product={product} />;
+  const userId = (await requireUser()).id;
 
   if (isDownstreamIntelligenceV2Enabled()) {
     const [gapV2, legacy] = await Promise.all([
@@ -17,6 +21,9 @@ export default async function DemandGapPage() {
     if (!gapV2 && !legacy) {
       return <InsightsDataEmptyState workspaceId={workspace.id} productId={product.id} fallbackTitle="Gap is temporarily unavailable" fallbackBody="Your saved intelligence is unchanged; try again shortly." />;
     }
+    const shareCard = legacy?.gaps[0]
+      ? await getWorkspaceIntelligenceShareCardQuery(workspace.id, userId, { variant: "DEMAND_GAP", productId: product.id, sourceId: legacy.gaps[0].id }).catch(() => null)
+      : null;
     const headline = gapV2 ? demandGapV2Headline(gapV2) : { title: "No current gap evidence", body: "Gap could not be loaded." };
     return (
       <div style={{ marginTop: 20 }}>
@@ -30,6 +37,7 @@ export default async function DemandGapPage() {
             <GapPageBody gaps={legacy.gaps} />
           </HistoricalEvidenceSection>
         ) : null}
+        {shareCard ? <IntelligenceShareCardAction endpoint={`/api/share-cards/workspace/${encodeURIComponent(workspace.id)}`} card={shareCard} /> : null}
       </div>
     );
   }
@@ -46,5 +54,8 @@ export default async function DemandGapPage() {
     );
   }
 
-  return <GapPageBody gaps={gapResult.gaps} />;
+  const shareCard = gapResult.gaps[0]
+    ? await getWorkspaceIntelligenceShareCardQuery(workspace.id, userId, { variant: "DEMAND_GAP", productId: product.id, sourceId: gapResult.gaps[0].id }).catch(() => null)
+    : null;
+  return <>{<GapPageBody gaps={gapResult.gaps} />}{shareCard ? <IntelligenceShareCardAction endpoint={`/api/share-cards/workspace/${encodeURIComponent(workspace.id)}`} card={shareCard} /> : null}</>;
 }

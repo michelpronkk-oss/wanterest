@@ -8,10 +8,14 @@ import { HistoricalEvidenceSection } from "@/components/dashboard/demand-map-con
 import { CapabilityGate } from "@/components/dashboard/upgrade-surface";
 import { resolveWorkspaceCapabilities } from "@/server/modules/entitlements/plan-capabilities";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
+import { IntelligenceShareCardAction } from "@/components/share-cards/intelligence-share-card-action";
+import { getWorkspaceIntelligenceShareCardQuery } from "@/server/modules/share-cards";
+import { requireUser } from "@/server/modules/auth";
 
 export default async function DemandDriftPage() {
   const { workspace, product } = await getDashboardContext();
   if (!workspace || !product) return <InsightsScopeEmptyState workspace={workspace} product={product} />;
+  const userId = (await requireUser()).id;
 
   const capabilities = await resolveWorkspaceCapabilities(createSupabaseServiceClient(), workspace.id);
   if (capabilities.history.driftHistoryDays === 0) {
@@ -38,6 +42,9 @@ export default async function DemandDriftPage() {
     const headline = driftV2 ? demandDriftV2Headline(driftV2) : { title: "No comparable current movement", body: "Drift could not be loaded." };
     const rising = driftV2?.comparable ? driftV2.rising : [];
     const cooling = driftV2?.comparable ? driftV2.cooling : [];
+    const shareCard = legacy?.drifts[0]
+      ? await getWorkspaceIntelligenceShareCardQuery(workspace.id, userId, { variant: "DEMAND_DRIFT", productId: product.id, sourceId: legacy.drifts[0].id }).catch(() => null)
+      : null;
     return (
       <div style={{ marginTop: 20 }}>
         <div className="ui-card ui-card-pad-lg" style={{ marginBottom: 16 }}>
@@ -54,6 +61,7 @@ export default async function DemandDriftPage() {
             })()}
           </HistoricalEvidenceSection>
         ) : null}
+        {shareCard ? <IntelligenceShareCardAction endpoint={`/api/share-cards/workspace/${encodeURIComponent(workspace.id)}`} card={shareCard} title="Share this evidence-backed movement" /> : null}
       </div>
     );
   }
@@ -75,6 +83,9 @@ export default async function DemandDriftPage() {
   const emergingPhrases = [...driftResult.phraseDrifts].filter((row) => row.drift_direction === "rising").sort((a, b) => (b.growth_rate ?? 0) - (a.growth_rate ?? 0)).slice(0, 5);
   const topRising = rising[0] ?? null;
   const topCooling = cooling[0] ?? null;
+  const shareCard = topRising
+    ? await getWorkspaceIntelligenceShareCardQuery(workspace.id, userId, { variant: "DEMAND_DRIFT", productId: product.id, sourceId: topRising.id }).catch(() => null)
+    : null;
 
   return (
     <div style={{ marginTop: 20 }}>
@@ -105,6 +116,7 @@ export default async function DemandDriftPage() {
           </div>
         ))}
       </div>
+      {shareCard ? <IntelligenceShareCardAction endpoint={`/api/share-cards/workspace/${encodeURIComponent(workspace.id)}`} card={shareCard} title="Share this evidence-backed movement" /> : null}
     </div>
   );
 }

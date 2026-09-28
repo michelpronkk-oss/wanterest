@@ -5,20 +5,29 @@ import { useMemo, useState } from "react";
 import { ShareCardArtwork, shareCardIdentity } from "./share-card-artwork";
 
 type ShareCardPanelCard = {
-  variant: "EARLY_ACCESS" | "PRIORITY_ACCESS" | "FOUNDING_25" | "EARLY_100";
+  variant: "EARLY_ACCESS" | "PRIORITY_ACCESS" | "FOUNDING_25" | "EARLY_100" | "SIGNAL" | "DEMAND_GAP" | "DEMAND_DRIFT";
   displayName: string | null;
   headline: string | null;
   identityLabel: string;
   identityNumber: number | null;
-  tone: "neutral" | "priority" | "founding" | "early";
+  tone: "neutral" | "priority" | "founding" | "early" | "signal" | "gap" | "drift";
+  cardKind?: "identity" | "intelligence";
+  claim?: string | null;
+  evidence?: string | null;
+  evidenceStrength?: string | null;
+  contextLabel?: string | null;
+  freshnessLabel?: string | null;
+  sourceLabel?: string | null;
   isPermanent: boolean;
   publicationId: string | null;
   publicSlug: string | null;
   publicationState: "published" | "revoked" | null;
   publishedAt: string | null;
+  productId?: string | null;
+  sourceId?: string | null;
 };
 
-const variantOrder: ShareCardPanelCard["variant"][] = ["EARLY_ACCESS", "PRIORITY_ACCESS", "FOUNDING_25", "EARLY_100"];
+const variantOrder: ShareCardPanelCard["variant"][] = ["EARLY_ACCESS", "PRIORITY_ACCESS", "FOUNDING_25", "EARLY_100", "SIGNAL", "DEMAND_GAP", "DEMAND_DRIFT"];
 
 function publishLabel(card: ShareCardPanelCard): string {
   if (card.publicationState === "revoked") return "Share again";
@@ -50,7 +59,7 @@ export function ShareCardPanel({ endpoint, initialCards, title = "Share your Wan
     setBusy(`${card.variant}:${action}`);
     setMessage(null);
     try {
-      const response = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, variant: card.variant }) });
+      const response = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, variant: card.variant, productId: card.productId ?? null, sourceId: card.sourceId ?? null }) });
       const payload = await response.json() as { card?: ShareCardPanelCard; cards?: ShareCardPanelCard[]; error?: { message?: string } };
       if (!response.ok) throw new Error(payload.error?.message ?? "The share card could not be updated.");
       if (action === "publish" && payload.card) setCards((current) => current.map((item) => item.variant === card.variant ? payload.card! : item));
@@ -68,7 +77,7 @@ export function ShareCardPanel({ endpoint, initialCards, title = "Share your Wan
     const url = `${window.location.origin}/share/${encodeURIComponent(card.publicSlug)}`;
     try {
       await navigator.clipboard.writeText(url);
-      setCopied(card.variant);
+      setCopied(`${card.variant}:${card.sourceId ?? "identity"}`);
       event(card.publicSlug, "shared", "copy");
       window.setTimeout(() => setCopied(null), 2200);
     } catch {
@@ -90,10 +99,10 @@ export function ShareCardPanel({ endpoint, initialCards, title = "Share your Wan
           return (
             <article className="share-card-panel-card" key={card.variant}>
               <div className="share-card-panel-artwork"><ShareCardArtwork data={card} /></div>
-              <div className="share-card-panel-card-copy"><div><strong>{card.identityLabel} {shareCardIdentity(card)}</strong><span>{card.isPermanent ? "Permanent identity" : "Current status"}</span></div></div>
+              <div className="share-card-panel-card-copy"><div><strong>{card.identityLabel} {card.cardKind === "intelligence" ? "" : shareCardIdentity(card)}</strong><span>{card.cardKind === "intelligence" ? card.evidenceStrength ?? "Evidence-backed intelligence" : card.isPermanent ? "Permanent identity" : "Current status"}</span></div></div>
               <div className="share-card-panel-controls">
                 {!published ? <button className="dashboard-button dashboard-button-primary" type="button" disabled={busy !== null} onClick={() => void mutate(card, "publish")}>{busy === `${card.variant}:publish` ? "Publishing…" : publishLabel(card)}</button> : <>
-                  <button className="dashboard-button dashboard-button-secondary" type="button" disabled={busy !== null} onClick={() => void copy(card)}>{copied === card.variant ? "Link copied" : "Copy link"}</button>
+                  <button className="dashboard-button dashboard-button-secondary" type="button" disabled={busy !== null} onClick={() => void copy(card)}>{copied === `${card.variant}:${card.sourceId ?? "identity"}` ? "Link copied" : "Copy link"}</button>
                   <button className="dashboard-button dashboard-button-secondary" type="button" onClick={() => shareExternally(card, "x")}>X</button>
                   <button className="dashboard-button dashboard-button-secondary" type="button" onClick={() => shareExternally(card, "linkedin")}>LinkedIn</button>
                   <a className="dashboard-button dashboard-button-secondary" href={`/share/${encodeURIComponent(card.publicSlug!)}/image?format=portrait`} download onClick={() => event(card.publicSlug!, "downloaded", "download")}>Download</a>

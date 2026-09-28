@@ -3,6 +3,7 @@ import { Drawer } from "@/components/ui/drawer";
 import { ConfidenceBadge, IntentBadge, SourceBadge } from "@/components/ui/badge";
 import { formatDate, safeExternalUrl, sourceLabel } from "./dashboard-utils";
 import { formatSignalCard } from "./signal-card.presenter";
+import { IntelligenceShareCardAction } from "@/components/share-cards/intelligence-share-card-action";
 
 export function SignalDetailDrawer({ signal, open, onClose }: { signal: SignalReadModel | null; open: boolean; onClose: () => void }) {
   if (!signal) return null;
@@ -61,6 +62,32 @@ export function SignalDetailDrawer({ signal, open, onClose }: { signal: SignalRe
           </a>
         ) : null}
       </div>
+      <IntelligenceShareCardAction
+        endpoint={`/api/share-cards/workspace/${encodeURIComponent(signal.workspaceId)}`}
+        title="Share this evidence-backed signal"
+        card={{
+          variant: "SIGNAL",
+          displayName: "Wanterest intelligence",
+          headline: "A current, evidence-backed conversation signal",
+          identityLabel: "Observed signal",
+          identityNumber: null,
+          tone: "signal",
+          cardKind: "intelligence",
+          claim: presentation.evidence || signal.excerpt,
+          evidence: presentation.why || signal.excerpt,
+          evidenceStrength: signal.qualification ? "Qualified match evidence" : "Current signal evidence",
+          contextLabel: "Current product-scoped observation",
+          freshnessLabel: formatDate(signal.publishedAt ?? signal.createdAt),
+          sourceLabel: sourceLabel(signal.source),
+          isPermanent: false,
+          publicationId: null,
+          publicSlug: null,
+          publicationState: null,
+          publishedAt: null,
+          productId: signal.productId,
+          sourceId: signal.signalId,
+        }}
+      />
     </Drawer>
   );
 }

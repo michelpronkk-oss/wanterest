@@ -50,6 +50,13 @@ function snapshot(raw: unknown): ShareCardSnapshot {
     identityNumber: value.identityNumber ?? null,
     tone: value.tone,
     isPermanent: value.isPermanent,
+    cardKind: value.cardKind ?? "identity",
+    claim: value.claim ?? null,
+    evidence: value.evidence ?? null,
+    evidenceStrength: value.evidenceStrength ?? null,
+    contextLabel: value.contextLabel ?? null,
+    freshnessLabel: value.freshnessLabel ?? null,
+    sourceLabel: value.sourceLabel ?? null,
   });
   if (!parsed.success) throw new AppError("INTERNAL_ERROR", "The share-card snapshot is invalid.");
   return parsed.data;
@@ -68,13 +75,16 @@ function publication(raw: RawRecord): ShareCardPublication {
     snapshot: snapshot(raw.snapshot),
     publishedAt: requiredString(raw.published_at, "The share-card publication has no publication timestamp."),
     revokedAt: optionalString(raw.revoked_at),
+    productId: optionalString(raw.product_id),
+    sourceId: optionalString(raw.source_id),
+    sourceEvidenceNodeId: optionalString(raw.source_evidence_node_id),
   };
 }
 
 export type ShareCardRepository = {
-  listPublications(owner: { workspaceId?: string | null; waitlistApplicationId?: string | null }): Promise<ShareCardPublication[]>;
-  publish(input: { workspaceId?: string | null; waitlistApplicationId?: string | null; variant: ShareCardVariant; publicSlug: string; snapshot: ShareCardSnapshot; actorUserId?: string | null }): Promise<ShareCardPublication>;
-  revoke(input: { workspaceId?: string | null; waitlistApplicationId?: string | null; variant: ShareCardVariant; actorUserId?: string | null }): Promise<ShareCardPublication | null>;
+  listPublications(owner: { workspaceId?: string | null; waitlistApplicationId?: string | null; productId?: string | null }): Promise<ShareCardPublication[]>;
+  publish(input: { workspaceId?: string | null; waitlistApplicationId?: string | null; variant: ShareCardVariant; publicSlug: string; snapshot: ShareCardSnapshot; actorUserId?: string | null; productId?: string | null; sourceId?: string | null; sourceEvidenceNodeId?: string | null }): Promise<ShareCardPublication>;
+  revoke(input: { workspaceId?: string | null; waitlistApplicationId?: string | null; variant: ShareCardVariant; actorUserId?: string | null; productId?: string | null; sourceId?: string | null }): Promise<ShareCardPublication | null>;
   getPublic(publicSlug: string): Promise<PublicShareCard | null>;
   recordEvent(input: { publicSlug: string; eventType: string; source?: string | null }): Promise<void>;
 };
@@ -85,6 +95,7 @@ export function createSupabaseShareCardRepository(client: ShareCardClient = crea
       const { data, error } = await client.rpc("get_share_card_publications", {
         p_workspace_id: owner.workspaceId ?? null,
         p_waitlist_application_id: owner.waitlistApplicationId ?? null,
+        p_product_id: owner.productId ?? null,
       });
       if (error) throw providerError("Share-card publications could not be loaded.", error);
       return ((data ?? []) as RawRecord[]).map(publication);
@@ -98,6 +109,9 @@ export function createSupabaseShareCardRepository(client: ShareCardClient = crea
         p_public_slug: input.publicSlug,
         p_snapshot: input.snapshot,
         p_actor_user_id: input.actorUserId ?? null,
+        p_product_id: input.productId ?? null,
+        p_source_id: input.sourceId ?? null,
+        p_source_evidence_node_id: input.sourceEvidenceNodeId ?? null,
       });
       if (error) throw providerError("The share card could not be published.", error);
       const row = first(data as RawRecord | RawRecord[] | null);
@@ -111,6 +125,8 @@ export function createSupabaseShareCardRepository(client: ShareCardClient = crea
         p_waitlist_application_id: input.waitlistApplicationId ?? null,
         p_variant: input.variant,
         p_actor_user_id: input.actorUserId ?? null,
+        p_product_id: input.productId ?? null,
+        p_source_id: input.sourceId ?? null,
       });
       if (error) throw providerError("The share card could not be unpublished.", error);
       const row = first(data as RawRecord | RawRecord[] | null);
@@ -134,6 +150,13 @@ export function createSupabaseShareCardRepository(client: ShareCardClient = crea
         identityNumber: optionalNumber(row.identity_number),
         tone,
         isPermanent: row.is_permanent === true,
+        cardKind: row.card_kind === "intelligence" ? "intelligence" : "identity",
+        claim: optionalString(row.claim),
+        evidence: optionalString(row.evidence),
+        evidenceStrength: optionalString(row.evidence_strength),
+        contextLabel: optionalString(row.context_label),
+        freshnessLabel: optionalString(row.freshness_label),
+        sourceLabel: optionalString(row.source_label),
         publishedAt: requiredString(row.published_at, "The public share card has no publication timestamp."),
         accessMode: row.access_mode,
         ctaLabel: requiredString(row.cta_label, "The public share card has no CTA label."),

@@ -33,16 +33,16 @@ export default async function ShareCardPage({ params }: PageProps) {
     <main className="share-card-page" aria-labelledby="share-card-title">
       <ShareCardOpenTracker publicSlug={card.publicSlug} />
       <div className="share-card-page-inner">
-        <p className="marketing-content-eyebrow"><span className="marketing-content-eyebrow-dot" /> Wanterest shared identity</p>
+        <p className="marketing-content-eyebrow"><span className="marketing-content-eyebrow-dot" /> Wanterest shared {card.cardKind === "intelligence" ? "intelligence" : "identity"}</p>
         <h1 id="share-card-title">{card.identityLabel}{card.identityNumber ? ` ${card.identityNumber}` : ""}</h1>
-        <p className="share-card-page-intro">A verified Wanterest identity, shared explicitly by its owner.</p>
+        <p className="share-card-page-intro">{card.cardKind === "intelligence" ? "An evidence-backed Wanterest finding, shared explicitly by its workspace owner." : "A verified Wanterest identity, shared explicitly by its owner."}</p>
         <div className="share-card-artwork-frame" aria-label={`${card.identityLabel} share card`}>
           <ShareCardArtwork data={card} />
         </div>
         <div className="share-card-page-details">
           <div>
-            <span className="share-card-page-detail-label">{card.displayName ?? "Wanterest member"}</span>
-            <span>{card.headline ?? "Shared with consent."}</span>
+            <span className="share-card-page-detail-label">{card.cardKind === "intelligence" ? card.contextLabel ?? "Market intelligence" : card.displayName ?? "Wanterest member"}</span>
+            <span>{card.cardKind === "intelligence" ? card.claim ?? card.headline ?? "Shared with consent." : card.headline ?? "Shared with consent."}</span>
           </div>
           <Link className="dashboard-button dashboard-button-primary" href={card.ctaHref}>{card.ctaLabel} →</Link>
         </div>
