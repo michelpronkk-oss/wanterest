@@ -17,6 +17,7 @@ import { getStructuredLlmProvider, engineRegistryVersion, type LlmRuntimeConfig 
 import { WebsiteUnderstandingService } from "../../providers/website";
 import { jsonValueSchema, type Json } from "../../db/database.helpers";
 import { ensureEngineVersion } from "../observability/engine.repository";
+import { logPerformanceAudit, withPerformanceAudit } from "../../lib/performance-audit";
 
 function service() {
   return new IntelligenceService(new SupabaseIntelligenceRepository(createSupabaseServiceClient()));
@@ -232,7 +233,9 @@ export async function addMatchFeedbackCommand(input: Parameters<IntelligenceServ
 
 export async function listSignalsQuery(workspaceId: unknown, productId: unknown, filters?: Parameters<IntelligenceService["listSignals"]>[2]) {
   const product = await getProductQuery(workspaceId, productId);
-  return service().listSignals(product.workspace_id, product.id, filters);
+  const result = await withPerformanceAudit("Signals", () => service().listSignals(product.workspace_id, product.id, filters));
+  logPerformanceAudit(result.audit);
+  return result.value;
 }
 
 export async function getSignalQuery(workspaceId: unknown, signalId: string) {

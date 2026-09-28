@@ -15,6 +15,7 @@ import { SupabaseActionRepository } from "./action.repository";
 import { ActionLifecycleService, ACTION_MUTATING_ROLES, authorizeActionAccess, type ActionAccessPorts, type WorkspaceRole } from "./action-lifecycle.service";
 import { loadConceptActionInputs } from "./concept-action.inputs";
 import { conceptActionInputPorts } from "./action.orchestration";
+import { logPerformanceAudit, withPerformanceAudit } from "../../lib/performance-audit";
 
 export const ACTION_JOB_TYPES = ["generate-actions", "build-digest"] as const;
 export type ActionJobType = (typeof ACTION_JOB_TYPES)[number];
@@ -79,7 +80,9 @@ async function callerCanMutate(workspaceId: string): Promise<boolean> {
  */
 export async function listActionsQuery(workspaceId: unknown, productId: unknown, filters?: ActionListFilters): Promise<ActionReadModel[]> {
   const product = await getProductQuery(workspaceId, productId);
-  const models = await readService().listActions(product.workspace_id, product.id, filters);
+  const result = await withPerformanceAudit("Actions", () => readService().listActions(product.workspace_id, product.id, filters));
+  logPerformanceAudit(result.audit);
+  const models = result.value;
   if (!models.length) return models;
   const live = await lifecycleService().evaluate(models.map((model) => model.action), { canMutate: await callerCanMutate(product.workspace_id) });
   return models.map((model) => ({ ...model, liveBasis: live.get(model.action.id) ?? null }));
