@@ -145,9 +145,9 @@ begin
     raise exception using errcode = '22023', message = 'waitlist_admission_token_hash_invalid';
   end if;
 
-  select * into v_application
-    from public.waitlist_applications
-   where id = p_waitlist_application_id
+  select application.* into v_application
+    from public.waitlist_applications as application
+   where application.id = p_waitlist_application_id
    for update;
   if not found then
     raise exception using errcode = 'P0002', message = 'waitlist_application_not_found';
@@ -160,9 +160,9 @@ begin
     raise exception using errcode = '23505', message = 'waitlist_application_already_admitted';
   end if;
 
-  select * into v_current
-    from public.waitlist_admission_invites
-   where waitlist_application_id = v_application.id and status = 'issued'
+  select invite.* into v_current
+    from public.waitlist_admission_invites as invite
+   where invite.waitlist_application_id = v_application.id and invite.status = 'issued'
    for update;
   if found then
     update public.waitlist_admission_invites

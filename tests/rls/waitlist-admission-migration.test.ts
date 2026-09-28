@@ -37,6 +37,13 @@ describe("13A.5 invite/admission migration contract", () => {
     expect(migration).not.toContain("insert into public.subscriptions");
   });
 
+  it("qualifies columns that could collide with PL/pgSQL output variables", () => {
+    expect(migration).toContain("from public.waitlist_admission_invites as invite");
+    expect(migration).toContain("invite.status = 'issued'");
+    expect(migration).toContain("from public.waitlist_applications as application");
+    expect(migration).toContain("application.id = p_waitlist_application_id");
+  });
+
   it("uses service-only database access with append-only events", () => {
     expect(migration).toContain("alter table public.waitlist_admission_invites enable row level security");
     expect(migration).toContain("alter table public.workspace_admissions enable row level security");
