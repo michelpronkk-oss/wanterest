@@ -33,14 +33,16 @@ export default async function GeographyPage({ searchParams }: { searchParams: Se
       />
     );
   }
-  const data = await getGeographyQuery(workspace.id, product.id, window, parseGeographySelection(query)).catch(() => null);
+  const dataPromise = getGeographyQuery(workspace.id, product.id, window, parseGeographySelection(query), capabilities).catch(() => null);
+  const currentGeographyPromise = isGeographyV2Enabled() ? getCurrentGeographyQuery(workspace.id, product.id).catch(() => null) : Promise.resolve(null);
+  const [data, geography] = await Promise.all([dataPromise, currentGeographyPromise]);
   if (!data) return <InsightsDataEmptyState workspaceId={workspace.id} productId={product.id} fallbackTitle="Geography is not ready yet" fallbackBody="Complete a scan to build location-aware demand intelligence." />;
 
   // Layer 9D: current, lifecycle-aware Geography renders first; the legacy
   // raw-window view below becomes clearly labelled historical context. See
   // docs/architecture.md §19.
   if (isGeographyV2Enabled()) {
-    const geography = await getCurrentGeographyQuery(workspace.id, product.id);
+    if (!geography) return <InsightsDataEmptyState workspaceId={workspace.id} productId={product.id} fallbackTitle="Current Geography is not ready yet" fallbackBody="Complete a scan to build lifecycle-aware location intelligence." />;
     const headline = currentGeographyHeadline(geography);
     return (
       <div style={{ marginTop: 8 }}>

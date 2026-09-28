@@ -13,7 +13,7 @@ import { geographyWindowSchema, type GeographyReadModel, type GeographySelection
 import { GeographyService } from "../geography/geography.service";
 import { CurrentGeographyService } from "../geography/current-geography.service";
 import type { CurrentGeographyReadModel } from "../geography/current-geography.policy";
-import { resolveWorkspaceCapabilities } from "../entitlements/plan-capabilities";
+import { resolveWorkspaceCapabilities, type PlanCapabilities } from "../entitlements/plan-capabilities";
 import { getServerEnv } from "../../lib/env";
 import { SupabaseDemandClusteringRepository } from "./demand-clustering.repository";
 import { demandMapV2Enabled, type DemandMapV2ReadModel } from "./demand-map.policy";
@@ -36,12 +36,12 @@ function geographyService() {
 }
 
 /** Server-side geography aggregation. The browser receives only public-safe summaries. */
-export async function getGeographyQuery(workspaceId: unknown, productId: unknown, window: GeographyWindow = "30d", selection?: GeographySelection): Promise<GeographyReadModel> {
+export async function getGeographyQuery(workspaceId: unknown, productId: unknown, window: GeographyWindow = "30d", selection?: GeographySelection, resolvedCapabilities?: PlanCapabilities): Promise<GeographyReadModel> {
   const product = await getProductQuery(workspaceId, productId);
   await requireUser();
   const parsedWindow = geographyWindowSchema.parse(window);
   const { client, service } = geographyService();
-  const capabilities = await resolveWorkspaceCapabilities(client, product.workspace_id);
+  const capabilities = resolvedCapabilities ?? await resolveWorkspaceCapabilities(client, product.workspace_id);
   const requestedDays = Number(parsedWindow.slice(0, -1));
   if (requestedDays > 30 && capabilities.geography.historyDays < requestedDays) {
     throw new AppError("CAPABILITY_DISABLED", "Geography history is not enabled for this workspace window.", 403, {

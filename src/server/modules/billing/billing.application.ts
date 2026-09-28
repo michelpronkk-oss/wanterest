@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 import { requireUser } from "@/server/modules/auth";
 import { AppError, type AppErrorCode } from "@/server/lib/errors";
 import { getServerEnv } from "@/server/lib/env";
@@ -240,13 +242,13 @@ export async function createCheckoutCommand(input: unknown) {
   }
 }
 
-export async function getBillingOverviewQuery(workspaceId: unknown) {
+export const getBillingOverviewQuery = cache(async function getBillingOverviewQuery(workspaceId: unknown) {
   const parsed = workspaceIdSchema.safeParse(workspaceId);
   if (!parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid workspace identifier.");
   await requireUser();
   await assertWorkspaceMember(parsed.data);
   return (await service()).getBillingOverview(parsed.data);
-}
+});
 
 export async function cancelSubscriptionCommand(workspaceId: unknown) {
   const parsed = workspaceIdSchema.safeParse(workspaceId);

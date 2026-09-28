@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "../../db/database.types";
@@ -320,7 +322,7 @@ type SubscriptionPlanRow = Pick<Database["public"]["Tables"]["subscriptions"]["R
 type Client = SupabaseClient<Database>;
 
 /** Runtime resolver used by jobs and server actions. A missing subscription is Free. */
-export async function resolveWorkspaceCapabilities(client: Client, workspaceId: string): Promise<PlanCapabilities> {
+export const resolveWorkspaceCapabilities = cache(async function resolveWorkspaceCapabilities(client: Client, workspaceId: string): Promise<PlanCapabilities> {
   const result = await client
     .from("subscriptions")
     .select("internal_plan, status, billing_interval")
@@ -332,7 +334,7 @@ export async function resolveWorkspaceCapabilities(client: Client, workspaceId: 
   const row = result.data as SubscriptionPlanRow | null;
   const cadence: BillingCadence = row?.billing_interval === "monthly" || row?.billing_interval === "annual" ? row.billing_interval : null;
   return getPlanCapabilities(resolveInternalPlan(row), cadence);
-}
+});
 
 export function sourceKeyForProviderBudget(sourceKey: string): ProviderKey | null {
   return (Object.keys(providerBudgets) as ProviderKey[]).includes(sourceKey as ProviderKey) ? sourceKey as ProviderKey : null;

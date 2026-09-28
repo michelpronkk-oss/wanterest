@@ -10,8 +10,10 @@ export default async function DemandGapPage() {
   if (!workspace || !product) return <InsightsScopeEmptyState workspace={workspace} product={product} />;
 
   if (isDownstreamIntelligenceV2Enabled()) {
-    const gapV2 = await getDemandGapV2Query(workspace.id, product.id).catch(() => null);
-    const legacy = await getDemandGapQuery(workspace.id, product.id).catch(() => null);
+    const [gapV2, legacy] = await Promise.all([
+      getDemandGapV2Query(workspace.id, product.id).catch(() => null),
+      getDemandGapQuery(workspace.id, product.id).catch(() => null),
+    ]);
     if (!gapV2 && !legacy) {
       return <InsightsDataEmptyState workspaceId={workspace.id} productId={product.id} fallbackTitle="Gap is temporarily unavailable" fallbackBody="Your saved intelligence is unchanged; try again shortly." />;
     }

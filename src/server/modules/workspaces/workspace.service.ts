@@ -151,18 +151,23 @@ export async function listWorkspaceMembersQuery(workspaceId: unknown) {
   await requireUser();
   const members = await listWorkspaceMembers(await createSupabaseServerClient(), parsed.data);
   const serviceClient = createSupabaseServiceClient();
-  return Promise.all(
-    members.map(async (member) => {
-      let email: string | null = null;
-      try {
-        const { data } = await serviceClient.auth.admin.getUserById(member.user_id);
-        email = data.user?.email ?? null;
-      } catch {
-        email = null;
+  const memberIds = new Set(members.map((member) => member.user_id));
+  const usersById = new Map<string, string | null>();
+  let page = 1;
+  try {
+    while (usersById.size < memberIds.size) {
+      const result = await serviceClient.auth.admin.listUsers({ page, perPage: 1000 });
+      const data = result.data as unknown as { users?: Array<{ id: string; email?: string | null }>; nextPage?: number | null; lastPage?: number | null } | null;
+      for (const user of data?.users ?? []) {
+        if (memberIds.has(user.id)) usersById.set(user.id, user.email ?? null);
       }
-      return { ...member, email };
-    }),
-  );
+      if (!data?.users?.length || data.users.length < 1000 || (data.lastPage !== null && data.lastPage !== undefined && page >= data.lastPage) || (data.nextPage === null && data.lastPage === null)) break;
+      page += 1;
+    }
+  } catch {
+    // Email is an optional display field; membership and authorization remain intact.
+  }
+  return members.map((member) => ({ ...member, email: usersById.get(member.user_id) ?? null }));
 }
 
 export { ACTIVE_WORKSPACE_COOKIE };

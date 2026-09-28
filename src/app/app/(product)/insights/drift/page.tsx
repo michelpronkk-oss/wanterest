@@ -28,8 +28,10 @@ export default async function DemandDriftPage() {
   }
 
   if (isDownstreamIntelligenceV2Enabled()) {
-    const driftV2 = await getDemandDriftV2Query(workspace.id, product.id).catch(() => null);
-    const legacy = await getDemandDriftQuery(workspace.id, product.id).catch(() => null);
+    const [driftV2, legacy] = await Promise.all([
+      getDemandDriftV2Query(workspace.id, product.id).catch(() => null),
+      getDemandDriftQuery(workspace.id, product.id).catch(() => null),
+    ]);
     if (!driftV2 && !legacy) {
       return <InsightsDataEmptyState workspaceId={workspace.id} productId={product.id} fallbackTitle="Drift is temporarily unavailable" fallbackBody="Your saved intelligence is unchanged; try again shortly." />;
     }

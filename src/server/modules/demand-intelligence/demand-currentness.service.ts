@@ -27,15 +27,17 @@ export class DemandCurrentnessService {
     const { workspaceId, productId } = input;
     const clusterRows = (await this.repository.listClusters(workspaceId, productId, DEMAND_CLUSTERING_VERSION))
       .filter((row) => row.workspace_id === workspaceId && row.product_id === productId);
-    const memberships = clusterRows.length
-      ? (await this.repository.listMemberships(workspaceId, productId, DEMAND_CLUSTERING_VERSION)).filter((row) => row.workspace_id === workspaceId && row.product_id === productId)
-      : [];
-    const latest = clusterRows.length
-      ? await this.repository.listLatestStates(workspaceId, productId, DEMAND_CLUSTER_STRENGTH_VERSION)
-      : { states: [], historyLength: {}, truncated: false };
+    const [memberships, latest] = clusterRows.length
+      ? await Promise.all([
+        this.repository.listMemberships(workspaceId, productId, DEMAND_CLUSTERING_VERSION).then((rows) => rows.filter((row) => row.workspace_id === workspaceId && row.product_id === productId)),
+        this.repository.listLatestStates(workspaceId, productId, DEMAND_CLUSTER_STRENGTH_VERSION),
+      ])
+      : [[], { states: [], historyLength: {}, truncated: false }];
     const states = latest.states.filter((row) => row.workspace_id === workspaceId && row.product_id === productId);
-    const edges = states.length ? await this.repository.listStateContributionsForStates(states.map((row) => row.evidence_node_id)) : [];
-    const lifecycle = memberships.length ? await this.repository.loadMatchLifecycle(workspaceId, productId, memberships.map((row) => row.product_match_id)) : [];
+    const [edges, lifecycle] = await Promise.all([
+      states.length ? this.repository.listStateContributionsForStates(states.map((row) => row.evidence_node_id)) : Promise.resolve([]),
+      memberships.length ? this.repository.loadMatchLifecycle(workspaceId, productId, memberships.map((row) => row.product_match_id)) : Promise.resolve([]),
+    ]);
 
     const stateByCluster = new Map(states.map((row) => [row.cluster_id, row]));
     const edgeByStateAndMember = new Map(edges.map((edge) => [`${edge.stateEvidenceNodeId}:${edge.sourceEvidenceNodeId}`, edge]));

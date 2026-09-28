@@ -11,8 +11,10 @@ export default async function DemandMapPage() {
   const { workspace, product } = await getDashboardContext();
   if (!workspace || !product) return <InsightsScopeEmptyState workspace={workspace} product={product} />;
 
+  const demandMapV2Enabled = isDemandMapV2Enabled();
+  const driftPromise = demandMapV2Enabled ? Promise.resolve(null) : getDemandDriftQuery(workspace.id, product.id).catch(() => null);
   const view = await loadDemandMapView({
-    enabled: isDemandMapV2Enabled(),
+    enabled: demandMapV2Enabled,
     loadLegacy: () => getDemandMapQuery(workspace.id, product.id).catch(() => null),
     loadV2: () => getDemandMapV2Query(workspace.id, product.id).catch(() => null),
   });
@@ -43,7 +45,7 @@ export default async function DemandMapPage() {
       />
     );
   }
-  const driftResult = await getDemandDriftQuery(workspace.id, product.id).catch(() => null);
+  const driftResult = await driftPromise;
 
   const { themes, snapshot } = mapResult;
   const sortedThemes = [...themes].sort((a, b) => b.share_of_demand - a.share_of_demand);
