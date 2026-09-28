@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
  * behaviour itself is proven on real PostgreSQL by
  * experiment-measurement-postgres.test.ts (opt-in).
  */
-const migration = readFileSync("supabase/migrations/20261019000000_experiment_measurement_v1.sql", "utf8");
+const migration = normalizeLineEndings(readFileSync("supabase/migrations/20261019000000_experiment_measurement_v1.sql", "utf8"));
 const fn = (name: string) => {
   const start = migration.indexOf(`create or replace function public.${name}(`);
   expect(start, name).toBeGreaterThan(-1);
@@ -23,13 +23,13 @@ const RPCS = [
 ];
 
 describe("Layer 11 migration contract", () => {
-  it("sorts after Layer 10, is additive, and leaves 20261018000000 byte-identical to its committed version", () => {
+  it("sorts after Layer 10, is additive, and leaves 20261018000000 content-identical to its committed version", () => {
     const files = readdirSync("supabase/migrations").filter((name) => name.endsWith(".sql")).sort();
     expect(files.indexOf("20261019000000_experiment_measurement_v1.sql")).toBe(files.indexOf("20261018000000_actions_lifecycle_v1.sql") + 1);
     expect(migration).not.toMatch(/\bdrop table\b/i);
     expect(migration).not.toMatch(/\bdelete from\b/i);
-    const committed = execFileSync("git", ["show", "HEAD:supabase/migrations/20261018000000_actions_lifecycle_v1.sql"], { encoding: "utf8" });
-    expect(readFileSync("supabase/migrations/20261018000000_actions_lifecycle_v1.sql", "utf8")).toBe(committed);
+    const committed = normalizeLineEndings(execFileSync("git", ["show", "HEAD:supabase/migrations/20261018000000_actions_lifecycle_v1.sql"], { encoding: "utf8" }));
+    expect(normalizeLineEndings(readFileSync("supabase/migrations/20261018000000_actions_lifecycle_v1.sql", "utf8"))).toBe(committed);
   });
 
   it("every RPC is service-role only (revoked from public/anon/authenticated) and security invoker", () => {
@@ -117,3 +117,7 @@ describe("Layer 11 migration contract", () => {
     expect(doc).toContain("p_experiment_starts_allowed boolean default false");
   });
 });
+
+function normalizeLineEndings(source: string): string {
+  return source.replace(/\r\n/g, "\n");
+}

@@ -300,13 +300,17 @@ describe("Layer 12A.2 frozen systems", () => {
     expect(MARKET_PARTITION_REFRESH_LIMIT).toBe(10);
     expect(MARKET_PARTITION_IDENTITY_VERSION).toBe("market_partition_identity_v1");
     expect(queryPlanningVersion).toBe("query_planning_v7");
-    const selectionSource = readFileSync("src/server/modules/intelligence/signal-qualification.config.ts", "utf8");
+    const selectionSource = normalizeLineEndings(readFileSync("src/server/modules/intelligence/signal-qualification.config.ts", "utf8"));
     expect(selectionSource).toBe(execGit("src/server/modules/intelligence/signal-qualification.config.ts"));
   });
 });
 
 function execGit(path: string): string {
   // The frozen config must be byte-identical to the 12A.1 production base.
-  return execFileSync("git", ["show", `241ae569775bd52fefcaa83d5289d30dd1c5d657:${path}`], { encoding: "utf8" });
+  return normalizeLineEndings(execFileSync("git", ["show", `241ae569775bd52fefcaa83d5289d30dd1c5d657:${path}`], { encoding: "utf8" }));
+}
+
+function normalizeLineEndings(source: string): string {
+  return source.replace(/\r\n/g, "\n");
 }
 
