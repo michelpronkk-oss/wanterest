@@ -5145,7 +5145,11 @@ seam without rendering images or OG responses.
 **Routes and indexability.** `/members` is the public wall and `/members/[slug]` is the public pass. Hidden or
 unknown profiles resolve as unavailable and are not indexable. Metadata uses a canonical public URL and restrained
 title/description derived from the public projection; no customer relationship is claimed beyond the authoritative
-public cohort label. The empty production wall is valid while both cohort counts are zero.
+public cohort label. The empty production wall is valid while both cohort counts are zero. The V1
+monogram contract is deterministic and shared by application and SQL paths: NFKC-normalize, keep ASCII
+letters/digits, use the first letter for one token, the first letters of the first two tokens for multiple
+tokens, uppercase the result, and use `WN` when no usable token exists. Stored values remain constrained to
+`^[A-Z0-9]{1,3}$`.
 
 **Admission and validation.** 13A.5 may initialize a profile after its authoritative admission assignment,
 but admission never depends on publication. Tests cover no-cohort rejection, both cohort namespaces, default

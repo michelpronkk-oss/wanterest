@@ -42,8 +42,16 @@ describe("13A.4 public cohort profile contract", () => {
   });
 
   it("derives a stable display-safe monogram without creating assets", () => {
+    expect(derivePublicMonogram("Auterim")).toBe("A");
     expect(derivePublicMonogram("Acme Labs")).toBe("AL");
-    expect(derivePublicMonogram("Auterim")).toBe("AU");
+    expect(derivePublicMonogram("Test")).toBe("T");
+    expect(derivePublicMonogram("test")).toBe("T");
+    expect(derivePublicMonogram("  Acme   Labs  ")).toBe("AL");
+    expect(derivePublicMonogram("!!!")).toBe("WN");
+    expect(derivePublicMonogram("123 Launch")).toBe("1L");
+    expect(derivePublicMonogram("Ångström")).toBe("NM");
+    expect(derivePublicMonogram("你好")).toBe("WN");
+    expect(derivePublicMonogram("A".repeat(1000))).toBe("A");
     expect(derivePublicMonogram("   ")).toBe("WN");
   });
 

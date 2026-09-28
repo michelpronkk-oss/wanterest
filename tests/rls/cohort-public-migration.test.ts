@@ -5,6 +5,10 @@ const migration = readFileSync(
   "supabase/migrations/20260928004407_layer13a4_public_cohort_profiles_v1.sql",
   "utf8",
 );
+const repairMigration = readFileSync(
+  "supabase/migrations/20260928012224_layer13a4_monogram_normalization_repair.sql",
+  "utf8",
+);
 
 describe("Layer 13A.4 public cohort profile migration contract", () => {
   it("keeps public settings separate from authoritative cohort identity", () => {
@@ -52,5 +56,18 @@ describe("Layer 13A.4 public cohort profile migration contract", () => {
     expect(migration).toContain("unique (workspace_id)");
     expect(migration).toContain("where m.workspace_id = p_workspace_id\n   for update");
     expect(migration).toContain("public_cohort_slug_conflict");
+  });
+
+  it("keeps SQL monogram derivation aligned with the application V1 contract", () => {
+    expect(repairMigration).toContain("create or replace function public.derive_public_cohort_monogram(p_display_name text)");
+    expect(repairMigration).toContain("normalize(coalesce(p_display_name, ''), NFKC)");
+    expect(repairMigration).toContain("when coalesce(array_length(parts, 1), 0) >= 2 then left(parts[1], 1) || left(parts[2], 1)");
+    expect(repairMigration).toContain("when coalesce(array_length(parts, 1), 0) = 1 then left(parts[1], 1)");
+    expect(repairMigration).toContain("else 'WN'");
+    expect(repairMigration).toContain("v_monogram := public.derive_public_cohort_monogram(v_display_name);");
+    expect(repairMigration).toContain("security definer");
+    expect(repairMigration).toContain("set search_path = public, auth");
+    expect(repairMigration).toContain("^[A-Z0-9]{1,3}$");
+    expect(repairMigration).toContain("grant execute on function public.upsert_workspace_public_cohort_profile");
   });
 });

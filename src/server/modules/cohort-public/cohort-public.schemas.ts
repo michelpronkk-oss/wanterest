@@ -62,6 +62,6 @@ export type PublicCohortPass = PublicCohortRow & { canonicalUrl: string };
 
 export function derivePublicMonogram(displayName: string): string {
   const words = displayName.normalize("NFKC").trim().split(/[^A-Za-z0-9]+/).filter(Boolean);
-  const value = words.length > 1 ? `${words[0][0]}${words[1][0]}` : words[0]?.slice(0, 2) ?? "WN";
+  const value = words.length > 1 ? `${words[0][0]}${words[1][0]}` : words[0]?.slice(0, 1) ?? "WN";
   return value.toUpperCase().slice(0, 3);
 }
