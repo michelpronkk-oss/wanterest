@@ -6,6 +6,7 @@ import { JsonLd } from "@/components/marketing/json-ld";
 import { MarketingHome } from "@/components/marketing/marketing-home";
 import { organizationJsonLd, softwareApplicationJsonLd, websiteJsonLd } from "@/components/marketing/structured-data";
 import { getCurrentUser } from "@/server/modules/auth";
+import { getProductAccessState } from "@/server/modules/access";
 import { DEFAULT_DESCRIPTION, DEFAULT_TITLE } from "@/shared/config/seo";
 import { isAppHost } from "@/shared/config/site";
 
@@ -31,12 +32,13 @@ export default async function Home() {
     redirect(user ? "/app" : "/login");
   }
 
+  const access = await getProductAccessState();
   return (
     <>
       <JsonLd data={organizationJsonLd()} />
       <JsonLd data={websiteJsonLd()} />
       <JsonLd data={softwareApplicationJsonLd()} />
-      <MarketingHome />
+      <MarketingHome accessMode={access.mode} />
     </>
   );
 }

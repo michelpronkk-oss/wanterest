@@ -1,5 +1,7 @@
 import { createWaitlistService } from "@/server/modules/waitlist";
 import { createSupabaseWaitlistRepository } from "@/server/modules/waitlist/waitlist.repository";
+import { getProductAccessPolicy } from "@/server/modules/access";
+import { createSupabaseAccessModeRepository } from "@/server/modules/access/access-mode.repository";
 import { SupabaseRateLimitStore } from "@/server/modules/operations/rate-limit";
 import { jsonError, readJson } from "@/server/lib/http";
 import { getTraceId } from "@/server/lib/request-context";
@@ -16,6 +18,10 @@ export async function POST(request: Request) {
     const contentLength = Number(request.headers.get("content-length") ?? 0);
     if (contentLength > MAX_BODY_BYTES) return Response.json({ error: { code: "VALIDATION_ERROR", message: "Request is too large." }, traceId }, { status: 422 });
     const client = createSupabaseServiceClient();
+    const policy = await getProductAccessPolicy(createSupabaseAccessModeRepository(client));
+    if (!policy.waitlistRequestsAllowed) {
+      return Response.json({ error: { code: "CONFLICT", message: "Early Access requests are closed because Wanterest is open." }, traceId }, { status: 409, headers: { "cache-control": "no-store", "x-request-id": traceId } });
+    }
     const service = createWaitlistService({
       repository: createSupabaseWaitlistRepository(client),
       rateLimitStore: new SupabaseRateLimitStore(client),

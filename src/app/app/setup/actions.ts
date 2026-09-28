@@ -7,7 +7,8 @@ import { z } from "zod";
 import { captureWebsiteProductSnapshotCommand, generateDemandProfileCommand } from "@/server/modules/intelligence/commands";
 import { listSignalsQuery } from "@/server/modules/intelligence/commands";
 import { createProductCommand, getProductQuery, listProductsQuery } from "@/server/modules/products";
-import { createWorkspaceCommand, listWorkspacesQuery } from "@/server/modules/workspaces";
+import { listWorkspacesQuery } from "@/server/modules/workspaces";
+import { provisionOpenSignupCommand } from "@/server/modules/access";
 import { ensureEngineVersion } from "@/server/modules/observability/engine.repository";
 import { FixtureDemandProfileEngine } from "@/server/modules/intelligence/engines";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
@@ -148,7 +149,10 @@ export async function createOnboardingWorkspaceAction(_previous: OnboardingActio
   if (!parsed.success) return validationError(parsed.error, { name: rawName });
   let workspace;
   try {
-    workspace = await createWorkspaceCommand({ name: parsed.data.name, slug: slugifyOnboardingName(parsed.data.name) });
+    // The first public workspace is an admission, not a second provisioning
+    // system. The database also rechecks the mode and idempotency key inside
+    // the canonical admission transaction.
+    workspace = await provisionOpenSignupCommand({ name: parsed.data.name });
   } catch (error) {
     if (toPublicError(error).code === "CONFLICT") {
       let existingWorkspaces;
@@ -165,7 +169,7 @@ export async function createOnboardingWorkspaceAction(_previous: OnboardingActio
     }
     return actionError(error);
   }
-  await setContextCookies(workspace.id);
+  await setContextCookies(workspace.workspaceId);
   redirect(nextProductPath);
 }
 

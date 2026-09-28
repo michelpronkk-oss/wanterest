@@ -1,6 +1,8 @@
 import Image from "next/image";
 import type { CSSProperties } from "react";
 
+import type { AccessMode } from "@/server/modules/access";
+import { APP_ORIGIN } from "@/shared/config/site";
 import { SourceBrandIcon } from "@/components/ui/source-brand-icon";
 import { BeyondSignalsTabs } from "./beyond-signals";
 import { DifferenceSection } from "./difference";
@@ -16,12 +18,12 @@ import { Reveal } from "./reveal";
 import { ResponsiveText } from "./responsive-text";
 import { ScanForm } from "./scan-form";
 
-export function MarketingHome() {
+export function MarketingHome({ accessMode = "invite_only" }: { accessMode?: AccessMode }) {
   return (
     <div className="marketing-page">
-      <MarketingNav />
+      <MarketingNav accessMode={accessMode} />
       <div className="marketing-fold">
-        <Hero />
+        <Hero accessMode={accessMode} />
         <LogoStrip />
       </div>
       <ProcessSection />
@@ -34,7 +36,7 @@ export function MarketingHome() {
       <DailyValue />
       <PricingSection />
       <Faq />
-      <FinalCta />
+      <FinalCta accessMode={accessMode} />
       <MarketingFooter />
     </div>
   );
@@ -104,7 +106,7 @@ function HeroSignalField() {
   );
 }
 
-function Hero() {
+function Hero({ accessMode }: { accessMode: AccessMode }) {
   return (
     <header className="marketing-hero">
       <div className="marketing-hero-bg" aria-hidden="true" />
@@ -138,7 +140,7 @@ function Hero() {
           already exists.
         </h1>
         <p className="marketing-hero-sub">Wanterest just finds it.</p>
-        <ScanForm />
+        <PrimaryAccessAction accessMode={accessMode} />
         <p className="marketing-hero-note">No keywords. No setup. Just real conversations.</p>
         <div className="marketing-hero-proof-row">
           <div className="marketing-hero-avatars" aria-hidden="true">
@@ -671,13 +673,18 @@ function DailyValue() {
   );
 }
 
-function FinalCta() {
+function FinalCta({ accessMode }: { accessMode: AccessMode }) {
   return (
     <section className="marketing-section is-tight marketing-final-cta is-dark">
       <div className="marketing-final-cta-glow" aria-hidden="true" />
       <h2 className="marketing-heading marketing-section-title marketing-section-title-compact marketing-final-cta-title">The demand is already there.</h2>
       <p className="marketing-final-cta-sub">Find it.</p>
-      <ScanForm compact ctaVariant="accent" />
+      <PrimaryAccessAction accessMode={accessMode} compact />
     </section>
   );
+}
+
+function PrimaryAccessAction({ accessMode, compact = false }: { accessMode: AccessMode; compact?: boolean }) {
+  if (accessMode === "open") return <ScanForm compact={compact} ctaVariant={compact ? "accent" : "ink"} />;
+  return <a className={`marketing-cta${compact ? " is-compact" : ""}${compact ? " is-accent" : ""}`} href={`${APP_ORIGIN}/waitlist`}>{compact ? "Request access →" : "Request access →"}</a>;
 }

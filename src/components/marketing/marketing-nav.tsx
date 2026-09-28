@@ -1,6 +1,8 @@
 import Link from "next/link";
 
 import { LogoMark } from "@/components/dashboard/nav-icons";
+import type { AccessMode } from "@/server/modules/access";
+import { APP_ORIGIN } from "@/shared/config/site";
 import { APP_LOGIN_URL, APP_START_URL } from "./links";
 
 type NavLink = { label: string; href: string };
@@ -13,7 +15,9 @@ export const MARKETING_NAV_LINKS: NavLink[] = [
   { label: "Contact", href: "/contact" },
 ];
 
-export function MarketingNav({ links = MARKETING_NAV_LINKS, activeHref }: { links?: NavLink[]; activeHref?: string }) {
+export function MarketingNav({ links = MARKETING_NAV_LINKS, activeHref, accessMode = "invite_only" }: { links?: NavLink[]; activeHref?: string; accessMode?: AccessMode }) {
+  const primaryHref = accessMode === "open" ? APP_START_URL : `${APP_ORIGIN}/waitlist`;
+  const primaryLabel = accessMode === "open" ? "Start free" : "Request access";
   return (
     <nav className="marketing-nav">
       <div className="marketing-nav-inner">
@@ -30,7 +34,7 @@ export function MarketingNav({ links = MARKETING_NAV_LINKS, activeHref }: { link
         </div>
         <div className="marketing-nav-actions">
           <a className="marketing-nav-signin" href={APP_LOGIN_URL}>Log in</a>
-          <a className="marketing-cta-nav" href={APP_START_URL}>Start free</a>
+          <a className="marketing-cta-nav" href={primaryHref}>{primaryLabel}</a>
         </div>
       </div>
     </nav>
