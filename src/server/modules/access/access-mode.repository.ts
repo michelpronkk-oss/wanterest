@@ -2,12 +2,13 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import type { Database } from "@/server/db/database.types";
 import { AppError } from "@/server/lib/errors";
 import { createSupabaseServerClient } from "@/server/providers/supabase/server";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
 import { accessModeSchema, publicAccessStateSchema, type AccessMode, type PublicAccessState } from "./access-mode.schemas";
 
-type AccessClient = SupabaseClient;
+type AccessClient = SupabaseClient<Database>;
 
 function first<T>(data: T | T[] | null): T | null {
   return Array.isArray(data) ? data[0] ?? null : data;
@@ -28,7 +29,7 @@ export function createSupabaseAccessModeRepository(client?: AccessClient): Acces
       const readClient = await readClientPromise;
       const { data, error } = await readClient.rpc("get_product_access_state");
       if (error) throw providerError("Product access state could not be loaded.", error);
-      const raw = first(data as Record<string, unknown> | Record<string, unknown>[] | null);
+      const raw = first(data);
       const parsed = publicAccessStateSchema.safeParse({
         mode: raw?.mode,
         canRequestAccess: raw?.can_request_access,
@@ -39,14 +40,14 @@ export function createSupabaseAccessModeRepository(client?: AccessClient): Acces
       return parsed.data;
     },
     async setMode(input) {
-      const serviceClient = createSupabaseServiceClient() as unknown as AccessClient;
+      const serviceClient = createSupabaseServiceClient();
       const { data, error } = await serviceClient.rpc("set_product_access_mode", {
         p_to_mode: input.mode,
         p_reason: input.reason,
         p_actor_user_id: input.actorUserId ?? null,
       });
       if (error) throw providerError("Product access mode could not be changed.", error);
-      const raw = first(data as Record<string, unknown> | Record<string, unknown>[] | null);
+      const raw = first(data);
       const mode = accessModeSchema.safeParse(raw?.mode);
       if (!mode.success || typeof raw?.changed !== "boolean" || typeof raw?.version !== "number") {
         throw new AppError("INTERNAL_ERROR", "Product access mode response is invalid.");

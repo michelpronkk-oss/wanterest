@@ -135,7 +135,7 @@ export class SupabaseIntelligenceRepository implements IntelligenceRepository {
   async getSignalByMatch(matchId: string) { const { data, error } = await this.client.from("signals").select("*").eq("product_match_id", matchId).maybeSingle(); if (error) throw dbError(error, "Signal could not be loaded."); return data; }
   async listSignals(workspaceId: string, productId?: string) { let query = this.client.from("signals").select("id, workspace_id, product_id, product_match_id, product_match_evaluation_id, conversation_id, source_key, canonical_url, published_at, created_at, updated_at, intent_type, excerpt, why_it_matters, tags, buyer_language, pain_themes, lifecycle_status, evidence_node_id, match_ranking_id").eq("workspace_id", workspaceId); if (productId) query = query.eq("product_id", productId); const { data, error } = await query.order("created_at", { ascending: false }); if (error) throw dbError(error, "Signals could not be loaded."); return data ?? []; }
   async listSignalPage(input: SignalPageInput) {
-    const { data, error } = await this.client.rpc("list_signal_page" as never, {
+    const { data, error } = await this.client.rpc("list_signal_page", {
       p_workspace_id: input.workspaceId,
       p_product_id: input.productId ?? null,
       p_lifecycle_status: input.lifecycleStatus ?? null,
@@ -147,9 +147,9 @@ export class SupabaseIntelligenceRepository implements IntelligenceRepository {
       p_query: input.query ?? null,
       p_limit: input.limit,
       p_offset: input.offset,
-    } as never);
+    });
     if (error) throw dbError(error, "Signals could not be loaded.");
-    return (data ?? []) as unknown as SignalPageRow[];
+    return data ?? [];
   }
   async getSignal(signalId: string) { const { data, error } = await this.client.from("signals").select("*").eq("id", signalId).maybeSingle(); if (error) throw dbError(error, "Signal could not be loaded."); return data; }
   async createSignal(input: SignalInsert) { const id = input.id ?? crypto.randomUUID(); await this.evidence(input.evidence_node_id, "signal", input.workspace_id, "signals", id); const { data, error } = await this.client.from("signals").insert({ ...input, id }).select("*").single(); if (error || !data) throw dbError(error ?? { message: "No signal returned." }, "Signal could not be stored."); return data; }
