@@ -1,6 +1,7 @@
 "use client";
 
-import { useId, useState, type FormEvent } from "react";
+import { useSearchParams } from "next/navigation";
+import { useId, useState, type ChangeEvent, type FormEvent } from "react";
 
 type FormState = "idle" | "sending" | "success" | "error";
 
@@ -8,6 +9,10 @@ export function WaitlistForm() {
   const [state, setState] = useState<FormState>("idle");
   const [message, setMessage] = useState("");
   const [marketingConsent, setMarketingConsent] = useState(false);
+  // Prefills from the homepage's request-access entry point (?website=), which types a site
+  // there instead of here.
+  const searchParams = useSearchParams();
+  const [companyWebsite, setCompanyWebsite] = useState(() => (searchParams.get("website") ?? "").slice(0, 240));
   const firstNameId = useId(); const emailId = useId(); const companyId = useId(); const websiteId = useId(); const roleId = useId(); const useCaseId = useId(); const consentId = useId(); const honeypotId = useId();
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -40,7 +45,7 @@ export function WaitlistForm() {
         <Field id={firstNameId} name="firstName" label="First name" required placeholder="Your first name" />
         <Field id={emailId} name="email" label="Work email" type="email" required placeholder="you@company.com" />
         <Field id={companyId} name="companyName" label="Company" required placeholder="Your company" />
-        <Field id={websiteId} name="companyWebsite" label="Company website" placeholder="https://example.com" />
+        <Field id={websiteId} name="companyWebsite" label="Company website" placeholder="https://example.com" value={companyWebsite} onChange={setCompanyWebsite} />
         <Field id={roleId} name="roleTitle" label="Role" placeholder="Product, marketing, founder…" />
       </div>
       <div className="waitlist-field"><label htmlFor={useCaseId}>What do you want Wanterest to help you understand?</label><textarea id={useCaseId} name="useCase" rows={5} maxLength={1200} required placeholder="For example: where our best-fit buyers are frustrated and what they compare us against." /></div>
@@ -52,4 +57,15 @@ export function WaitlistForm() {
   );
 }
 
-function Field({ id, name, label, type = "text", required = false, placeholder }: { id: string; name: string; label: string; type?: string; required?: boolean; placeholder?: string }) { return <div className="waitlist-field"><label htmlFor={id}>{label}{required ? <span aria-hidden="true"> *</span> : null}</label><input id={id} name={name} type={type} required={required} maxLength={type === "url" ? 240 : 160} placeholder={placeholder} /></div>; }
+function Field({ id, name, label, type = "text", required = false, placeholder, value, onChange }: { id: string; name: string; label: string; type?: string; required?: boolean; placeholder?: string; value?: string; onChange?: (value: string) => void }) {
+  return (
+    <div className="waitlist-field">
+      <label htmlFor={id}>{label}{required ? <span aria-hidden="true"> *</span> : null}</label>
+      {value !== undefined ? (
+        <input id={id} name={name} type={type} required={required} maxLength={type === "url" ? 240 : 160} placeholder={placeholder} value={value} onChange={(event: ChangeEvent<HTMLInputElement>) => onChange?.(event.target.value)} />
+      ) : (
+        <input id={id} name={name} type={type} required={required} maxLength={type === "url" ? 240 : 160} placeholder={placeholder} />
+      )}
+    </div>
+  );
+}
