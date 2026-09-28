@@ -5107,3 +5107,48 @@ duplicate submission responses remain owned by 13A.1. No IP/device fingerprintin
 email, cohort assignment, workspace creation, or product scan is introduced. 13A.5 may consume the read-only
 `priorityUnlocked`, `priorityGrantedAt`, and `verifiedCount` seam when admission is later designed; 13B.1 may
 consume the same status/share fields for cards without changing attribution authority.
+
+### 13A.4 — Founder Pass + Public Founding Wall V1 (`public_cohort_profiles_v1`) — FEATURE BRANCH
+
+**Purpose and boundary.** 13A.4 projects an already-assigned workspace cohort identity into a restrained,
+privacy-first public surface. It never assigns a cohort, consumes a seat, creates a workspace, grants access,
+changes waitlist/referral state, invokes Dodo, or creates a billing entitlement. The authoritative
+`workspace_cohort_memberships` row remains immutable and is the only source of cohort type, namespace-local
+number, limit, and assignment time.
+
+**Public profile persistence.** `workspace_public_cohort_profiles` is one mutable settings/projection row per
+workspace and references the authoritative membership through `(workspace_id, cohort_membership_id)`. It stores
+the normalized unique `public_slug`, display name, optional logo/avatar URL references, optional monogram and
+headline, website URL, and independent `wall_visible` / `pass_visible` flags. The migration creates no rows;
+there is no backfill and Early Access identities are never converted into public cohort profiles.
+
+**Visibility and identity.** Both visibility flags default to false. A profile can be created or edited only
+after a real membership exists and only by an active workspace owner/admin (or the later server-only admission
+seam). Profile edits cannot accept cohort or number values. Slugs are lowercase ASCII, bounded, reserved-path
+safe, and unique; changing one changes only the public URL and does not change cohort provenance. V1 does not
+retain redirects for old slugs. A stable monogram is derived from the display name when no image reference is
+present; no binary upload system is introduced.
+
+**Public read boundary.** Anonymous and authenticated callers receive only narrow RPC projections for opted-in
+profiles. The public wall reads `wall_visible` profiles ordered by the authoritative cohort namespace and number,
+with separate Founding 25 and Early 100 collections; hidden seats remain gaps. A public pass requires
+`pass_visible` and may be shared directly even when the workspace is not listed on the wall. It returns no email,
+billing, internal workspace ID, waitlist/referral token, team data, or private subscription state. Private
+membership/profile tables have no browser table grants.
+
+**Private settings and audit.** Owner/admin settings use existing `has_workspace_role` authorization and a
+server-side repository contract. Creation, visibility toggles, and profile edits append concise existing
+`audit_log` events (`public_profile_created`, visibility changes, and `public_profile_updated`). Cohort assignment
+events remain owned by 13A.2. The profile read model is server-authoritative and carries a typed 13B.1 share-card
+seam without rendering images or OG responses.
+
+**Routes and indexability.** `/members` is the public wall and `/members/[slug]` is the public pass. Hidden or
+unknown profiles resolve as unavailable and are not indexable. Metadata uses a canonical public URL and restrained
+title/description derived from the public projection; no customer relationship is claimed beyond the authoritative
+public cohort label. The empty production wall is valid while both cohort counts are zero.
+
+**Admission and validation.** 13A.5 may initialize a profile after its authoritative admission assignment,
+but admission never depends on publication. Tests cover no-cohort rejection, both cohort namespaces, default
+privacy, visibility gaps, stable workspace ownership, inactive workspaces, safe projection fields, slug safety,
+IDOR, spoof resistance, concurrent initialization/slug claims, and immutable membership boundaries. This phase
+does not modify 12A.6 or build final share cards.
