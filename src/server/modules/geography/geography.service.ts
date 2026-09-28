@@ -160,13 +160,15 @@ export class GeographyService {
     const periodEnd = input.periodEnd ?? new Date().toISOString();
     const periodStart = windowStart(periodEnd, window);
     const previousStart = new Date(Date.parse(periodStart) - windowLength(window) * 86_400_000).toISOString();
-    const currentObservations = await this.demand.listObservations(input.product.workspace_id, input.product.id, periodStart, periodEnd);
-    const previousObservations = input.access.trendEnabled ? await this.demand.listObservations(input.product.workspace_id, input.product.id, previousStart, periodStart) : [];
+    const [currentObservations, previousObservations] = await Promise.all([
+      this.demand.listObservations(input.product.workspace_id, input.product.id, periodStart, periodEnd),
+      input.access.trendEnabled ? this.demand.listObservations(input.product.workspace_id, input.product.id, previousStart, periodStart) : Promise.resolve([]),
+    ]);
     const observations = [...currentObservations, ...previousObservations];
     const conversationIds = [...new Set(observations.map((row) => row.conversation_id))];
     const conversations = await this.intelligence.listConversations(conversationIds);
     const sourceIds = [...new Set(conversations.map((row) => row.primary_source_item_id))];
-    const [sources, analyses, rawSignals] = await Promise.all([this.intelligence.listSourceItems(sourceIds), this.intelligence.listConversationAnalyses([...new Set(observations.map((row) => row.conversation_analysis_id))]), this.intelligence.listSignals(input.product.workspace_id, input.product.id)]);
+    const [sources, analyses, rawSignals] = await Promise.all([this.intelligence.listSourceItems(sourceIds), this.intelligence.listConversationAnalyses([...new Set(observations.map((row) => row.conversation_analysis_id))]), this.intelligence.listSignalsByConversationIds(input.product.workspace_id, input.product.id, conversationIds)]);
     // Demand counts come from immutable demand_observations and must not be
     // rewritten by a later dismiss; only the representative-signal id/link
     // attached to a geo point should avoid pointing at a dismissed signal.

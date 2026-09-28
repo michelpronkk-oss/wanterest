@@ -126,6 +126,20 @@ describe("Geo aggregation", () => {
     expect(region.selectedMarket).toMatchObject({ marketName: "California", shareOfParentMarket: 5 / 9, topDemandTheme: "automation", topIntent: "purchase_research", topPain: "workflow" });
   });
 
+  it("keeps full-population totals when the displayed market list is bounded", () => {
+    const current = [
+      ...Array.from({ length: 8 }, (_, index) => signal(`us-${index}`, location("US", "United States"))),
+      ...Array.from({ length: 6 }, (_, index) => signal(`ca-${index}`, location("CA", "Canada", "medium", "Toronto"))),
+      ...Array.from({ length: 4 }, (_, index) => signal(`de-${index}`, location("DE", "Germany"))),
+    ];
+    const result = aggregateGeoIntelligence({ current, previous: [], periodEnd: "2026-09-23T00:00:00.000Z", periodStart: "2026-08-24T00:00:00.000Z", window: "30d", access: { enabled: true, historyDays: 30, trendEnabled: false, maxMarkets: 2, countryDrilldown: true, regionDrilldown: true, upgradeHint: null } });
+    expect(result.totalQualifiedSignalCount).toBe(18);
+    expect(result.reliableGeoSignalCount).toBe(18);
+    expect(result.markets).toHaveLength(3);
+    expect(result.topMarkets).toHaveLength(2);
+    expect(result.topMarkets.reduce((total, market) => total + market.qualifiedSignalCount, 0)).toBe(14);
+  });
+
   it("keeps regional claims unavailable below the five-signal threshold and falls back from missing regions", () => {
     const current = [
       signal("ca-1", location("US", "United States", "medium", null, "US-CA", "California"), { pains: ["other"] }),

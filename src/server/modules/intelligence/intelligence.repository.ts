@@ -55,6 +55,7 @@ export interface IntelligenceRepository {
   createRanking(input: MatchRankingInsert): Promise<MatchRankingRow>;
   getSignalByMatch(matchId: string): Promise<SignalRow | null>;
   listSignals(workspaceId: string, productId?: string): Promise<SignalRow[]>;
+  listSignalsByConversationIds(workspaceId: string, productId: string, conversationIds: string[]): Promise<SignalRow[]>;
   listSignalPage(input: SignalPageInput): Promise<SignalPageRow[]>;
   getSignal(signalId: string): Promise<SignalRow | null>;
   getEvaluationById(evaluationId: string): Promise<ProductMatchEvaluationRow | null>;
@@ -134,6 +135,7 @@ export class SupabaseIntelligenceRepository implements IntelligenceRepository {
   async createRanking(input: MatchRankingInsert) { const id = input.id ?? crypto.randomUUID(); await this.evidence(input.evidence_node_id, "ranking", input.workspace_id, "match_rankings", id); const { data, error } = await this.client.from("match_rankings").insert({ ...input, id }).select("*").single(); if (error) { if (error.code === "23505") { const existing = await this.getRanking(input.product_match_evaluation_id, input.ranking_engine_version_id, input.input_fingerprint); if (existing) return existing; } throw dbError(error, "Ranking could not be stored."); } if (!data) throw dbError({ message: "No ranking returned." }, "Ranking could not be stored."); return data; }
   async getSignalByMatch(matchId: string) { const { data, error } = await this.client.from("signals").select("*").eq("product_match_id", matchId).maybeSingle(); if (error) throw dbError(error, "Signal could not be loaded."); return data; }
   async listSignals(workspaceId: string, productId?: string) { let query = this.client.from("signals").select("id, workspace_id, product_id, product_match_id, product_match_evaluation_id, conversation_id, source_key, canonical_url, published_at, created_at, updated_at, intent_type, excerpt, why_it_matters, tags, buyer_language, pain_themes, lifecycle_status, evidence_node_id, match_ranking_id").eq("workspace_id", workspaceId); if (productId) query = query.eq("product_id", productId); const { data, error } = await query.order("created_at", { ascending: false }); if (error) throw dbError(error, "Signals could not be loaded."); return data ?? []; }
+  async listSignalsByConversationIds(workspaceId: string, productId: string, conversationIds: string[]) { if (!conversationIds.length) return []; const { data, error } = await this.client.from("signals").select("id, workspace_id, product_id, product_match_id, product_match_evaluation_id, conversation_id, source_key, canonical_url, published_at, created_at, updated_at, intent_type, excerpt, why_it_matters, tags, buyer_language, pain_themes, lifecycle_status, evidence_node_id, match_ranking_id").eq("workspace_id", workspaceId).eq("product_id", productId).in("conversation_id", conversationIds).in("lifecycle_status", ["active", "saved"]).order("created_at", { ascending: false }); if (error) throw dbError(error, "Geography signals could not be loaded."); return data ?? []; }
   async listSignalPage(input: SignalPageInput) {
     const { data, error } = await this.client.rpc("list_signal_page", {
       p_workspace_id: input.workspaceId,
@@ -215,6 +217,7 @@ export class InMemoryIntelligenceRepository implements IntelligenceRepository {
   async createRanking(input: MatchRankingInsert) { const timestamp = now(); const row = { ...input, id: input.id ?? uuid(), calculated_at: input.calculated_at ?? timestamp, created_at: input.created_at ?? timestamp } as MatchRankingRow; this.rankings.set(row.id, row); return row; }
   async getSignalByMatch(matchId: string) { return [...this.signals.values()].find((row) => row.product_match_id === matchId) ?? null; }
   async listSignals(workspaceId: string, productId?: string) { return [...this.signals.values()].filter((row) => row.workspace_id === workspaceId && (!productId || row.product_id === productId)); }
+  async listSignalsByConversationIds(workspaceId: string, productId: string, conversationIds: string[]) { const ids = new Set(conversationIds); return [...this.signals.values()].filter((row) => row.workspace_id === workspaceId && row.product_id === productId && ids.has(row.conversation_id) && (row.lifecycle_status === "active" || row.lifecycle_status === "saved")).sort((a, b) => b.created_at.localeCompare(a.created_at)); }
   async listSignalPage(input: SignalPageInput) {
     this.readCounters.signalPage += 1;
     const query = input.query?.toLowerCase();

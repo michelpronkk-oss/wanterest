@@ -6,6 +6,7 @@ type Functions = Database["public"]["Functions"];
 type AccessState = Functions["get_product_access_state"];
 type AccessModeChange = Functions["set_product_access_mode"];
 type SignalPage = Functions["list_signal_page"];
+type ComparableDriftPair = Functions["find_latest_comparable_drift_pair"];
 
 const accessStateArgs: AccessState["Args"] = {};
 const accessStateRow: AccessState["Returns"][number] = {
@@ -46,6 +47,15 @@ const signalPageRow: SignalPage["Returns"][number] = {
   why_it_matters: "",
   workspace_id: "00000000-0000-0000-0000-000000000000",
 };
+const comparableDriftPairArgs: ComparableDriftPair["Args"] = {
+  p_product_id: "00000000-0000-0000-0000-000000000000",
+  p_window_type: "30d",
+  p_workspace_id: "00000000-0000-0000-0000-000000000000",
+};
+const comparableDriftPairRow: ComparableDriftPair["Returns"][number] = {
+  current_snapshot_id: "00000000-0000-0000-0000-000000000000",
+  previous_snapshot_id: "00000000-0000-0000-0000-000000000000",
+};
 
 describe("generated Supabase RPC contracts", () => {
   it("keeps the live access and P2.1 read-model signatures typed", () => {
@@ -54,5 +64,7 @@ describe("generated Supabase RPC contracts", () => {
     expect(accessModeChangeArgs.p_to_mode).toBe("open");
     expect(signalPageArgs.p_limit).toBe(26);
     expect(signalPageRow.opportunity_score).toBe(0);
+    expect(comparableDriftPairArgs.p_window_type).toBe("30d");
+    expect(comparableDriftPairRow.current_snapshot_id).toBe(comparableDriftPairRow.previous_snapshot_id);
   });
 });
