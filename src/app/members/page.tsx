@@ -1,49 +1,64 @@
 import type { Metadata } from "next";
 
-import { getPublicCohortWallsQuery, type PublicCohortRow } from "@/server/modules/cohort-public";
+import { PublicMembersWall } from "@/components/members/public-members-wall";
+import { APP_START_URL } from "@/components/marketing/links";
+import { MarketingPageShell } from "@/components/marketing/marketing-page-shell";
+import { getHomepageAccessState, getProductAccessState } from "@/server/modules/access";
+import { getPublicCohortWallsQuery } from "@/server/modules/cohort-public";
+import { selectPublicMemberIdentity } from "@/server/modules/cohort-public/cohort-public.identity";
+import { APP_ORIGIN } from "@/shared/config/site";
 
 export const dynamic = "force-dynamic";
 
+const TITLE = "Wanterest Members — Public Cohort Wall";
+const DESCRIPTION = "The public, opt-in Founding 25 and Early 100 members of Wanterest.";
+
 export const metadata: Metadata = {
-  title: "Wanterest members",
-  description: "Publicly opted-in Founding 25 and Early 100 members of Wanterest.",
+  title: { absolute: TITLE },
+  description: DESCRIPTION,
   alternates: { canonical: "/members" },
+  openGraph: { title: TITLE, description: DESCRIPTION, url: "/members" },
 };
 
-function number(row: PublicCohortRow): string {
-  return `#${String(row.number).padStart(row.cohort === "founding_25" ? 2 : 3, "0")}`;
-}
-
-function WallSection({ title, rows }: { title: string; rows: PublicCohortRow[] }) {
-  return (
-    <section aria-labelledby={`${title.toLowerCase().replaceAll(" ", "-")}-title`}>
-      <div className="marketing-content-eyebrow"><span className="marketing-content-eyebrow-dot" /> {title}</div>
-      <h2 id={`${title.toLowerCase().replaceAll(" ", "-")}-title`}>{rows.length ? `${rows.length} public member${rows.length === 1 ? "" : "s"}` : "No public members yet"}</h2>
-      {rows.length ? (
-        <ol aria-label={`${title} public members`}>
-          {rows.map((row) => (
-            <li key={row.publicSlug}>
-              <a href={`/members/${encodeURIComponent(row.publicSlug)}`}>
-                <span aria-hidden="true">{row.monogram ?? "WN"}</span>
-                <span>{number(row)} · {row.displayName}</span>
-              </a>
-            </li>
-          ))}
-        </ol>
-      ) : <p>Public visibility is opt-in. The wall will grow as members choose to share their identity.</p>}
-    </section>
-  );
+function primaryAction(mode: Parameters<typeof getHomepageAccessState>[0]) {
+  const state = getHomepageAccessState(mode);
+  const label = {
+    REQUEST_ACCESS: "Request access",
+    START_FREE: "Start free",
+    CHECK_EMAIL: "Check your email",
+    VIEW_STATUS: "View status",
+    VIEW_PRIORITY_STATUS: "View Priority status",
+    ACCEPT_INVITATION: "Accept invitation",
+    OPEN_WANTEREST: "Open Wanterest",
+  }[state.primaryAction];
+  return { label, href: state.primaryAction === "START_FREE" ? APP_START_URL : `${APP_ORIGIN}${state.primaryActionHref}` };
 }
 
 export default async function MembersPage() {
-  const walls = await getPublicCohortWallsQuery();
+  const [walls, access] = await Promise.all([getPublicCohortWallsQuery(), getProductAccessState()]);
+  const wallRows = {
+    founding: walls.founding.map((row) => ({
+      publicSlug: row.publicSlug,
+      displayName: row.displayName,
+      headline: row.headline,
+      cohort: row.cohort,
+      number: row.number,
+      assignedAt: row.assignedAt,
+      identity: selectPublicMemberIdentity(row),
+    })),
+    early: walls.early.map((row) => ({
+      publicSlug: row.publicSlug,
+      displayName: row.displayName,
+      headline: row.headline,
+      cohort: row.cohort,
+      number: row.number,
+      assignedAt: row.assignedAt,
+      identity: selectPublicMemberIdentity(row),
+    })),
+  };
   return (
-    <main className="marketing-content-wrap" aria-labelledby="members-title">
-      <div className="marketing-content-eyebrow"><span className="marketing-content-eyebrow-dot" /> WANterest community</div>
-      <h1 id="members-title">The people building with Wanterest.</h1>
-      <p>Permanent cohort identities belong to workspaces. Only members who opt in appear here.</p>
-      <WallSection title="Founding 25" rows={walls.founding} />
-      <WallSection title="Early 100" rows={walls.early} />
-    </main>
+    <MarketingPageShell accessMode={access.mode}>
+      <PublicMembersWall founding={wallRows.founding} early={wallRows.early} primaryAction={primaryAction(access.mode)} />
+    </MarketingPageShell>
   );
 }
