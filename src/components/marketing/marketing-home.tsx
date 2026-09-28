@@ -1,3 +1,4 @@
+import Image from "next/image";
 import type { CSSProperties } from "react";
 
 import type { HomepageAccessState } from "@/server/modules/access";
@@ -99,6 +100,8 @@ function isUnrecognizedVisitor(accessState: HomepageAccessState): boolean {
   return accessState.primaryAction === "REQUEST_ACCESS" || accessState.primaryAction === "START_FREE";
 }
 
+const HERO_AVATARS = ["/avatars/avatar-01.png", "/avatars/avatar-02.png", "/avatars/avatar-03.png", "/avatars/avatar-04.png"] as const;
+
 function Hero({ accessState }: { accessState: HomepageAccessState }) {
   return (
     <header className="marketing-hero">
@@ -110,7 +113,9 @@ function Hero({ accessState }: { accessState: HomepageAccessState }) {
           <span className="marketing-eyebrow-pill-text">REAL DEMAND. FOUND.</span>
         </div>
         <h1 className="marketing-display-title marketing-hero-title">
-          {"Know what your market "}
+          {"Know what "}
+          <br className="marketing-hero-title-break-mobile" />
+          {"your market "}
           <br className="marketing-hero-title-break" />
           wants next.
         </h1>
@@ -122,10 +127,16 @@ function Hero({ accessState }: { accessState: HomepageAccessState }) {
         </p>
         <PrimaryAccessAction accessState={accessState} />
         <p className="marketing-hero-note">Evidence attached to every finding. No manufactured activity.</p>
+        {/* Audience fit, not endorsement: the avatars are illustrative (aria-hidden, empty alt) and
+            the copy says who Wanterest is for — never that these people are customers. */}
         <div className="marketing-hero-proof-row">
-          <span className="marketing-hero-proof-label">PUBLIC SIGNALS</span>
+          <div className="marketing-hero-avatars" aria-hidden="true">
+            {HERO_AVATARS.map((src) => (
+              <span className="marketing-hero-avatar" key={src}><Image src={src} alt="" width={36} height={36} sizes="36px" /></span>
+            ))}
+          </div>
           <span className="marketing-hero-proof-divider" aria-hidden="true" />
-          <p className="marketing-hero-proof">For builders, marketers, and product teams that need the source behind the signal.</p>
+          <p className="marketing-hero-proof">Built for builders, marketers, and product teams who need the source behind every signal.</p>
         </div>
       </div>
       <HeroWave />
