@@ -5210,3 +5210,56 @@ typed admission result is reusable by a later 13A.6 launch-mode gate and a later
 add an open signup path around the same workspace/admission primitives; 13A.5 does not hardcode a permanent invite-only
 policy. No admin UI, Dodo live call, production invite, production admission, 12A.6 behavior, or share-card rendering
 is part of this implementation.
+
+### 13A.6 — Launch & Access Mode V1 (`layer13a6_launch_access_mode_v1`) — FEATURE BRANCH
+
+**Purpose and source of truth.** Launch access is one durable product-level policy, not a set of
+environment flags or contradictory booleans. `product_access_mode` is a singleton whose mode is one of
+`waitlist`, `invite_only`, or `open`; its version, change actor, reason, and timestamp are durable. The
+initial migration inserts `invite_only` with a safe pre-public-launch reason and never initializes `open`.
+`product_access_mode_events` is append-only and records initialization and every authorized transition.
+The table is private to service-role access; the narrow `get_product_access_state` RPC is the only public
+projection and exposes mode plus `canRequestAccess`, `canSignUp`, and `inviteRequired`.
+
+**Policy and transitions.** The typed server policy derives waitlist requests, referral/Priority activity,
+invite issuance, invite acceptance, public signup, and invite requirement from the mode. The normal graph is
+`waitlist -> invite_only -> open`; controlled emergency rollback is `open -> invite_only -> waitlist`.
+Same-mode writes are idempotent; all other transitions are rejected unless they are edges in this graph.
+Mode mutation is a service/internal RPC only, with a bounded reason and actor, and is serialized by locking
+the singleton row. Existing valid invites remain acceptable in every V1 mode, so a launch switch never
+silently invalidates an already-issued invitation; new invite issuance is disabled in `waitlist`, enabled in
+`invite_only`, and not required in `open`.
+
+**Canonical admission.** The migration makes `workspace_admissions` additive: `source` accepts
+`waitlist_invite` or `open_signup`, waitlist/invite foreign keys are nullable only for `open_signup`, and a
+unique server-derived `idempotency_key` is backfilled for historical admissions. The new internal
+`provision_workspace_admission` primitive owns workspace creation, owner membership, default entitlements,
+admission persistence, cohort allocation, benefit grant, private cohort-profile initialization, audit, and
+idempotent replay. `accept_waitlist_admission_invite` validates its token/email/policy and delegates to this
+primitive. The existing first-workspace `create_workspace` seam delegates to it for an authenticated,
+verified user only when the authoritative mode is `open`; in `waitlist` and `invite_only`, a user without a
+workspace cannot create product access. Existing members may retain the repository's existing multi-workspace
+behavior. No fake waitlist or invite identifiers are created for open users.
+
+**Concurrency and temporal safety.** Open admission derives its idempotency key from the authenticated user,
+not the browser. The admission primitive takes a per-key advisory transaction lock, locks the access-mode row
+close to the durable admission mutation, and rechecks `open` plus verified Auth email ownership in the same
+transaction. A mode transition therefore serializes against an in-flight admission: either the admission
+holds the read lock and completes under the previously-authorized policy, or the transition commits first and
+the admission is rejected. Concurrent users still use the existing cohort allocator locks. Existing members,
+waitlist applications, Early Access numbers, Priority history, cohort identities, benefits, profiles, and
+subscriptions are never rewritten by a mode change.
+
+**Public integration.** Marketing navigation, hero, and final CTA consume the same server-read public access
+state. `waitlist` and `invite_only` expose `Request access`; `open` exposes `Start free`. The waitlist POST
+boundary and the database submission path reject new waitlist applications in `open`, while verified status,
+history, and existing admission status remain readable. Historical referral links redirect to public signup in
+`open` without granting new referral credit; historical referral records remain immutable. Public signup uses
+the normal Supabase Auth flow and the canonical first-workspace admission path, so no waitlist token, invite
+token, Early Access number, Priority state, or automatic special identity is created for ordinary open users.
+
+**Caching and future seam.** Access state is read dynamically through the RPC with no indefinite Next.js
+cache. Security-sensitive admission and waitlist endpoints recheck the authoritative database policy rather
+than trusting the CTA or browser state. The typed homepage projection is intentionally small and leaves a
+13B.1 seam for Early Access, Priority, invited, Founding 25, Early 100, and normal-member share-card states;
+image rendering and premium homepage redesign are out of scope.
