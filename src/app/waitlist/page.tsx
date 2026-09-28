@@ -40,7 +40,7 @@ export default async function WaitlistPage() {
       <main className="ea-page" aria-labelledby="waitlist-title">
         <div className="ea-hero">
           <div className="ea-copy-col">
-            <div className="ea-eyebrow-pill"><span className="ea-eyebrow-dot" />EARLY ACCESS</div>
+            <div className="ea-eyebrow-pill"><span className="ea-eyebrow-dot" /><span className="ea-eyebrow-text">EARLY ACCESS</span></div>
             {access.canRequestAccess ? (
               <>
                 <h1 id="waitlist-title" className="ea-title">See what your market wants before anyone else does.</h1>

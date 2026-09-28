@@ -5,16 +5,16 @@
 /* Page shell + two-column editorial hero. Spec: ≥1080px two columns (copy 1fr / form fixed
    460px, 96px gutter); 760–1079px single column, ladder moves under the form; <760px compact. */
 .ea-page { max-width: 1240px; margin: 0 auto; padding: 64px 32px 120px; }
-.ea-hero { display: grid; grid-template-columns: minmax(0, 1fr) 460px; grid-template-areas: "copy form" "ladder form"; column-gap: 96px; row-gap: 56px; align-items: start; }
+.ea-hero { display: grid; grid-template-columns: minmax(0, 1fr) 460px; grid-template-areas: "copy form" "ladder form"; column-gap: 96px; row-gap: 36px; align-items: start; }
 .ea-copy-col { grid-area: copy; padding-top: 12px; }
 .ea-form-col { grid-area: form; }
 .ea-ladder-col { grid-area: ladder; }
 .ea-eyebrow-pill { display: inline-flex; align-items: center; gap: 9px; margin-bottom: 22px; padding: 8px 16px; border-radius: 20px; background: var(--color-ink); }
 .ea-eyebrow-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); flex-shrink: 0; }
-.ea-eyebrow-pill > span:last-child { font-size: 11px; font-weight: 700; letter-spacing: 0.2em; color: var(--color-dark-ink); }
+.ea-eyebrow-text { font-size: 11px; font-weight: 700; letter-spacing: 0.2em; color: var(--color-dark-ink); white-space: nowrap; }
 .ea-title { max-width: 470px; margin: 0 0 18px; font-family: var(--font-archivo), sans-serif; font-weight: 800; font-size: clamp(32px, 4vw, 46px); line-height: 1.06; letter-spacing: -0.035em; }
 .ea-lede { max-width: 440px; margin: 0 0 22px; color: var(--color-ink-secondary); font-size: 16.5px; line-height: 1.65; }
-.ea-note { position: relative; max-width: 420px; margin: 0 0 72px; padding-left: 16px; color: var(--color-ink-muted); font-size: 13.5px; line-height: 1.6; }
+.ea-note { position: relative; max-width: 420px; margin: 0; padding-left: 16px; color: var(--color-ink-muted); font-size: 13.5px; line-height: 1.6; }
 .ea-note::before { content: ""; position: absolute; left: 0; top: 3px; bottom: 3px; width: 1.5px; background: var(--color-ink); }
 .ea-note strong { color: var(--color-ink); font-weight: 600; }
 
@@ -51,6 +51,7 @@
 .ea-field textarea { min-height: 96px; }
 .ea-field input:focus, .ea-field textarea:focus { border-color: var(--color-ink); box-shadow: 0 0 0 3px rgba(215, 255, 61, 0.7); }
 .ea-field input:invalid:not(:placeholder-shown):not(:focus) { border-color: var(--color-negative); box-shadow: 0 0 0 3px rgba(181, 72, 47, 0.1); }
+.ea-field textarea[aria-invalid="true"]:not(:focus) { border-color: var(--color-negative); box-shadow: 0 0 0 3px rgba(181, 72, 47, 0.1); }
 .ea-field input:disabled, .ea-field textarea:disabled { background: var(--color-subtle); border-color: rgba(17, 17, 16, 0.08); color: var(--color-ink-faint); }
 .ea-field-meta { justify-self: end; font-size: 12px; color: var(--color-ink-faint); }
 .ea-field-error { margin: 0; font-size: 12.5px; color: var(--color-negative); }
@@ -70,18 +71,29 @@
 .ea-form-legal { margin: 0; text-align: center; color: var(--color-ink-faint); font-size: 12px; line-height: 1.55; }
 .ea-form-error { margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--color-warning-tint); color: var(--color-warning-ink); font-size: 13px; line-height: 1.5; }
 
-/* Check-your-email (post-submit) state */
-.ea-check-email { display: grid; gap: 18px; }
+/* Check-your-email — a genuine dedicated, centered screen (/waitlist/check-email), not a state
+   nested inside the two-column landing page's form card. No headline, no ladder, no form chrome. */
+.ea-check-email-page { max-width: 1240px; margin: 0 auto; padding: 96px 32px 140px; display: flex; justify-content: center; }
+.ea-check-email { display: grid; gap: 18px; width: 100%; max-width: 620px; padding: 44px; border: 1px solid var(--color-border); border-radius: 18px; background: var(--color-surface); box-shadow: 0 30px 70px -40px rgba(17, 17, 16, 0.25); text-align: left; }
 .ea-check-email-pill { display: inline-flex; align-items: center; gap: 8px; width: fit-content; padding: 6px 13px; border-radius: 20px; background: var(--color-chip); font-size: 12px; font-weight: 600; color: var(--color-ink-secondary); }
 .ea-check-email-dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--color-ink-muted); }
-.ea-check-email h2 { margin: 0; font-family: var(--font-archivo), sans-serif; font-weight: 800; font-size: 26px; letter-spacing: -0.02em; }
-.ea-check-email > p { margin: 0; color: var(--color-ink-secondary); font-size: 14.5px; line-height: 1.6; }
+.ea-check-email h1 { margin: 0; font-family: var(--font-archivo), sans-serif; font-weight: 800; font-size: clamp(30px, 4vw, 38px); letter-spacing: -0.03em; }
+.ea-check-email > p { margin: 0; color: var(--color-ink-secondary); font-size: 15px; line-height: 1.6; }
 .ea-check-email-list { display: grid; gap: 0; margin: 0; border-top: 1px solid var(--color-border-soft); }
 .ea-check-email-list div { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--color-border-soft); }
 .ea-check-email-list dt { margin: 0; font-size: 13px; font-weight: 600; color: var(--color-ink); }
 .ea-check-email-list dd { margin: 0; font-size: 12.5px; color: var(--color-ink-faint); text-align: right; }
-.ea-check-email-actions { display: flex; gap: 10px; }
+.ea-check-email-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .ea-check-email-note { margin: 0; font-size: 12.5px; color: var(--color-positive); }
+.ea-check-email-recovery { margin: 0; font-size: 13px; color: var(--color-ink-faint); }
+.ea-check-email-recovery a { color: var(--color-ink-secondary); text-decoration: underline; }
+
+@media (max-width: 759px) {
+  .ea-check-email-page { padding: 56px 20px 88px; }
+  .ea-check-email { padding: 26px; }
+  .ea-check-email-actions { flex-direction: column; }
+  .ea-check-email-actions .dashboard-button { width: 100%; }
+}
 
 /* Status page */
 .ea-status-page { max-width: 1080px; margin: 0 auto; padding: 64px 32px 120px; display: grid; gap: 32px; }
