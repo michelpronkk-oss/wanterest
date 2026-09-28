@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 
-import { MarketingPageShell } from "@/components/marketing/marketing-page-shell";
+import { earlyAccessLabel } from "@/components/waitlist/journey";
+import { JourneyShell } from "@/components/waitlist/journey-views";
 import { CheckEmailPanel } from "@/components/waitlist/check-email-panel";
+import { loadPrivateStatus } from "../_lib/journey-data";
 
 export const dynamic = "force-dynamic";
 
@@ -12,17 +14,21 @@ export const metadata: Metadata = {
 };
 
 /**
- * A genuine separate screen, not a state nested in the two-column landing page: no headline,
- * no membership ladder, no form card. The personalized content (which email, resend payload)
- * lives in sessionStorage on the client — see check-email-storage.ts for why there is no
- * server-side session to read here instead.
+ * Design 04 — a dedicated screen after submission, not a state inside the two-column landing.
+ * Personalised content comes from sessionStorage (see check-email-storage.ts). If this browser
+ * already holds a verified private status, that authoritative record wins: a verified applicant
+ * is never shown as awaiting verification.
  */
-export default function CheckEmailPage() {
+export default async function CheckEmailPage() {
+  const status = await loadPrivateStatus();
+  const verified = status && status.application.emailVerificationStatus === "verified" && status.application.earlyAccessNumber
+    ? { email: status.application.email, earlyAccess: earlyAccessLabel(status.application.earlyAccessNumber) ?? "" }
+    : null;
   return (
-    <MarketingPageShell activeHref="/waitlist">
-      <main className="ea-check-email-page">
-        <CheckEmailPanel />
+    <JourneyShell nav="marketing">
+      <main className="ea-check-email-page" aria-labelledby="check-email-title">
+        <CheckEmailPanel verified={verified} />
       </main>
-    </MarketingPageShell>
+    </JourneyShell>
   );
 }

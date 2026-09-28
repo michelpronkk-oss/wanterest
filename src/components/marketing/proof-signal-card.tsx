@@ -6,14 +6,16 @@ type Props = {
   time: string;
   intentLabel: string;
   intentTone?: "accent" | "neutral" | "problem";
-  matchPercent: number;
+  /** Optional real score from a supplied authoritative fixture. Marketing examples omit it. */
+  matchPercent?: number;
+  evidenceLabel?: string;
   quote: string;
   tags?: string[];
   iconSize?: number;
 };
 
 /** Static, non-interactive rendering of a real Signal card — used as product proof on the marketing site. */
-export function ProofSignalCard({ source, sourceLabel, time, intentLabel, intentTone = "neutral", matchPercent, quote, tags, iconSize = 20 }: Props) {
+export function ProofSignalCard({ source, sourceLabel, time, intentLabel, intentTone = "neutral", matchPercent, evidenceLabel, quote, tags, iconSize = 20 }: Props) {
   return (
     <article className={`signal-card marketing-signal-static marketing-proof-signal-card${intentTone === "problem" ? " is-problem" : ""}`}>
       <div className="marketing-proof-signal-topline">
@@ -23,7 +25,7 @@ export function ProofSignalCard({ source, sourceLabel, time, intentLabel, intent
           <span className="marketing-proof-signal-separator" aria-hidden="true">·</span>
           <span className="signal-source-time">{time}</span>
         </div>
-        <span className="marketing-proof-signal-score">{matchPercent}% match</span>
+        <span className="marketing-proof-signal-score">{evidenceLabel ?? (matchPercent === undefined ? "Evidence attached" : `${matchPercent}% match`)}</span>
       </div>
       <span className={`marketing-proof-signal-intent${intentTone === "accent" ? " is-accent" : ""}`}>{intentLabel}</span>
       <p className="marketing-proof-signal-quote">&ldquo;{quote}&rdquo;</p>

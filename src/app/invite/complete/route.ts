@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     return response;
   }
 
-  return new NextResponse(reviewHtml(), { status: 200, headers: privateHtmlHeaders() });
+  return new NextResponse(reviewHtml(user.email ?? null), { status: 200, headers: privateHtmlHeaders() });
 }
 
 /** Admission is an explicit user action. The invite token remains HttpOnly and server-held. */
@@ -89,12 +89,29 @@ function layout(content: string) {
     .meta dt{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#8c8c82;margin:0}
     .meta dd{margin:6px 0 0;font-weight:600;font-size:14px}
     .note{font-size:12px;color:#a3a399;line-height:1.55;margin:0}
+    .card.is-invite{border-width:1.5px;border-color:#111110}
+    .cohort{margin:0 0 22px;padding:16px 18px;border:1px solid rgba(17,17,16,.06);border-radius:16px;background:#f9f8f4}
+    .cohort-kicker{font-size:11px;font-weight:700;letter-spacing:.12em;color:#a3a399;margin-bottom:6px}
+    .cohort strong{display:block;font-size:14px;margin-bottom:4px}
+    .cohort p{margin:0;font-size:12.5px;color:#8c8c82}
     @media(max-width:480px){.meta{grid-template-columns:1fr}.mark{margin-bottom:36px}.actions{flex-direction:column}.button{width:100%}}
   </style></head><body><main>${content}</main></body></html>`;
 }
 
-function reviewHtml() {
-  return layout(`<section class="card" aria-labelledby="invite-title"><div class="mark">${LOGO_MARK}<span>wanterest</span></div><div class="pill"><span class="pill-dot" aria-hidden="true"></span><span class="pill-text">INVITE READY</span></div><h1 id="invite-title">You&rsquo;re invited.</h1><p>Your Wanterest workspace is ready to be created. This is real product access, not the waitlist. It&rsquo;s linked to your signed-in account &mdash; continue only if this is the account you want to use.</p><form method="post" action="/invite/complete"><div class="actions"><button class="button" type="submit">Accept invitation →</button></div></form><p class="note">Your workspace and cohort identity are created by the authoritative admission service after you confirm.</p></section>`);
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
+}
+
+/**
+ * Design 10. Invitation details (recipient, expiry, Early Access number) are shown on the private
+ * status page, which can read them from the status record. They are not repeated here: this route
+ * only holds the raw invite token, and the only token-keyed operation is the consuming accept —
+ * a preview would need a read-only invite lookup that does not exist yet.
+ */
+function reviewHtml(signedInEmail: string | null) {
+  const account = signedInEmail ? `<dl class="meta"><div><dt>Signed in as</dt><dd>${escapeHtml(signedInEmail)}</dd></div><div><dt>Access</dt><dd>Workspace invitation</dd></div></dl>` : "";
+  const cohort = `<div class="cohort"><div class="cohort-kicker">COHORT</div><strong>Assigned when your workspace is created</strong><p>If a founding cohort is still open, you may join it. Preview only &mdash; an invite is not a cohort.</p></div>`;
+  return layout(`<section class="card is-invite" aria-labelledby="invite-title"><div class="mark">${LOGO_MARK}<span>wanterest</span></div><div class="pill"><span class="pill-dot" aria-hidden="true"></span><span class="pill-text">INVITE READY</span></div><h1 id="invite-title">You&rsquo;re invited.</h1><p>Your Wanterest workspace is ready to be created. This is real product access, not the waitlist. It&rsquo;s linked to your signed-in account &mdash; continue only if this is the account you want to use.</p>${account}<form method="post" action="/invite/complete"><div class="actions"><button class="button" type="submit">Accept invitation →</button></div></form>${cohort}<p class="note">Your workspace and cohort identity are created by the authoritative admission service after you confirm.</p></section>`);
 }
 
 function admissionHtml(result: AdmissionResult) {

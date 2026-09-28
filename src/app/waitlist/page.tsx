@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 
 import { MarketingPageShell } from "@/components/marketing/marketing-page-shell";
+import { earlyAccessLabel } from "@/components/waitlist/journey";
 import { MembershipLadder } from "@/components/waitlist/membership-ladder";
 import { WaitlistForm } from "@/components/waitlist/waitlist-form";
 import { getProductAccessState } from "@/server/modules/access";
@@ -22,12 +23,13 @@ export const metadata: Metadata = {
  * oracle), so "you've already applied" can only ever be told honestly from the visitor's own
  * session — never inferred from a form response. A stored status cookie is that session.
  */
-async function existingApplicantStatus(): Promise<"eligible" | null> {
+async function existingApplicantStatus(): Promise<{ earlyAccess: string | null } | null> {
   const token = (await cookies()).get(WAITLIST_STATUS_COOKIE)?.value;
   if (!token) return null;
   try {
     const application = await createWaitlistService().status(token);
-    return application.status === "declined" || application.status === "withdrawn" ? null : "eligible";
+    if (application.status === "declined" || application.status === "withdrawn") return null;
+    return { earlyAccess: earlyAccessLabel(application.earlyAccessNumber) };
   } catch {
     return null;
   }
@@ -58,8 +60,12 @@ export default async function WaitlistPage() {
           <div className="ea-form-col">
             {access.canRequestAccess && existingApplicant ? (
               <section className="ea-form-card ea-form-card-notice" aria-label="Existing Early Access request">
-                <div className="ea-form-heading"><h2>You&rsquo;re already on the list.</h2><p>We found a private status link stored in this browser.</p></div>
-                <a className="dashboard-button dashboard-button-primary ea-submit" href="/waitlist/status">View my status →</a>
+                <div className="ea-form-heading">
+                  <h2>{existingApplicant.earlyAccess ? <>You&rsquo;re Early Access {existingApplicant.earlyAccess}.</> : <>You&rsquo;ve already requested access.</>}</h2>
+                  <p>This browser holds your private status link, so there&rsquo;s nothing to fill in again.</p>
+                </div>
+                <a className="dashboard-button dashboard-button-primary ea-submit" href="/waitlist/status">View status →</a>
+                {existingApplicant.earlyAccess ? <a className="ea-text-action" href="/waitlist/verified">See your Early Access identity</a> : null}
               </section>
             ) : access.canRequestAccess ? (
               <section className="ea-form-card" aria-label="Wanterest Early Access application"><WaitlistForm /></section>
