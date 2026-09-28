@@ -7,6 +7,7 @@ import { getTraceId } from "@/server/lib/request-context";
 import { getProductAccessPolicy } from "./access-mode.service";
 import { openSignupInputSchema, type OpenAdmissionResult } from "./open-admission.schemas";
 import { createSupabaseOpenAdmissionRepository, type OpenAdmissionRepository } from "./open-admission.repository";
+import { readShareCardAttribution } from "@/server/modules/share-cards/share-card-attribution";
 
 export async function provisionOpenSignupCommand(
   input: unknown,
@@ -18,10 +19,12 @@ export async function provisionOpenSignupCommand(
   const user = await requireUser();
   const policy = await getProductAccessPolicy();
   if (!policy.publicSignupAllowed) throw new AppError("FORBIDDEN", "Public signup is not available in the current access mode.");
+  const shareCardPublicSlug = await readShareCardAttribution();
   return (repository ?? createSupabaseOpenAdmissionRepository()).provision({
     userId: user.id,
     name: parsed.data.name,
     slug: slugifyOnboardingName(parsed.data.name),
     traceId: getTraceId(request),
+    shareCardPublicSlug,
   });
 }

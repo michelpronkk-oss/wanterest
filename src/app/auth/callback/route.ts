@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from "@/server/providers/supabase/server";
 import { authCallbackErrorPath, isRecoveryCallbackPath } from "@/shared/auth/callback";
 import { safeInternalPath } from "@/shared/config/site";
 import { tryNormalizePublicWebsiteUrl } from "@/shared/validation/public-website";
+import { recordShareCardAttributionEvent } from "@/server/modules/share-cards/share-card-attribution";
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
@@ -21,6 +22,8 @@ export async function GET(request: Request) {
       const supabase = await createSupabaseServerClient();
       const { error } = await supabase.auth.exchangeCodeForSession(code);
       if (error) return redirectToCallbackError(requestUrl, next, "invalid_link", websiteUrl);
+      const nextPathname = new URL(next, requestUrl.origin).pathname;
+      if (nextPathname === "/start" || nextPathname.startsWith("/app/setup")) await recordShareCardAttributionEvent("signup_completed");
     } catch {
       return redirectToCallbackError(requestUrl, next, "temporarily_unavailable", websiteUrl);
     }

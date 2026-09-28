@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import { provisionOpenSignupCommand } from "../../src/server/modules/access";
 import type { OpenAdmissionRepository } from "../../src/server/modules/access/open-admission.repository";
 
+const attribution = vi.hoisted(() => ({ read: vi.fn(async () => null as string | null) }));
 vi.mock("server-only", () => ({}));
 vi.mock("../../src/server/modules/auth", () => ({ requireUser: vi.fn(async () => ({ id: "44444444-4444-4444-8444-444444444444" })) }));
 vi.mock("../../src/server/modules/access/access-mode.service", () => ({ getProductAccessPolicy: vi.fn(async () => ({ mode: "open", publicSignupAllowed: true })) }));
+vi.mock("../../src/server/modules/share-cards/share-card-attribution", () => ({ readShareCardAttribution: attribution.read }));
 
 const result = {
   admissionId: "33333333-3333-4333-8333-333333333333",
@@ -23,6 +25,16 @@ const result = {
 };
 
 describe("13A.6 open admission seam", () => {
+  it("carries only the server-validated share publication handoff into OPEN admission", async () => {
+    attribution.read.mockResolvedValueOnce("abcdefghijklmnopqrstuvwxyz1234567890ABCD");
+    const provision = vi.fn(async (input: Parameters<OpenAdmissionRepository["provision"]>[0]) => { void input; return result; });
+    const repository: OpenAdmissionRepository = { provision };
+    await provisionOpenSignupCommand({ name: "Miche & Co. Research" }, undefined, repository);
+    expect(provision).toHaveBeenCalledWith(expect.objectContaining({
+      shareCardPublicSlug: "abcdefghijklmnopqrstuvwxyz1234567890ABCD",
+    }));
+  });
+
   it("derives the workspace slug and authenticated owner server-side", async () => {
     const provision = vi.fn(async (input: Parameters<OpenAdmissionRepository["provision"]>[0]) => { void input; return result; });
     const repository: OpenAdmissionRepository = { provision };

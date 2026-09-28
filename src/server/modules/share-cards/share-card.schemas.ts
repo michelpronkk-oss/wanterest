@@ -20,7 +20,7 @@ export type ShareCardTone = z.infer<typeof shareCardToneSchema>;
 export const shareCardActionSchema = z.enum(["publish", "revoke"]);
 export type ShareCardAction = z.infer<typeof shareCardActionSchema>;
 
-export const shareCardEventTypeSchema = z.enum(["opened", "cta_clicked", "shared", "downloaded"]);
+export const shareCardEventTypeSchema = z.enum(["opened", "cta_clicked", "shared", "downloaded", "signup_started", "signup_completed", "verified_conversion"]);
 export type ShareCardEventType = z.infer<typeof shareCardEventTypeSchema>;
 
 export const shareCardEventSourceSchema = z.enum(["page", "x", "linkedin", "copy", "download", "cta"]);

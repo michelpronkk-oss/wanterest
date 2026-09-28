@@ -29,6 +29,7 @@ import { getProductScanState, type ProductScanState } from "@/components/dashboa
 import { onboardingSuccessState } from "@/lib/onboarding-transition";
 import { findExistingOnboardingProduct, needsOnboardingUnderstanding } from "@/server/modules/onboarding/onboarding-product-flow";
 import { sourceHealthCoverageCopy } from "@/shared/source-health-v1";
+import { clearShareCardAttribution } from "@/server/modules/share-cards/share-card-attribution";
 
 export type OnboardingFieldErrors = Partial<Record<"name" | "websiteUrl" | "description", string>>;
 export type OnboardingFormValues = Partial<Record<"name" | "websiteUrl" | "description", string>>;
@@ -169,6 +170,7 @@ export async function createOnboardingWorkspaceAction(_previous: OnboardingActio
     }
     return actionError(error);
   }
+  await clearShareCardAttribution();
   await setContextCookies(workspace.workspaceId);
   redirect(nextProductPath);
 }

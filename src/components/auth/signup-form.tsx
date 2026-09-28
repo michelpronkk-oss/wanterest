@@ -54,6 +54,7 @@ export function SignupForm({ websiteUrl = null, nextPath = null }: { websiteUrl?
       }
 
       if (data.session) {
+        await fetch("/api/share-cards/attribution/signup-completed", { method: "POST", keepalive: true }).catch(() => undefined);
         router.replace(nextPath ?? startPathForWebsite(websiteUrl));
         router.refresh();
         return;

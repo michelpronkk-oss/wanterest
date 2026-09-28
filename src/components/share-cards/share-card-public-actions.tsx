@@ -17,7 +17,9 @@ export function ShareCardOpenTracker({ publicSlug }: { publicSlug: string }) {
 }
 
 export function ShareCardCtaLink({ publicSlug, href, label }: { publicSlug: string; href: string; label: string }) {
-  return <a className="dashboard-button dashboard-button-primary" href={href} onClick={() => record(publicSlug, "cta_clicked", "cta")}>{label} →</a>;
+  void href;
+  const handoffHref = `/api/share-cards/cta?slug=${encodeURIComponent(publicSlug)}`;
+  return <a className="dashboard-button dashboard-button-primary" href={handoffHref} onClick={() => record(publicSlug, "cta_clicked", "cta")}>{label} →</a>;
 }
 
 export function ShareCardPublicActions({ publicSlug, canonicalUrl, title }: { publicSlug: string; canonicalUrl: string; title: string }) {

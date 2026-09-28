@@ -20,7 +20,7 @@ function mapDatabaseError(error: { code?: string; message?: string }): AppError 
   return new AppError("INTERNAL_ERROR", "Open signup could not be completed.", 500, { providerMessage: message });
 }
 export type OpenAdmissionRepository = {
-  provision(input: { userId: string; name: string; slug: string; traceId: string }): Promise<OpenAdmissionResult>;
+  provision(input: { userId: string; name: string; slug: string; traceId: string; shareCardPublicSlug?: string | null }): Promise<OpenAdmissionResult>;
 };
 
 export function createSupabaseOpenAdmissionRepository(client: OpenAdmissionClient = createSupabaseServiceClient()): OpenAdmissionRepository {
@@ -35,6 +35,7 @@ export function createSupabaseOpenAdmissionRepository(client: OpenAdmissionClien
         p_waitlist_application_id: null,
         p_invite_id: null,
         p_trace_id: input.traceId,
+        p_share_card_public_slug: input.shareCardPublicSlug ?? null,
       });
       if (error) throw mapDatabaseError(error);
       const raw = Array.isArray(data) ? data[0] : data;
