@@ -158,7 +158,7 @@ export function DifferenceStage({
 
 export function DifferenceSection() {
   return (
-    <section className="marketing-section marketing-difference-section is-alt">
+    <section className="marketing-section marketing-difference-section">
       <div className="marketing-section-inner marketing-difference-inner">
         <div className="marketing-section-eyebrow">THE DIFFERENCE</div>
         <h2 className="marketing-heading marketing-difference-title">

@@ -2140,20 +2140,42 @@ body {
 .marketing-compare-callout-copy { display: flex; flex-direction: column; gap: 5px; max-width: 420px; }
 .marketing-compare-callout-copy h4 { margin: 0; font-family: var(--font-sora), sans-serif; font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
 .marketing-compare-callout-copy p { margin: 0; font-size: 12px; line-height: 1.5; color: var(--color-ink-faint); text-wrap: pretty; }
-/* Tablet/mobile: the metric label, chart and delta stack instead of squeezing three columns. */
+.marketing-mention-key { display: none; }
+/* Tablet/mobile: title and delta share a row, then the description, then the full-width chart. */
 @container (width < 600px) {
   .marketing-compare-panel { gap: 24px; }
-  .marketing-compare-metric { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .marketing-compare-metric > .marketing-pill { justify-self: start; }
-  .marketing-compare-callout { padding: 20px; gap: 16px; }
+  .marketing-compare-metric { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title delta" "desc desc" "chart chart"; gap: 0 12px; padding: 18px 0; }
+  .marketing-compare-metric-label { display: contents; }
+  .marketing-compare-metric-label h4 { grid-area: title; align-self: center; }
+  .marketing-compare-metric-label p { grid-area: desc; margin-top: 4px; }
+  .marketing-compare-metric > .marketing-meter-pair, .marketing-compare-metric > .marketing-preference { grid-area: chart; margin-top: 14px; }
+  .marketing-compare-metric > .marketing-pill { grid-area: delta; }
+  .marketing-compare-callout { padding: 22px 20px 20px; gap: 18px; }
+  .marketing-compare-callout-main { flex-direction: column; align-items: flex-start; gap: 12px; }
 }
-/* Narrow phones: segment values centre in their share instead of overflowing the 10px inset. */
+/* Phones: centred values inside the share bar, and a 2 × 2 key in place of the cramped captions. */
 @container (width < 440px) {
   .marketing-compare-context > span:last-child { white-space: normal; }
+  .marketing-compare-legend { width: 100%; padding-top: 14px; border-top: 1px solid var(--color-border-soft); }
   .marketing-mention-bar { gap: 2px; }
-  .marketing-mention-fill { height: 38px; padding: 0; justify-content: center; font-size: 11px; }
-  .marketing-mention-label { font-size: 10px; }
-  .marketing-preference-labels { font-size: 10px; }
+  .marketing-mention-segment { gap: 0; }
+  .marketing-mention-fill { height: 40px; padding: 0; justify-content: center; font-size: 11.5px; }
+  .marketing-mention-label { display: none; }
+  .marketing-mention-key { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; margin: 2px 0 0; padding: 0; list-style: none; }
+  .marketing-mention-key li { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11px; color: var(--color-ink-muted); }
+  .marketing-mention-key i { width: 10px; height: 10px; flex-shrink: 0; border-radius: 3px; }
+  .marketing-mention-key span { min-width: 0; }
+  .marketing-mention-key strong { margin-left: auto; font-family: var(--font-sora), sans-serif; font-weight: 600; color: var(--color-ink); }
+  .marketing-mention-key .is-you i { background: var(--color-accent); box-shadow: inset 0 0 0 1px rgba(17, 17, 16, 0.08); }
+  .marketing-mention-key .is-both i { background: linear-gradient(90deg, var(--marketing-signal-tint) 50%, var(--marketing-stone-deep) 50%); }
+  .marketing-mention-key .is-competitor i { background: var(--color-ink); }
+  .marketing-mention-key .is-neither i { background: var(--color-surface); box-shadow: inset 0 0 0 1.5px var(--marketing-olive-line); }
+  .marketing-mention-key .is-neither span, .marketing-mention-key .is-neither strong { font-weight: 600; color: var(--marketing-signal-ink); }
+  .marketing-mention-key .is-both i { box-shadow: inset 0 0 0 1px rgba(17, 17, 16, 0.1); }
+  .marketing-preference-labels { font-size: 10.5px; }
+}
+@container (width < 300px) {
+  .marketing-mention-key { grid-template-columns: minmax(0, 1fr); gap: 9px; }
 }
 
 @media (max-width: 719px) {
