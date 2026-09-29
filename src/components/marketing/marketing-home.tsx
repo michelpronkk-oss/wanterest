@@ -8,6 +8,7 @@ import { ComparisonPreviewSection } from "./comparison-preview";
 import { DailyValueSection } from "./daily-value";
 import { DifferenceSection } from "./difference";
 import { Faq } from "./faq";
+import { HeroDashboardPreview } from "./hero-dashboard-preview";
 import { MarketingFooter } from "./marketing-footer";
 import { SiteNav } from "./marketing-nav";
 import { PricingSection } from "./pricing";
@@ -78,88 +79,9 @@ function Hero({ accessState }: { accessState: HomepageAccessState }) {
             </p>
           </div>
         </div>
-        <HeroProductPreview />
+        <HeroDashboardPreview />
       </div>
     </header>
-  );
-}
-
-function PreviewSignalCard({ className = "" }: { className?: string }) {
-  return (
-    <div className={`marketing-preview-card${className}`}>
-      <div className="marketing-preview-card-head">
-        <span className="marketing-preview-tag is-ink"><span className="marketing-preview-tag-dot" />SIGNAL</span>
-        <span className="marketing-preview-card-kind">Switching intent</span>
-      </div>
-      <p className="marketing-preview-card-title">Teams keep switching from X to Y because setup is faster.</p>
-      <p className="marketing-preview-quote">“We moved over in an afternoon. The old tool took a quarter to configure.”</p>
-      <div className="marketing-preview-card-foot"><strong>Source attached</strong><span>·</span><span>Observation window</span></div>
-    </div>
-  );
-}
-
-const PREVIEW_NAV = ["Home", "Signals", "Saved", "Insights", "Actions"] as const;
-
-/**
- * Illustrative product window — example content (placeholder "Acme", "X to Y"), not real
- * customer data, counts or activity. Exposed to assistive tech as one labelled image.
- * Desktop/tablet: browser-framed Signals view. Mobile: the single Signal card.
- */
-function HeroProductPreview() {
-  return (
-    <div className="marketing-hero-preview-slot" role="img" aria-label="Illustrative preview of the Wanterest Signals view with example Signal, Demand Gap and Demand Drift cards">
-      <div className="marketing-hero-preview" aria-hidden="true">
-        <div className="marketing-preview-chrome">
-          <span /><span /><span />
-          <div className="marketing-preview-url"><span>app.wanterest.com/signals</span></div>
-          <span className="marketing-preview-chrome-spacer" />
-        </div>
-        <div className="marketing-preview-body">
-          <div className="marketing-preview-sidebar">
-            <div className="marketing-preview-workspace"><span className="marketing-preview-workspace-mark">A</span><span>Acme</span><span className="marketing-preview-workspace-caret">⌄</span></div>
-            {PREVIEW_NAV.map((item) => (
-              <div key={item} className={`marketing-preview-nav-item${item === "Signals" ? " is-active" : ""}`}><span className="marketing-preview-nav-icon" />{item}</div>
-            ))}
-          </div>
-          <div className="marketing-preview-main">
-            <div className="marketing-preview-main-head">
-              <div className="marketing-preview-main-title"><strong>This week&apos;s demand</strong><span>Observation window · last 30 days</span></div>
-              <div className="marketing-preview-segments"><span className="is-active">All</span><span>Signals</span><span>Demand Gap</span><span>Demand Drift</span></div>
-            </div>
-            <div className="marketing-preview-grid">
-              <PreviewSignalCard />
-              <div className="marketing-preview-card">
-                <div className="marketing-preview-card-head">
-                  <span className="marketing-preview-tag">DEMAND GAP</span>
-                  <span className="marketing-preview-card-kind">Unmet need</span>
-                </div>
-                <p className="marketing-preview-card-title">Users want approval workflows without enterprise complexity.</p>
-                <dl className="marketing-preview-gap">
-                  <div><dt>Asked for</dt><dd className="is-strong">Lightweight approvals</dd></div>
-                  <div><dt>Offered</dt><dd>Full enterprise suites</dd></div>
-                </dl>
-                <div className="marketing-preview-card-foot"><strong>Repeated unmet need</strong><span>·</span><span>Qualified demand</span></div>
-              </div>
-              <div className="marketing-preview-card">
-                <div className="marketing-preview-card-head">
-                  <span className="marketing-preview-tag">DEMAND DRIFT</span>
-                  <span className="marketing-preview-card-kind">Trend movement</span>
-                </div>
-                <p className="marketing-preview-card-title">Mentions of AI note-taking are flattening while workflow automation rises.</p>
-                <svg viewBox="0 0 280 44" width="100%" height="44" preserveAspectRatio="none" className="marketing-preview-drift">
-                  <line x1="0" y1="43" x2="280" y2="43" stroke="rgba(17,17,16,0.08)" />
-                  <polyline points="0,14 50,12 100,15 150,17 200,18 240,19 280,19" fill="none" stroke="#a3a399" strokeWidth="1.5" />
-                  <polyline points="0,38 50,36 100,33 150,27 200,21 240,14 280,8" fill="none" stroke="#111110" strokeWidth="2" />
-                  <circle cx="280" cy="8" r="3" fill="#D7FF3D" stroke="#111110" strokeWidth="1.2" />
-                </svg>
-                <div className="marketing-preview-card-foot"><strong>Changing demand</strong><span>·</span><span>Trend movement</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <PreviewSignalCard className=" is-mobile" />
-    </div>
   );
 }
 
