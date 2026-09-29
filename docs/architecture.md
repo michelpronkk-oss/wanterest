@@ -5286,6 +5286,45 @@ invite tokens, workspace IDs, internal review state, billing, team data, or inte
 routes are dynamic and no-store under Wanterest control; external social caches may retain already-fetched
 previews. Future intelligence-card adapters are reserved for 13B.2/13B.3.
 
+## Admin Control Plane v1 — isolated application
+
+**Decision.** Wanterest Admin is a separate Next.js App Router application in this repository,
+deployed as its own Vercel project at `admin.wanterest.com`. It has a separate build and release
+gate from the customer application. It does not add admin routes to the customer deployment or
+reuse the customer production API as its privileged backend. Shared client code uses explicit
+workspace packages; server contracts remain server-only.
+
+**Data source.** The existing Wanterest production Supabase project is the eventual Auth and data
+source. No staging, disposable, or second Supabase project will be created. The local application
+uses the existing Auth identity, granted access only by an explicit UUID-keyed `admin_memberships`
+record, with verified TOTP MFA/AAL2. There is no public admin registration or duplicate Auth
+account. Initial admin permissions are read-only. Local server environment is private; public
+Vercel previews never receive the production service-role credential.
+
+**Trust boundary.** The admin browser communicates only with authenticated admin route handlers and
+server actions. It never receives Supabase service-role, Vercel, Trigger.dev, Resend, or Dodo
+credentials and never queries unrestricted production tables. Server-side queries use bounded,
+selected, redacted data after `auth.getUser()`, AAL2, active membership, and permission checks.
+Existing domain modules remain authoritative for waitlist, referral, admission, cohort, share-card,
+billing, and job lifecycle behavior. Public customer RLS is not weakened for admin reads.
+
+**Audit and mutations.** Read-only views are the first delivery slice. Any future mutation requires
+a separately approved permission and typed domain command, revalidated authority, idempotency,
+bounded reason, confirmation, and append-only audit record with server-derived actor. Test runs may
+not mutate live customer lifecycle data.
+
+**Status and telemetry.** The system map derives dependencies from verified modules, tasks,
+providers, storage and routes, then joins timestamped health observations. Unknown, stale, degraded,
+critical, and intentionally disabled remain distinct. The `/api/health` database probe cannot mark
+downstream dependencies healthy. Every metric carries source, period and refresh time; missing
+integrations are unavailable, not zero.
+
+**Migration and release.** The admin membership/audit migration was approved and applied to the
+existing production Supabase project as version `20261102000000`; catalog verification confirmed
+private grants, RLS, Auth foreign-key behavior and the append-only audit trigger. Founder membership
+grant and the separate Admin Vercel deployment remain independent approval steps. Preview deploys
+have no production mutation path.
+
 Integration (Board 15 artwork): the migration is `20261101000000_layer13b1_dynamic_share_card_engine_v1.sql`,
 ordered after the last applied migration and not yet applied to production. Until it is, every journey surface
 degrades to "Sharing isn't available right now" because the engine query fails closed. Snapshots are snake_case

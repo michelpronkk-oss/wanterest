@@ -15,6 +15,7 @@
 
 # next.js
 /.next/
+apps/admin/.next/
 /out/
 
 # production

@@ -10,6 +10,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      "@wanterest/brand/logo-mark": fileURLToPath(new URL("./packages/brand/src/logo-mark.tsx", import.meta.url)),
     },
   },
 });
