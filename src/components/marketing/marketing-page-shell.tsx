@@ -1,15 +1,14 @@
 import type { ReactNode } from "react";
 
 import { MarketingFooter } from "./marketing-footer";
-import { MarketingNav } from "./marketing-nav";
-import { getProductAccessState, type AccessMode } from "@/server/modules/access";
+import type { AccessMode } from "@/server/modules/access";
+import { SiteHeader } from "./site-header";
 
-/** Shared chrome for every marketing page other than the homepage, which renders its own nav/footer directly. */
+/** Shared chrome for every marketing page other than the homepage, which renders the same nav in its hero. */
 export async function MarketingPageShell({ children, activeHref, accessMode }: { children: ReactNode; activeHref?: string; accessMode?: AccessMode }) {
-  const mode = accessMode ?? (await getProductAccessState()).mode;
   return (
     <div className="marketing-page">
-      <MarketingNav activeHref={activeHref} accessMode={mode} />
+      <SiteHeader activeHref={activeHref} accessMode={accessMode} />
       {children}
       <MarketingFooter />
     </div>

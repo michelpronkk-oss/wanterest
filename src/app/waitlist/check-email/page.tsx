@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { earlyAccessLabel } from "@/components/waitlist/journey";
-import { JourneyShell } from "@/components/waitlist/journey-views";
+import { JourneyShell } from "@/components/waitlist/journey-shell";
 import { CheckEmailPanel } from "@/components/waitlist/check-email-panel";
 import { loadPrivateStatus } from "../_lib/journey-data";
 
@@ -25,7 +25,7 @@ export default async function CheckEmailPage() {
     ? { email: status.application.email, earlyAccess: earlyAccessLabel(status.application.earlyAccessNumber) ?? "" }
     : null;
   return (
-    <JourneyShell nav="marketing">
+    <JourneyShell>
       <main className="ea-check-email-page" aria-labelledby="check-email-title">
         <CheckEmailPanel verified={verified} />
       </main>

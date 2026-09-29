@@ -36,37 +36,20 @@ export function navPrimaryAction(state: HomepageAccessState): NavPrimaryAction {
   return { href, label };
 }
 
-export function MarketingNav({ links = MARKETING_NAV_LINKS, activeHref, accessMode = "invite_only", accessState }: { links?: NavLink[]; activeHref?: string; accessMode?: AccessMode; accessState?: HomepageAccessState }) {
-  const primary = navPrimaryAction(accessState ?? getHomepageAccessState(accessMode));
+/**
+ * The one header for every public page: logo, links pill, Log in and the visitor's state-aware
+ * primary action, with a menu button below 641px. Standalone pages wrap it in the site header
+ * bar; the homepage renders the same SiteNav inside its hero stage.
+ */
+export function MarketingNav({ activeHref, accessMode = "invite_only", accessState }: { activeHref?: string; accessMode?: AccessMode; accessState?: HomepageAccessState }) {
   return (
-    <nav className="marketing-nav">
-      <div className="marketing-nav-inner">
-        <Link href="/" className="marketing-logo">
-          <LogoMark size={20} />
-          <span className="marketing-logo-text">wanterest</span>
-        </Link>
-        <div className="marketing-nav-links">
-          {links.map((link) => (
-            <Link key={link.href} href={link.href} className={link.href === activeHref ? "is-active" : undefined}>
-              {link.label}
-            </Link>
-          ))}
-        </div>
-        <div className="marketing-nav-actions">
-          <a className="marketing-nav-signin" href={APP_LOGIN_URL}>Log in</a>
-          <a className="marketing-cta-nav" href={primary.href}>{primary.label}</a>
-        </div>
-      </div>
-    </nav>
+    <header className="marketing-site-header">
+      <SiteNav accessState={accessState ?? getHomepageAccessState(accessMode)} activeHref={activeHref} />
+    </header>
   );
 }
 
-/**
- * Homepage hero nav (Hero v2): lives inside the rounded hero stage instead of the sticky page
- * bar. Same links, same login URL and the same state-aware primary action as MarketingNav;
- * below 641px the links and actions move into StageNavMenu.
- */
-export function StageNav({ accessState }: { accessState: HomepageAccessState }) {
+export function SiteNav({ accessState, activeHref }: { accessState: HomepageAccessState; activeHref?: string }) {
   const primary = navPrimaryAction(accessState);
   return (
     <nav className="marketing-stage-nav" aria-label="Main">
@@ -75,8 +58,8 @@ export function StageNav({ accessState }: { accessState: HomepageAccessState }) 
         <span>wanterest</span>
       </Link>
       <div className="marketing-stage-links">
-        {MARKETING_NAV_LINKS.map((link, index) => (
-          <Link key={link.href} href={link.href} className={index === 0 ? "is-lead" : undefined}>{link.label}</Link>
+        {MARKETING_NAV_LINKS.map((link) => (
+          <Link key={link.href} href={link.href} className={link.href === activeHref ? "is-active" : undefined} aria-current={link.href === activeHref ? "page" : undefined}>{link.label}</Link>
         ))}
       </div>
       <div className="marketing-stage-actions">

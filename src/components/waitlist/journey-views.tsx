@@ -1,6 +1,6 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 
+import Link from "next/link";
 import { LogoMark } from "@/components/dashboard/nav-icons";
 import { APP_LOGIN_URL } from "@/components/marketing/links";
 import { SUPPORT_EMAIL } from "@/shared/config/site";
@@ -49,7 +49,6 @@ export function JourneyShell({ indicator, mobileBadge, nav, children }: { indica
     </div>
   );
 }
-
 export function StatusChip({ label, tone }: { label: string; tone: ChipTone }) {
   return <span className={`ea-status-chip is-${tone}`}><span className="ea-status-chip-dot" aria-hidden="true" />{label}</span>;
 }
