@@ -1,8 +1,6 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { LogoMark } from "@/components/dashboard/nav-icons";
-import { APP_LOGIN_URL } from "@/components/marketing/links";
 import { SUPPORT_EMAIL } from "@/shared/config/site";
 import type { ChipTone, LedgerNode, RevealModel, StatusView } from "./journey";
 
@@ -11,43 +9,6 @@ import type { ChipTone, LedgerNode, RevealModel, StatusView } from "./journey";
  * state and pick a view; nothing here fetches, so every screen can also be rendered in a real
  * browser from fixtures without touching any database.
  */
-
-const SHELL_NAV_LINKS = [
-  { label: "Product", href: "/product" },
-  { label: "Pricing", href: "/pricing" },
-  { label: "About", href: "/about" },
-];
-
-/**
- * `nav="marketing"` (designs 04 and 05): public nav links and "Member log in", no CTA — the
- * applicant is already in the flow. Without it (designs 07–10) the header carries the private
- * status indicator instead.
- */
-export function JourneyShell({ indicator, mobileBadge, nav, children }: { indicator?: string; mobileBadge?: string; nav?: "marketing"; children: ReactNode }) {
-  const year = new Date().getFullYear();
-  return (
-    <div className="marketing-page ea-shell">
-      <header className={`ea-shell-header${nav ? " is-marketing" : ""}`}>
-        <Link href="/" className="ea-shell-logo" aria-label="Wanterest home"><LogoMark size={20} /><span>wanterest</span></Link>
-        {nav ? (
-          <>
-            <nav className="ea-shell-links" aria-label="Main">
-              {SHELL_NAV_LINKS.map((link) => <Link key={link.href} href={link.href}>{link.label}</Link>)}
-            </nav>
-            <a className="ea-shell-login" href={APP_LOGIN_URL}>Member log in</a>
-          </>
-        ) : null}
-        {indicator ? <span className="ea-shell-indicator"><span className="ea-shell-indicator-dot" aria-hidden="true" />{indicator}</span> : null}
-        {mobileBadge ? <span className="ea-shell-badge">{mobileBadge}</span> : null}
-      </header>
-      {children}
-      <footer className="ea-shell-footer">
-        <span>© {year} Wanterest</span>
-        <nav aria-label="Legal"><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link><Link href="/cookies">Cookies</Link></nav>
-      </footer>
-    </div>
-  );
-}
 
 export function StatusChip({ label, tone }: { label: string; tone: ChipTone }) {
   return <span className={`ea-status-chip is-${tone}`}><span className="ea-status-chip-dot" aria-hidden="true" />{label}</span>;

@@ -8,7 +8,7 @@ import { DifferenceSection } from "./difference";
 import { Faq } from "./faq";
 import { APP_START_URL } from "./links";
 import { MarketingFooter } from "./marketing-footer";
-import { StageNav } from "./marketing-nav";
+import { SiteNav } from "./marketing-nav";
 import { PricingSection } from "./pricing";
 import { ProofSignalCard } from "./proof-signal-card";
 import { QualificationSection } from "./qualification";
@@ -50,7 +50,7 @@ function Hero({ accessState }: { accessState: HomepageAccessState }) {
   return (
     <header className="marketing-hero-frame">
       <div className="marketing-hero-stage">
-        <StageNav accessState={accessState} />
+        <SiteNav accessState={accessState} />
         <div className="marketing-hero-content">
           <div className="marketing-hero-badge">
             <span className="marketing-hero-badge-dot" aria-hidden="true" />

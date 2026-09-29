@@ -3,7 +3,8 @@ import { cookies } from "next/headers";
 
 import { CopyLinkButton } from "@/components/waitlist/copy-link-button";
 import { describeStatus, earlyAccessLabel, formatJourneyDate } from "@/components/waitlist/journey";
-import { JourneyShell, PrivateStatus, ReferralProgress, StatusUnavailableView } from "@/components/waitlist/journey-views";
+import { JourneyShell } from "@/components/waitlist/journey-shell";
+import { PrivateStatus, ReferralProgress, StatusUnavailableView } from "@/components/waitlist/journey-views";
 import { ShareSection } from "@/components/waitlist/share-my-place";
 import { WaitlistWithdrawButton } from "@/components/waitlist/waitlist-withdraw-button";
 import { WAITLIST_STATUS_COOKIE } from "@/server/modules/waitlist/waitlist.session";
@@ -31,7 +32,7 @@ export default async function WaitlistStatusPage() {
   const share = view.variant === "standard" || view.variant === "priority" || view.variant === "admitted" ? await loadShareAvailability() : null;
 
   return (
-    <JourneyShell indicator={`Private status · ${application.email}`} mobileBadge={`Early access ${earlyAccess}`}>
+    <JourneyShell>
       <PrivateStatus
         view={view}
         earlyAccess={earlyAccess}
