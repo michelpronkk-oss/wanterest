@@ -47,7 +47,7 @@ describe("responsive marketing navigation contracts", () => {
   it("keeps the Hero v2 preview card inset and rounded on mobile", () => {
     const css = read("src/app/globals.css");
     expect(css).toContain("margin: 28px 14px 16px; min-width: 0;");
-    expect(css).toMatch(/\.marketing-preview-card\.is-mobile \{[^}]*border-radius: 16px;/);
-    expect(css).not.toMatch(/\.marketing-preview-card\.is-mobile \{[^}]*border-radius: 16px 16px 0 0;/);
+    expect(css).toMatch(/\.marketing-app-mobile-card \{[^}]*border-radius: 20px;/);
+    expect(css).not.toMatch(/\.marketing-app-mobile-card \{[^}]*border-radius: 20px 20px 0 0;/);
   });
 });

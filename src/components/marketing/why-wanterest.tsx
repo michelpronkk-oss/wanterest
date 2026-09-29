@@ -28,7 +28,7 @@ export function WhyWanterestSection() {
   return (
     <MarketingBand
       id="why-wanterest"
-      tone="soft"
+      tone="stone"
       eyebrow="WHY WANTEREST"
       title="Built for evidence, not guesses."
       subtitle="Four commitments behind every Signal we show you."

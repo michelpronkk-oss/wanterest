@@ -44,6 +44,16 @@ function MentionShareBar() {
           </div>
         ))}
       </div>
+      {/* Narrow panels: the per-segment captions get too cramped, so a 2 × 2 key replaces them. */}
+      <ul className="marketing-mention-key" aria-hidden="true">
+        {MENTION_SHARE.map((segment) => (
+          <li className={`is-${segment.key}`} key={segment.key}>
+            <i />
+            <span>{segment.label}</span>
+            <strong>{segment.share}%</strong>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -101,7 +111,7 @@ export function ComparisonPreviewSection() {
   return (
     <MarketingBand
       id="comparison"
-      tone="soft"
+      tone="stone"
       eyebrow="COMING SOON"
       title="Understand what buyers compare you against."
       subtitle="Discover who buyers consider, where competitors have the edge, and which needs remain underserved."

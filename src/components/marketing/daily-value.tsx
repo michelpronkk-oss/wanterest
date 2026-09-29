@@ -68,7 +68,7 @@ export function DailyValueSection() {
   return (
     <MarketingBand
       id="daily-value"
-      tone="stone"
+      tone="soft"
       eyebrow="DAILY VALUE"
       title="A clearer market picture, over time."
       subtitle="Each day, new conversations are qualified and every finding keeps its source, window and state as your market moves."
