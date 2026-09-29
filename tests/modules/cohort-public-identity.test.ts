@@ -19,9 +19,9 @@ const row: PublicCohortRow = {
 
 describe("public member identity contract", () => {
   it("selects only public profile fields in the documented hierarchy", () => {
-    expect(selectPublicMemberIdentity({ ...row, logoUrl: "https://assets.example/logo.png", avatarUrl: "https://assets.example/avatar.png" }).assets).toEqual([
-      { kind: "company_logo", url: "https://assets.example/logo.png" },
-      { kind: "profile_avatar", url: "https://assets.example/avatar.png" },
+    expect(selectPublicMemberIdentity({ ...row, logoUrl: "https://assets.example.com/logo.png", avatarUrl: "https://assets.example.com/avatar.png" }).assets).toEqual([
+      { kind: "company_logo", url: "https://assets.example.com/logo.png" },
+      { kind: "profile_avatar", url: "https://assets.example.com/avatar.png" },
       { kind: "monogram", value: "N" },
       { kind: "placeholder" },
     ]);

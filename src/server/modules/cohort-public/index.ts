@@ -6,6 +6,7 @@ export {
   updateWorkspacePublicCohortProfileCommand,
 } from "./cohort-public.service";
 export { createSupabaseCohortPublicRepository } from "./cohort-public.repository";
+export { publicMemberPassPresentation, privateMembershipPresentation } from "./cohort-public.presentation";
 export {
   derivePublicMonogram,
   normalizePublicSlug,

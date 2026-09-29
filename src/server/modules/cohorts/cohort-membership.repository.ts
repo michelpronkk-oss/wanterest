@@ -1,6 +1,8 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/server/db/database.types";
+import { withCohortRpcContracts } from "@/server/db/cohort-contracts";
 
 import { AppError } from "@/server/lib/errors";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
@@ -12,7 +14,7 @@ import {
   type WorkspaceCohortIdentity,
 } from "./cohort-membership.schemas";
 
-type Client = SupabaseClient;
+type Client = SupabaseClient<Database>;
 
 type RpcError = { code?: string; message?: string } | null;
 
@@ -34,7 +36,7 @@ function mapDatabaseError(error: RpcError, fallback: string): AppError {
 }
 
 function serviceClient(): Client {
-  return createSupabaseServiceClient() as unknown as Client;
+  return createSupabaseServiceClient();
 }
 
 function firstRow<T>(data: T | T[] | null): T | null {
@@ -49,7 +51,8 @@ export type CohortMembershipRepository = {
   getWorkspaceIdentity(workspaceId: string): Promise<WorkspaceCohortIdentity>;
 };
 
-export function createSupabaseCohortMembershipRepository(client: Client = serviceClient()): CohortMembershipRepository {
+export function createSupabaseCohortMembershipRepository(baseClient: Client = serviceClient()): CohortMembershipRepository {
+  const client = withCohortRpcContracts(baseClient);
   return {
     async assignAtAdmission(input) {
       const { data, error } = await client.rpc("assign_workspace_cohort_membership", {
@@ -60,7 +63,7 @@ export function createSupabaseCohortMembershipRepository(client: Client = servic
         p_assignment_version: input.assignmentVersion,
       });
       if (error) throw mapDatabaseError(error, "Workspace cohort identity could not be assigned.");
-      const raw = firstRow(data as unknown as Record<string, unknown> | Record<string, unknown>[] | null);
+      const raw = firstRow(data);
       if (!raw) throw new AppError("INTERNAL_ERROR", "Workspace cohort assignment returned no result.");
       const parsed = cohortAssignmentSchema.safeParse({
         assignmentStatus: raw.assignment_status,
@@ -87,7 +90,7 @@ export function createSupabaseCohortMembershipRepository(client: Client = servic
         p_assignment_version: input.assignmentVersion,
       });
       if (error) throw mapDatabaseError(error, "Workspace cohort identity and benefit eligibility could not be assigned.");
-      const raw = firstRow(data as unknown as Record<string, unknown> | Record<string, unknown>[] | null);
+      const raw = firstRow(data);
       if (!raw) throw new AppError("INTERNAL_ERROR", "Workspace cohort assignment returned no result.");
       const parsed = cohortAssignmentSchema.safeParse({
         assignmentStatus: raw.assignment_status,
@@ -108,7 +111,7 @@ export function createSupabaseCohortMembershipRepository(client: Client = servic
     async getWorkspaceIdentity(workspaceId) {
       const { data, error } = await client.rpc("get_workspace_cohort_identity", { p_workspace_id: workspaceId });
       if (error) throw mapDatabaseError(error, "Workspace cohort identity could not be loaded.");
-      const raw = firstRow(data as unknown as Record<string, unknown> | Record<string, unknown>[] | null);
+      const raw = firstRow(data);
       if (!raw) throw new AppError("NOT_FOUND", "The workspace was not found.");
       const parsed = workspaceCohortIdentitySchema.safeParse({
         cohort: raw.cohort,

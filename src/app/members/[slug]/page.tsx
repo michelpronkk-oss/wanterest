@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { getPublicCohortPassQuery } from "@/server/modules/cohort-public";
+import { getPublicCohortPassQuery, publicMemberPassPresentation } from "@/server/modules/cohort-public";
+import { FounderPassArtwork } from "@/components/members/member-identity";
 
 export const dynamic = "force-dynamic";
 
@@ -23,12 +24,13 @@ export default async function MemberPassPage({ params }: PageProps) {
   const { slug } = await params;
   const profile = await getPublicCohortPassQuery(slug);
   if (!profile) notFound();
-  const cohortLabel = profile.cohort === "founding_25" ? "Founding 25" : "Early 100";
-  const number = `#${String(profile.number).padStart(profile.cohort === "founding_25" ? 2 : 3, "0")}`;
+  const presentation = publicMemberPassPresentation(profile);
+  const cohortLabel = presentation.label;
+  const number = presentation.serial;
   return (
     <main className="marketing-content-wrap" aria-labelledby="member-pass-title">
       <div className="marketing-content-eyebrow"><span className="marketing-content-eyebrow-dot" /> {cohortLabel}</div>
-      <div aria-hidden="true">{profile.monogram ?? "WN"}</div>
+      <FounderPassArtwork {...presentation} />
       <h1 id="member-pass-title">{profile.displayName}</h1>
       <p>{profile.headline ?? "Public member"}</p>
       <dl>
