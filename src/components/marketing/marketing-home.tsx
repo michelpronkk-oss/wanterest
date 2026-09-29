@@ -481,57 +481,56 @@ function CompetitorPreview() {
             short="Keep buyer context and uncertainty visible."
           />
         </p>
-        <div className="marketing-competitor-card">
-          <div className="marketing-competitor-kicker"><BarsIcon /> <span>Context intelligence</span></div>
-
-          <div className="marketing-competitor-products">
-            <div className="marketing-competitor-product is-you">
-              <span className="marketing-competitor-dot" />
+        <div className="marketing-context-preview" role="region" aria-labelledby="context-preview-title">
+          <div className="marketing-context-preview-head">
+            <div className="marketing-context-preview-heading">
+              <span className="marketing-context-preview-icon" aria-hidden="true"><BarsIcon /></span>
               <div>
-                <strong>Observed language</strong>
-                <span>What people actually describe</span>
+                <span className="marketing-context-preview-eyebrow">Context intelligence</span>
+                <h3 id="context-preview-title">Evidence before inference.</h3>
               </div>
             </div>
-            <div className="marketing-competitor-vs" aria-hidden="true">+</div>
-            <div className="marketing-competitor-product is-them">
-              <span className="marketing-competitor-dot" />
-              <div>
-                <strong>Market context</strong>
-                <span>What the evidence can support</span>
-              </div>
-            </div>
+            <span className="marketing-context-preview-status">In development</span>
           </div>
-
-          <div className="marketing-competitor-metrics">
-            {[
-              ["Observation", "The original conversation and source remain attached."],
-              ["Interpretation", "Themes, gaps and movement are clearly labeled as derived."],
-              ["Uncertainty", "Unsupported percentages and market-wide claims stay out."],
-            ].map(([title, body]) => (
-              <div className="marketing-competitor-metric" key={title}>
-                <div className="marketing-competitor-metric-copy">
-                  <strong>{title}</strong>
-                  <span>{body}</span>
+          <div className="marketing-context-preview-body">
+            <div className="marketing-context-preview-inputs">
+              <span className="marketing-context-preview-label">The starting point</span>
+              <div className="marketing-context-preview-input">
+                <span className="marketing-context-preview-input-icon" aria-hidden="true"><DocumentIcon /></span>
+                <h4>Observed language</h4>
+                <p>Buyer language, alternatives and unmet needs, kept with their source.</p>
+                <span className="marketing-context-preview-source">Source-linked conversation</span>
+              </div>
+              <div className="marketing-context-preview-market">
+                <h4>Market context</h4>
+                <p>Product · audience · alternatives</p>
+              </div>
+            </div>
+            <div className="marketing-context-preview-findings">
+              <span className="marketing-context-preview-label">Keep each layer distinct</span>
+              <dl>
+                <div className="marketing-context-preview-finding">
+                  <dt><span aria-hidden="true">01</span> Observation</dt>
+                  <dd>What the conversation actually says, with the supporting evidence attached.</dd>
                 </div>
-              </div>
-            ))}
+                <div className="marketing-context-preview-finding">
+                  <dt><span aria-hidden="true">02</span> Interpretation</dt>
+                  <dd>How it may relate to a product or unmet need, without presenting inference as fact.</dd>
+                </div>
+                <div className="marketing-context-preview-finding">
+                  <dt><span aria-hidden="true">03</span> Uncertainty</dt>
+                  <dd>What the available sample cannot establish. A conversation is not a market-wide claim.</dd>
+                </div>
+              </dl>
+            </div>
           </div>
-
-          <div className="marketing-competitor-callout">
-            <span className="marketing-competitor-callout-icon"><LightbulbIcon /></span>
-            <p><strong>Evidence before inference.</strong><span>Wanterest keeps the claim no stronger than the source behind it.</span></p>
+          <div className="marketing-context-preview-footer">
+            <span>Illustrative preview · No live market data</span>
+            <span>Context intelligence is in development.</span>
           </div>
         </div>
       </div>
     </section>
-  );
-}
-
-function LightbulbIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M9 18h6M10 21h4M8.6 14.7a6 6 0 1 1 6.8 0c-.9.7-1.4 1.4-1.4 2.3h-4c0-.9-.5-1.6-1.4-2.3Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }
 

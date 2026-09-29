@@ -66,7 +66,13 @@ export function SiteNav({ accessState, activeHref }: { accessState: HomepageAcce
         <a className="marketing-stage-login" href={APP_LOGIN_URL}>Log in</a>
         <a className="marketing-stage-cta" href={primary.href}>{primary.label}</a>
       </div>
-      <StageNavMenu links={MARKETING_NAV_LINKS} loginHref={APP_LOGIN_URL} primary={primary} />
+      <StageNavMenu
+        links={MARKETING_NAV_LINKS}
+        loginHref={APP_LOGIN_URL}
+        primary={primary}
+        activeHref={activeHref}
+        brand={<><LogoMark size={21} /><span>wanterest</span></>}
+      />
     </nav>
   );
 }
