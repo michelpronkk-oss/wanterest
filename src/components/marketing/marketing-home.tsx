@@ -4,9 +4,10 @@ import type { HomepageAccessState } from "@/server/modules/access";
 import { APP_ORIGIN } from "@/shared/config/site";
 import { SourceBrandIcon } from "@/components/ui/source-brand-icon";
 import { BeyondSignalsTabs } from "./beyond-signals";
+import { ComparisonPreviewSection } from "./comparison-preview";
+import { DailyValueSection } from "./daily-value";
 import { DifferenceSection } from "./difference";
 import { Faq } from "./faq";
-import { APP_START_URL } from "./links";
 import { MarketingFooter } from "./marketing-footer";
 import { SiteNav } from "./marketing-nav";
 import { PricingSection } from "./pricing";
@@ -15,6 +16,7 @@ import { QualificationSection } from "./qualification";
 import { Reveal } from "./reveal";
 import { ResponsiveText } from "./responsive-text";
 import { ScanForm } from "./scan-form";
+import { WhyWanterestSection } from "./why-wanterest";
 
 export function MarketingHome({ accessState }: { accessState: HomepageAccessState }) {
   return (
@@ -27,10 +29,10 @@ export function MarketingHome({ accessState }: { accessState: HomepageAccessStat
       <ProofSection />
       <QualificationSection />
       <BeyondSignals />
-      <WhyWanterest />
-      <CompetitorPreview />
+      <WhyWanterestSection />
+      <DailyValueSection />
+      <ComparisonPreviewSection />
       <DifferenceSection />
-      <DailyValue />
       <PricingSection />
       <Faq />
       <FinalCta accessState={accessState} />
@@ -439,190 +441,6 @@ function BeyondSignals() {
       </div>
       <div className="marketing-beyond-visual">
         <BeyondSignalsTabs />
-      </div>
-    </section>
-  );
-}
-
-function WhyWanterest() {
-  const features = [
-    { title: "Real evidence", body: "Every Signal links back to the original conversation." },
-    { title: "Qualified intent", body: "Noise, promotion and generic mentions are filtered out." },
-    { title: "Market context", body: "Individual Signals become themes, gaps and trends." },
-    { title: "Actionable", body: "Every recommendation is connected to supporting evidence." },
-  ];
-  return (
-    <section className="marketing-section is-tight is-alt">
-      <div className="marketing-section-inner">
-        <div className="marketing-section-eyebrow">WHY WANTEREST</div>
-        <h2 className="marketing-heading marketing-section-title marketing-section-title-compact is-tight">Built for evidence, not guesses.</h2>
-        <div className="marketing-feature-grid">
-          {features.map((feature) => (
-            <div className="marketing-feature-card" key={feature.title}>
-              <div className="marketing-feature-title">{feature.title}</div>
-              <div className="marketing-feature-body">{feature.body}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function CompetitorPreview() {
-  return (
-    <section className="marketing-section is-tight">
-      <div className="marketing-section-inner marketing-competitor-inner">
-        <div className="marketing-section-eyebrow">COMING SOON</div>
-        <h2 className="marketing-heading marketing-section-title marketing-competitor-title">Understand the context around demand.</h2>
-        <p className="marketing-section-subtitle marketing-competitor-subtitle">
-          <ResponsiveText
-            full="See how buyer language, alternatives and unmet needs can be organized without turning a small sample into a market-wide claim."
-            short="Keep buyer context and uncertainty visible."
-          />
-        </p>
-        <div className="marketing-context-preview" role="region" aria-labelledby="context-preview-title">
-          <div className="marketing-context-preview-head">
-            <div className="marketing-context-preview-heading">
-              <span className="marketing-context-preview-icon" aria-hidden="true"><BarsIcon /></span>
-              <div>
-                <span className="marketing-context-preview-eyebrow">Context intelligence</span>
-                <h3 id="context-preview-title">Evidence before inference.</h3>
-              </div>
-            </div>
-            <span className="marketing-context-preview-status">In development</span>
-          </div>
-          <div className="marketing-context-preview-body">
-            <div className="marketing-context-preview-inputs">
-              <span className="marketing-context-preview-label">The starting point</span>
-              <div className="marketing-context-preview-input">
-                <span className="marketing-context-preview-input-icon" aria-hidden="true"><DocumentIcon /></span>
-                <h4>Observed language</h4>
-                <p>Buyer language, alternatives and unmet needs, kept with their source.</p>
-                <span className="marketing-context-preview-source">Source-linked conversation</span>
-              </div>
-              <div className="marketing-context-preview-market">
-                <h4>Market context</h4>
-                <p>Product · audience · alternatives</p>
-              </div>
-            </div>
-            <div className="marketing-context-preview-findings">
-              <span className="marketing-context-preview-label">Keep each layer distinct</span>
-              <dl>
-                <div className="marketing-context-preview-finding">
-                  <dt><span aria-hidden="true">01</span> Observation</dt>
-                  <dd>What the conversation actually says, with the supporting evidence attached.</dd>
-                </div>
-                <div className="marketing-context-preview-finding">
-                  <dt><span aria-hidden="true">02</span> Interpretation</dt>
-                  <dd>How it may relate to a product or unmet need, without presenting inference as fact.</dd>
-                </div>
-                <div className="marketing-context-preview-finding">
-                  <dt><span aria-hidden="true">03</span> Uncertainty</dt>
-                  <dd>What the available sample cannot establish. A conversation is not a market-wide claim.</dd>
-                </div>
-              </dl>
-            </div>
-          </div>
-          <div className="marketing-context-preview-footer">
-            <span>Illustrative preview · No live market data</span>
-            <span>Context intelligence is in development.</span>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-const DAILY_FEED = [
-  {
-    key: "d1",
-    source: "reddit",
-    label: "Source reference",
-    time: "Observation date",
-    quote: "Every signal keeps its original source and observation context attached.",
-    tag: "Provenance",
-  },
-  {
-    key: "d2",
-    source: "hacker-news",
-    label: "Qualification",
-    time: "Lifecycle state",
-    quote: "Qualification and lifecycle state stay visible as the finding changes.",
-    tag: "Evidence",
-    tone: "problem",
-  },
-  {
-    key: "d3",
-    source: "bluesky",
-    label: "Derived context",
-    time: "Bounded window",
-    quote: "Themes and movement are bounded by the evidence and time window behind them.",
-    tag: "Freshness",
-  },
-  {
-    key: "d4",
-    source: "x",
-    label: "Uncertainty",
-    time: "Always visible",
-    quote: "A small set of conversations never becomes an unsupported market-wide claim.",
-    tag: "Caution",
-  },
-] as const;
-
-function DailyValue() {
-  return (
-    <section className="marketing-section is-tight">
-      <div className="marketing-daily-inner">
-        <div className="marketing-section-eyebrow">DAILY VALUE</div>
-        <h2 className="marketing-heading marketing-section-title marketing-section-title-compact">A clearer market picture, over time.</h2>
-        <p className="marketing-section-subtitle marketing-daily-subtitle">
-          <ResponsiveText
-            full="Wanterest keeps the source, qualification and freshness of each finding visible as your market changes."
-            short="Keep source, qualification and freshness visible."
-          />
-        </p>
-        <div className="marketing-daily-card">
-          <div className="marketing-daily-card-head">
-            <div>
-              <div className="marketing-daily-card-label">Illustrative intelligence view</div>
-              <div className="marketing-daily-card-headline">Findings, with their context attached.</div>
-            </div>
-            <div className="marketing-daily-live">
-              <span className="marketing-daily-pulse-dot" aria-hidden="true" />
-              Source-linked
-            </div>
-          </div>
-          <div className="marketing-daily-stats">
-            <div className="marketing-daily-stat">
-              <strong>Source</strong>
-              <span>linked to the finding</span>
-            </div>
-            <div className="marketing-daily-stat">
-              <strong>Time</strong>
-              <span>bounded observation window</span>
-            </div>
-            <div className="marketing-daily-stat">
-              <strong>Context</strong>
-              <span>qualification stays visible</span>
-            </div>
-          </div>
-          <div className="marketing-daily-feed">
-            {DAILY_FEED.map((item, index) => (
-              <Reveal key={item.key} delay={index * 90}>
-                <div className="marketing-daily-feed-row">
-                  <SourceBrandIcon sourceKey={item.source} label={item.label} size={22} />
-                  <div className="marketing-daily-feed-body">
-                    <p>&ldquo;{item.quote}&rdquo;</p>
-                    <span className="marketing-daily-feed-meta">{item.label} · {item.time}</span>
-                  </div>
-                  <span className={`marketing-daily-feed-tag${"tone" in item && item.tone === "problem" ? " is-problem" : ""}`}>{item.tag}</span>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-        <a className="marketing-cta is-compact" href={APP_START_URL}>See the product →</a>
       </div>
     </section>
   );
