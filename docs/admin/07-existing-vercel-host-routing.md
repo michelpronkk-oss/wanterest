@@ -4,12 +4,12 @@
 
 ## Routing boundary
 
-- `src/proxy.ts` checks the incoming hostname against the exact `admin.wanterest.com` hostname.
+- `src/proxy.ts` checks the incoming hostname against the exact `admin.wanterest.com` hostname. It is the single Proxy entry beside `src/app`; it preserves the existing customer Supabase session refresh for customer hosts.
 - In Production, requests for that hostname rewrite to the private `/admin-internal` route namespace. Public paths stay clean (`/login`, `/operations`, and so on).
 - Any direct request to `/admin-internal` or a case/encoded variant is denied on every host.
 - The Admin hostname on Vercel Preview/development is denied. Preview builds cannot expose Admin pages even if Production credentials exist in the project.
 - Existing customer domains continue through their existing routes and Supabase session refresh. The internal prefix never resolves on those domains.
-- Auth actions and server Admin authorization check the original `Host` again. A customer-host action replay cannot use an Admin server action.
+- The private route-group layout independently returns not-found unless the original host is the Production Admin hostname. The Auth callback, Auth actions, and server Admin authorization check the original `Host` again. A customer-host request cannot reach Admin pages, callback handling, or server actions even if an upstream rewrite is bypassed.
 
 ## Security behavior
 
