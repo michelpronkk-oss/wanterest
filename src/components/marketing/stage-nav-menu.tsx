@@ -5,6 +5,15 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 type MenuLink = { label: string; href: string };
 
+// Drawn icons, not text glyphs: iOS renders "↗" as a colour emoji.
+function ArrowIcon({ direction }: { direction: "up-right" | "right" }) {
+  return (
+    <svg className="marketing-stage-menu-arrow" viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {direction === "up-right" ? <path d="M6 14 14 6M7.5 6H14v6.5" /> : <path d="M4 10h12M11 5l5 5-5 5" />}
+    </svg>
+  );
+}
+
 /** Accessible full-screen navigation shared by the Hero v2 and standalone marketing header. */
 export function StageNavMenu({ links, loginHref, primary, brand, activeHref }: {
   links: MenuLink[];
@@ -58,6 +67,9 @@ export function StageNavMenu({ links, loginHref, primary, brand, activeHref }: {
     const dialog = dialogRef.current;
     if (!dialog || dialog.open) return;
     dialog.showModal();
+    // showModal() focuses the first link (the brand), which iOS rings on touch. Focus the panel
+    // itself instead; Tab still reaches every control and keyboard focus rings stay intact.
+    dialog.focus();
     setOpen(true);
   }
 
@@ -105,6 +117,7 @@ export function StageNavMenu({ links, loginHref, primary, brand, activeHref }: {
         id={panelId}
         className="marketing-stage-menu-panel"
         aria-label="Main menu"
+        tabIndex={-1}
         onCancel={(event) => {
           event.preventDefault();
           closeMenu();
@@ -120,20 +133,20 @@ export function StageNavMenu({ links, loginHref, primary, brand, activeHref }: {
               {brand}
             </Link>
             <button type="button" className="marketing-stage-menu-close" aria-label="Close menu" onClick={() => closeMenu()}>
-              <span aria-hidden="true">×</span>
+              <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M5 5l10 10M15 5 5 15" /></svg>
             </button>
           </div>
           <nav className="marketing-stage-menu-links" aria-label="Menu pages">
             {links.map((link) => (
               <Link key={link.href} href={link.href} aria-current={link.href === activeHref ? "page" : undefined} onClick={() => closeMenu(true)}>
-                {link.label}<span aria-hidden="true">↗</span>
+                {link.label}<ArrowIcon direction="up-right" />
               </Link>
             ))}
           </nav>
           <div className="marketing-stage-menu-footer">
             <a className="marketing-stage-menu-login" href={loginHref} onClick={() => closeMenu(true)}>Log in</a>
             <a className="marketing-stage-menu-cta" href={primary.href} onClick={() => closeMenu(true)}>
-              {primary.label}<span aria-hidden="true">→</span>
+              {primary.label}<ArrowIcon direction="right" />
             </a>
           </div>
         </div>
