@@ -1,6 +1,6 @@
-import { ConsoleShell, DataState, PageHeading, SourceStamp } from "@/components/console-shell";
-import { requireAdminPermission } from "@/server/auth";
-import { getOperationsSnapshot } from "@/server/operations";
+import { ConsoleShell, DataState, PageHeading, SourceStamp } from "@admin/components/console-shell";
+import { requireAdminPermission } from "@admin/server/auth";
+import { getOperationsSnapshot } from "@admin/server/operations";
 
 export const dynamic = "force-dynamic";
 

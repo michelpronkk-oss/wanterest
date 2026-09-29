@@ -18,7 +18,7 @@ const serviceEnvironmentSchema = z.object({
 const productionProjectHost = "hudjhlkbizngahpadqpt.supabase.co";
 
 function isPublicPreviewDeployment() {
-  return process.env.VERCEL === "1" && process.env.VERCEL_ENV === "preview";
+  return process.env.VERCEL === "1" && process.env.VERCEL_ENV !== "production";
 }
 
 export function isAdminAuthConfigured() {

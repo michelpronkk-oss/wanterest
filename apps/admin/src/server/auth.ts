@@ -2,6 +2,7 @@ import "server-only";
 
 import { redirect } from "next/navigation";
 import { createAdminServiceClient, createAdminSessionClient } from "./supabase";
+import { isAdminHostnameRequest } from "./request";
 
 const roleLabels = {
   founder: "Founder",
@@ -31,6 +32,7 @@ const rolePermissions: Record<AdminRole, ReadonlySet<string>> = {
 };
 
 export async function getAdminContext(): Promise<AdminContext | null> {
+  if (!await isAdminHostnameRequest()) return null;
   const session = await createAdminSessionClient();
   if (!session) return null;
 

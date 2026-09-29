@@ -6,6 +6,7 @@ vi.mock("../../apps/admin/src/server/supabase", () => ({
   createAdminSessionClient: vi.fn(),
   createAdminServiceClient: vi.fn(),
 }));
+vi.mock("../../apps/admin/src/server/request", () => ({ isAdminHostnameRequest: vi.fn(async () => true) }));
 
 import { createAdminServiceClient, createAdminSessionClient } from "../../apps/admin/src/server/supabase";
 

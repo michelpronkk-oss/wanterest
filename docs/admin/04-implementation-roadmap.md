@@ -4,7 +4,7 @@ Status: Phases A–C are implemented locally on `codex/adminsystem`, which inclu
 
 ## Phase A — Architecture and security gate
 
-**Outcome:** approved monorepo workspace, independent admin Vercel project, admin server boundary, environment/secret inventory, permission vocabulary, and data classification.
+**Outcome:** approved monorepo workspace, Admin server boundary, exact-host routing inside the existing Vercel project, environment/secret inventory, permission vocabulary, and data classification.
 
 - **Done:** record the decision in `docs/architecture.md` and add an explicit architecture decision for the admin backend.
 - **Done:** fetched and merged current `origin/main` into `codex/adminsystem`; preserved prior local state in a named stash and reapplied relevant work on the updated product files.

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { AdminScope } from "./admin-scope";
+import type { ReactNode } from "react";
+import { AdminScope } from "@admin/app/admin-scope";
 
-// Every response receives a one-time CSP nonce from proxy.ts.
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
@@ -10,10 +10,6 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false, noarchive: true },
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return (
-    <html lang="en">
-      <body><AdminScope>{children}</AdminScope></body>
-    </html>
-  );
+export default function AdminHostLayout({ children }: Readonly<{ children: ReactNode }>) {
+  return <AdminScope>{children}</AdminScope>;
 }

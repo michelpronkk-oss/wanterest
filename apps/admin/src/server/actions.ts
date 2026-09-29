@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createAdminServiceClient, createAdminSessionClient, getAdminAuthRecoveryRedirectUrl } from "./supabase";
+import { assertAdminHostnameRequest } from "./request";
 
 const credentialsSchema = z.object({
   email: z.string().trim().email().max(254),
@@ -10,6 +11,7 @@ const credentialsSchema = z.object({
 });
 
 export async function signIn(formData: FormData) {
+  await assertAdminHostnameRequest();
   const parsed = credentialsSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
@@ -44,12 +46,14 @@ export async function signIn(formData: FormData) {
 }
 
 export async function signOut() {
+  await assertAdminHostnameRequest();
   const session = await createAdminSessionClient();
   if (session) await session.auth.signOut();
   redirect("/login");
 }
 
 export async function requestPasswordRecovery(formData: FormData) {
+  await assertAdminHostnameRequest();
   const parsed = z.object({ email: z.string().trim().email().max(254) }).safeParse({ email: formData.get("email") });
   if (!parsed.success) redirect("/forgot-password?error=invalid");
   const session = await createAdminSessionClient();
@@ -61,6 +65,7 @@ export async function requestPasswordRecovery(formData: FormData) {
 }
 
 export async function completePasswordRecovery(formData: FormData) {
+  await assertAdminHostnameRequest();
   const parsed = z.object({ password: z.string().min(12).max(128), confirmation: z.string().min(12).max(128) }).safeParse({
     password: formData.get("password"), confirmation: formData.get("confirmation"),
   });
@@ -89,6 +94,7 @@ async function requireActiveMembership() {
 }
 
 export async function startMfaEnrollment() {
+  await assertAdminHostnameRequest();
   const session = await requireActiveMembership();
   const { data, error } = await session.auth.mfa.enroll({ factorType: "totp", friendlyName: "Wanterest Admin" });
   if (error || !data) return { ok: false as const, qrCode: null, factorId: null };
@@ -96,6 +102,7 @@ export async function startMfaEnrollment() {
 }
 
 export async function verifyMfa(formData: FormData) {
+  await assertAdminHostnameRequest();
   const parsed = z.object({ factorId: z.string().uuid(), code: z.string().trim().regex(/^\d{6,8}$/) }).safeParse({
     factorId: formData.get("factorId"),
     code: formData.get("code"),

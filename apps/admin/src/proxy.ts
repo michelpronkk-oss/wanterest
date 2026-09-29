@@ -1,7 +1,20 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-export async function proxy(request: NextRequest) {
+const productionProjectHost = "hudjhlkbizngahpadqpt.supabase.co";
+
+function applyAdminSecurityHeaders(response: NextResponse, csp: string) {
+  response.headers.set("Content-Security-Policy", csp);
+  response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+  response.headers.set("Cache-Control", "private, no-store, max-age=0");
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  return response;
+}
+
+export async function createAdminProxyResponse(request: NextRequest, rewritePath?: string) {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const isDev = process.env.NODE_ENV === "development";
   const csp = [
@@ -21,16 +34,21 @@ export async function proxy(request: NextRequest) {
   requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("Content-Security-Policy", csp);
 
-  const createResponse = () => {
-    const next = NextResponse.next({ request: { headers: requestHeaders } });
-    next.headers.set("Content-Security-Policy", csp);
-    return next;
+  const createResponse = (rewrite = true) => {
+    const response = rewritePath && rewrite
+      ? NextResponse.rewrite(new URL(`${rewritePath}${request.nextUrl.search}`, request.url), { request: { headers: requestHeaders } })
+      : NextResponse.next({ request: { headers: requestHeaders } });
+    return applyAdminSecurityHeaders(response, csp);
   };
 
-  const isPublicPreviewDeployment = process.env.VERCEL === "1" && process.env.VERCEL_ENV === "preview";
-  const url = isPublicPreviewDeployment ? undefined : process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const isNonProductionVercelDeployment = process.env.VERCEL === "1" && process.env.VERCEL_ENV !== "production";
+  if (isNonProductionVercelDeployment) {
+    return applyAdminSecurityHeaders(new NextResponse(null, { status: 404 }), csp);
+  }
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return createResponse();
+  if (!url || !anonKey || new URL(url).hostname !== productionProjectHost) return createResponse();
 
   let response = createResponse();
   const supabase = createServerClient(url, anonKey, {
@@ -44,8 +62,16 @@ export async function proxy(request: NextRequest) {
       },
     },
   });
-  await supabase.auth.getUser();
+  try {
+    await supabase.auth.getUser();
+  } catch {
+    // Server-side page authorization remains authoritative when refresh is unavailable.
+  }
   return response;
+}
+
+export async function proxy(request: NextRequest) {
+  return createAdminProxyResponse(request);
 }
 
 export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"] };

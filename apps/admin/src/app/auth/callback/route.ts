@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createAdminSessionClient } from "@/server/supabase";
+import { createAdminSessionClient } from "@admin/server/supabase";
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");

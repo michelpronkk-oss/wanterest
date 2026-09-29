@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { ConsoleShell, PageHeading, SourceStamp } from "@/components/console-shell";
-import { requireAdminPermission } from "@/server/auth";
-import { getOperationsSnapshot } from "@/server/operations";
-import { getOverviewMetrics } from "@/server/overview";
-import { getWebAnalyticsSnapshot } from "@/server/vercel-analytics";
+import { ConsoleShell, PageHeading, SourceStamp } from "@admin/components/console-shell";
+import { requireAdminPermission } from "@admin/server/auth";
+import { getOperationsSnapshot } from "@admin/server/operations";
+import { getOverviewMetrics } from "@admin/server/overview";
+import { getWebAnalyticsSnapshot } from "@admin/server/vercel-analytics";
 
 export const dynamic = "force-dynamic";
 

@@ -36,6 +36,19 @@ describe("public Vercel Preview credential boundary", () => {
     expect(vi.mocked(await import("@supabase/supabase-js")).createClient).not.toHaveBeenCalled();
   });
 
+  it("fails closed for every Vercel environment except production", async () => {
+    process.env.VERCEL = "1";
+    process.env.VERCEL_ENV = "development";
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://hudjhlkbizngahpadqpt.supabase.co";
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "public-anon-key";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "must-not-be-used";
+
+    const { createAdminSessionClient, createAdminServiceClient, isAdminAuthConfigured } = await import("../../apps/admin/src/server/supabase");
+    expect(isAdminAuthConfigured()).toBe(false);
+    await expect(createAdminSessionClient()).resolves.toBeNull();
+    expect(createAdminServiceClient()).toBeNull();
+  });
+
   it("accepts admin database clients only for the existing production project", async () => {
     process.env.VERCEL = "0";
     process.env.VERCEL_ENV = "development";

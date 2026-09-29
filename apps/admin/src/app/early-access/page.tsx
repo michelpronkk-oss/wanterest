@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { ConsoleShell, DataState, PageHeading, SourceStamp } from "@/components/console-shell";
-import { requireAdminPermission } from "@/server/auth";
-import { applicationStatuses, getEarlyAccessRows } from "@/server/early-access";
+import { ConsoleShell, DataState, PageHeading, SourceStamp } from "@admin/components/console-shell";
+import { requireAdminPermission } from "@admin/server/auth";
+import { applicationStatuses, getEarlyAccessRows } from "@admin/server/early-access";
 
 export const dynamic = "force-dynamic";
 

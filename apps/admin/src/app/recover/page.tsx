@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { AuthShell } from "@/components/auth-shell";
-import { AuthSubmitButton } from "@/components/auth-submit-button";
-import { completePasswordRecovery } from "@/server/actions";
-import { createAdminSessionClient } from "@/server/supabase";
+import { AuthShell } from "@admin/components/auth-shell";
+import { AuthSubmitButton } from "@admin/components/auth-submit-button";
+import { completePasswordRecovery } from "@admin/server/actions";
+import { createAdminSessionClient } from "@admin/server/supabase";
 
 export const metadata: Metadata = { title: "Choose a new password" };
 

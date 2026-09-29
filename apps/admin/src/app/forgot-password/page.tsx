@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AuthShell } from "@/components/auth-shell";
-import { AuthSubmitButton } from "@/components/auth-submit-button";
-import { requestPasswordRecovery } from "@/server/actions";
+import { AuthShell } from "@admin/components/auth-shell";
+import { AuthSubmitButton } from "@admin/components/auth-submit-button";
+import { requestPasswordRecovery } from "@admin/server/actions";
 
 export const metadata: Metadata = { title: "Password recovery" };
 
