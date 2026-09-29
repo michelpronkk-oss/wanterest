@@ -20,25 +20,28 @@ describe("asset-independent identity presentation", () => {
     expect(() => admittedCohortPresentation("early_100", 101)).toThrow();
     expect(admittedCohortPresentation("early_100", 42).serial).toBe("#042");
   });
-  it("supports compact/tone/actual serial hooks without SVG substitutes", () => {
+  it("renders the approved Apex badge with compact/tone hooks and the actual serial", () => {
     const html = renderToStaticMarkup(<CohortBadge cohort="founding_25" number={7} size="compact" tone="dark" />);
     expect(html).toContain("Founding 25 #07");
     expect(html).toContain('data-badge-size="compact"');
     expect(html).toContain('data-tone="dark"');
-    expect(html).not.toContain("<svg");
+    // Approved micro-cut geometry (glyph < 24px) with the lit keystone, extracted from the source.
+    expect(html).toContain('points="60,19.3 51.7,39 68.3,39" fill="#D7FF3D"');
+    expect(html).toContain(">07</span>");
   });
   it("contains logos, crops avatars, and preserves fallback text", () => {
     const logo = renderToStaticMarkup(<MemberIdentity identity={{ assets: [{ kind: "company_logo", url: pass.logoUrl! }, { kind: "placeholder" }] }} size={32} />);
     const avatar = renderToStaticMarkup(<MemberIdentity identity={{ assets: [{ kind: "profile_avatar", url: pass.logoUrl! }, { kind: "placeholder" }] }} size={64} tone="dark" />);
     expect(logo).toContain("object-fit:contain");
     expect(logo).toContain("width:32px");
+    expect(logo).toContain('data-identity-kind="company_logo"');
     expect(avatar).toContain("object-fit:cover");
     expect(avatar).toContain('referrerPolicy="no-referrer"');
     expect(renderToStaticMarkup(<IdentityFallback asset={{ kind: "monogram", value: "C" }} />)).toContain(">C</span>");
   });
   it("maps pass fields and Early 100 labels without leaking private extras", () => {
     const data = publicMemberPassPresentation({ ...pass, cohort: "early_100", number: 42, limit: 100 });
-    expect(data).toMatchObject({ number: 42, serial: "#042", admissionMonth: "Sep 2026", headline: "Public headline" });
+    expect(data).toMatchObject({ number: 42, serial: "#042", digits: "042", limit: 100, admissionMonth: "Sep 2026", admissionMonthLong: "September 2026", headline: "Public headline" });
     const html = renderToStaticMarkup(<FounderPassArtwork {...data} />);
     expect(html).toContain("Early 100 #042 public pass");
     expect(html).not.toContain("founder pass");

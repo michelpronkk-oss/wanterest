@@ -140,7 +140,7 @@ describe("design 10 invitation state comes from the private status record", () =
   it("shows admission and cohort identity only after the admission record says admitted", () => {
     const view = describeStatus(app({ status: "approved_for_invite" }), null, admission({ inviteStatus: "accepted", admissionStatus: "admitted", cohort: "founding_25", cohortNumber: 7, admittedAt: "2026-10-04T00:00:00.000Z" }), NOW);
     expect(view.variant).toBe("admitted");
-    expect(view.admitted).toEqual({ identity: "Founding 25 · #07" });
+    expect(view.admitted).toEqual({ identity: "Founding 25 · #07", cohort: { cohort: "founding_25", number: 7 } });
     expect(view.canWithdraw).toBe(false);
   });
 });

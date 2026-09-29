@@ -15,13 +15,18 @@ const foundingMember: PublicCohortRow = {
 describe("public Members Wall", () => {
   it("renders only the supplied public projection with cohort provenance", () => {
     const html = renderToStaticMarkup(<PublicMembersWall founding={[{ ...foundingMember, identity: selectPublicMemberIdentity(foundingMember) }]} early={[]} primaryAction={{ href: "/waitlist", label: "Request access" }} />);
-    expect(html).toContain("The people building");
-    expect(html).toContain("Founding 25");
-    expect(html).toContain("#0007");
+    expect(html).toContain("The first workspaces to find real demand.");
+    expect(html).toContain("FOUNDING 25");
+    // Apex 2.0 serial-led card: authoritative number in the approved two-digit format.
+    expect(html).toContain('aria-label="Northwind, Founding 25 #07"');
+    expect(html).toMatch(/>07<\/span><span[^>]*>\/25</);
+    expect(html).not.toContain("#0007");
     expect(html).toContain("Northwind");
-    expect(html).toContain("Visible by choice");
+    expect(html).toContain("Admitted Sep 2026");
     expect(html).not.toContain("/members/northwind");
     expect(html).not.toContain("View public pass");
+    expect(html).not.toContain("View pass");
+    expect(html).not.toMatch(/<a [^>]*href="\/members\//);
     expect(html).not.toContain("workspace_id");
     expect(html).not.toContain("invite");
     expect(html).not.toContain("@northwind");
@@ -34,7 +39,9 @@ describe("public Members Wall", () => {
     expect(html).toContain('aria-selected="true"');
     expect(html).toContain('role="tabpanel"');
     expect(html).toContain("No public members yet.");
-    expect(html).toContain("Only members who have chosen public visibility appear on this wall.");
+    expect(html).toContain("Only members who choose public visibility appear on the wall. Founding 25 identities exist whether or not they are shown here.");
+    expect(html).toContain("Early 100 identities exist whether or not they are shown here.");
+    expect(html).not.toContain("/25<");
     const source = readFileSync(join(process.cwd(), "src/components/members/public-members-wall.tsx"), "utf8");
     expect(source).toContain("onKeyDown");
     expect(source).toContain("ArrowRight");
