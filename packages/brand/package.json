@@ -1,0 +1,11 @@
+{
+  "name": "@wanterest/brand",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    "./logo-mark": {
+      "types": "./src/logo-mark.tsx",
+      "default": "./src/logo-mark.tsx"
+    }
+  }
+}
