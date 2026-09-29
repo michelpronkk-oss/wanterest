@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
-export type SettingsTabKey = "general" | "product" | "sources" | "plan" | "billing" | "team" | "membership";
+export type SettingsTabKey = "general" | "product" | "sources" | "plan" | "billing" | "team" | "membership" | "sharing";
 type SettingsContentKey = Exclude<SettingsTabKey, "billing">;
 
 const TABS: Array<{ key: SettingsTabKey; label: string }> = [
@@ -15,6 +15,7 @@ const TABS: Array<{ key: SettingsTabKey; label: string }> = [
   { key: "billing", label: "Billing" },
   { key: "team", label: "Team" },
   { key: "membership", label: "Membership" },
+  { key: "sharing", label: "Sharing" },
 ];
 
 export function SettingsTabs({ sections }: { sections: Record<SettingsContentKey, React.ReactNode> }) {
@@ -22,7 +23,7 @@ export function SettingsTabs({ sections }: { sections: Record<SettingsContentKey
   const pathname = usePathname();
   const billingActive = pathname.startsWith("/app/settings/billing");
   const initial = (searchParams.get("tab") as SettingsContentKey | null) ?? "product";
-  const [active, setActive] = useState<SettingsContentKey>(["general", "product", "sources", "plan", "team", "membership"].includes(initial) ? initial : "product");
+  const [active, setActive] = useState<SettingsContentKey>(["general", "product", "sources", "plan", "team", "membership", "sharing"].includes(initial) ? initial : "product");
 
   return (
     <div className="settings-layout">

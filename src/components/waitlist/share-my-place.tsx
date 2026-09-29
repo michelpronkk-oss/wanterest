@@ -2,8 +2,16 @@
 
 import { useState } from "react";
 
-/** The 13B share-card release is intentionally not present in this F1 production bundle. */
-export type ShareAvailability = { available: false };
+import { ShareCardPanel, type ShareCardPanelCard } from "@/components/share-cards/share-card-panel";
+
+/**
+ * `available: false` whenever the 13B.1 share-card engine can't be reached (e.g. its migration
+ * is not yet applied); the journey then says so instead of offering a control that would fail.
+ */
+export type ShareAvailability = { available: false } | { available: true; cards: ShareCardPanelCard[] };
+
+/** The applicant's owner-scoped share route; it sits under /waitlist because the status cookie does. */
+const APPLICANT_SHARE_ENDPOINT = "/waitlist/share-cards";
 
 function ShareUnavailable() {
   return (
@@ -17,9 +25,9 @@ function ShareUnavailable() {
   );
 }
 
-/** Keep an optional design affordance honest until the separate sharing release is live. */
-export function ShareSection({ share }: { share: ShareAvailability }) {
-  return share.available === false ? <ShareUnavailable /> : null;
+export function ShareSection({ share, compact = false }: { share: ShareAvailability; compact?: boolean }) {
+  if (!share.available) return <ShareUnavailable />;
+  return <ShareCardPanel endpoint={APPLICANT_SHARE_ENDPOINT} initialCards={share.cards} title="Share your place" compact={compact} />;
 }
 
 export function RevealActions({ share }: { share: ShareAvailability }) {
@@ -34,7 +42,7 @@ export function RevealActions({ share }: { share: ShareAvailability }) {
         </button>
       </div>
       <div id="share-my-place" className="ea-reveal-share" hidden={!open}>
-        {open ? <ShareSection share={share} /> : null}
+        {open ? <ShareSection share={share} compact /> : null}
       </div>
     </>
   );

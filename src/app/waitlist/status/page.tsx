@@ -29,7 +29,7 @@ export default async function WaitlistStatusPage() {
   const { application, referral, admission } = status;
   const view = describeStatus(application, referral, admission);
   const earlyAccess = earlyAccessLabel(application.earlyAccessNumber) ?? "Pending";
-  const share = view.variant === "standard" || view.variant === "priority" || view.variant === "admitted" ? await loadShareAvailability() : null;
+  const share = view.variant === "standard" || view.variant === "priority" || view.variant === "admitted" ? await loadShareAvailability(token) : null;
 
   return (
     <JourneyShell

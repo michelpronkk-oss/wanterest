@@ -27,7 +27,7 @@ export default async function VerifiedPage() {
   const resolution = resolveReveal(status.application, status.referral, status.admission);
   if (resolution.kind === "redirect") redirect(resolution.to);
 
-  const share = await loadShareAvailability();
+  const share = await loadShareAvailability(status.token);
   return (
     <JourneyShell>
       <VerifiedReveal model={resolution.model} actions={<RevealActions share={share} />} />

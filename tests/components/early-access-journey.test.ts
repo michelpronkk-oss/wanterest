@@ -226,13 +226,18 @@ describe("route-to-component wiring for the complete journey", () => {
     expect(withdrawButton).toContain('"/waitlist/withdraw"');
     expect(withdrawButton).not.toContain("token");
     expect(reveal).toContain("Sharing isn");
-    expect(reveal).not.toContain("/waitlist/share-cards");
+    // Share mutations sit under /waitlist too: the status cookie is scoped to that path.
+    expect(reveal).toContain('"/waitlist/share-cards"');
+    expect(reveal).not.toContain("/api/share-cards/applicant");
   });
 
-  it("keeps sharing unavailable until its separately validated 13B production release", () => {
+  it("offers 13B.1 sharing only through the engine and fails closed when it is unavailable", () => {
     const journeyData = read("src/app/waitlist/_lib/journey-data.ts");
-    expect(reveal).not.toMatch(/ShareCardPanel|share-cards/);
-    expect(journeyData).not.toContain("@/server/modules/share-cards");
+    expect(reveal).toContain("ShareCardPanel");
+    expect(reveal).toContain("ShareUnavailable");
+    expect(journeyData).toContain("getApplicantShareCardsQuery");
+    expect(journeyData).toMatch(/catch \{\s*return \{ available: false \};/);
+    // Pages only read eligibility; publishing is an explicit user action through the owner-scoped route.
     expect(verifiedPage).not.toMatch(/mutateApplicantShareCardCommand|publishApplicant/);
     expect(statusPage).not.toMatch(/mutateApplicantShareCardCommand|publishApplicant/);
   });
