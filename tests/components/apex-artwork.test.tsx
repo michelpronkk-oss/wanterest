@@ -23,6 +23,7 @@ import {
   apexSvgMarkup,
   plateGlyphSize,
   plateRadius,
+  wanterestLogoSvgMarkup,
 } from "@/shared/apex-artwork";
 import { admittedCohortPresentation, monogramFontSize, monogramTone } from "@/shared/member-presentation";
 import type { PublicMemberIdentity } from "@/shared/public-member-identity";
@@ -40,11 +41,11 @@ describe("Apex 2.0 geometry is extracted verbatim from the approved source", () 
       expect(SOURCE).toContain(`<polygon points="${cut.keystone}"`);
     }
     expect(SOURCE).toContain(`<polyline points="${WANTEREST_LOGO.polyline}" fill="none" stroke="#111110" stroke-width="16"`);
-    expect(SOURCE).toContain(`<polygon points="${WANTEREST_LOGO.keystone}" fill="#D7FF3D"`);
-    // Master logo in the app is unchanged and identical to the source.
+    // Master logo: the source's W geometry, drawn as a single ink W with no lime keystone.
     const navIcons = read("src/components/dashboard/nav-icons.tsx");
     expect(navIcons).toContain(`points="${WANTEREST_LOGO.polyline}"`);
-    expect(navIcons).toContain(`points="${WANTEREST_LOGO.keystone}"`);
+    expect(navIcons).not.toContain("<polygon");
+    expect(wanterestLogoSvgMarkup({ size: 20 })).not.toContain("<polygon");
   });
 
   it("uses the 7u micro cut below 24px and the 3u standard cut from 24px (board 02/03)", () => {

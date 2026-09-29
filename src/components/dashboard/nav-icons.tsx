@@ -1,10 +1,10 @@
 type IconProps = { color: string };
 
+/** The Wanterest master logo: a single ink W, no lime keystone (lime stays reserved for signals). */
 export function LogoMark({ size = 19 }: { size?: number }) {
   return (
     <svg viewBox="0 0 120 118" width={size} height={size} aria-hidden="true">
       <polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="currentColor" strokeWidth={16} strokeLinejoin="miter" strokeLinecap="butt" />
-      <polygon points="60,19 51,42 69,42" fill="var(--color-accent)" />
     </svg>
   );
 }

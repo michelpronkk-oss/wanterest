@@ -132,19 +132,19 @@ export function apexPlateSvgMarkup({ size, edition, surface = "light" }: { size:
 
 /**
  * The official Wanterest master logo (`LogoMark`, `nav-icons.tsx`). Reproduced
- * here unchanged, only for server HTML/static contexts that cannot import React;
- * the Apex source uses exactly this geometry and it must not be redrawn.
+ * here unchanged, only for server HTML/static contexts that cannot import React.
+ * The W geometry matches the Apex source; the logo is a single ink W with no lime
+ * keystone (the keystone belongs to the Apex member marks only).
  */
 export const WANTEREST_LOGO = {
   viewBox: "0 0 120 118",
   polyline: "10,32 34,102 60,40 86,102 110,32",
   strokeWidth: 16,
-  keystone: "60,19 51,42 69,42",
 } as const;
 
 export function wanterestLogoSvgMarkup({ size, stroke = APEX_COLORS.ink }: { size: number; stroke?: string }): string {
   const pixels = assertSize(size);
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${WANTEREST_LOGO.viewBox}" width="${pixels}" height="${pixels}" aria-hidden="true" focusable="false"><polyline points="${WANTEREST_LOGO.polyline}" fill="none" stroke="${stroke}" stroke-width="${WANTEREST_LOGO.strokeWidth}" stroke-linejoin="miter" stroke-linecap="butt"/><polygon points="${WANTEREST_LOGO.keystone}" fill="${APEX_COLORS.keystone}"/></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${WANTEREST_LOGO.viewBox}" width="${pixels}" height="${pixels}" aria-hidden="true" focusable="false"><polyline points="${WANTEREST_LOGO.polyline}" fill="none" stroke="${stroke}" stroke-width="${WANTEREST_LOGO.strokeWidth}" stroke-linejoin="miter" stroke-linecap="butt"/></svg>`;
 }
 
 function escapeAttribute(value: string): string {
