@@ -74,7 +74,11 @@ describe("static library public/identity/apex-2", () => {
   const directory = join(root, "public/identity/apex-2");
   it("contains exactly the generated files and they match the geometry module", () => {
     expect(readdirSync(directory).sort()).toEqual(Object.keys(APEX_STATIC_ASSETS).sort());
-    for (const [name, build] of Object.entries(APEX_STATIC_ASSETS)) expect(readFileSync(join(directory, name), "utf8")).toBe(`${build()}\n`);
+    for (const [name, build] of Object.entries(APEX_STATIC_ASSETS)) {
+      const actual = readFileSync(join(directory, name), "utf8").replace(/\r\n?/g, "\n");
+      const expected = `${build()}\n`.replace(/\r\n?/g, "\n");
+      expect(actual).toBe(expected);
+    }
   });
   it("is sanitized: no scripts, handlers, foreignObject, external references or member data", () => {
     for (const name of readdirSync(directory)) {
