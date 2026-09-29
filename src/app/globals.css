@@ -2292,3 +2292,24 @@ body {
   .marketing-footer-bottom { flex-direction: column; gap: 6px; }
 }
 
+
+/* Apex 2.0 compact application identity (board 16). Small, precise, separate from the workspace avatar. */
+.workspace-cohort-identity { position: relative; display: flex; align-items: center; border-radius: 999px; outline: none; }
+.workspace-cohort-identity.is-sidebar > span:first-child { flex: 1; }
+.workspace-cohort-identity.is-mobile { margin-left: auto; }
+.workspace-cohort-identity:focus-visible { outline: 2px solid var(--color-ink); outline-offset: 3px; }
+.workspace-cohort-tooltip { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 30; display: none; width: max-content; max-width: 240px; padding: 10px 14px; border-radius: 10px; background: #111110; color: #9c9c92; font-size: 12px; line-height: 1.45; box-shadow: 0 12px 30px -16px rgba(17, 17, 16, 0.5); }
+.workspace-cohort-tooltip strong { display: block; color: #f5f4ee; font-size: 12.5px; font-weight: 600; }
+.workspace-cohort-identity.is-mobile .workspace-cohort-tooltip { top: calc(100% + 8px); right: 0; bottom: auto; left: auto; }
+.workspace-cohort-identity:hover .workspace-cohort-tooltip, .workspace-cohort-identity:focus-visible .workspace-cohort-tooltip { display: block; }
+.dashboard-topbar-cohort { margin: 0 2px; }
+@media (max-width: 1100px) { .dashboard-topbar-cohort { display: none; } }
+
+/* Apex 2.0 pre-admission treatment (boards 02/13): Archivo serial with a muted "#", no Apex. */
+.ea-identity-number, .ea-priority-number { font-family: var(--font-archivo), sans-serif; font-weight: 800; letter-spacing: -0.05em; color: #111110; font-variant-numeric: tabular-nums; }
+.ea-shell-badge.is-node { padding: 0; border: 0; background: transparent; }
+.ea-priority-band-meta { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; }
+.ea-priority-band { background: #eff9c4; }
+.ea-priority-band strong, .ea-priority-kicker { color: #3d4a0e; }
+.ea-ladder-row > span:first-child { justify-self: start; }
+.ea-admitted-identity { align-items: center; flex-wrap: wrap; }

@@ -31,7 +31,9 @@ function primaryAction(mode: Parameters<typeof getHomepageAccessState>[0]) {
     ACCEPT_INVITATION: "Accept invitation",
     OPEN_WANTEREST: "Open Wanterest",
   }[state.primaryAction];
-  return { label, href: state.primaryAction === "START_FREE" ? APP_START_URL : `${APP_ORIGIN}${state.primaryActionHref}` };
+  // Board 06 supporting line is specific to the waitlist CTA; other access modes show the label alone.
+  const description = state.primaryAction === "REQUEST_ACCESS" ? "Request access to join the Wanterest waitlist." : null;
+  return { label, description, href: state.primaryAction === "START_FREE" ? APP_START_URL : `${APP_ORIGIN}${state.primaryActionHref}` };
 }
 
 export default async function MembersPage() {

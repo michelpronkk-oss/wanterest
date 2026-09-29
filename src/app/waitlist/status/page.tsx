@@ -5,6 +5,7 @@ import { CopyLinkButton } from "@/components/waitlist/copy-link-button";
 import { describeStatus, earlyAccessLabel, formatJourneyDate } from "@/components/waitlist/journey";
 import { JourneyShell, PrivateStatus, ReferralProgress, StatusUnavailableView } from "@/components/waitlist/journey-views";
 import { ShareSection } from "@/components/waitlist/share-my-place";
+import { EarlyAccessPill, PriorityPill } from "@/components/members/member-identity-slots";
 import { WaitlistWithdrawButton } from "@/components/waitlist/waitlist-withdraw-button";
 import { WAITLIST_STATUS_COOKIE } from "@/server/modules/waitlist/waitlist.session";
 import { loadPrivateStatus, loadShareAvailability } from "../_lib/journey-data";
@@ -31,10 +32,16 @@ export default async function WaitlistStatusPage() {
   const share = view.variant === "standard" || view.variant === "priority" || view.variant === "admitted" ? await loadShareAvailability() : null;
 
   return (
-    <JourneyShell indicator={`Private status · ${application.email}`} mobileBadge={`Early access ${earlyAccess}`}>
+    <JourneyShell
+      indicator={`Private status · ${application.email}`}
+      mobileBadge={view.variant === "priority"
+        ? <PriorityPill status="granted" earlyAccessNumber={application.earlyAccessNumber} size="compact" />
+        : <EarlyAccessPill number={application.earlyAccessNumber} size="compact" />}
+    >
       <PrivateStatus
         view={view}
         earlyAccess={earlyAccess}
+        earlyAccessNumber={application.earlyAccessNumber}
         details={{ submitted: formatJourneyDate(application.createdAt), company: application.companyName, email: application.email, marketingConsent: application.marketingConsent }}
         withdraw={<WaitlistWithdrawButton />}
         referral={referral?.shareUrl ? <ReferralProgress verifiedCount={referral.verifiedCount} threshold={referral.threshold} copyButton={<CopyLinkButton url={referral.shareUrl} />} /> : null}

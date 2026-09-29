@@ -1,32 +1,33 @@
-import { LogoMark } from "@/components/dashboard/nav-icons";
+import { CohortBadge, EarlyAccessPill, PriorityPill } from "@/components/members/member-identity-slots";
 
 /**
- * The four-tier ladder from the approved Early Access design. Deliberately carries no numbers —
- * the design's "07"/"042" badges are illustrative mockup flavor only. Cohort numbers are assigned
- * at admission, never shown here as if they belonged to the person reading this page.
+ * The four-tier ladder from the approved Early Access design, drawn with the Apex 2.0 badge family
+ * (board 02/03): Apex pills for the two permanent cohorts, the signal-dot Priority pill and the
+ * hollow Early Access pill. Deliberately carries no numbers — cohort numbers are assigned at
+ * admission, never shown here as if they belonged to the person reading this page.
  */
 const TIERS = [
   {
     key: "founding",
-    badge: <span className="ea-ladder-badge is-founding"><LogoMark size={13} /><span>FOUNDING 25</span></span>,
+    badge: <CohortBadge cohort="founding_25" />,
     title: "Founding 25.",
     body: "The first 25 admitted workspaces.",
   },
   {
     key: "early",
-    badge: <span className="ea-ladder-badge is-early"><LogoMark size={13} /><span>EARLY 100</span></span>,
+    badge: <CohortBadge cohort="early_100" />,
     title: "Early 100.",
     body: "The next 100 admitted. Permanent.",
   },
   {
     key: "priority",
-    badge: <span className="ea-ladder-badge is-priority"><span className="ea-ladder-dot" aria-hidden="true" />Priority access</span>,
+    badge: <PriorityPill status="granted" />,
     title: "Priority.",
     body: "Moved forward in review.",
   },
   {
     key: "early-access",
-    badge: <span className="ea-ladder-badge is-default">Early access</span>,
+    badge: <EarlyAccessPill />,
     title: "Early Access.",
     body: "Where everyone starts.",
   },
