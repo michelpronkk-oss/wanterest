@@ -2,6 +2,7 @@
   "name": "wanterest",
   "version": "0.1.0",
   "private": true,
+  "workspaces": ["apps/admin", "packages/brand"],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -31,9 +32,14 @@
     "trigger:dev": "npx trigger.dev@latest dev start --profile default --env-file .env.local",
     "trigger:deploy": "npx trigger.dev@latest deploy",
     "db:lint": "supabase db lint",
-    "db:reset": "supabase db reset"
+    "db:reset": "supabase db reset",
+    "admin:dev": "npm --workspace @wanterest/admin run dev",
+    "admin:build": "npm --workspace @wanterest/admin run build",
+    "admin:lint": "npm --workspace @wanterest/admin run lint",
+    "admin:typecheck": "npm --workspace @wanterest/admin run typecheck"
   },
   "dependencies": {
+    "@wanterest/brand": "0.1.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.116.0",
     "@trigger.dev/sdk": "4.6.4",

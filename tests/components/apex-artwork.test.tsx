@@ -41,9 +41,12 @@ describe("Apex 2.0 geometry is extracted verbatim from the approved source", () 
       expect(SOURCE).toContain(`<polygon points="${cut.keystone}"`);
     }
     expect(SOURCE).toContain(`<polyline points="${WANTEREST_LOGO.polyline}" fill="none" stroke="#111110" stroke-width="16"`);
-    // Master logo: the source's W geometry, drawn as a single ink W with no lime keystone.
+    // Master LogoMark: shared package keeps the exact approved W geometry, without the cohort keystone.
+    const brandMark = read("packages/brand/src/logo-mark.tsx");
     const navIcons = read("src/components/dashboard/nav-icons.tsx");
-    expect(navIcons).toContain(`points="${WANTEREST_LOGO.polyline}"`);
+    expect(brandMark).toContain(`points="${WANTEREST_LOGO.polyline}"`);
+    expect(navIcons).toContain('export { LogoMark } from "@wanterest/brand/logo-mark"');
+    expect(brandMark).not.toContain("<polygon");
     expect(navIcons).not.toContain("<polygon");
     expect(wanterestLogoSvgMarkup({ size: 20 })).not.toContain("<polygon");
   });
