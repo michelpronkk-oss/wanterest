@@ -3,6 +3,7 @@ import "server-only";
 import { cookies } from "next/headers";
 
 import type { ShareAvailability } from "@/components/waitlist/share-my-place";
+import { getApplicantShareCardsQuery } from "@/server/modules/share-cards";
 import { createWaitlistService } from "@/server/modules/waitlist";
 import { WAITLIST_STATUS_COOKIE } from "@/server/modules/waitlist/waitlist.session";
 
@@ -24,10 +25,16 @@ export async function loadPrivateStatus(token?: string) {
 }
 
 /**
- * The 13B share-card migrations are intentionally excluded from this F1 release.
- * Keep the optional UI truthful and isolated from the private status flow until
- * its separately validated production rollout is complete.
+ * Loads the applicant's Board 15 share cards through the 13B.1 engine. Any failure (including the
+ * share-card migration not yet being applied) degrades to `available: false`, so the journey never
+ * offers a publish control that would error. Eligibility stays with the engine's authority adapter.
  */
-export async function loadShareAvailability(): Promise<ShareAvailability> {
-  return { available: false };
+export async function loadShareAvailability(token?: string): Promise<ShareAvailability> {
+  token ??= await readStatusToken();
+  if (!token) return { available: false };
+  try {
+    return { available: true, cards: await getApplicantShareCardsQuery(token) };
+  } catch {
+    return { available: false };
+  }
 }

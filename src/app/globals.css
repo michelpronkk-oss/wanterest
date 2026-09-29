@@ -357,6 +357,50 @@
 .waitlist-withdraw-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .waitlist-withdraw-confirm p { flex-basis: 100%; margin: 0; color: var(--color-negative); font-size: 0.8rem; }
 .waitlist-withdrawn { margin: 0; padding: 12px 14px; background: var(--color-accent-tint); color: var(--color-accent-ink); font-size: 0.82rem; line-height: 1.5; }
+/* Share cards (13B.1, Board 15). The preview renders the exact PNG artwork at native size, scaled. */
+.share-card-preview { position: relative; width: 100%; overflow: hidden; border-radius: 12px; box-shadow: 0 20px 40px -26px rgba(17, 17, 16, 0.4), inset 0 0 0 1px rgba(17, 17, 16, 0.08); background: var(--color-track); }
+.share-card-preview-canvas { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+.share-card-panel { display: grid; gap: 18px; text-align: left; }
+.share-card-panel-heading { display: grid; gap: 6px; }
+.share-card-panel-heading h2 { margin: 0; font-family: var(--font-sora), sans-serif; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: var(--color-ink); }
+.share-card-panel-heading p, .share-card-panel-empty { margin: 0; max-width: 460px; color: var(--color-ink-muted); font-size: 13px; line-height: 1.55; }
+.share-card-panel-message { margin: 0; padding: 10px 12px; border-radius: 9px; font-size: 13px; line-height: 1.45; }
+.share-card-panel-message.is-positive { background: var(--color-accent-tint); color: var(--color-accent-ink); }
+.share-card-panel-message.is-error { background: #fbeae5; color: var(--color-negative); }
+.share-card-panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; }
+.share-card-panel.is-compact .share-card-panel-grid { grid-template-columns: minmax(0, 1fr); }
+.share-card-panel-card { display: grid; gap: 14px; min-width: 0; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-panel); background: var(--color-surface); }
+.share-card-panel-card-body { display: grid; gap: 12px; padding: 0 4px 4px; }
+.share-card-panel-card-copy { display: grid; gap: 4px; }
+.share-card-panel-card-copy strong { font-family: var(--font-sora), sans-serif; font-size: 14px; font-weight: 600; color: var(--color-ink); }
+.share-card-panel-card-copy span { display: inline-flex; align-items: center; gap: 7px; color: var(--color-ink-muted); font-size: 12px; }
+.share-card-panel-card-copy span i { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--color-ink-faint); }
+.share-card-panel-card-copy span.is-live { color: var(--color-accent-ink); }
+.share-card-panel-card-copy span.is-live i { border: 0; background: var(--color-positive); box-shadow: 0 0 0 3px var(--color-accent-tint); }
+.share-card-panel-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.share-card-panel-controls .dashboard-button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 8px 12px; font-size: 13px; }
+.share-card-panel-unpublish { margin-left: auto; padding: 8px 4px; border: 0; background: none; color: var(--color-ink-muted); font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.share-card-panel-unpublish:hover { color: var(--color-negative); }
+.share-card-panel-unpublish:disabled { opacity: 0.5; cursor: default; }
+.ea-reveal-share .share-card-panel { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--color-border); }
+
+.share-card-page { padding: clamp(40px, 7vw, 88px) 20px clamp(56px, 8vw, 104px); }
+.share-card-page-inner { width: min(760px, 100%); margin: 0 auto; }
+.share-card-page-eyebrow { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--color-positive); }
+.share-card-page-eyebrow span { width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); box-shadow: 0 0 0 1px var(--color-ink); }
+.share-card-page h1 { margin: 14px 0 12px; font-family: var(--font-archivo), sans-serif; font-weight: 800; font-size: clamp(30px, 5vw, 46px); line-height: 1.05; letter-spacing: -0.035em; text-wrap: balance; color: var(--color-ink); }
+.share-card-page-intro { max-width: 600px; margin: 0 0 32px; color: var(--color-ink-secondary); font-size: 16px; line-height: 1.6; text-wrap: pretty; }
+.share-card-page-card.is-square { display: none; }
+@media (max-width: 640px) {
+  .share-card-page-card.is-landscape { display: none; }
+  .share-card-page-card.is-square { display: block; }
+}
+.share-card-page-card .share-card-preview { border-radius: 16px; box-shadow: 0 30px 70px -36px rgba(17, 17, 16, 0.45), inset 0 0 0 1px rgba(17, 17, 16, 0.08); }
+.share-card-page-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 24px 0; border-bottom: 1px solid var(--color-border); }
+.share-card-page-actions > .dashboard-button { min-height: 44px; padding: 10px 18px; font-size: 14px; }
+.share-card-public-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.share-card-public-actions .dashboard-button { min-height: 38px; padding: 8px 12px; font-size: 13px; }
+.share-card-page-footnote { margin: 20px 0 0; color: var(--color-ink-faint); font-size: 12px; line-height: 1.55; }
 @media (max-width: 760px) { .waitlist-page { grid-template-columns: 1fr; gap: 34px; padding-top: 56px; } .waitlist-hero { padding-top: 0; } .waitlist-form-grid { grid-template-columns: 1fr; } .waitlist-title { font-size: clamp(2.8rem, 15vw, 4.6rem); } }
 
 :root {
@@ -959,6 +1003,7 @@ body {
 .settings-usage-row { padding: 10px 0; }
 .settings-usage-bar-track { flex: 1; height: 7px; background: var(--color-track); border-radius: 4px; margin-top: 6px; }
 .settings-usage-bar-fill { height: 100%; border-radius: 4px; }
+.share-card-panel + .settings-row { margin-top: 0; }
 
 /* Upgrade and capability access states */
 .capability-gate { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 22px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }

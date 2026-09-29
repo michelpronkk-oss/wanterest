@@ -15,6 +15,8 @@ import { PublicMembersWall } from "@/components/members/public-members-wall";
 import { describeStatus, earlyAccessLabel, formatJourneyDate, resolveReveal, type JourneyAdmission, type JourneyApplication, type JourneyReferral } from "@/components/waitlist/journey";
 import { JourneyShell, PrivateStatus, VerifiedReveal } from "@/components/waitlist/journey-views";
 import { MembershipLadder } from "@/components/waitlist/membership-ladder";
+import { RevealActions } from "@/components/waitlist/share-my-place";
+import { ShareCardPanel, type ShareCardPanelCard } from "@/components/share-cards/share-card-panel";
 import { admittedCohortPresentation, admissionMonth, admissionMonthLong } from "@/shared/member-presentation";
 import type { PublicMemberIdentity } from "@/shared/public-member-identity";
 import { earlyRows, foundingRows, identities, LONG_NAME } from "./fixtures";
@@ -52,6 +54,13 @@ function profilePresentation(cohort: "founding_25" | "early_100", number: number
 }
 
 const application: JourneyApplication = { status: "verified", earlyAccessNumber: 184, email: "fixture@example.test", companyName: "Fixture Co", createdAt: "2026-09-20T10:00:00Z", verifiedAt: "2026-09-20T10:05:00Z", marketingConsent: false };
+/** Board 15 share-card fixtures: fictional values rendered through the real panel and artwork. */
+const shareFixture = (variant: ShareCardPanelCard["variant"], identityNumber: number, extra: Partial<ShareCardPanelCard> = {}): ShareCardPanelCard => ({
+  variant, identityNumber, displayName: "Wanterest member", headline: null, identityLabel: variant, tone: "neutral", isPermanent: variant !== "PRIORITY_ACCESS",
+  monogram: null, admittedOn: null, publicationId: null, publicSlug: null, publicationState: null, publishedAt: null, ...extra,
+});
+const applicantShareCards = [shareFixture("EARLY_ACCESS", 184), shareFixture("PRIORITY_ACCESS", 184, { tone: "priority" })];
+const workspaceShareCards = [shareFixture("FOUNDING_25", 7, { displayName: "Fixture Co", monogram: "F", admittedOn: "2026-03-14", tone: "founding", publicationId: "00000000-0000-4000-8000-0000000000aa", publicSlug: "fixtureabcdefghijklmnopqrstuvwxyz0123456789", publicationState: "published", publishedAt: "2026-09-28T00:00:00Z" })];
 const referralNormal: JourneyReferral = { priorityStatus: "normal", priorityUnlocked: false, priorityGrantedAt: null, verifiedCount: 1, threshold: 3, remainingCount: 2, shareUrl: null };
 const referralPriority: JourneyReferral = { ...referralNormal, priorityStatus: "granted", priorityUnlocked: true, priorityGrantedAt: "2026-09-24T09:00:00Z", verifiedCount: 3, remainingCount: 0 };
 const referralRevoked: JourneyReferral = { ...referralNormal, priorityStatus: "revoked", priorityUnlocked: false, priorityGrantedAt: null };
@@ -100,6 +109,18 @@ export default async function ApexFixtures({ searchParams }: { searchParams: Pro
     case "verified": {
       const resolution = resolveReveal(application, referralNormal, null, new Date("2026-09-29T00:00:00Z"));
       return <><Banner /><JourneyShell nav="marketing">{resolution.kind === "reveal" ? <VerifiedReveal model={resolution.model} actions={null} /> : null}</JourneyShell></>;
+    }
+    case "share-cards": {
+      const resolution = resolveReveal(application, referralPriority, null, new Date("2026-09-29T00:00:00Z"));
+      return (
+        <><Banner />
+          <JourneyShell>{resolution.kind === "reveal" ? <VerifiedReveal model={resolution.model} actions={<RevealActions share={{ available: true, cards: applicantShareCards }} />} /> : null}</JourneyShell>
+          <div style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}>
+            <ShareCardPanel endpoint="/api/share-cards/workspace/fixture" initialCards={workspaceShareCards} title="Share your permanent identity" />
+          </div>
+          <div style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}><RevealActions share={{ available: false }} /></div>
+        </>
+      );
     }
     case "status":
       return <><Banner /><Status referral={referralNormal} admission={null} /></>;

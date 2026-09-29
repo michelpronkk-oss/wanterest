@@ -19,6 +19,9 @@ import { MembershipSection, type MembershipSectionData } from "@/components/dash
 import { getWorkspaceCohortIdentityQuery, workspaceCohortPresentation } from "@/server/modules/cohorts";
 import { getWorkspacePublicCohortProfileQuery, privateMembershipPresentation } from "@/server/modules/cohort-public";
 import { SITE_ORIGIN } from "@/shared/config/site";
+import { ShareCardPanel } from "@/components/share-cards/share-card-panel";
+import { requireUser } from "@/server/modules/auth";
+import { getWorkspaceShareCardsQuery } from "@/server/modules/share-cards";
 
 type BusinessClassification = { business_type?: string; market_scope?: string; primary_category?: string };
 
@@ -27,8 +30,9 @@ export default async function SettingsPage() {
   if (!workspace) {
     return <section className="dashboard-page dashboard-state"><p className="dashboard-eyebrow">Settings</p><h1>Create a workspace first</h1><Link className="dashboard-button dashboard-button-primary" href="/app/setup/workspace">Create workspace</Link></section>;
   }
+  const user = await requireUser();
 
-  const [snapshot, billing, members, scanSummary, activeExperiments, cohortIdentity, publicProfile] = await Promise.all([
+  const [snapshot, billing, members, scanSummary, activeExperiments, cohortIdentity, publicProfile, shareCards] = await Promise.all([
     product ? getCurrentProductSnapshotQuery(workspace.id, product.id).catch(() => null) : Promise.resolve(null),
     getBillingOverviewQuery(workspace.id).catch(() => null),
     listWorkspaceMembersQuery(workspace.id).catch(() => []),
@@ -37,6 +41,7 @@ export default async function SettingsPage() {
     // One authorized private read each; no public wall data is used as authority.
     getWorkspaceCohortIdentityQuery(workspace.id).catch(() => null),
     getWorkspacePublicCohortProfileQuery(workspace.id).catch(() => null),
+    getWorkspaceShareCardsQuery(workspace.id, user.id).catch(() => []),
   ]);
 
   const classification = (snapshot?.metadata as { business_classification?: BusinessClassification } | null)?.business_classification ?? null;
@@ -162,6 +167,7 @@ export default async function SettingsPage() {
   );
 
   const membershipSection = <MembershipSection data={membershipData(workspace.id, cohortIdentity, publicProfile)} />;
+  const sharingSection = <ShareCardPanel endpoint={`/api/share-cards/workspace/${encodeURIComponent(workspace.id)}`} initialCards={shareCards} title="Share your permanent identity" />;
 
   return (
     <section className="dashboard-page">
@@ -169,7 +175,7 @@ export default async function SettingsPage() {
         <p className="dashboard-eyebrow">Settings</p>
         <h1>Settings</h1>
       </header>
-      <SettingsTabs sections={{ general: generalSection, product: productSection, sources: sourcesSection, plan: planSection, team: teamSection, membership: membershipSection }} />
+      <SettingsTabs sections={{ general: generalSection, product: productSection, sources: sourcesSection, plan: planSection, team: teamSection, membership: membershipSection, sharing: sharingSection }} />
     </section>
   );
 }
