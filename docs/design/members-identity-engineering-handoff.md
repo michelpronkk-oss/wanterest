@@ -44,6 +44,17 @@ Claude-designed visual assets should target these files, not business logic or R
 - `src/components/members/public-members-wall.module.css` — current replaceable wall skin
 - `src/app/members/[slug]/page.tsx` — public pass composition once definitive Founder Pass artwork is ready
 
+The final Apex 2.0 delivery must provide approved, editable SVG source (with outlined or licensed typography) for:
+
+- Founding 25 and Early 100 badge treatments used by `CohortBadge`
+- the neutral identity placeholder and any approved avatar-tile frame used by `IdentityFallback` / `MemberIdentity`
+- Founding 25 and Early 100 Founder Pass artwork used by `FounderPassArtwork`
+- any share-card artwork derived from the pass system, delivered separately for the unreleased sharing layer
+
+Each SVG needs a documented view box, safe area, minimum rendered size, light-background treatment, accessible name guidance, and confirmation that it contains no private member data. Raster exports are reference previews only; they are not substitutes for the editable master SVGs. The existing approved Wanterest master logo remains authoritative and must not be redrawn as part of Apex 2.0.
+
+No Apex asset directory or placeholder SVG is committed by this integration. Add final files only after the approved masters are supplied, then replace presentation inside the four stable component contracts without changing their authorization-free props.
+
 ## Image-upload boundary
 
 There is currently no Supabase Storage bucket, upload adapter, signed-URL flow, or object-ownership model for cohort images. Do not add direct client uploads as part of visual work.
@@ -58,3 +69,5 @@ A future upload implementation needs a private bucket, workspace-owned object re
 - `public.get_public_cohort_profile(text)`
 
 It is **NOT_RUNTIME_VALIDATED**. Before any production rollout, execute it in an isolated PostgreSQL/Supabase environment after the Layer 13A cohort migrations, then verify function definitions, `SECURITY DEFINER` search paths, revoked `PUBLIC` access, role grants, active-workspace revocation, independent wall/pass consent, and cross-workspace isolation. No migration has been applied by this work.
+
+The visual wall can read the currently deployed Layer 13A.4 `get_public_cohort_wall(text)` projection without any Layer 13B dependency. That deployed signature already enforces `wall_visible`, cohort filtering, the narrow public return shape, and ordered cohort numbers. It does **not** revalidate `workspaces.status = 'active'`. Therefore the active-workspace repair is an exact pre-release runtime dependency for the strengthened revocation guarantee; until it is runtime-validated and applied, an opted-in profile belonging to a subsequently suspended or archived workspace may remain readable through the existing public RPC.
