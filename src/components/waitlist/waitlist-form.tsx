@@ -1,13 +1,21 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 
 import { storePendingSubmission } from "./check-email-storage";
+import {
+  buildWaitlistPayload,
+  MAX_USE_CASE,
+  normalizeWebsiteInput,
+  REQUIRED_FIELD_ORDER,
+  requiredFieldErrors,
+  submitWaitlistRequest,
+  websiteLabel,
+  type RequiredField,
+} from "./waitlist-form-model";
 
 type FormState = "idle" | "sending" | "error";
-
-const MAX_USE_CASE = 1200;
 
 /**
  * The backend's public submission boundary intentionally returns the same {ok:true} response for
@@ -15,13 +23,15 @@ const MAX_USE_CASE = 1200;
  * honeypot hit — it must never become an email-enumeration oracle. So there is no distinct "already
  * applied" success state here: every accepted submission moves on to the same dedicated
  * /waitlist/check-email screen, and a genuinely new verification email only goes out when the
- * underlying row is still pending. The one truthful place "already verified" can show up is the
- * private status page, once someone with an existing session revisits it.
+ * underlying row is still pending.
  *
  * On success this navigates to a dedicated screen rather than swapping in a local "success"
- * state, per the approved design: a genuine separate screen, not a state buried inside the
- * two-column landing page's form card, and one that survives a refresh (see
- * check-email-storage.ts for why sessionStorage, not this component's state, carries it).
+ * state, and one that survives a refresh (see check-email-storage.ts for why sessionStorage, not
+ * this component's state, carries it).
+ *
+ * Layout (F1.4): the four required fields are always visible; website, role and product-updates
+ * consent sit in a collapsed "Add context" section whose inputs stay mounted, so a website
+ * prefilled from the homepage is still submitted while collapsed.
  */
 export function WaitlistForm() {
   const router = useRouter();
@@ -31,13 +41,15 @@ export function WaitlistForm() {
   const [state, setState] = useState<FormState>("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [retryAfter, setRetryAfter] = useState(0);
-  const [contextOpen, setContextOpen] = useState(Boolean(prefilledWebsite));
-  const [useCaseError, setUseCaseError] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<RequiredField, string>>>({});
   const [useCaseCount, setUseCaseCount] = useState(0);
   const [marketingConsent, setMarketingConsent] = useState(false);
 
-  const useCaseRef = useRef<HTMLTextAreaElement>(null);
-  const firstNameId = useId(); const emailId = useId(); const companyId = useId(); const websiteId = useId(); const roleId = useId(); const useCaseId = useId(); const consentId = useId(); const honeypotId = useId();
+  const ids = {
+    firstName: useId(), companyName: useId(), email: useId(), useCase: useId(),
+    website: useId(), role: useId(), consent: useId(), panel: useId(), honeypot: useId(),
+  };
 
   useEffect(() => {
     if (retryAfter <= 0) return;
@@ -45,99 +57,122 @@ export function WaitlistForm() {
     return () => window.clearInterval(timer);
   }, [retryAfter]);
 
+  function clearFieldError(field: RequiredField) {
+    if (fieldErrors[field]) setFieldErrors((current) => ({ ...current, [field]: undefined }));
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (state === "sending" || retryAfter > 0) return;
 
     const form = new FormData(event.currentTarget);
-    const useCase = String(form.get("useCase") ?? "").trim();
-    if (!useCase) {
-      setUseCaseError(true);
-      useCaseRef.current?.focus();
-      return;
-    }
-    setUseCaseError(false);
-
-    const params = new URLSearchParams(window.location.search);
-    const utm = (key: string) => (params.get(key) ?? "").slice(0, 160);
-    const email = String(form.get("email") ?? "");
-    const payload = {
-      firstName: form.get("firstName"), email, companyName: form.get("companyName"), companyWebsite: normalizeWebsiteInput(String(form.get("companyWebsite") ?? "")),
-      roleTitle: form.get("roleTitle"), useCase, marketingConsent,
-      honeypot: form.get("website"), source: utm("source") || "waitlist", utmSource: utm("utm_source"), utmMedium: utm("utm_medium"), utmCampaign: utm("utm_campaign"), utmContent: utm("utm_content"), utmTerm: utm("utm_term"),
-      referrerCategory: document.referrer ? "external" : "direct", referralCode: utm("ref"),
+    const text = (name: string) => String(form.get(name) ?? "");
+    const values = {
+      firstName: text("firstName"), companyName: text("companyName"), email: text("email"), useCase: text("useCase"),
+      companyWebsite: text("companyWebsite"), roleTitle: text("roleTitle"), marketingConsent, honeypot: text("website"),
     };
 
-    setState("sending"); setErrorMessage("");
-    try {
-      const response = await fetch("/api/waitlist", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
-      if (!response.ok) {
-        const body = await response.json().catch(() => null) as { error?: { message?: string; details?: { retryAfterSeconds?: number } } } | null;
-        setState("error");
-        setErrorMessage(body?.error?.message ?? "We couldn't save that. Please try again.");
-        if (body?.error?.details?.retryAfterSeconds) setRetryAfter(body.error.details.retryAfterSeconds);
-        return;
-      }
-    } catch {
-      setState("error");
-      setErrorMessage("Wanterest isn't reachable right now. Please try again in a moment.");
+    const errors = requiredFieldErrors(values);
+    setFieldErrors(errors);
+    const firstInvalid = REQUIRED_FIELD_ORDER.find((field) => errors[field]);
+    if (firstInvalid) {
+      document.getElementById(ids[firstInvalid])?.focus();
       return;
     }
-    storePendingSubmission(email, payload);
+
+    const payload = buildWaitlistPayload(values, window.location.search, document.referrer);
+    setState("sending"); setErrorMessage("");
+    const result = await submitWaitlistRequest(payload);
+    if (!result.ok) {
+      setState("error");
+      setErrorMessage(result.message);
+      if (result.retryAfterSeconds) setRetryAfter(result.retryAfterSeconds);
+      return;
+    }
+    storePendingSubmission(values.email, payload);
     router.push("/waitlist/check-email");
   }
 
   return (
     <form className="ea-form" onSubmit={(event) => void submit(event)} noValidate>
-      <div className="ea-form-heading"><h2>Request access</h2><p>Four fields. Under a minute.</p></div>
+      <div className="ea-form-heading"><h2>Request access</h2><p>Takes under a minute.</p></div>
       {state === "error" ? <p className="ea-form-error" role="alert">{retryAfter > 0 ? `${errorMessage} Try again in ${formatClock(retryAfter)}.` : errorMessage}</p> : null}
+
       <div className="ea-form-grid">
-        <Field id={firstNameId} name="firstName" label="First name" required placeholder="Your first name" />
-        <Field id={companyId} name="companyName" label="Company" required placeholder="Your company" />
+        <Field id={ids.firstName} name="firstName" label="First name" autoComplete="given-name" placeholder="Your first name" error={fieldErrors.firstName} onInput={() => clearFieldError("firstName")} />
+        <Field id={ids.companyName} name="companyName" label="Company" autoComplete="organization" placeholder="Your company" error={fieldErrors.companyName} onInput={() => clearFieldError("companyName")} />
       </div>
-      <Field id={emailId} name="email" label="Work email" type="email" required placeholder="you@company.com" />
+      <Field id={ids.email} name="email" label="Work email" type="email" autoComplete="email" placeholder="you@company.com" error={fieldErrors.email} onInput={() => clearFieldError("email")} />
 
       <div className="ea-field">
-        <label htmlFor={useCaseId}>What should Wanterest help you understand?</label>
+        <div className="ea-field-label-row">
+          <label htmlFor={ids.useCase}>What should Wanterest help you understand?</label>
+          <span className="ea-field-meta" id={`${ids.useCase}-count`}>{useCaseCount} / {MAX_USE_CASE}</span>
+        </div>
         <textarea
-          id={useCaseId}
+          id={ids.useCase}
           name="useCase"
-          ref={useCaseRef}
           required
-          rows={4}
+          rows={2}
           maxLength={MAX_USE_CASE}
           placeholder="Where our best-fit buyers are frustrated, and what they compare us against."
-          onChange={(event) => { setUseCaseCount(event.target.value.length); if (useCaseError) setUseCaseError(false); }}
-          aria-describedby={`${useCaseId}-count`}
-          aria-invalid={useCaseError}
+          onChange={(event) => { setUseCaseCount(event.target.value.length); clearFieldError("useCase"); }}
+          aria-describedby={fieldErrors.useCase ? `${ids.useCase}-count ${ids.useCase}-error` : `${ids.useCase}-count`}
+          aria-invalid={Boolean(fieldErrors.useCase)}
         />
-        <div className="ea-field-meta" id={`${useCaseId}-count`}>{useCaseCount} / {MAX_USE_CASE}</div>
-        {useCaseError ? <p className="ea-field-error" role="alert">Add a line here so we know what to review.</p> : null}
+        {fieldErrors.useCase ? <p className="ea-field-error" id={`${ids.useCase}-error`} role="alert">{fieldErrors.useCase}</p> : null}
       </div>
 
-      {!contextOpen ? (
-        <button type="button" className="ea-context-teaser" onClick={() => setContextOpen(true)}>
-          <span><strong>Add context</strong><small>Website and role. Optional, helps review.</small></span>
-          <span className="ea-context-teaser-plus" aria-hidden="true">+</span>
-        </button>
-      ) : (
-        <div className="ea-context">
-          <div className="ea-context-head">
-            <span>Context</span>
-            <button type="button" className="ea-context-hide" onClick={() => setContextOpen(false)}>Hide</button>
-          </div>
-          <Field id={websiteId} name="companyWebsite" label="Website" optional placeholder="yourcompany.com" defaultValue={prefilledWebsite} />
-          <Field id={roleId} name="roleTitle" label="Role" optional placeholder="Founder, Head of growth…" />
-        </div>
-      )}
+      <OptionalContext
+        open={contextOpen}
+        onToggle={() => setContextOpen((open) => !open)}
+        ids={{ panel: ids.panel, website: ids.website, role: ids.role, consent: ids.consent }}
+        prefilledWebsite={prefilledWebsite}
+        marketingConsent={marketingConsent}
+        onConsentChange={setMarketingConsent}
+      />
 
-      <label className="ea-checkbox"><input id={consentId} type="checkbox" checked={marketingConsent} onChange={(event) => setMarketingConsent(event.target.checked)} /> <span>Send me occasional product updates. Optional.</span></label>
-      <div className="ea-honeypot" aria-hidden="true"><label htmlFor={honeypotId}>Website</label><input id={honeypotId} name="website" tabIndex={-1} autoComplete="off" /></div>
-      <button className="dashboard-button dashboard-button-primary ea-submit" type="submit" disabled={state === "sending" || retryAfter > 0}>
-        {state === "sending" ? "Saving your request" : "Request Early Access →"}
+      <div className="ea-honeypot" aria-hidden="true"><label htmlFor={ids.honeypot}>Website</label><input id={ids.honeypot} name="website" tabIndex={-1} autoComplete="off" /></div>
+      <button className="ea-submit" type="submit" disabled={state === "sending" || retryAfter > 0}>
+        {state === "sending" ? "Saving your request" : <>Request Early Access<span className="ea-submit-arrow" aria-hidden="true">→</span></>}
       </button>
       <p className="ea-form-legal">We&rsquo;ll email you once to confirm. This doesn&rsquo;t create an account.</p>
     </form>
+  );
+}
+
+/**
+ * "+ Add context (optional)". Collapsed by default; the panel is hidden, never unmounted, so its
+ * values (including a homepage-prefilled website) are always part of the submission. Marketing
+ * consent lives here, unchecked by default and independent of the request itself.
+ */
+export function OptionalContext({ open, onToggle, ids, prefilledWebsite, marketingConsent, onConsentChange }: {
+  open: boolean;
+  onToggle: () => void;
+  ids: { panel: string; website: string; role: string; consent: string };
+  prefilledWebsite: string;
+  marketingConsent: boolean;
+  onConsentChange: (value: boolean) => void;
+}) {
+  const summary = prefilledWebsite ? `${websiteLabel(prefilledWebsite)} added` : "Website, role, product updates";
+  return (
+    <div className={`ea-optional${open ? " is-open" : ""}`}>
+      <button type="button" className="ea-optional-toggle" aria-expanded={open} aria-controls={ids.panel} onClick={onToggle}>
+        <span className="ea-optional-icon" aria-hidden="true" />
+        <span className="ea-optional-label">Add context <span>(optional)</span></span>
+        <span className="ea-optional-summary">{summary}</span>
+      </button>
+      <div id={ids.panel} className="ea-optional-panel" hidden={!open}>
+        <div className="ea-form-grid">
+          <Field id={ids.website} name="companyWebsite" label="Company website" optional inputMode="url" autoComplete="url" placeholder="yourcompany.com" defaultValue={prefilledWebsite} />
+          <Field id={ids.role} name="roleTitle" label="Role" optional autoComplete="organization-title" placeholder="Founder, Head of growth…" />
+        </div>
+        <label className="ea-checkbox" htmlFor={ids.consent}>
+          <input id={ids.consent} type="checkbox" checked={marketingConsent} onChange={(event) => onConsentChange(event.target.checked)} />
+          <span>Send me occasional product updates. Optional, and separate from your request.</span>
+        </label>
+      </div>
+    </div>
   );
 }
 
@@ -147,18 +182,28 @@ function formatClock(totalSeconds: number): string {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-/** Matches the site-wide convention (see marketing/links.ts) of accepting a bare domain and treating it as https. The real schema still has the final word server-side. */
-function normalizeWebsiteInput(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-}
-
-function Field({ id, name, label, type = "text", required = false, optional = false, placeholder, defaultValue }: { id: string; name: string; label: string; type?: string; required?: boolean; optional?: boolean; placeholder?: string; defaultValue?: string }) {
+function Field({ id, name, label, type = "text", optional = false, placeholder, defaultValue, autoComplete, inputMode, error, onInput }: {
+  id: string; name: string; label: string; type?: string; optional?: boolean; placeholder?: string; defaultValue?: string;
+  autoComplete?: string; inputMode?: "url" | "email" | "text"; error?: string; onInput?: () => void;
+}): ReactNode {
   return (
     <div className="ea-field">
       <label htmlFor={id}>{label}{optional ? <span className="ea-field-optional">Optional</span> : null}</label>
-      <input id={id} name={name} type={type} required={required} maxLength={240} placeholder={placeholder} defaultValue={defaultValue} />
+      <input
+        id={id}
+        name={name}
+        type={type}
+        required={!optional}
+        maxLength={240}
+        placeholder={placeholder}
+        defaultValue={defaultValue}
+        autoComplete={autoComplete}
+        inputMode={inputMode}
+        onInput={onInput}
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? `${id}-error` : undefined}
+      />
+      {error ? <p className="ea-field-error" id={`${id}-error`} role="alert">{error}</p> : null}
     </div>
   );
 }

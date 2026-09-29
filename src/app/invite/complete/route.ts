@@ -65,7 +65,7 @@ function applyPrivateHeaders(response: NextResponse) {
   response.headers.set("referrer-policy", "no-referrer");
 }
 
-const LOGO_MARK = `<svg viewBox="0 0 120 118" width="20" height="20" aria-hidden="true"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#111110" stroke-width="16" stroke-linejoin="miter" stroke-linecap="butt"/><polygon points="60,19 51,42 69,42" fill="#D7FF3D"/></svg>`;
+const LOGO_MARK = `<svg viewBox="0 0 120 118" width="20" height="20" aria-hidden="true"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#111110" stroke-width="16" stroke-linejoin="miter" stroke-linecap="butt"/></svg>`;
 
 function layout(content: string) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Wanterest invitation</title>
