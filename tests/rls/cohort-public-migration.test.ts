@@ -1,14 +1,14 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const migration = readFileSync(
+const migration = normalizeLineEndings(readFileSync(
   "supabase/migrations/20260928004407_layer13a4_public_cohort_profiles_v1.sql",
   "utf8",
-);
-const repairMigration = readFileSync(
+));
+const repairMigration = normalizeLineEndings(readFileSync(
   "supabase/migrations/20260928012224_layer13a4_monogram_normalization_repair.sql",
   "utf8",
-);
+));
 
 describe("Layer 13A.4 public cohort profile migration contract", () => {
   it("keeps public settings separate from authoritative cohort identity", () => {
@@ -71,3 +71,7 @@ describe("Layer 13A.4 public cohort profile migration contract", () => {
     expect(repairMigration).toContain("grant execute on function public.upsert_workspace_public_cohort_profile");
   });
 });
+
+function normalizeLineEndings(source: string): string {
+  return source.replace(/\r\n/g, "\n");
+}

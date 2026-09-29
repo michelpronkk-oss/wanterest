@@ -65,24 +65,24 @@ export function createCohortPublicService(repository?: CohortPublicRepository): 
 
 export const getPublicCohortWallsQuery = cache(async function getPublicCohortWallsQuery(): Promise<PublicCohortWalls> {
   const client = await createSupabaseServerClient();
-  return createCohortPublicService(createSupabaseCohortPublicRepository(client as never)).getWalls();
+  return createCohortPublicService(createSupabaseCohortPublicRepository(client)).getWalls();
 });
 
 export const getPublicCohortPassQuery = cache(async function getPublicCohortPassQuery(slug: unknown): Promise<PublicCohortPass | null> {
   const parsed = z.string().min(1).max(80).safeParse(slug);
   if (!parsed.success) return null;
   const client = await createSupabaseServerClient();
-  return createCohortPublicService(createSupabaseCohortPublicRepository(client as never)).getPublicPass(parsed.data);
+  return createCohortPublicService(createSupabaseCohortPublicRepository(client)).getPublicPass(parsed.data);
 });
 
 export const getWorkspacePublicCohortProfileQuery = cache(async function getWorkspacePublicCohortProfileQuery(workspaceId: unknown) {
   const client = await createSupabaseServerClient();
-  return createCohortPublicService(createSupabaseCohortPublicRepository(client as never)).getPrivateProfile(workspaceId);
+  return createCohortPublicService(createSupabaseCohortPublicRepository(client)).getPrivateProfile(workspaceId);
 });
 
 export async function updateWorkspacePublicCohortProfileCommand(workspaceId: unknown, input: unknown, traceId?: string) {
   const client = await createSupabaseServerClient();
-  return createCohortPublicService(createSupabaseCohortPublicRepository(client as never)).updatePrivateProfile(workspaceId, input, traceId);
+  return createCohortPublicService(createSupabaseCohortPublicRepository(client)).updatePrivateProfile(workspaceId, input, traceId);
 }
 
 export { publicCohortTypeSchema };

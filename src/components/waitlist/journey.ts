@@ -28,7 +28,7 @@ export type StatusView = {
   contactAction?: { label: string; reason: "invite_expired" | "invite_revoked" };
   invite?: { email: string; company: string; expiresAt: string; daysRemaining: number; earlyAccess: string };
   priority?: { since: string | null };
-  admitted?: { identity: string | null };
+  admitted?: { identity: string | null; cohort: { cohort: "founding_25" | "early_100"; number: number } | null };
   showReferralProgress: boolean;
   canWithdraw: boolean;
 };
@@ -90,7 +90,7 @@ export function describeStatus(application: JourneyApplication, referral: Journe
       title: "Your Wanterest access is ready.",
       body: "Your invitation is complete and your workspace has been created.",
       ledger: [requested, verified("done"), { label: reviewLabel, tone: "done", meta: "Reviewed" }, { label: "Invite", tone: "done", meta: shortDate(admission.admittedAt) }],
-      admitted: { identity: cohortIdentityLabel(admission) },
+      admitted: { identity: cohortIdentityLabel(admission), cohort: admission.cohort && admission.cohortNumber ? { cohort: admission.cohort, number: admission.cohortNumber } : null },
     };
   }
 

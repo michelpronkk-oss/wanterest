@@ -21,9 +21,10 @@ export function ProofSignalCard({ source, sourceLabel, time, intentLabel, intent
       <div className="marketing-proof-signal-topline">
         <div className="marketing-proof-signal-source">
           <SourceBrandIcon sourceKey={source} label={sourceLabel} size={iconSize} />
-          <span className="signal-source-name">{sourceLabel}</span>
-          <span className="marketing-proof-signal-separator" aria-hidden="true">·</span>
-          <span className="signal-source-time">{time}</span>
+          <span className="marketing-proof-signal-source-copy">
+            <span className="signal-source-name">{sourceLabel}</span>
+            <span className="signal-source-time">{time}</span>
+          </span>
         </div>
         <span className="marketing-proof-signal-score">{evidenceLabel ?? (matchPercent === undefined ? "Evidence attached" : `${matchPercent}% match`)}</span>
       </div>

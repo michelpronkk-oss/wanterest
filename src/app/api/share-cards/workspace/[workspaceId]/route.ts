@@ -27,8 +27,9 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const { workspaceId } = await context.params;
     const user = await requireUser();
-    const card = await mutateWorkspaceShareCardCommand(workspaceId, user.id, await readJson(request));
-    return Response.json({ card, traceId }, { headers: { "cache-control": "private, no-store", "x-request-id": traceId } });
+    const result = await mutateWorkspaceShareCardCommand(workspaceId, user.id, await readJson(request));
+    // Publish returns the one card; unpublish returns the refreshed list.
+    return Response.json({ ...(Array.isArray(result) ? { cards: result } : { card: result }), traceId }, { headers: { "cache-control": "private, no-store", "x-request-id": traceId } });
   } catch (error) {
     return jsonError(error, traceId);
   }

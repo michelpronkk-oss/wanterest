@@ -5,17 +5,14 @@ vi.mock("server-only", () => ({}));
 const mocks = vi.hoisted(() => ({
   verify: vi.fn(),
   withdraw: vi.fn(),
-  getApplicantShareCardsQuery: vi.fn(),
-  mutateApplicantShareCardCommand: vi.fn(),
   cookie: { value: undefined as string | undefined },
 }));
-const { verify, withdraw, getApplicantShareCardsQuery, mutateApplicantShareCardCommand } = mocks;
+const { verify, withdraw } = mocks;
 
 vi.mock("@/server/modules/waitlist", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/modules/waitlist")>();
   return { ...actual, createWaitlistService: () => ({ verify: mocks.verify, withdraw: mocks.withdraw }) };
 });
-vi.mock("@/server/modules/share-cards", () => ({ getApplicantShareCardsQuery: mocks.getApplicantShareCardsQuery, mutateApplicantShareCardCommand: mocks.mutateApplicantShareCardCommand }));
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: (name: string) => (name === "wanterest_waitlist_status" && mocks.cookie.value ? { value: mocks.cookie.value } : undefined) }),
 }));
@@ -25,7 +22,6 @@ function setCookie(value: string | undefined) { mocks.cookie.value = value; }
 import { AppError } from "../../src/server/lib/errors";
 import { GET as verifyRoute } from "../../src/app/waitlist/verify/route";
 import { POST as withdrawRoute } from "../../src/app/waitlist/withdraw/route";
-import { POST as shareCardsPost } from "../../src/app/waitlist/share-cards/route";
 import { loadShareAvailability } from "../../src/app/waitlist/_lib/journey-data";
 
 const verificationToken = "v".repeat(43);
@@ -37,7 +33,7 @@ function verifyRequest(token = verificationToken, status = statusToken) {
 }
 
 beforeEach(() => {
-  verify.mockReset(); withdraw.mockReset(); getApplicantShareCardsQuery.mockReset(); mutateApplicantShareCardCommand.mockReset();
+  verify.mockReset(); withdraw.mockReset();
   setCookie(undefined);
 });
 
@@ -128,30 +124,8 @@ describe("manual withdrawal is reachable with the path=/waitlist status cookie",
   });
 });
 
-describe("Share my place reuses Layer 13B.1 with explicit publication only", () => {
-  it("returns `card` after an explicit publish and `cards` after revoke, matching ShareCardPanel's contract", async () => {
-    setCookie(statusToken);
-    mutateApplicantShareCardCommand.mockResolvedValueOnce({ variant: "EARLY_ACCESS", publicationState: "published" });
-    const published = await shareCardsPost(new Request(`${origin}/waitlist/share-cards`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ action: "publish", variant: "EARLY_ACCESS" }) }));
-    expect(await published.json()).toMatchObject({ card: { variant: "EARLY_ACCESS" } });
-
-    mutateApplicantShareCardCommand.mockResolvedValueOnce([{ variant: "EARLY_ACCESS", publicationState: "revoked" }]);
-    const revoked = await shareCardsPost(new Request(`${origin}/waitlist/share-cards`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ action: "revoke", variant: "EARLY_ACCESS" }) }));
-    expect(await revoked.json()).toMatchObject({ cards: [{ variant: "EARLY_ACCESS" }] });
-    expect(mutateApplicantShareCardCommand).toHaveBeenCalledWith(statusToken, expect.anything());
-  });
-
-  it("rejects cross-origin share mutations", async () => {
-    setCookie(statusToken);
-    const response = await shareCardsPost(new Request(`${origin}/waitlist/share-cards`, { method: "POST", headers: { origin: "https://evil.example" }, body: "{}" }));
-    expect(response.status).toBe(403);
-    expect(mutateApplicantShareCardCommand).not.toHaveBeenCalled();
-  });
-
-  it("reports sharing as unavailable (not empty) when the 13B schema is missing, without throwing", async () => {
-    getApplicantShareCardsQuery.mockRejectedValue(new Error("relation \"share_card_publications\" does not exist"));
-    await expect(loadShareAvailability(statusToken)).resolves.toEqual({ available: false });
-    getApplicantShareCardsQuery.mockResolvedValue([]);
-    await expect(loadShareAvailability(statusToken)).resolves.toEqual({ available: true, cards: [] });
+describe("Share my place is safely deferred from the F1 release", () => {
+  it("reports sharing as unavailable without importing the unapplied 13B engine", async () => {
+    await expect(loadShareAvailability()).resolves.toEqual({ available: false });
   });
 });

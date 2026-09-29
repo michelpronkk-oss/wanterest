@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { getPublicCohortPassQuery } from "@/server/modules/cohort-public";
+import { getPublicCohortPassQuery, publicMemberPassPresentation } from "@/server/modules/cohort-public";
+import { MarketingPageShell } from "@/components/marketing/marketing-page-shell";
+import { MemberProfileView } from "@/components/members/member-profile";
 
 export const dynamic = "force-dynamic";
 
@@ -19,25 +21,20 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
+/**
+ * Apex 2.0 boards 11 (desktop) and 12 (mobile). Publication authority is the
+ * current pass-visible RPC read above, never the slug or a wall row. "Share
+ * pass" is intentionally absent: public sharing belongs to the unreleased 13B
+ * layer and stays inactive here.
+ */
 export default async function MemberPassPage({ params }: PageProps) {
   const { slug } = await params;
   const profile = await getPublicCohortPassQuery(slug);
   if (!profile) notFound();
-  const cohortLabel = profile.cohort === "founding_25" ? "Founding 25" : "Early 100";
-  const number = `#${String(profile.number).padStart(profile.cohort === "founding_25" ? 2 : 3, "0")}`;
+  const presentation = publicMemberPassPresentation(profile);
   return (
-    <main className="marketing-content-wrap" aria-labelledby="member-pass-title">
-      <div className="marketing-content-eyebrow"><span className="marketing-content-eyebrow-dot" /> {cohortLabel}</div>
-      <div aria-hidden="true">{profile.monogram ?? "WN"}</div>
-      <h1 id="member-pass-title">{profile.displayName}</h1>
-      <p>{profile.headline ?? "Public member"}</p>
-      <dl>
-        <div><dt>Cohort</dt><dd>{cohortLabel}</dd></div>
-        <div><dt>Identity</dt><dd>{number}</dd></div>
-        <div><dt>Member since</dt><dd>{new Date(profile.assignedAt).toLocaleDateString("en", { dateStyle: "medium", timeZone: "UTC" })}</dd></div>
-      </dl>
-      {profile.websiteUrl ? <p><a href={profile.websiteUrl} rel="noreferrer">Visit website</a></p> : null}
-      <p>This public pass represents workspace cohort provenance. It is not an access token, invitation, or billing credential.</p>
-    </main>
+    <MarketingPageShell>
+      <MemberProfileView presentation={presentation} canonicalUrl={profile.canonicalUrl} websiteUrl={profile.websiteUrl} />
+    </MarketingPageShell>
   );
 }

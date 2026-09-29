@@ -1,9 +1,10 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 
+import Link from "next/link";
 import { LogoMark } from "@/components/dashboard/nav-icons";
 import { APP_LOGIN_URL } from "@/components/marketing/links";
 import { SUPPORT_EMAIL } from "@/shared/config/site";
+import { CohortBadge, EarlyAccessNumber, PriorityPill } from "@/components/members/member-identity-slots";
 import type { ChipTone, LedgerNode, RevealModel, StatusView } from "./journey";
 
 /**
@@ -23,7 +24,7 @@ const SHELL_NAV_LINKS = [
  * applicant is already in the flow. Without it (designs 07–10) the header carries the private
  * status indicator instead.
  */
-export function JourneyShell({ indicator, mobileBadge, nav, children }: { indicator?: string; mobileBadge?: string; nav?: "marketing"; children: ReactNode }) {
+export function JourneyShell({ indicator, mobileBadge, nav, children }: { indicator?: string; mobileBadge?: ReactNode; nav?: "marketing"; children: ReactNode }) {
   const year = new Date().getFullYear();
   return (
     <div className="marketing-page ea-shell">
@@ -38,7 +39,7 @@ export function JourneyShell({ indicator, mobileBadge, nav, children }: { indica
           </>
         ) : null}
         {indicator ? <span className="ea-shell-indicator"><span className="ea-shell-indicator-dot" aria-hidden="true" />{indicator}</span> : null}
-        {mobileBadge ? <span className="ea-shell-badge">{mobileBadge}</span> : null}
+        {mobileBadge ? <span className={`ea-shell-badge${typeof mobileBadge === "string" ? "" : " is-node"}`}>{mobileBadge}</span> : null}
       </header>
       {children}
       <footer className="ea-shell-footer">
@@ -48,7 +49,6 @@ export function JourneyShell({ indicator, mobileBadge, nav, children }: { indica
     </div>
   );
 }
-
 export function StatusChip({ label, tone }: { label: string; tone: ChipTone }) {
   return <span className={`ea-status-chip is-${tone}`}><span className="ea-status-chip-dot" aria-hidden="true" />{label}</span>;
 }
@@ -103,7 +103,7 @@ export function VerifiedReveal({ model, actions }: { model: RevealModel; actions
         <p className="ea-reveal-body">Your place is recorded. <span className="ea-hide-mobile">We review requests and open access in waves.</span><span className="ea-show-mobile">Access opens in waves.</span></p>
         <section className="ea-identity-card is-reveal" aria-label="Your Early Access identity">
           <div className="ea-identity-head ea-reveal-label"><span>Early access</span><span className="ea-identity-permanent">Permanent</span></div>
-          <div className="ea-identity-number ea-reveal-number">{model.earlyAccess}</div>
+          <div className="ea-identity-number ea-reveal-number"><EarlyAccessNumber label={model.earlyAccess} /></div>
           <dl className="ea-identity-meta ea-reveal-meta">
             <div><dt>Joined</dt><dd>{model.joined}</dd></div>
             <div><dt>Company</dt><dd>{model.company}</dd></div>
@@ -131,7 +131,7 @@ function IdentitySide({ earlyAccess, chip }: { earlyAccess: string; chip: { labe
     <aside className="ea-status-side">
       <div className="ea-identity-card is-compact">
         <div className="ea-identity-head"><span>Early access</span><StatusChip label={chip.label} tone={chip.tone} /></div>
-        <div className="ea-identity-number">{earlyAccess}</div>
+        <div className="ea-identity-number"><EarlyAccessNumber label={earlyAccess} /></div>
         <p className="ea-identity-caption">Yours permanently, whatever happens next.</p>
       </div>
       <p className="ea-status-footnote">Joining the waitlist does not create an account or guarantee an invite.</p>
@@ -150,15 +150,18 @@ function StatusDetails({ submitted, company, email, marketingConsent }: { submit
   );
 }
 
-function PriorityCard({ earlyAccess, since }: { earlyAccess: string; since: string | null }) {
+function PriorityCard({ earlyAccess, earlyAccessNumber, since }: { earlyAccess: string; earlyAccessNumber: number | null; since: string | null }) {
   return (
     <section className="ea-priority-card" aria-label="Priority Access">
       <div className="ea-priority-band">
         <div><span className="ea-priority-kicker">Status</span><strong>Priority access</strong></div>
-        {since ? <span className="ea-priority-since">Since {since}</span> : null}
+        <span className="ea-priority-band-meta">
+          <PriorityPill status="granted" earlyAccessNumber={earlyAccessNumber} />
+          {since ? <span className="ea-priority-since">Since {since}</span> : null}
+        </span>
       </div>
       <div className="ea-priority-number-row">
-        <div><span className="ea-priority-kicker is-muted">Early access</span><span className="ea-priority-number">{earlyAccess}</span></div>
+        <div><span className="ea-priority-kicker is-muted">Early access</span><span className="ea-priority-number"><EarlyAccessNumber label={earlyAccess} /></span></div>
         <span className="ea-priority-note">Your original number is kept.</span>
       </div>
     </section>
@@ -187,8 +190,8 @@ export function CohortPreview() {
       <strong>Assigned when your workspace is created</strong>
       <p>If a founding cohort is still open, you may join it:</p>
       <div className="ea-cohort-badges">
-        <span className="ea-ladder-badge is-founding"><LogoMark size={13} /><span>FOUNDING 25</span></span>
-        <span className="ea-ladder-badge is-early"><LogoMark size={13} /><span>EARLY 100</span></span>
+        <CohortBadge cohort="founding_25" />
+        <CohortBadge cohort="early_100" />
       </div>
       <p className="ea-cohort-footnote">Preview only. An invite is not a cohort.</p>
     </aside>
@@ -208,9 +211,10 @@ export function ReferralProgress({ verifiedCount, threshold, copyButton }: { ver
   );
 }
 
-export function PrivateStatus({ view, earlyAccess, details, withdraw, referral, share }: {
+export function PrivateStatus({ view, earlyAccess, earlyAccessNumber = null, details, withdraw, referral, share }: {
   view: StatusView;
   earlyAccess: string;
+  earlyAccessNumber?: number | null;
   details: { submitted: string; company: string; email: string; marketingConsent: boolean };
   withdraw?: ReactNode;
   referral?: ReactNode;
@@ -226,9 +230,9 @@ export function PrivateStatus({ view, earlyAccess, details, withdraw, referral, 
           <StatusChip label={view.chip.label} tone={view.chip.tone} />
           <h1 id="status-title">{view.title}</h1>
           <p className="ea-status-body">{view.body}</p>
-          {view.variant === "priority" ? <PriorityCard earlyAccess={earlyAccess} since={view.priority?.since ?? null} /> : null}
+          {view.variant === "priority" ? <PriorityCard earlyAccess={earlyAccess} earlyAccessNumber={earlyAccessNumber} since={view.priority?.since ?? null} /> : null}
           {view.variant === "invite" && view.invite ? <InviteCard invite={view.invite} /> : null}
-          {view.variant === "admitted" && view.admitted?.identity ? <p className="ea-admitted-identity"><span>Cohort identity</span><strong>{view.admitted.identity}</strong></p> : null}
+          {view.variant === "admitted" && view.admitted?.cohort ? <p className="ea-admitted-identity"><span>Cohort identity</span><CohortBadge cohort={view.admitted.cohort.cohort} number={view.admitted.cohort.number} /></p> : view.variant === "admitted" && view.admitted?.identity ? <p className="ea-admitted-identity"><span>Cohort identity</span><strong>{view.admitted.identity}</strong></p> : null}
           <Ledger nodes={view.ledger} />
           {contact ? <div className="ea-status-actions">{contact}</div> : null}
           {view.showReferralProgress ? referral : null}

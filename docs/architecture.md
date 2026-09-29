@@ -5264,7 +5264,7 @@ than trusting the CTA or browser state. The typed homepage projection is intenti
 13B.1 seam for Early Access, Priority, invited, Founding 25, Early 100, and normal-member share-card states;
 image rendering and premium homepage redesign are out of scope.
 
-### 13B.1 — Dynamic Share Card Engine (`layer13b1_dynamic_share_card_engine_v1`) — IMPLEMENTATION BRANCH
+### 13B.1 — Dynamic Share Card Engine (`layer13b1_dynamic_share_card_engine_v1`) — INTEGRATED, MIGRATION NOT YET APPLIED
 
 13B.1 is an additive, consent-first distribution layer over existing authoritative waitlist, referral,
 admission, cohort, and 13A.4 public-profile state. It does not assign cohorts, verify applications, grant
@@ -5285,3 +5285,14 @@ rechecks active Priority/pass visibility, and derives the current 13A.6 CTA. It 
 invite tokens, workspace IDs, internal review state, billing, team data, or intelligence. Public image/page
 routes are dynamic and no-store under Wanterest control; external social caches may retain already-fetched
 previews. Future intelligence-card adapters are reserved for 13B.2/13B.3.
+
+Integration (Board 15 artwork): the migration is `20261101000000_layer13b1_dynamic_share_card_engine_v1.sql`,
+ordered after the last applied migration and not yet applied to production. Until it is, every journey surface
+degrades to "Sharing isn't available right now" because the engine query fails closed. Snapshots are snake_case
+JSON (`display_name`, `identity_label`, `identity_number`, `monogram`, `admitted_on`, ...), matching the public
+RPC projection. The Priority snapshot carries the applicant's verified Early Access number ("Early access #0184 ·
+moved up the queue"); cohort snapshots carry the persisted 13A.4 monogram and the UTC cohort assignment date.
+Company logo URLs are never fetched server-side (F1.6A: no fetch); the image tile shows the monogram. Applicant
+mutations live at `/waitlist/share-cards` because the private status cookie is scoped to `/waitlist`. One
+`ShareCardArtwork` composition renders the private previews, the public page and the 1200×630 / 1080×1350 /
+1080×1080 PNGs with bundled OFL fonts (`assets/fonts`).

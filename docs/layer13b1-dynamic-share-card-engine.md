@@ -18,7 +18,7 @@ The four V1 variants are `EARLY_ACCESS`, `PRIORITY_ACCESS`, `FOUNDING_25`, and `
 
 ## Routes and rendering
 
-- Private applicant controls: `/waitlist/status` and `/api/share-cards/applicant`.
+- Private applicant controls: `/waitlist/status`, the `/waitlist/verified` reveal and `/waitlist/share-cards` (under the status cookie's `/waitlist` path).
 - Private admitted-workspace controls: `/app/settings?tab=sharing` and `/api/share-cards/workspace/[workspaceId]`.
 - Public canonical page: `/share/[slug]`, always `noindex`.
 - Dynamic OG image: `/share/[slug]/opengraph-image`, 1200×630 PNG.
@@ -32,7 +32,7 @@ Private reads use one narrow authority lookup plus one bounded publication looku
 
 ## Migration inventory
 
-`supabase/migrations/20261026000000_layer13b1_dynamic_share_card_engine_v1.sql` adds the private publication/event tables, service-role publication/revocation/list RPCs, the narrow public card RPC, public event recording, RLS, grants, and append-only/update triggers. It is additive and has no backfill.
+`supabase/migrations/20261101000000_layer13b1_dynamic_share_card_engine_v1.sql` adds the private publication/event tables, service-role publication/revocation/list RPCs, the narrow public card RPC, public event recording, RLS, grants, and append-only/update triggers. It is additive and has no backfill.
 
 ## Future extension
 

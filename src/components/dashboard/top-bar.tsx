@@ -9,6 +9,8 @@ import { InboxIcon, SearchIcon } from "./nav-icons";
 import { ScanProgressModal } from "./scan-progress-modal";
 import { IntelligenceInbox } from "./intelligence-inbox";
 import type { InboxItem } from "./inbox";
+import { CohortBadge } from "@/components/members/member-identity-slots";
+import type { AdmittedCohort } from "@/shared/member-presentation";
 
 type Props = {
   workspaceId: string;
@@ -18,9 +20,11 @@ type Props = {
   userInitial: string;
   currentPlan: "free" | "pro" | "growth";
   inboxItems: InboxItem[];
+  /** Private, server-authorized permanent cohort of the current workspace (Apex board 16 topbar). */
+  cohortIdentity?: { cohort: AdmittedCohort; number: number } | null;
 };
 
-export function TopBar({ workspaceId, productId, productName, productDomain, userInitial, currentPlan, inboxItems }: Props) {
+export function TopBar({ workspaceId, productId, productName, productDomain, userInitial, currentPlan, inboxItems, cohortIdentity }: Props) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [scanOpen, setScanOpen] = useState(false);
@@ -92,6 +96,7 @@ export function TopBar({ workspaceId, productId, productName, productDomain, use
           <InboxIcon />
           {inboxItems.length > 0 ? <span className="dashboard-icon-badge">{inboxItems.length}</span> : null}
         </button>
+        {cohortIdentity ? <CohortBadge cohort={cohortIdentity.cohort} number={cohortIdentity.number} size="micro" className="dashboard-topbar-cohort" /> : null}
         <span className="dashboard-avatar" aria-hidden="true">{userInitial}</span>
       </div>
 

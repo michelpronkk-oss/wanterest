@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-const migration = readFileSync(path.resolve(process.cwd(), "supabase/migrations/20261026000000_layer13b1_dynamic_share_card_engine_v1.sql"), "utf8");
+const migration = readFileSync(path.resolve(process.cwd(), "supabase/migrations/20261101000000_layer13b1_dynamic_share_card_engine_v1.sql"), "utf8");
 
 describe("Layer 13B.1 share-card migration contract", () => {
   it("keeps publication storage explicit, revocable, and owner-scoped", () => {
@@ -21,6 +21,12 @@ describe("Layer 13B.1 share-card migration contract", () => {
     expect(migration).toContain("and (publication.variant <> 'PRIORITY_ACCESS' or priority.id is not null)");
     expect(migration).toContain("and (publication.variant in ('EARLY_ACCESS', 'PRIORITY_ACCESS') or profile.id is not null)");
     expect(migration).toContain("grant execute on function public.record_share_card_event(text, text, text) to anon, authenticated, service_role");
+  });
+
+  it("is ordered after the latest applied migration and projects the Board 15 fields", () => {
+    expect(migration).toContain("case when coalesce(publication.snapshot ->> 'monogram', '') ~ '^[A-Z0-9]{1,3}$'");
+    expect(migration).toContain("then (publication.snapshot ->> 'admitted_on')::date else null end");
+    expect(migration).toContain("publication.snapshot ->> 'display_name'");
   });
 
   it("does not make public slugs mutation credentials", () => {

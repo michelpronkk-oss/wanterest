@@ -17,7 +17,7 @@ const applicantId = "11111111-1111-4111-8111-111111111111";
 const workspaceId = "22222222-2222-4222-8222-222222222222";
 
 function authority(variant: ShareCardAuthority["variant"], ownerKind: "applicant" | "workspace" = "applicant"): ShareCardAuthority {
-  const identityNumber = variant === "PRIORITY_ACCESS" ? null : variant === "FOUNDING_25" ? 7 : variant === "EARLY_100" ? 42 : 1234;
+  const identityNumber = variant === "FOUNDING_25" ? 7 : variant === "EARLY_100" ? 42 : 1234;
   const snapshot: ShareCardSnapshot = {
     displayName: ownerKind === "workspace" ? "Acme" : "Wanterest member",
     headline: null,
@@ -25,6 +25,8 @@ function authority(variant: ShareCardAuthority["variant"], ownerKind: "applicant
     identityNumber,
     tone: variant === "FOUNDING_25" ? "founding" : variant === "EARLY_100" ? "early" : variant === "PRIORITY_ACCESS" ? "priority" : "neutral",
     isPermanent: variant !== "PRIORITY_ACCESS",
+    monogram: ownerKind === "workspace" ? "AC" : null,
+    admittedOn: ownerKind === "workspace" ? "2026-03-14" : null,
   };
   return { ownerKind, ownerId: ownerKind === "workspace" ? workspaceId : applicantId, workspaceId: ownerKind === "workspace" ? workspaceId : null, waitlistApplicationId: ownerKind === "applicant" ? applicantId : null, variant, snapshot };
 }
@@ -103,5 +105,44 @@ describe("Layer 13B.1 dynamic share-card engine", () => {
   it("rejects publishing a variant absent from the authoritative source", async () => {
     const { service } = harness([authority("EARLY_ACCESS")]);
     await expect(service.publishApplicant("status-token", "FOUNDING_25")).rejects.toBeInstanceOf(AppError);
+  });
+});
+
+describe("Layer 13B.1 share-card repository", () => {
+  it("stores snapshots with the snake_case keys the public RPC projects", async () => {
+    const { createSupabaseShareCardRepository } = await import("../../src/server/modules/share-cards/share-card.repository");
+    const calls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+    const row = {
+      id: "33333333-3333-4333-8333-333333333333",
+      workspace_id: workspaceId,
+      waitlist_application_id: null,
+      variant: "FOUNDING_25",
+      public_slug: "abcdefghijklmnopqrstuvwxyz0123456789",
+      publication_state: "published",
+      snapshot: null as unknown,
+      published_at: "2026-09-28T00:00:00.000Z",
+      revoked_at: null,
+    };
+    const client = {
+      rpc: async (fn: string, args: Record<string, unknown>) => {
+        calls.push({ fn, args });
+        row.snapshot = args.p_snapshot;
+        return { data: [row], error: null };
+      },
+    };
+    const repository = createSupabaseShareCardRepository(client as never);
+    const published = await repository.publish({ workspaceId, variant: "FOUNDING_25", publicSlug: row.public_slug, snapshot: authority("FOUNDING_25", "workspace").snapshot });
+    expect(calls[0]?.args.p_snapshot).toEqual({
+      display_name: "Acme",
+      headline: null,
+      identity_label: "Founding 25",
+      identity_number: 7,
+      tone: "founding",
+      is_permanent: true,
+      monogram: "AC",
+      admitted_on: "2026-03-14",
+    });
+    expect(published.snapshot.displayName).toBe("Acme");
+    expect(published.snapshot.admittedOn).toBe("2026-03-14");
   });
 });

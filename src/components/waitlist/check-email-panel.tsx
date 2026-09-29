@@ -114,7 +114,7 @@ export function CheckEmailPanel({ verified }: { verified: { email: string; early
         <div><dt>No dashboard access yet</dt><dd>Nothing is created until you are invited.</dd></div>
       </dl>
       <div className="ea-check-email-actions">
-        {mail ? <a className="dashboard-button dashboard-button-primary" href={mail.url} target="_blank" rel="noopener noreferrer">{mail.label} ↗</a> : null}
+        {mail ? <a className="dashboard-button dashboard-button-primary" href={mail.url} target="_blank" rel="noopener noreferrer">{mail.label} {"↗︎"}</a> : null}
         <button type="button" className="dashboard-button dashboard-button-secondary" disabled={resendState === "sending" || resendCooldown > 0} onClick={() => void resend()}>
           {resendCooldown > 0 ? `Resend in ${formatClock(resendCooldown)}` : resendState === "sending" ? "Sending…" : "Resend email"}
         </button>

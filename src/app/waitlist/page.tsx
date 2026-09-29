@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 
-import { MarketingPageShell } from "@/components/marketing/marketing-page-shell";
+import { ResponsiveText } from "@/components/marketing/responsive-text";
+import { JourneyShell } from "@/components/waitlist/journey-shell";
 import { earlyAccessLabel } from "@/components/waitlist/journey";
 import { MembershipLadder } from "@/components/waitlist/membership-ladder";
 import { WaitlistForm } from "@/components/waitlist/waitlist-form";
@@ -35,19 +36,26 @@ async function existingApplicantStatus(): Promise<{ earlyAccess: string | null }
   }
 }
 
+const PLACE_IN_LINE = <><strong>Early Access is a place in line, not an account.</strong> We review requests and open workspaces in waves.</>;
+
 export default async function WaitlistPage() {
   const [access, existingApplicant] = await Promise.all([getProductAccessState(), existingApplicantStatus()]);
   return (
-    <MarketingPageShell activeHref="/waitlist">
+    <JourneyShell>
       <main className="ea-page" aria-labelledby="waitlist-title">
         <div className="ea-hero">
           <div className="ea-copy-col">
-            <div className="ea-eyebrow-pill"><span className="ea-eyebrow-dot" /><span className="ea-eyebrow-text">EARLY ACCESS</span></div>
+            <div className="ea-eyebrow-pill"><span className="ea-eyebrow-dot" aria-hidden="true" /><span className="ea-eyebrow-text">EARLY ACCESS</span></div>
             {access.canRequestAccess ? (
               <>
                 <h1 id="waitlist-title" className="ea-title">See what your market wants before anyone else does.</h1>
-                <p className="ea-lede">Wanterest tracks public demand, emerging pain and switching intent across the conversations your buyers already have.</p>
-                <p className="ea-note"><strong>Early Access is a place in line, not an account.</strong> We review requests and open workspaces in waves.</p>
+                <p className="ea-lede">
+                  <ResponsiveText
+                    full="Wanterest tracks public demand, emerging pain and switching intent across the conversations your buyers already have."
+                    short="Public demand, emerging pain and switching intent, from the conversations your buyers already have."
+                  />
+                </p>
+                <p className="ea-note is-movable">{PLACE_IN_LINE}</p>
               </>
             ) : (
               <>
@@ -64,7 +72,7 @@ export default async function WaitlistPage() {
                   <h2>{existingApplicant.earlyAccess ? <>You&rsquo;re Early Access {existingApplicant.earlyAccess}.</> : <>You&rsquo;ve already requested access.</>}</h2>
                   <p>This browser holds your private status link, so there&rsquo;s nothing to fill in again.</p>
                 </div>
-                <a className="dashboard-button dashboard-button-primary ea-submit" href="/waitlist/status">View status →</a>
+                <a className="ea-submit" href="/waitlist/status">View status<span className="ea-submit-arrow" aria-hidden="true">→</span></a>
                 {existingApplicant.earlyAccess ? <a className="ea-text-action" href="/waitlist/verified">See your Early Access identity</a> : null}
               </section>
             ) : access.canRequestAccess ? (
@@ -72,13 +80,19 @@ export default async function WaitlistPage() {
             ) : (
               <section className="ea-form-card" aria-label="Start Wanterest">
                 <div className="ea-form-heading"><h2>Start free</h2><p>No waitlist. Your workspace is ready as soon as you sign up.</p></div>
-                <a className="dashboard-button dashboard-button-primary ea-submit" href={APP_SIGNUP_URL}>Start free →</a>
+                <a className="ea-submit" href={APP_SIGNUP_URL}>Start free<span className="ea-submit-arrow" aria-hidden="true">→</span></a>
               </section>
             )}
           </div>
-          {access.canRequestAccess ? <div className="ea-ladder-col"><MembershipLadder /></div> : null}
+          {access.canRequestAccess ? (
+            <div className="ea-ladder-col">
+              {/* Mobile only: the same note, moved under the form so the CTA fits the first screen. */}
+              <p className="ea-note ea-note-mobile">{PLACE_IN_LINE}</p>
+              <MembershipLadder />
+            </div>
+          ) : null}
         </div>
       </main>
-    </MarketingPageShell>
+    </JourneyShell>
   );
 }

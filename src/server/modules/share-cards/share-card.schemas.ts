@@ -1,26 +1,16 @@
 import { z } from "zod";
 
-export const shareCardVariants = ["EARLY_ACCESS", "PRIORITY_ACCESS", "FOUNDING_25", "EARLY_100", "SIGNAL", "DEMAND_GAP", "DEMAND_DRIFT"] as const;
+export const shareCardVariants = ["EARLY_ACCESS", "PRIORITY_ACCESS", "FOUNDING_25", "EARLY_100"] as const;
 export const shareCardVariantSchema = z.enum(shareCardVariants);
 export type ShareCardVariant = z.infer<typeof shareCardVariantSchema>;
 
-export const intelligenceShareCardVariants = ["SIGNAL", "DEMAND_GAP", "DEMAND_DRIFT"] as const;
-export const intelligenceShareCardVariantSchema = z.enum(intelligenceShareCardVariants);
-export type IntelligenceShareCardVariant = z.infer<typeof intelligenceShareCardVariantSchema>;
-
-export const shareCardKindSchema = z.enum(["identity", "intelligence"]);
-export type ShareCardKind = z.infer<typeof shareCardKindSchema>;
-
-export const shareCardClaimTypeSchema = z.enum(["observation", "interpretation"]);
-export type ShareCardClaimType = z.infer<typeof shareCardClaimTypeSchema>;
-
-export const shareCardToneSchema = z.enum(["neutral", "priority", "founding", "early", "signal", "gap", "drift"]);
+export const shareCardToneSchema = z.enum(["neutral", "priority", "founding", "early"]);
 export type ShareCardTone = z.infer<typeof shareCardToneSchema>;
 
 export const shareCardActionSchema = z.enum(["publish", "revoke"]);
 export type ShareCardAction = z.infer<typeof shareCardActionSchema>;
 
-export const shareCardEventTypeSchema = z.enum(["opened", "cta_clicked", "shared", "downloaded", "signup_started", "signup_completed", "verified_conversion"]);
+export const shareCardEventTypeSchema = z.enum(["opened", "cta_clicked", "shared", "downloaded"]);
 export type ShareCardEventType = z.infer<typeof shareCardEventTypeSchema>;
 
 export const shareCardEventSourceSchema = z.enum(["page", "x", "linkedin", "copy", "download", "cta"]);
@@ -29,8 +19,6 @@ export type ShareCardEventSource = z.infer<typeof shareCardEventSourceSchema>;
 export const shareCardMutationInputSchema = z.object({
   action: shareCardActionSchema,
   variant: shareCardVariantSchema,
-  productId: z.string().uuid().nullable().optional().default(null),
-  sourceId: z.string().uuid().nullable().optional().default(null),
 }).strict();
 
 export const shareCardEventInputSchema = z.object({
@@ -42,6 +30,15 @@ export const shareCardEventInputSchema = z.object({
 const safeDisplayName = z.string().trim().min(1).max(160);
 const safeHeadline = z.string().trim().max(240).nullable();
 
+const safeMonogram = z.string().regex(/^[A-Z0-9]{1,3}$/).nullable();
+const safeAdmittedOn = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable();
+
+/**
+ * Board 15 renders only these values. `identityNumber` is the card's number: the Early Access
+ * number for EARLY_ACCESS and PRIORITY_ACCESS, the cohort seat for FOUNDING_25 / EARLY_100.
+ * `monogram` and `admittedOn` exist only on cohort cards (the workspace identity tile and
+ * "Admitted <Month YYYY>").
+ */
 export const shareCardSnapshotSchema = z.object({
   displayName: safeDisplayName,
   headline: safeHeadline,
@@ -49,24 +46,11 @@ export const shareCardSnapshotSchema = z.object({
   identityNumber: z.number().int().positive().nullable(),
   tone: shareCardToneSchema,
   isPermanent: z.boolean(),
-  cardKind: shareCardKindSchema.default("identity"),
-  claimType: shareCardClaimTypeSchema.default("observation"),
-  claim: z.string().trim().max(320).nullable().default(null),
-  evidence: z.string().trim().max(320).nullable().default(null),
-  interpretation: z.string().trim().max(320).nullable().default(null),
-  evidenceStrength: z.string().trim().max(120).nullable().default(null),
-  contextLabel: z.string().trim().max(120).nullable().default(null),
-  freshnessLabel: z.string().trim().max(120).nullable().default(null),
-  observationPeriod: z.string().trim().max(160).nullable().default(null),
-  uncertainty: z.string().trim().max(320).nullable().default(null),
-  sourceLabel: z.string().trim().max(120).nullable().default(null),
-  sourceUrl: z.string().url().nullable().default(null),
+  monogram: safeMonogram.optional().default(null),
+  admittedOn: safeAdmittedOn.optional().default(null),
 }).strict();
 
-// Input-compatible on purpose: identity cards created by 13B.1 do not carry
-// intelligence fields, while the parser supplies safe null defaults at the
-// repository boundary.
-export type ShareCardSnapshot = z.input<typeof shareCardSnapshotSchema>;
+export type ShareCardSnapshot = z.infer<typeof shareCardSnapshotSchema>;
 
 export const shareCardPreviewSchema = shareCardSnapshotSchema.extend({
   variant: shareCardVariantSchema,
@@ -87,18 +71,8 @@ export const publicShareCardSchema = z.object({
   identityNumber: z.number().int().positive().nullable(),
   tone: shareCardToneSchema,
   isPermanent: z.boolean(),
-  cardKind: shareCardKindSchema,
-  claimType: shareCardClaimTypeSchema,
-  claim: z.string().nullable(),
-  evidence: z.string().nullable(),
-  interpretation: z.string().nullable(),
-  evidenceStrength: z.string().nullable(),
-  contextLabel: z.string().nullable(),
-  freshnessLabel: z.string().nullable(),
-  observationPeriod: z.string().nullable(),
-  uncertainty: z.string().nullable(),
-  sourceLabel: z.string().nullable(),
-  sourceUrl: z.string().url().nullable(),
+  monogram: safeMonogram,
+  admittedOn: safeAdmittedOn,
   publishedAt: z.string().datetime({ offset: true }),
   accessMode: z.enum(["waitlist", "invite_only", "open"]),
   ctaLabel: z.string().min(1).max(80),
@@ -117,9 +91,6 @@ export type ShareCardAuthority = {
   waitlistApplicationId: string | null;
   variant: ShareCardVariant;
   snapshot: ShareCardSnapshot;
-  productId?: string | null;
-  sourceId?: string | null;
-  sourceEvidenceNodeId?: string | null;
 };
 
 export type ShareCardPublication = {
@@ -132,7 +103,4 @@ export type ShareCardPublication = {
   snapshot: ShareCardSnapshot;
   publishedAt: string;
   revokedAt: string | null;
-  productId?: string | null;
-  sourceId?: string | null;
-  sourceEvidenceNodeId?: string | null;
 };

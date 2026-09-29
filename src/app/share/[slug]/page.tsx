@@ -1,25 +1,24 @@
 import type { Metadata } from "next";
-import { cache } from "react";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { ShareCardArtwork } from "@/components/share-cards/share-card-artwork";
-import { ShareCardCtaLink, ShareCardPublicActions, ShareCardOpenTracker } from "@/components/share-cards/share-card-public-actions";
+import { MarketingPageShell } from "@/components/marketing/marketing-page-shell";
+import { ShareCardPreview } from "@/components/share-cards/share-card-preview";
+import { ShareCardPublicActions, ShareCardOpenTracker } from "@/components/share-cards/share-card-public-actions";
 import { getPublicShareCardQuery } from "@/server/modules/share-cards";
-import { SUPPORT_EMAIL } from "@/shared/config/site";
-import { PublicIntelligenceDetails } from "@/components/share-cards/public-intelligence-details";
+import { shareCardLine, shareCardTitle } from "@/shared/share-card-presentation";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 type PageProps = { params: Promise<{ slug: string }> };
-const getPublicCard = cache((slug: string) => getPublicShareCardQuery(slug));
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const card = await getPublicCard(slug);
+  const card = await getPublicShareCardQuery(slug).catch(() => null);
   if (!card) return { title: "Share card unavailable", robots: { index: false, follow: false } };
   return {
-    title: card.ogTitle,
+    title: { absolute: card.ogTitle },
     description: card.ogDescription,
     alternates: { canonical: card.canonicalUrl },
     robots: { index: false, follow: false },
@@ -28,34 +27,31 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
+/** Public, noindex landing page for a consented share card: the card, what it means, one CTA. */
 export default async function ShareCardPage({ params }: PageProps) {
   const { slug } = await params;
-  const card = await getPublicCard(slug);
+  const card = await getPublicShareCardQuery(slug).catch(() => null);
   if (!card) notFound();
-  const intelligence = card.cardKind === "intelligence";
-  const issueHref = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(`Source issue for Wanterest share ${card.publicSlug}`)}`;
+  const title = shareCardTitle(card.variant, card.identityNumber);
+  const cohort = card.variant === "FOUNDING_25" || card.variant === "EARLY_100";
   return (
-    <main className="share-card-page" aria-labelledby="share-card-title">
-      <ShareCardOpenTracker publicSlug={card.publicSlug} />
-      <div className="share-card-page-inner">
-        <p className="marketing-content-eyebrow"><span className="marketing-content-eyebrow-dot" /> Wanterest shared {card.cardKind === "intelligence" ? "intelligence" : "identity"}</p>
-        <h1 id="share-card-title">{intelligence ? card.claim ?? card.identityLabel : `${card.identityLabel}${card.identityNumber ? ` ${card.identityNumber}` : ""}`}</h1>
-        <p className="share-card-page-intro">{intelligence ? "An evidence-backed Wanterest finding, shared explicitly by its workspace owner." : "A verified Wanterest identity, shared explicitly by its owner."}</p>
-        <div className="share-card-artwork-frame" aria-label={`${card.identityLabel} share card`}>
-          <ShareCardArtwork data={card} />
-        </div>
-        {intelligence ? <PublicIntelligenceDetails card={card} issueHref={issueHref} /> : (
-          <div className="share-card-page-details">
-            <div><span className="share-card-page-detail-label">{card.displayName ?? "Wanterest member"}</span><span>{card.headline ?? "Shared with consent."}</span></div>
+    <MarketingPageShell>
+      <main className="share-card-page" aria-labelledby="share-card-title">
+        <ShareCardOpenTracker publicSlug={card.publicSlug} />
+        <div className="share-card-page-inner">
+          <p className="share-card-page-eyebrow"><span aria-hidden="true" />Shared by its owner</p>
+          <h1 id="share-card-title">{cohort && card.displayName ? `${card.displayName} · ${title}` : title}</h1>
+          <p className="share-card-page-intro">{shareCardLine(card.variant, card.identityNumber)} Wanterest finds real buying intent in public conversations, with the source behind every signal.</p>
+          {/* Wide card on desktop; the square cut on phones, where the wide one gets too small to read. */}
+          <div className="share-card-page-card is-landscape"><ShareCardPreview data={card} label={`${title} share card`} /></div>
+          <div className="share-card-page-card is-square"><ShareCardPreview data={card} format="square" label={`${title} share card`} /></div>
+          <div className="share-card-page-actions">
+            <Link className="dashboard-button dashboard-button-primary" href={card.ctaHref}>{card.ctaLabel}<span aria-hidden="true"> →</span></Link>
+            <ShareCardPublicActions publicSlug={card.publicSlug} canonicalUrl={card.canonicalUrl} title={card.ogTitle} />
           </div>
-        )}
-        <div className="share-card-page-cta">
-          <div><div className="ui-section-label">Understand your market</div><p>Wanterest connects observed conversations to evidence-backed product intelligence.</p></div>
-          <ShareCardCtaLink publicSlug={card.publicSlug} href={card.ctaHref} label={card.ctaLabel} />
+          <p className="share-card-page-footnote">Published with the owner&rsquo;s consent. This card isn&rsquo;t an invitation, access token, cohort assignment or billing credential.</p>
         </div>
-        <ShareCardPublicActions publicSlug={card.publicSlug} canonicalUrl={card.canonicalUrl} title={card.ogTitle} />
-        <p className="share-card-page-footnote">This card is not an invitation, access token, cohort assignment, or billing credential.</p>
-      </div>
-    </main>
+      </main>
+    </MarketingPageShell>
   );
 }

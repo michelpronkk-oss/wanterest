@@ -2,9 +2,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-const migration = readFileSync(path.resolve(process.cwd(), "supabase/migrations/20260921000000_phase3_intelligence.sql"), "utf8");
-const privilegeCorrection = readFileSync(path.resolve(process.cwd(), "supabase/migrations/20260928000000_phase3_service_role_privilege_correction.sql"), "utf8");
-const digestCorrection = readFileSync(path.resolve(process.cwd(), "supabase/migrations/20260929000000_phase3_create_product_digest_schema_fix.sql"), "utf8");
+const migration = normalizeLineEndings(readFileSync(path.resolve(process.cwd(), "supabase/migrations/20260921000000_phase3_intelligence.sql"), "utf8"));
+const privilegeCorrection = normalizeLineEndings(readFileSync(path.resolve(process.cwd(), "supabase/migrations/20260928000000_phase3_service_role_privilege_correction.sql"), "utf8"));
+const digestCorrection = normalizeLineEndings(readFileSync(path.resolve(process.cwd(), "supabase/migrations/20260929000000_phase3_create_product_digest_schema_fix.sql"), "utf8"));
 
 describe("Phase 3 intelligence migration contract", () => {
   it("creates the product, analysis, matching, ranking, signal, and feedback tables", () => {
@@ -79,3 +79,7 @@ describe("Phase 3 intelligence migration contract", () => {
     expect(digestCorrection).not.toContain("disable row level security");
   });
 });
+
+function normalizeLineEndings(source: string): string {
+  return source.replace(/\r\n/g, "\n");
+}

@@ -9,9 +9,11 @@ export async function GET(request: Request, context: RouteContext) {
   try {
     const { workspaceId } = await context.params;
     const profile = await getWorkspacePublicCohortProfileQuery(workspaceId);
-    return Response.json({ profile, traceId }, { headers: { "x-request-id": traceId } });
+    return Response.json({ profile, traceId }, { headers: { "x-request-id": traceId, "cache-control": "private, no-store" } });
   } catch (error) {
-    return jsonError(error, traceId);
+    const response = jsonError(error, traceId);
+    response.headers.set("cache-control", "private, no-store");
+    return response;
   }
 }
 
@@ -20,8 +22,10 @@ export async function PATCH(request: Request, context: RouteContext) {
   try {
     const { workspaceId } = await context.params;
     const profile = await updateWorkspacePublicCohortProfileCommand(workspaceId, await readJson(request), traceId);
-    return Response.json({ profile, traceId }, { headers: { "x-request-id": traceId } });
+    return Response.json({ profile, traceId }, { headers: { "x-request-id": traceId, "cache-control": "private, no-store" } });
   } catch (error) {
-    return jsonError(error, traceId);
+    const response = jsonError(error, traceId);
+    response.headers.set("cache-control", "private, no-store");
+    return response;
   }
 }

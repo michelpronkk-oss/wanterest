@@ -140,7 +140,7 @@ describe("design 10 invitation state comes from the private status record", () =
   it("shows admission and cohort identity only after the admission record says admitted", () => {
     const view = describeStatus(app({ status: "approved_for_invite" }), null, admission({ inviteStatus: "accepted", admissionStatus: "admitted", cohort: "founding_25", cohortNumber: 7, admittedAt: "2026-10-04T00:00:00.000Z" }), NOW);
     expect(view.variant).toBe("admitted");
-    expect(view.admitted).toEqual({ identity: "Founding 25 · #07" });
+    expect(view.admitted).toEqual({ identity: "Founding 25 · #07", cohort: { cohort: "founding_25", number: 7 } });
     expect(view.canWithdraw).toBe(false);
   });
 });
@@ -225,11 +225,19 @@ describe("route-to-component wiring for the complete journey", () => {
     expect(verifiedPage).not.toContain("searchParams");
     expect(withdrawButton).toContain('"/waitlist/withdraw"');
     expect(withdrawButton).not.toContain("token");
+    expect(reveal).toContain("Sharing isn");
+    // Share mutations sit under /waitlist too: the status cookie is scoped to that path.
     expect(reveal).toContain('"/waitlist/share-cards"');
+    expect(reveal).not.toContain("/api/share-cards/applicant");
   });
 
-  it("shares only through the existing 13B.1 panel, which publishes on explicit action", () => {
+  it("offers 13B.1 sharing only through the engine and fails closed when it is unavailable", () => {
+    const journeyData = read("src/app/waitlist/_lib/journey-data.ts");
     expect(reveal).toContain("ShareCardPanel");
+    expect(reveal).toContain("ShareUnavailable");
+    expect(journeyData).toContain("getApplicantShareCardsQuery");
+    expect(journeyData).toMatch(/catch \{\s*return \{ available: false \};/);
+    // Pages only read eligibility; publishing is an explicit user action through the owner-scoped route.
     expect(verifiedPage).not.toMatch(/mutateApplicantShareCardCommand|publishApplicant/);
     expect(statusPage).not.toMatch(/mutateApplicantShareCardCommand|publishApplicant/);
   });

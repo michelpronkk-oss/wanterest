@@ -1,4 +1,7 @@
 import "server-only";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/server/db/database.types";
+import { withCohortRpcContracts, type PublicCohortRpcRow, type PrivateCohortProfileRpcRow } from "@/server/db/cohort-contracts";
 
 import { AppError } from "@/server/lib/errors";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
@@ -13,9 +16,7 @@ import {
 } from "./cohort-public.schemas";
 
 type RpcError = { code?: string; message?: string } | null;
-type Client = {
-  rpc: (functionName: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: RpcError }>;
-};
+type Client = SupabaseClient<Database>;
 
 function firstRow<T>(data: T | T[] | null): T | null {
   return Array.isArray(data) ? data[0] ?? null : data;
@@ -29,7 +30,7 @@ function mapDatabaseError(error: RpcError, fallback: string): AppError {
   return new AppError("INTERNAL_ERROR", fallback, 500, error?.message ? { providerMessage: error.message } : undefined);
 }
 
-function publicRow(raw: Record<string, unknown>): PublicCohortRow {
+function publicRow(raw: PublicCohortRpcRow): PublicCohortRow {
   const parsed = publicCohortRowSchema.safeParse({
     publicSlug: raw.public_slug,
     displayName: raw.display_name,
@@ -47,7 +48,7 @@ function publicRow(raw: Record<string, unknown>): PublicCohortRow {
   return parsed.data;
 }
 
-function privateRow(raw: Record<string, unknown>): PrivatePublicProfile {
+function privateRow(raw: PrivateCohortProfileRpcRow): PrivatePublicProfile {
   const parsed = privatePublicProfileSchema.safeParse({
     ...publicRow(raw),
     profileId: raw.profile_id,
@@ -67,25 +68,26 @@ export type CohortPublicRepository = {
   initializeProfile(workspaceId: string, publicSlug: string, traceId?: string): Promise<PrivatePublicProfile>;
 };
 
-export function createSupabaseCohortPublicRepository(client: Client = createSupabaseServiceClient() as unknown as Client): CohortPublicRepository {
+export function createSupabaseCohortPublicRepository(baseClient: Client = createSupabaseServiceClient()): CohortPublicRepository {
+  const client = withCohortRpcContracts(baseClient);
   return {
     async getPublicWall(cohort) {
       const { data, error } = await client.rpc("get_public_cohort_wall", { p_cohort: cohort });
       if (error) throw mapDatabaseError(error, "The public cohort wall could not be loaded.");
-      return ((data ?? []) as Record<string, unknown>[]).map(publicRow);
+      return (data ?? []).map(publicRow);
     },
 
     async getPublicProfile(slug) {
       const { data, error } = await client.rpc("get_public_cohort_profile", { p_public_slug: slug });
       if (error) throw mapDatabaseError(error, "The public cohort pass could not be loaded.");
-      const row = firstRow(data as Record<string, unknown>[] | null);
+      const row = firstRow(data);
       return row ? publicRow(row) : null;
     },
 
     async getPrivateProfile(workspaceId) {
       const { data, error } = await client.rpc("get_workspace_public_cohort_profile", { p_workspace_id: workspaceId });
       if (error) throw mapDatabaseError(error, "The public profile settings could not be loaded.");
-      const row = firstRow(data as Record<string, unknown>[] | null);
+      const row = firstRow(data);
       return row ? privateRow(row) : null;
     },
 
@@ -104,7 +106,7 @@ export function createSupabaseCohortPublicRepository(client: Client = createSupa
         p_trace_id: traceId ?? null,
       });
       if (error) throw mapDatabaseError(error, "The public profile could not be saved.");
-      const row = firstRow(data as Record<string, unknown>[] | null);
+      const row = firstRow(data);
       if (!row) throw new AppError("INTERNAL_ERROR", "The public profile save returned no result.");
       return privateRow(row);
     },
@@ -116,7 +118,7 @@ export function createSupabaseCohortPublicRepository(client: Client = createSupa
         p_trace_id: traceId ?? null,
       });
       if (error) throw mapDatabaseError(error, "The public profile could not be initialized.");
-      const row = firstRow(data as Record<string, unknown>[] | null);
+      const row = firstRow(data);
       if (!row) throw new AppError("INTERNAL_ERROR", "The public profile initialization returned no result.");
       return privateRow(row);
     },

@@ -66,7 +66,7 @@ export function ScannedCandidateReview({ candidates }: { candidates: ScanCandida
               </div>
               <h3>{candidate.title || candidate.excerpt}</h3>
               <p>{candidate.excerpt}</p>
-              {candidate.canonicalUrl ? <a href={candidate.canonicalUrl} target="_blank" rel="noreferrer">Open source ↗</a> : null}
+              {candidate.canonicalUrl ? <a href={candidate.canonicalUrl} target="_blank" rel="noreferrer">Open source {"↗︎"}</a> : null}
               <div className="scan-candidate-reasons">
                 {(reasons.length ? reasons : ["Did not meet the current demand threshold"]).map((reason) => <span key={reason}>{reason}</span>)}
               </div>

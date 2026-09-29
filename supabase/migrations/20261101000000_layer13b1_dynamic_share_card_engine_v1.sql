@@ -1,6 +1,10 @@
 -- Layer 13B.1: explicit, revocable public share cards for authoritative identities.
 -- This migration never assigns cohorts, verifies applications, grants Priority,
 -- creates admissions, or changes the access-mode policy.
+-- Unpublished until now; ordered after 20261031000000 (the latest applied migration).
+-- Snapshots are snake_case JSON objects written only by the service role from
+-- authoritative state (display_name, headline, identity_label, identity_number,
+-- tone, is_permanent, monogram, admitted_on). Board 15 artwork reads the same keys.
 
 create table if not exists public.share_card_publications (
   id uuid primary key default gen_random_uuid(),
@@ -322,6 +326,8 @@ returns table (
   identity_number integer,
   tone text,
   is_permanent boolean,
+  monogram text,
+  admitted_on date,
   published_at timestamptz,
   access_mode text,
   cta_label text,
@@ -341,6 +347,10 @@ as $$
       then (publication.snapshot ->> 'identity_number')::integer else null end,
     publication.snapshot ->> 'tone',
     coalesce((publication.snapshot ->> 'is_permanent')::boolean, false),
+    case when coalesce(publication.snapshot ->> 'monogram', '') ~ '^[A-Z0-9]{1,3}$'
+      then publication.snapshot ->> 'monogram' else null end,
+    case when coalesce(publication.snapshot ->> 'admitted_on', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+      then (publication.snapshot ->> 'admitted_on')::date else null end,
     publication.published_at,
     access.mode,
     case when access.mode = 'open' then 'Start free' else 'Request access' end,

@@ -5,12 +5,13 @@ import { useState } from "react";
 import { ShareCardPanel, type ShareCardPanelCard } from "@/components/share-cards/share-card-panel";
 
 /**
- * The applicant share endpoint must live under /waitlist: the private status cookie is scoped to
- * path=/waitlist, so a browser never sends it to /api/share-cards/applicant.
+ * `available: false` whenever the 13B.1 share-card engine can't be reached (e.g. its migration
+ * is not yet applied); the journey then says so instead of offering a control that would fail.
  */
-export const APPLICANT_SHARE_ENDPOINT = "/waitlist/share-cards";
+export type ShareAvailability = { available: false } | { available: true; cards: ShareCardPanelCard[] };
 
-export type ShareAvailability = { available: true; cards: ShareCardPanelCard[] } | { available: false };
+/** The applicant's owner-scoped share route; it sits under /waitlist because the status cookie does. */
+const APPLICANT_SHARE_ENDPOINT = "/waitlist/share-cards";
 
 function ShareUnavailable() {
   return (
@@ -24,10 +25,9 @@ function ShareUnavailable() {
   );
 }
 
-/** Existing Layer 13B.1 panel: preview is private until the applicant explicitly publishes. */
-export function ShareSection({ share }: { share: ShareAvailability }) {
+export function ShareSection({ share, compact = false }: { share: ShareAvailability; compact?: boolean }) {
   if (!share.available) return <ShareUnavailable />;
-  return <ShareCardPanel endpoint={APPLICANT_SHARE_ENDPOINT} initialCards={share.cards} title="Share your place" />;
+  return <ShareCardPanel endpoint={APPLICANT_SHARE_ENDPOINT} initialCards={share.cards} title="Share your place" compact={compact} />;
 }
 
 export function RevealActions({ share }: { share: ShareAvailability }) {
@@ -42,7 +42,7 @@ export function RevealActions({ share }: { share: ShareAvailability }) {
         </button>
       </div>
       <div id="share-my-place" className="ea-reveal-share" hidden={!open}>
-        {open ? <ShareSection share={share} /> : null}
+        {open ? <ShareSection share={share} compact /> : null}
       </div>
     </>
   );

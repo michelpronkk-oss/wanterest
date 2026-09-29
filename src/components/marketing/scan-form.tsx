@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type ChangeEvent, type FormEvent } from "react";
 
 import { requestAccessUrlForSite, startUrlForSite } from "./links";
 
@@ -52,7 +52,21 @@ function useTypingPlaceholder(defaultText: string, enabled: boolean): string {
  * prefilled instead of implying instant product access — see the design note this replaces
  * ("'Scan my website' reads as a site audit, and implies instant access").
  */
-export function ScanForm({ compact = false, ctaVariant = "ink", variant = "scan" }: { compact?: boolean; ctaVariant?: "ink" | "accent"; variant?: "scan" | "request" }) {
+function GlobeIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="marketing-hero-field-icon">
+      <circle cx="8" cy="8" r="6.2" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M1.8 8h12.4M8 1.8c1.8 1.7 2.6 3.8 2.6 6.2S9.8 12.5 8 14.2C6.2 12.5 5.4 10.4 5.4 8S6.2 3.5 8 1.8Z" stroke="currentColor" strokeWidth="1.3" />
+    </svg>
+  );
+}
+
+/**
+ * `appearance="hero"` is the Hero v2 treatment: field and ink button share one white container,
+ * with the lime arrow. Submission, validation and destinations are identical in both appearances.
+ */
+export function ScanForm({ compact = false, ctaVariant = "ink", variant = "scan", appearance = "default" }: { compact?: boolean; ctaVariant?: "ink" | "accent"; variant?: "scan" | "request"; appearance?: "default" | "hero" }) {
+  const errorId = useId();
   const [site, setSite] = useState("");
   const [error, setError] = useState<string | null>(null);
   const defaultPlaceholder = compact || variant === "request" ? "yourcompany.com" : "yourwebsite.com";
@@ -68,27 +82,47 @@ export function ScanForm({ compact = false, ctaVariant = "ink", variant = "scan"
     }
   }
 
+  const inputProps = {
+    type: "text",
+    inputMode: "url" as const,
+    autoComplete: "off",
+    placeholder,
+    "aria-label": "Your website",
+    value: site,
+    onChange: (event: ChangeEvent<HTMLInputElement>) => {
+      setSite(event.target.value);
+      if (error) setError(null);
+    },
+    "aria-invalid": Boolean(error),
+    "aria-describedby": error ? errorId : undefined,
+  };
+  const errorMessage = error ? <p id={errorId} className="marketing-scan-error" role="alert">{error}</p> : null;
+
+  if (appearance === "hero") {
+    return (
+      <form className="marketing-hero-form" onSubmit={handleSubmit}>
+        <div className="marketing-hero-form-box">
+          <label className="marketing-hero-field">
+            <GlobeIcon />
+            <input {...inputProps} className="marketing-hero-input" />
+          </label>
+          <button type="submit" className="marketing-hero-submit">
+            {variant === "request" ? "Request access" : "Scan my website"}
+            <span className="marketing-hero-arrow" aria-hidden="true">→</span>
+          </button>
+        </div>
+        {errorMessage}
+      </form>
+    );
+  }
+
   return (
     <form className={`marketing-scan-form${compact ? " is-compact" : ""}`} onSubmit={handleSubmit}>
-      <input
-        type="text"
-        inputMode="url"
-        autoComplete="off"
-        placeholder={placeholder}
-        aria-label="Your website"
-        className="marketing-scan-input"
-        value={site}
-        onChange={(event) => {
-          setSite(event.target.value);
-          if (error) setError(null);
-        }}
-        aria-invalid={Boolean(error)}
-        aria-describedby={error ? "marketing-site-error" : undefined}
-      />
+      <input {...inputProps} className="marketing-scan-input" />
       <button type="submit" className={`marketing-cta${compact ? " is-compact" : ""}${ctaVariant === "accent" ? " is-accent" : ""}`}>
         {variant === "request" ? "Request access →" : "Scan my website →"}
       </button>
-      {error ? <p id="marketing-site-error" className="marketing-scan-error" role="alert">{error}</p> : null}
+      {errorMessage}
     </form>
   );
 }

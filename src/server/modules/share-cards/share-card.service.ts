@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 
 import { AppError } from "@/server/lib/errors";
 import { SITE_ORIGIN } from "@/shared/config/site";
+import { shareCardShareText } from "@/shared/share-card-presentation";
 import { createSupabaseShareCardAuthorityAdapter, type ShareCardAuthorityAdapter } from "./share-card.authority";
 import { createSupabaseShareCardRepository, type ShareCardRepository } from "./share-card.repository";
 import {
@@ -21,18 +22,6 @@ function newPublicSlug(): string {
 function preview(authority: ShareCardAuthority, publication: ShareCardPublication | null): ShareCardPreview {
   return {
     ...authority.snapshot,
-    cardKind: authority.snapshot.cardKind ?? "identity",
-    claimType: authority.snapshot.claimType ?? "observation",
-    claim: authority.snapshot.claim ?? null,
-    evidence: authority.snapshot.evidence ?? null,
-    interpretation: authority.snapshot.interpretation ?? null,
-    evidenceStrength: authority.snapshot.evidenceStrength ?? null,
-    contextLabel: authority.snapshot.contextLabel ?? null,
-    freshnessLabel: authority.snapshot.freshnessLabel ?? null,
-    observationPeriod: authority.snapshot.observationPeriod ?? null,
-    uncertainty: authority.snapshot.uncertainty ?? null,
-    sourceLabel: authority.snapshot.sourceLabel ?? null,
-    sourceUrl: authority.snapshot.sourceUrl ?? null,
     variant: authority.variant,
     publicationId: publication?.id ?? null,
     publicSlug: publication?.publicationState === "published" ? publication.publicSlug : null,
@@ -43,7 +32,7 @@ function preview(authority: ShareCardAuthority, publication: ShareCardPublicatio
 
 function withPublications(authorities: ShareCardAuthority[], publications: ShareCardPublication[]): ShareCardPreview[] {
   return authorities.map((authority) => {
-    return preview(authority, publications.find((publication) => publication.variant === authority.variant && (publication.sourceId ?? null) === (authority.sourceId ?? null)) ?? null);
+    return preview(authority, publications.find((publication) => publication.variant === authority.variant) ?? null);
   });
 }
 
@@ -53,17 +42,6 @@ function findAuthority(authorities: ShareCardAuthority[], variant: ShareCardVari
   return authority;
 }
 
-type IntelligenceShareCardInput = {
-  productId: string;
-  sourceId: string;
-  variant: "SIGNAL" | "DEMAND_GAP" | "DEMAND_DRIFT";
-};
-
-function requireIntelligenceAuthority(adapter: ShareCardAuthorityAdapter) {
-  if (!adapter.getWorkspaceIntelligenceCard) throw new AppError("INTERNAL_ERROR", "Intelligence share-card authority is unavailable.");
-  return adapter.getWorkspaceIntelligenceCard.bind(adapter);
-}
-
 export type ShareCardService = {
   getApplicantCards(statusToken: string): Promise<ShareCardPreview[]>;
   publishApplicant(statusToken: string, variant: ShareCardVariant): Promise<ShareCardPreview>;
@@ -71,9 +49,6 @@ export type ShareCardService = {
   getWorkspaceCards(workspaceId: string, userId: string): Promise<ShareCardPreview[]>;
   publishWorkspace(workspaceId: string, userId: string, variant: ShareCardVariant): Promise<ShareCardPreview>;
   revokeWorkspace(workspaceId: string, userId: string, variant: ShareCardVariant): Promise<ShareCardPreview[]>;
-  getWorkspaceIntelligenceCard(workspaceId: string, userId: string, input: IntelligenceShareCardInput): Promise<ShareCardPreview>;
-  publishWorkspaceIntelligence(workspaceId: string, userId: string, input: IntelligenceShareCardInput): Promise<ShareCardPreview>;
-  revokeWorkspaceIntelligence(workspaceId: string, userId: string, input: IntelligenceShareCardInput): Promise<ShareCardPreview>;
   getPublicCard(publicSlug: string): Promise<PublicShareCard | null>;
   recordEvent(input: { publicSlug: string; eventType: string; source?: string | null }): Promise<void>;
 };
@@ -129,9 +104,6 @@ export class DynamicShareCardService implements ShareCardService {
       publicSlug: newPublicSlug(),
       snapshot: authority.snapshot,
       actorUserId: userId,
-      productId: authority.productId,
-      sourceId: authority.sourceId,
-      sourceEvidenceNodeId: authority.sourceEvidenceNodeId,
     });
     return preview(authority, publication);
   }
@@ -142,46 +114,13 @@ export class DynamicShareCardService implements ShareCardService {
     return this.getWorkspaceCards(workspaceId, userId);
   }
 
-  async getWorkspaceIntelligenceCard(workspaceId: string, userId: string, input: IntelligenceShareCardInput) {
-    await this.authority.authorizeWorkspace(workspaceId, userId);
-    const authority = await requireIntelligenceAuthority(this.authority)({ workspaceId, ...input });
-    const publications = await this.repository.listPublications({ workspaceId, productId: input.productId });
-    return preview(authority, publications.find((item) => item.variant === input.variant && item.sourceId === input.sourceId) ?? null);
-  }
-
-  async publishWorkspaceIntelligence(workspaceId: string, userId: string, input: IntelligenceShareCardInput) {
-    await this.authority.authorizeWorkspace(workspaceId, userId);
-    const authority = await requireIntelligenceAuthority(this.authority)({ workspaceId, ...input });
-    const publication = await this.repository.publish({
-      workspaceId,
-      variant: input.variant,
-      publicSlug: newPublicSlug(),
-      snapshot: authority.snapshot,
-      actorUserId: userId,
-      productId: authority.productId,
-      sourceId: authority.sourceId,
-      sourceEvidenceNodeId: authority.sourceEvidenceNodeId,
-    });
-    return preview(authority, publication);
-  }
-
-  async revokeWorkspaceIntelligence(workspaceId: string, userId: string, input: IntelligenceShareCardInput) {
-    await this.authority.authorizeWorkspace(workspaceId, userId);
-    await requireIntelligenceAuthority(this.authority)({ workspaceId, ...input });
-    const publication = await this.repository.revoke({ workspaceId, variant: input.variant, actorUserId: userId, productId: input.productId, sourceId: input.sourceId });
-    if (!publication) return this.getWorkspaceIntelligenceCard(workspaceId, userId, input);
-    const authority = await requireIntelligenceAuthority(this.authority)({ workspaceId, ...input });
-    return preview(authority, publication);
-  }
-
   async getPublicCard(publicSlug: string) {
     const card = await this.repository.getPublic(publicSlug);
     if (!card) return null;
     return {
       ...card,
       canonicalUrl: `${SITE_ORIGIN}/share/${encodeURIComponent(card.publicSlug)}`,
-      ogTitle: card.cardKind === "intelligence" ? `${card.identityLabel} · Wanterest intelligence` : `${card.identityLabel}${card.identityNumber ? ` #${card.identityNumber}` : ""} · Wanterest`,
-      ogDescription: card.cardKind === "intelligence" ? card.claim ?? card.headline ?? "Evidence-backed Wanterest intelligence, shared with consent." : card.headline ?? "A verified Wanterest identity, shared with consent.",
+      ...shareCardShareText(card.variant, card.identityNumber),
     };
   }
 

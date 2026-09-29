@@ -37,10 +37,10 @@ export function ShareCardPublicActions({ publicSlug, canonicalUrl, title }: { pu
   const encodedUrl = encodeURIComponent(canonicalUrl);
   const encodedTitle = encodeURIComponent(title);
   return (
-    <div className="share-card-public-actions" aria-label="Share this card">
+    <div className="share-card-public-actions" role="group" aria-label="Share this card">
       <button type="button" className="dashboard-button dashboard-button-secondary" onClick={() => void copy()}>{copied ? "Link copied" : "Copy link"}</button>
-      <a className="dashboard-button dashboard-button-secondary" href={`https://twitter.com/intent/tweet?url=${encodedUrl}&text=${encodedTitle}`} target="_blank" rel="noreferrer" onClick={() => record(publicSlug, "shared", "x")}>Share on X</a>
-      <a className="dashboard-button dashboard-button-secondary" href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`} target="_blank" rel="noreferrer" onClick={() => record(publicSlug, "shared", "linkedin")}>LinkedIn</a>
+      <a className="dashboard-button dashboard-button-secondary" href={`https://twitter.com/intent/tweet?url=${encodedUrl}&text=${encodedTitle}`} target="_blank" rel="noopener noreferrer" onClick={() => record(publicSlug, "shared", "x")}>Post on X</a>
+      <a className="dashboard-button dashboard-button-secondary" href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`} target="_blank" rel="noopener noreferrer" onClick={() => record(publicSlug, "shared", "linkedin")}>LinkedIn</a>
     </div>
   );
 }

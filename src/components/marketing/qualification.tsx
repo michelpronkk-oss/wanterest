@@ -1,62 +1,113 @@
-function HeartIcon() {
+import { SourceBrandIcon } from "@/components/ui/source-brand-icon";
+import { MarketingBand } from "./marketing-band";
+
+/** Three ascending bars — the design's signal-strength glyph. */
+export function SignalBarsIcon({ size = 10 }: { size?: number }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M12 20.2 4.7 13a5.15 5.15 0 0 1 7.3-7.28A5.15 5.15 0 0 1 19.3 13L12 20.2Z" />
+    <svg width={size} height={size} viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+      <rect x="1" y="7" width="2" height="4" rx="0.5" />
+      <rect x="5" y="4" width="2" height="7" rx="0.5" />
+      <rect x="9" y="1" width="2" height="10" rx="0.5" />
     </svg>
   );
 }
 
-function MoreIcon() {
+type QualificationExample = {
+  source: "x" | "reddit";
+  sourceName: string;
+  likes: string;
+  quote: string;
+  facets: { intent: string | null; pain: string | null; requirement: string | null };
+  qualified: boolean;
+};
+
+const EXAMPLES: QualificationExample[] = [
+  {
+    source: "x",
+    sourceName: "X",
+    likes: "500K likes",
+    quote: "HubSpot lol",
+    facets: { intent: null, pain: null, requirement: null },
+    qualified: false,
+  },
+  {
+    source: "reddit",
+    sourceName: "Reddit",
+    likes: "2 likes",
+    quote: "Looking for a cheaper HubSpot alternative with SSO",
+    facets: { intent: "Switching", pain: "Price", requirement: "SSO" },
+    qualified: true,
+  },
+];
+
+const FACET_LABELS = [
+  ["intent", "Intent"],
+  ["pain", "Pain"],
+  ["requirement", "Requirement"],
+] as const;
+
+function QualificationCard({ example }: { example: QualificationExample }) {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true">
-      <circle cx="3.5" cy="9" r="1.5" />
-      <circle cx="9" cy="9" r="1.5" />
-      <circle cx="14.5" cy="9" r="1.5" />
-    </svg>
+    <article className={`marketing-qualify-card${example.qualified ? " is-qualified" : ""}`}>
+      <header className="marketing-qualify-card-head">
+        <div className="marketing-source-id">
+          <SourceBrandIcon sourceKey={example.source} size={22} decorative />
+          <div className="marketing-source-id-text">
+            <span className="marketing-source-id-name">{example.sourceName}</span>
+            <span className="marketing-source-id-meta">Observation date</span>
+          </div>
+        </div>
+        <span className="marketing-qualify-card-likes">{example.likes}</span>
+      </header>
+      <blockquote className="marketing-qualify-card-quote">
+        <p>&ldquo;{example.quote}&rdquo;</p>
+      </blockquote>
+      <dl className="marketing-qualify-facets">
+        {FACET_LABELS.map(([key, label]) => {
+          const value = example.facets[key];
+          return (
+            <div className="marketing-qualify-facet" key={key}>
+              <dt>{label}</dt>
+              {value ? (
+                <dd>{value}</dd>
+              ) : (
+                <dd className="is-empty">
+                  <span aria-hidden="true">&mdash;</span>
+                  <span className="sr-only">None</span>
+                </dd>
+              )}
+            </div>
+          );
+        })}
+      </dl>
+      <div className="marketing-qualify-card-foot">
+        {example.qualified ? (
+          <span className="marketing-qualify-verdict is-signal"><SignalBarsIcon />HIGH-CONFIDENCE SIGNAL</span>
+        ) : (
+          <span className="marketing-qualify-verdict">NOT A SIGNAL</span>
+        )}
+      </div>
+    </article>
   );
 }
 
-function SignalIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <rect x="2" y="8" width="2.5" height="6" rx="0.6" fill="currentColor" />
-      <rect x="6.7" y="5" width="2.5" height="9" rx="0.6" fill="currentColor" />
-      <rect x="11.4" y="2" width="2.5" height="12" rx="0.6" fill="currentColor" />
-    </svg>
-  );
-}
-
-function QualificationMeta({ likes }: { likes: string }) {
-  return (
-    <div className="marketing-qualification-meta">
-      <div className="marketing-qualification-likes"><HeartIcon /> <span>{likes}</span></div>
-      <MoreIcon />
-    </div>
-  );
-}
-
+/** Qualification — "Wanterest Qualification + Why.dc.html", screen 1. */
 export function QualificationSection() {
   return (
-    <section className="marketing-section marketing-qualification-section is-tight is-alt">
-      <div className="marketing-section-inner marketing-qualification-inner">
-        <div className="marketing-section-eyebrow">QUALIFICATION</div>
-        <h2 className="marketing-heading marketing-qualification-title">Not every mention is demand.</h2>
-        <p className="marketing-qualification-subtitle">Popularity doesn&rsquo;t create demand. Intent does.</p>
-        <div className="marketing-qualification-grid">
-          <article className="marketing-qualification-card">
-            <QualificationMeta likes="Popularity alone" />
-            <p className="marketing-qualification-quote">A visible mention without pain, intent or specificity is not enough.</p>
-            <span className="marketing-qualification-tag">NOT A SIGNAL</span>
-          </article>
-          <article className="marketing-qualification-card is-featured">
-            <QualificationMeta likes="Evidence context" />
-            <p className="marketing-qualification-quote">
-              A conversation with explicit problem and switching context may qualify for review.
-            </p>
-            <span className="marketing-qualification-tag is-strong"><SignalIcon /> QUALIFIED FOR REVIEW</span>
-          </article>
-        </div>
+    <MarketingBand
+      id="qualification"
+      tone="stone"
+      compactFoot
+      eyebrow="QUALIFICATION"
+      title="Not every mention is demand."
+      subtitle="Popularity doesn’t create demand. Intent does."
+      subtitleMaxWidth={420}
+    >
+      <div className="marketing-band-pair">
+        {EXAMPLES.map((example) => (
+          <QualificationCard key={example.source} example={example} />
+        ))}
       </div>
-    </section>
+    </MarketingBand>
   );
 }

@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { resolveReveal } from "@/components/waitlist/journey";
-import { JourneyShell, StatusUnavailableView, VerifiedReveal } from "@/components/waitlist/journey-views";
+import { JourneyShell } from "@/components/waitlist/journey-shell";
+import { StatusUnavailableView, VerifiedReveal } from "@/components/waitlist/journey-views";
 import { RevealActions } from "@/components/waitlist/share-my-place";
 import { loadPrivateStatus, loadShareAvailability } from "../_lib/journey-data";
 
@@ -28,7 +29,7 @@ export default async function VerifiedPage() {
 
   const share = await loadShareAvailability(status.token);
   return (
-    <JourneyShell nav="marketing">
+    <JourneyShell>
       <VerifiedReveal model={resolution.model} actions={<RevealActions share={share} />} />
     </JourneyShell>
   );

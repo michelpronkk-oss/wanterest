@@ -15,6 +15,10 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ProductLifecycle } from "@/components/dashboard/product-lifecycle";
 import { PlanUsageSummary } from "@/components/dashboard/plan-usage-summary";
 import { UpgradeTrigger } from "@/components/dashboard/upgrade-surface";
+import { MembershipSection, type MembershipSectionData } from "@/components/dashboard/membership-section";
+import { getWorkspaceCohortIdentityQuery, workspaceCohortPresentation } from "@/server/modules/cohorts";
+import { getWorkspacePublicCohortProfileQuery, privateMembershipPresentation } from "@/server/modules/cohort-public";
+import { SITE_ORIGIN } from "@/shared/config/site";
 import { ShareCardPanel } from "@/components/share-cards/share-card-panel";
 import { requireUser } from "@/server/modules/auth";
 import { getWorkspaceShareCardsQuery } from "@/server/modules/share-cards";
@@ -28,12 +32,15 @@ export default async function SettingsPage() {
   }
   const user = await requireUser();
 
-  const [snapshot, billing, members, scanSummary, activeExperiments, shareCards] = await Promise.all([
+  const [snapshot, billing, members, scanSummary, activeExperiments, cohortIdentity, publicProfile, shareCards] = await Promise.all([
     product ? getCurrentProductSnapshotQuery(workspace.id, product.id).catch(() => null) : Promise.resolve(null),
     getBillingOverviewQuery(workspace.id).catch(() => null),
     listWorkspaceMembersQuery(workspace.id).catch(() => []),
     product ? getProductDemandScanSummary(workspace.id, product.id).catch(() => null) : Promise.resolve(null),
     getActiveExperimentsQuery(workspace.id).catch(() => []),
+    // One authorized private read each; no public wall data is used as authority.
+    getWorkspaceCohortIdentityQuery(workspace.id).catch(() => null),
+    getWorkspacePublicCohortProfileQuery(workspace.id).catch(() => null),
     getWorkspaceShareCardsQuery(workspace.id, user.id).catch(() => []),
   ]);
 
@@ -159,6 +166,7 @@ export default async function SettingsPage() {
     </>
   );
 
+  const membershipSection = <MembershipSection data={membershipData(workspace.id, cohortIdentity, publicProfile)} />;
   const sharingSection = <ShareCardPanel endpoint={`/api/share-cards/workspace/${encodeURIComponent(workspace.id)}`} initialCards={shareCards} title="Share your permanent identity" />;
 
   return (
@@ -167,7 +175,36 @@ export default async function SettingsPage() {
         <p className="dashboard-eyebrow">Settings</p>
         <h1>Settings</h1>
       </header>
-      <SettingsTabs sections={{ general: generalSection, product: productSection, sources: sourcesSection, plan: planSection, team: teamSection, sharing: sharingSection }} />
+      <SettingsTabs sections={{ general: generalSection, product: productSection, sources: sourcesSection, plan: planSection, team: teamSection, membership: membershipSection, sharing: sharingSection }} />
     </section>
   );
+}
+
+function membershipData(
+  workspaceId: string,
+  identity: Awaited<ReturnType<typeof getWorkspaceCohortIdentityQuery>> | null,
+  profile: Awaited<ReturnType<typeof getWorkspacePublicCohortProfileQuery>> | null,
+): MembershipSectionData {
+  let cohort: MembershipSectionData["cohort"] = { state: "unavailable" };
+  try {
+    const presentation = identity ? workspaceCohortPresentation(identity) : null;
+    if (identity && !presentation) cohort = { state: "none", workspaceStatus: identity.workspaceStatus };
+    if (identity && presentation) cohort = { state: "member", cohort: presentation.cohort, number: presentation.number, workspaceStatus: identity.workspaceStatus };
+  } catch {
+    cohort = { state: "unavailable" };
+  }
+  const view = cohort.state === "member" ? privateMembershipPresentation(profile) : null;
+  return {
+    workspaceId,
+    publicOrigin: SITE_ORIGIN,
+    cohort,
+    profile: profile && view ? {
+      form: {
+        publicSlug: profile.publicSlug, displayName: profile.displayName, headline: profile.headline,
+        logoUrl: profile.logoUrl, avatarUrl: profile.avatarUrl, websiteUrl: profile.websiteUrl, monogram: profile.monogram,
+        wallVisible: view.visibility.wallVisible, passVisible: view.visibility.passVisible,
+      },
+      preview: { displayName: view.displayName, headline: view.headline, admissionMonth: view.admissionMonth, identity: view.identity, cohort: view.cohort, number: view.number },
+    } : null,
+  };
 }
