@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 
-import { MarketingPageShell } from "@/components/marketing/marketing-page-shell";
 import { ResponsiveText } from "@/components/marketing/responsive-text";
+import { JourneyShell } from "@/components/waitlist/journey-shell";
 import { earlyAccessLabel } from "@/components/waitlist/journey";
 import { MembershipLadder } from "@/components/waitlist/membership-ladder";
 import { WaitlistForm } from "@/components/waitlist/waitlist-form";
@@ -41,7 +41,7 @@ const PLACE_IN_LINE = <><strong>Early Access is a place in line, not an account.
 export default async function WaitlistPage() {
   const [access, existingApplicant] = await Promise.all([getProductAccessState(), existingApplicantStatus()]);
   return (
-    <MarketingPageShell activeHref="/waitlist">
+    <JourneyShell>
       <main className="ea-page" aria-labelledby="waitlist-title">
         <div className="ea-hero">
           <div className="ea-copy-col">
@@ -93,6 +93,6 @@ export default async function WaitlistPage() {
           ) : null}
         </div>
       </main>
-    </MarketingPageShell>
+    </JourneyShell>
   );
 }

@@ -149,7 +149,8 @@
 }
 
 /* Status page */
-.ea-status-page { max-width: 1080px; margin: 0 auto; padding: 64px 32px 120px; display: grid; gap: 32px; }
+/* align-content: start — the journey shell stretches <main> to the viewport; rows must not stretch with it. */
+.ea-status-page { max-width: 1080px; margin: 0 auto; padding: 64px 32px 120px; display: grid; gap: 32px; align-content: start; }
 .ea-status-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 64px; align-items: start; }
 .ea-status-main { display: grid; gap: 18px; }
 .ea-status-chip { display: inline-flex; align-items: center; gap: 8px; width: fit-content; padding: 6px 13px; border-radius: 20px; background: var(--color-chip); font-size: 12px; font-weight: 600; color: var(--color-ink-secondary); }
@@ -169,7 +170,7 @@
 .ea-status-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .ea-status-footnote { margin: 0; color: var(--color-ink-faint); font-size: 12px; line-height: 1.6; }
 .ea-status-side { display: grid; gap: 16px; }
-.ea-status-card { width: min(560px, 100%); display: grid; gap: 16px; padding: clamp(28px, 6vw, 44px); border: 1px solid var(--color-border); border-radius: 18px; background: var(--color-surface); box-shadow: 0 30px 70px -40px rgba(17, 17, 16, 0.25); margin: 0 auto; }
+.ea-status-card { width: min(560px, 100%); display: grid; align-content: start; gap: 16px; padding: clamp(28px, 6vw, 44px); border: 1px solid var(--color-border); border-radius: 18px; background: var(--color-surface); box-shadow: 0 30px 70px -40px rgba(17, 17, 16, 0.25); margin: 0 auto; }
 .ea-status-card h1 { margin: 0; font-family: var(--font-archivo), sans-serif; font-weight: 800; font-size: clamp(28px, 5vw, 38px); letter-spacing: -0.03em; }
 
 /* Progress ledger — 4 nodes, horizontal desktop / vertical mobile. */
@@ -233,9 +234,20 @@
 @keyframes ea-reveal-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes ea-reveal-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
-/* Private journey shell (design 12): logo + private-link indicator, no nav CTA. */
+/* Journey shell (design 12), used by every Early Access step: wordmark + optional private-link
+   indicator, no site nav, log-in or CTA. */
 .ea-shell { min-height: 100vh; display: flex; flex-direction: column; }
 .ea-shell > main { flex: 1 0 auto; width: 100%; }
+.ea-shell-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 56px; border-bottom: 1px solid var(--color-border); }
+.ea-shell-logo { display: inline-flex; align-items: center; gap: 9px; color: var(--color-ink); text-decoration: none; font-family: var(--font-sora), sans-serif; font-weight: 600; font-size: 16px; letter-spacing: -0.01em; }
+.ea-shell-logo:hover { color: var(--color-ink); }
+.ea-shell-indicator { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.ea-shell-indicator-dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--color-ink-muted); flex-shrink: 0; }
+.ea-shell-badge { display: none; padding: 5px 11px; border: 1px solid var(--color-border); border-radius: 20px; font-size: 12px; font-weight: 500; color: var(--color-ink-muted); background: var(--color-surface); white-space: nowrap; }
+.ea-shell-links { display: flex; gap: 32px; }
+.ea-shell-links a, .ea-shell-login { color: var(--color-ink-muted); font-size: 14px; font-weight: 500; text-decoration: none; }
+.ea-shell-links a:hover, .ea-shell-login:hover { color: var(--color-ink); }
+.ea-shell-login { color: var(--color-ink); }
 .ea-show-mobile { display: none; }
 .ea-shell-footer { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 28px 56px 36px; border-top: 1px solid var(--color-border); font-size: 12px; color: var(--color-ink-faint); }
 .ea-shell-footer nav { display: flex; gap: 16px; }
@@ -320,6 +332,10 @@
   .ea-status-details dd { text-align: left; }
   .ea-hide-mobile { display: none !important; }
   .ea-shell-footer { padding: 22px 20px 28px; }
+  .ea-shell-header { padding: 16px 20px; }
+  .ea-shell-indicator { display: none; }
+  .ea-shell-badge { display: inline-flex; }
+  .ea-shell-links, .ea-shell-login { display: none; }
   .ea-reveal-page { padding: 44px 22px 88px; }
   .ea-reveal h1 { font-size: 32px; }
   .ea-identity-card.is-reveal { padding: 22px; }

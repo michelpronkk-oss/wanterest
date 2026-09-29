@@ -26,6 +26,7 @@ const FOOTER_GROUPS: FooterGroup[] = [
     heading: "Company",
     links: [
       { label: "About", href: "/about" },
+      { label: "Members", href: "/members" },
       { label: "Contact", href: "/contact" },
       { label: "X", href: X_PROFILE_URL, external: true, icon: true },
     ],
