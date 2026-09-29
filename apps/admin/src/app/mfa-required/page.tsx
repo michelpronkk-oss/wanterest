@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
-import { createAdminServiceClient, createAdminSessionClient } from "@/server/supabase";
-import { verifyMfa } from "@/server/actions";
-import { MfaEnrollment } from "@/components/mfa-enrollment";
-import { AuthShell } from "@/components/auth-shell";
-import { AuthSubmitButton } from "@/components/auth-submit-button";
+import { createAdminServiceClient, createAdminSessionClient } from "@admin/server/supabase";
+import { verifyMfa } from "@admin/server/actions";
+import { MfaEnrollment } from "@admin/components/mfa-enrollment";
+import { AuthShell } from "@admin/components/auth-shell";
+import { AuthSubmitButton } from "@admin/components/auth-submit-button";
 
 export default async function MfaRequiredPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const session = await createAdminSessionClient();

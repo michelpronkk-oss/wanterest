@@ -20,6 +20,7 @@
     ],
     "paths": {
       "@wanterest/brand/*": ["./packages/brand/src/*"],
+      "@admin/*": ["./apps/admin/src/*"],
       "@/*": ["./src/*"]
     }
   },

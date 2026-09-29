@@ -4,15 +4,16 @@ Status: approved foundation decision recorded in `docs/architecture.md`; `codex/
 
 ## Decision summary
 
-Build a dedicated, independently deployed Next.js App Router application in this repository, with an explicit server-only admin application boundary and a separate Vercel project. Keep it in the same Git repository to reuse code and review history, but give it its own package/build/deployment configuration and release gate. The admin browser talks only to this app’s authenticated route handlers/server actions. It never connects to Supabase with a service-role key, Trigger.dev, Dodo, Resend, or the Vercel API directly.
+Keep `apps/admin` as the independently organized Next.js Admin application boundary and reuse its existing pages, read models, authentication, MFA and server-side authorization inside the existing customer-facing Next.js build. Deploy through the existing `wanterest` Vercel project only. The admin browser talks only to server-authorized routes/actions on `admin.wanterest.com`; it never connects to Supabase with a service-role key, Trigger.dev, Dodo, Resend, or the Vercel API directly.
 
-Do not add admin routes to the customer-facing Next.js deployment. Do not point a second Vercel project at the customer app’s same root build. The current repository is an npm app rather than a workspace; establish the workspace/package boundary as part of the architecture change so deployment does not depend on accidental parent-directory imports.
+The two interfaces share one build and Vercel project but have separate hostname boundaries. A Next 16 Proxy routes only the exact `admin.wanterest.com` production hostname to the private `/admin-internal` route namespace. It returns not-found for direct requests to that namespace on every hostname and for the Admin hostname on every Vercel Preview/non-production deployment. Do not create another Vercel project or expose Admin pages/actions on customer-facing domains. Keep Admin source under its existing workspace package and use explicit workspace imports; scope its CSS and local fonts so customer UI stays unchanged.
 
 ## Application and trust boundaries
 
 ```text
 admin.wanterest.com browser
-  └─ admin Next.js app (separate Vercel project, noindex, restrictive headers)
+  └─ existing Wanterest Next.js app / Vercel project
+       └─ exact-host Proxy rewrite → private /admin-internal routes (noindex, no-store, restrictive CSP)
        ├─ Supabase Auth session: email/password + verified MFA assurance
        ├─ admin authorization service: UUID-linked admin membership + permission checks
        ├─ typed admin commands and query/read-model contracts
@@ -48,7 +49,7 @@ The actual extraction/reuse boundary should be small. Admin query services shoul
 | Option | Assessment |
 |---|---|
 | Admin pages/routes inside existing customer app | Reject. Shared deployment/release and broader route surface increase accidental exposure and couple founder tooling to customer releases. |
-| Separate Next.js app under `apps/admin` in this repository | Recommended. Separate Vercel project and build give release isolation while one reviewed repository can share narrow, versioned server contracts. Requires a deliberate npm workspace and no implicit cross-root imports. |
+| Admin source under `apps/admin`, mounted by the existing root Next.js app | Selected. One existing Vercel project and build serve both interfaces; exact hostname routing plus an inaccessible internal route namespace protect the Admin surface. The Admin source remains a workspace package with scoped CSS and explicit imports. |
 | Separate repository/service | Defer. It creates duplicated domain contracts or a new remote internal API, deployment/secret surface, and synchronization burden before reuse boundaries are known. Revisit if monorepo deployment or access separation cannot meet the threat model. |
 | Reuse customer production API as the admin backend | Reject. It lacks the internal admin authorization model and would couple privileged reads/actions to public product routes. |
 

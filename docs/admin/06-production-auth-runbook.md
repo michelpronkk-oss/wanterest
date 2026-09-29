@@ -173,7 +173,7 @@ Expect an enabled `BEFORE UPDATE OR DELETE` trigger with an empty search path. B
 - Confirm the provisioned user is required to enroll a TOTP factor if none is verified; verify the authenticator and require AAL2 before any operational data is rendered.
 - Confirm a verified factor at AAL1 sees only the MFA challenge. Confirm AAL2 can read the Overview projection and that unavailable/stale dependencies are labeled explicitly.
 - Confirm the role exposes read-only permissions. Do not test customer review, invites, admissions, lifecycle changes, billing actions, share publication, retries, or job replays with production records.
-- Keep `SUPABASE_SERVICE_ROLE_KEY` out of all browser variables and all Vercel Preview environments. The application also refuses to instantiate either Supabase client on a Vercel Preview deployment. Configure the production service key only as a server-side variable on the separately approved production admin deployment.
+- Keep `SUPABASE_SERVICE_ROLE_KEY` out of browser variables. The existing shared Vercel project currently includes this server-only variable in Preview for the customer app; the Admin Proxy and Admin client factories refuse Admin traffic/client creation on Preview and other non-production deployments. Do not add any Admin-only credentials to Preview. Review any future change to the shared Preview scope separately for customer-preview impact.
 
 ## Approval boundary
 
@@ -181,6 +181,6 @@ Production activation status and remaining approval boundaries:
 
 1. **Completed:** migration `20261102000000` was applied and verified as described above. Do not reapply it or use `--include-all` to run unfinished Layer 13B migrations.
 2. **Next, separate approval:** grant the initial Founder membership to the exact existing Auth UUID and record the operator/audit event with the one-statement CTE above. Run the read-only membership/audit checks afterward. No membership has been granted.
-3. **Separate approval still required:** configure and deploy the dedicated Admin Vercel project. Keep credentials server-side; then verify ordinary-user denial and mandatory TOTP/AAL2 after the existing Founder account has been provisioned. Do not run lifecycle mutations as smoke tests.
+3. **Separate approval still required:** complete the focused host-routing PR and deploy through the existing `wanterest` Vercel project. Keep production credentials server-side and do not add Admin-only credentials to Preview. Verify ordinary-user denial and mandatory TOTP/AAL2 only after the existing Founder account has been provisioned. Do not run lifecycle mutations as smoke tests.
 
 The migration approval has been exercised; membership provisioning and deployment have not.

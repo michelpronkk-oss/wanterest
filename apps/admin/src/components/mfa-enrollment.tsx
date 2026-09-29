@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from "react";
 import Image from "next/image";
-import { startMfaEnrollment, verifyMfa } from "@/server/actions";
-import { AuthSubmitButton } from "@/components/auth-submit-button";
+import { startMfaEnrollment, verifyMfa } from "@admin/server/actions";
+import { AuthSubmitButton } from "@admin/components/auth-submit-button";
 
 export function MfaEnrollment() {
   const [setup, setSetup] = useState<{ factorId: string; qrCode: string } | null>(null);

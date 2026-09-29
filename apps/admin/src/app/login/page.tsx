@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { signIn } from "@/server/actions";
-import { AuthShell } from "@/components/auth-shell";
-import { AuthSubmitButton } from "@/components/auth-submit-button";
-import { isAdminAuthConfigured } from "@/server/supabase";
+import { signIn } from "@admin/server/actions";
+import { AuthShell } from "@admin/components/auth-shell";
+import { AuthSubmitButton } from "@admin/components/auth-submit-button";
+import { isAdminAuthConfigured } from "@admin/server/supabase";
 
 export const metadata: Metadata = { title: "Sign in" };
 

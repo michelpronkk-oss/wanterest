@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { LogoMark } from "@wanterest/brand/logo-mark";
-import { signOut } from "@/server/actions";
-import { adminCan, type AdminContext } from "@/server/auth";
+import { signOut } from "@admin/server/actions";
+import { adminCan, type AdminContext } from "@admin/server/auth";
 
 const navigation = [
   { href: "/", label: "Overview", icon: "◫", permission: "operations.read" },

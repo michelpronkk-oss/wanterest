@@ -15,7 +15,7 @@
     "incremental": true,
     "plugins": [{ "name": "next" }],
     "paths": {
-      "@/*": ["./src/*"],
+      "@admin/*": ["./src/*"],
       "@wanterest/brand/*": ["../../packages/brand/src/*"]
     }
   },
