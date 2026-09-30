@@ -27,6 +27,16 @@ describe("root hostname Proxy", () => {
     expect(await response.text()).toBe("admin");
   });
 
+  it.each(["/growth", "/early-access/11111111-1111-4111-8111-111111111111"])(
+    "routes %s through the Admin-only proxy path",
+    async (path) => {
+      const request = new NextRequest(`https://admin.wanterest.com${path}`);
+      await proxy(request);
+      expect(createAdminProxyResponse).toHaveBeenCalledWith(request, `/admin-internal${path}`);
+      expect(updateSupabaseSession).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(["wanterest.com", "www.wanterest.com", "app.wanterest.com"])("keeps %s customer routes unchanged", async (hostname) => {
     const request = new NextRequest(`https://${hostname}/login`);
     const response = await proxy(request);

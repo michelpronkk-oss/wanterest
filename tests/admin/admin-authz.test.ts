@@ -57,16 +57,26 @@ describe("admin server authorization", () => {
     await expect(requireAdminPermission("operations.read")).rejects.toThrow("REDIRECT:/forbidden");
   });
 
-  it("keeps every initial role read-only, including the founder role", async () => {
+  it("grants lifecycle controls only to Founder and Operations Admin", async () => {
     mocks.membership = { role: "founder" };
     configureAuth();
     const { requireAdminPermission } = await import("../../apps/admin/src/server/auth");
     await expect(requireAdminPermission("operations.read")).resolves.toMatchObject({ role: "founder" });
+    await expect(requireAdminPermission("lifecycle.write")).resolves.toMatchObject({ role: "founder" });
     await expect(requireAdminPermission("lifecycle.review")).rejects.toThrow("REDIRECT:/forbidden");
     await expect(requireAdminPermission("admission.manage")).rejects.toThrow("REDIRECT:/forbidden");
     await expect(requireAdminPermission("share_cards.manage")).rejects.toThrow("REDIRECT:/forbidden");
     await expect(requireAdminPermission("incidents.recover")).rejects.toThrow("REDIRECT:/forbidden");
     await expect(requireAdminPermission("organic_intelligence.review")).rejects.toThrow("REDIRECT:/forbidden");
+
+    mocks.membership = { role: "operations_admin" };
+    await expect(requireAdminPermission("lifecycle.write")).resolves.toMatchObject({ role: "operations_admin" });
+
+    mocks.membership = { role: "support" };
+    await expect(requireAdminPermission("lifecycle.write")).rejects.toThrow("REDIRECT:/forbidden");
+
+    mocks.membership = { role: "read_only_analyst" };
+    await expect(requireAdminPermission("lifecycle.write")).rejects.toThrow("REDIRECT:/forbidden");
   });
 
   it("limits the separately granted Organic Reviewer role to readiness review", async () => {

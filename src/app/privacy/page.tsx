@@ -114,8 +114,14 @@ export default function PrivacyPage() {
 
             <h2>Analytics</h2>
             <p>
-              As of this writing, Wanterest does not use third-party website analytics or advertising tracking. If that changes, this policy and our{" "}
-              <a href="/cookies">Cookie Policy</a> will be updated first.
+              The public marketing pages use Vercel Web Analytics to measure page views and aggregate visitor traffic. Vercel describes its visitor
+              measurement as a request-derived hash that expires after 24 hours; it does not use a third-party cookie or track visitors across websites
+              or across days. Wanterest sends only public page views and the property-free event name <code>application_started</code>. We exclude query
+              parameters and suppress page views on authenticated, account, invitation, and status pages; we do not send application field values, email addresses, account IDs,
+              or workspace IDs to Web Analytics. Vercel processes this telemetry for Wanterest; the Admin displays aggregate traffic separately from
+              authoritative application, verification, invitation, and admission records. Those datasets are not joined to identify individual visitors.
+              See Vercel&rsquo;s{" "}<a href="https://vercel.com/docs/analytics/privacy-policy" rel="noreferrer">Web Analytics privacy information</a> and our{" "}
+              <a href="/cookies">Cookie Policy</a>.
             </p>
 
             <h2>Why we process this information</h2>

@@ -134,7 +134,7 @@ describe("Admin presentation and truthful data states", () => {
   });
   it("keeps Overview counts unavailable when no database is connected", async () => {
     const html = render("overview", await OverviewPage());
-    expect(html.match(/<strong>—<\/strong>/g)).toHaveLength(7);
+    expect(html.match(/<strong>—<\/strong>/g)).toHaveLength(8);
     expect(html).toContain('metric-card metric-featured');
     expect(requireAdminPermission).toHaveBeenCalledWith("operations.read");
   });

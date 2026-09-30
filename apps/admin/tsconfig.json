@@ -16,7 +16,10 @@
     "plugins": [{ "name": "next" }],
     "paths": {
       "@admin/*": ["./src/*"],
-      "@wanterest/brand/*": ["../../packages/brand/src/*"]
+      "@/*": ["../../src/*"],
+      "@wanterest/brand/*": ["../../packages/brand/src/*"],
+      "@wanterest/server/*": ["../../src/server/*"],
+      "@wanterest/shared/*": ["../../src/shared/*"]
     }
   },
   "include": ["next-env.d.ts", ".next/types/**/*.ts", ".next/dev/types/**/*.ts", "src/**/*.ts", "src/**/*.tsx"],

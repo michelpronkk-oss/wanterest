@@ -6,6 +6,7 @@ import { adminCan, type AdminContext } from "@admin/server/auth";
 const navigation = [
   { href: "/", label: "Overview", icon: "overview", permission: "operations.read" },
   { href: "/early-access", label: "Early Access", icon: "people", permission: "lifecycle.read" },
+  { href: "/growth", label: "Growth", icon: "overview", permission: "analytics.read" },
   { href: "/operations", label: "Operations", icon: "activity", permission: "operations.read" },
   { href: "/search-console", label: "Search Console", icon: "search", permission: "analytics.read" },
   { href: "/publication-readiness", label: "Organic readiness", icon: "search", permission: "operations.summary.read" },

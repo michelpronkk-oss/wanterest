@@ -12,7 +12,7 @@ describe("read-only admin data contracts", () => {
   it("represents missing lifecycle data as unavailable rather than zero", async () => {
     const { getOverviewMetrics } = await import("../../apps/admin/src/server/overview");
     const snapshot = await getOverviewMetrics(new Date("2026-09-29T12:00:00.000Z"));
-    expect(snapshot.metrics).toHaveLength(7);
+    expect(snapshot.metrics).toHaveLength(8);
     expect(snapshot.metrics.every((metric) => metric.value === null && metric.state === "unavailable")).toBe(true);
   });
 

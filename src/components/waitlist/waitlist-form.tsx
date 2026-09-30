@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { track } from "@vercel/analytics";
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 
 import { storePendingSubmission } from "./check-email-storage";
@@ -45,6 +46,7 @@ export function WaitlistForm() {
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<RequiredField, string>>>({});
   const [useCaseCount, setUseCaseCount] = useState(0);
   const [marketingConsent, setMarketingConsent] = useState(false);
+  const [applicationStartedTracked, setApplicationStartedTracked] = useState(false);
 
   const ids = {
     firstName: useId(), companyName: useId(), email: useId(), useCase: useId(),
@@ -94,7 +96,11 @@ export function WaitlistForm() {
   }
 
   return (
-    <form className="ea-form" onSubmit={(event) => void submit(event)} noValidate>
+    <form className="ea-form" onFocusCapture={() => {
+      if (applicationStartedTracked) return;
+      setApplicationStartedTracked(true);
+      track("application_started");
+    }} onSubmit={(event) => void submit(event)} noValidate>
       <div className="ea-form-heading"><h2>Request access</h2><p>Takes under a minute.</p></div>
       {state === "error" ? <p className="ea-form-error" role="alert">{retryAfter > 0 ? `${errorMessage} Try again in ${formatClock(retryAfter)}.` : errorMessage}</p> : null}
 

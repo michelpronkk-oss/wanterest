@@ -1,6 +1,6 @@
 # Wanterest Admin — Architecture Proposal
 
-Status: approved foundation decision recorded in `docs/architecture.md`; `codex/adminsystem` now includes fetched production `main`. The existing Wanterest production Supabase project is the eventual Auth and data source. No second Supabase environment will be created. The migration is schema-compatible for additive first application based on read-only live inspection, but awaits explicit approval. This does not authorize a production migration, membership grant, or deployment.
+Status: approved foundation decision recorded in `docs/architecture.md`; this candidate is based on current `origin/main` commit `a392de928d9eb2388fb24f6a5683cba0ed8debef`. The existing Wanterest production Supabase project is the sole Auth and data source. No second Supabase environment will be created. Candidate migration `20261104000000_admin_operations_growth_v1.sql` has passed an isolated local PostgreSQL rehearsal but remains unapplied in production. No production migration, membership grant, merge, or deployment is authorized by this implementation work.
 
 ## Decision summary
 
@@ -59,7 +59,7 @@ The actual extraction/reuse boundary should be small. Admin query services shoul
 - Require Supabase email/password authentication and verified MFA. Sensitive operations require current `aal2`/MFA assurance; no editable metadata can satisfy the check.
 - Store a private admin membership record linked by `user_id` with a role (`founder`, `operations_admin`, `support`, `read_only_analyst`), active/revoked state, grants, and audit timestamps. Use explicit permissions such as `waitlist.read`, `waitlist.review`, `admission.manage`, `billing.read`, `share_cards.manage`, `incidents.recover`; use deny-by-default checks.
 - Keep memberships, audit records, and privileged projections unavailable to `anon`/`authenticated` browser roles. Use a server-only Supabase service client only after authenticating the existing production Auth identity, requiring AAL2, checking explicit membership and permission, then using narrow selects/RPCs; no generic SQL execution.
-- Public Vercel preview deployments must not receive production Supabase service-role credentials. Local development may use operator-managed credentials only in a server-only `.env.local`; never expose them to a client bundle or public preview. Initial access is read-only.
+- Public Vercel preview deployments must not receive Admin production credentials; Admin Supabase clients reject every non-production Vercel environment. Local development may use operator-managed credentials only in a server-only `.env.local`; never expose them to a client bundle or public preview. The existing release remains read-only until the candidate migration and application release are approved and deployed; afterward, only Founder and Operations Admin roles gain the narrow Early Access `lifecycle.write` permission. Other roles remain read-only or denied.
 - Add per-account and per-IP rate limits, CSRF/origin defenses for cookie-authenticated mutations, safe recovery, short admin session lifetime, explicit session revocation, no-store private responses, noindex robots metadata, and restrictive response headers.
 
 ## Data and service design
