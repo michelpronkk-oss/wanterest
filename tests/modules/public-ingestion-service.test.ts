@@ -43,27 +43,33 @@ function req(overrides: { query?: string; limit?: number; requestMetadata?: Reco
   return sourceDiscoveryRequestSchema.parse({ query: "export", limit: 5, ...overrides });
 }
 
-function discoveryPage(overrides: Partial<{ rawSourceItemIds: string[]; rawInserted: number; nextCursor: string | undefined; diagnostics: string[]; providerMetrics: Record<string, unknown> }> = {}) {
+function discoveryPage(overrides: Partial<{ rawSourceItemIds: string[]; rawInserted: number; rawDuplicates: number; rejected: number; nextCursor: string | undefined; diagnostics: string[]; providerMetrics: Record<string, unknown>; jobRunId: string; attemptCount: number; rawItemObservations: Array<{ rawSourceItemId: string; providerItemFingerprint: string; inserted: boolean }> }> = {}) {
   return {
     rawSourceItemIds: overrides.rawSourceItemIds ?? [],
     rawInserted: overrides.rawInserted ?? 0,
+    rawDuplicates: overrides.rawDuplicates ?? 0,
+    rejected: overrides.rejected ?? 0,
+    jobRunId: overrides.jobRunId ?? "discovery-job",
+    attemptCount: overrides.attemptCount ?? 1,
+    rawItemObservations: overrides.rawItemObservations ?? [],
     diagnostics: overrides.diagnostics ?? [],
     nextCursor: overrides.nextCursor,
     ...(overrides.providerMetrics ? { providerMetrics: overrides.providerMetrics } : {}),
   };
 }
 
-function replayResult(overrides: Partial<{ normalizedSourceItemIds: string[]; canonicalizedConversationIds: string[] }> = {}) {
+function replayResult(overrides: Partial<{ normalizedSourceItemIds: string[]; canonicalizedConversationIds: string[]; rawSourceItemIds: string[] }> = {}) {
   const canonicalizedConversationIds = overrides.canonicalizedConversationIds ?? [];
   return {
     normalizedSourceItemIds: overrides.normalizedSourceItemIds ?? [],
     canonicalizedConversationIds,
-    replayMappings: canonicalizedConversationIds.map((conversationId) => ({ conversationId })),
+    replayMappings: canonicalizedConversationIds.map((conversationId, index) => ({ rawSourceItemId: overrides.rawSourceItemIds?.[index], sourceItemId: `source-${index + 1}`, conversationId })),
   };
 }
 
 describe("ingestPublicPartition (Stage 2A shared public-ingestion boundary)", () => {
   beforeEach(() => {
+    vi.unstubAllEnvs();
     discoverSourceMock.mockReset();
     replayDetailedMock.mockReset();
     ensurePartitionMock.mockReset();
@@ -136,6 +142,39 @@ describe("ingestPublicPartition (Stage 2A shared public-ingestion boundary)", ()
     expect(result.conversationIds).toEqual(["conv-1", "conv-2", "conv-3"]);
   });
 
+  it("records per-query unique provider items and independent roots without persisting content or cursor values", async () => {
+    vi.stubEnv("SOURCE_EXECUTION_OBSERVABILITY_ENABLED", "true");
+    discoverSourceMock
+      .mockResolvedValueOnce(discoveryPage({
+        rawSourceItemIds: ["raw-1"], rawInserted: 1, nextCursor: "private-cursor-value",
+        rawItemObservations: [{ rawSourceItemId: "raw-1", providerItemFingerprint: "provider-item-a", inserted: true }],
+      }))
+      .mockResolvedValueOnce(discoveryPage({
+        rawSourceItemIds: ["raw-2", "raw-3"], rawInserted: 2,
+        rawItemObservations: [
+          { rawSourceItemId: "raw-2", providerItemFingerprint: "provider-item-a", inserted: true },
+          { rawSourceItemId: "raw-3", providerItemFingerprint: "provider-item-b", inserted: true },
+        ],
+      }));
+    replayDetailedMock
+      .mockResolvedValueOnce(replayResult({ rawSourceItemIds: ["raw-1"], normalizedSourceItemIds: ["norm-1"], canonicalizedConversationIds: ["conv-a"] }))
+      .mockResolvedValueOnce(replayResult({ rawSourceItemIds: ["raw-2", "raw-3"], normalizedSourceItemIds: ["norm-2", "norm-3"], canonicalizedConversationIds: ["conv-a", "conv-b"] }));
+
+    const result = await ingestPublicPartition({
+      sourceKey: "github",
+      requests: [req({ requestMetadata: { queryPlanId: "plan-1", maxPages: 2 } })],
+      traceId: "trace-1",
+    });
+
+    expect(result.resultAttributions).toMatchObject([
+      { rawSourceItemId: "raw-1", conversationId: "conv-a", firstProviderItemInExecution: true, firstRootInExecution: true },
+      { rawSourceItemId: "raw-2", conversationId: "conv-a", firstProviderItemInExecution: false, firstRootInExecution: false },
+      { rawSourceItemId: "raw-3", conversationId: "conv-b", firstProviderItemInExecution: true, firstRootInExecution: true },
+    ]);
+    expect(result.queryTelemetry[0]).toMatchObject({ pagesRequested: 2, pagesCompleted: 2, cursorContinuationCount: 1, continuationStoppedReason: "no_cursor", normalizedItems: 3, uniqueConversations: 2, duplicateCount: 1 });
+    expect(JSON.stringify(result.resultAttributions)).not.toContain("private-cursor-value");
+  });
+
   it("deduplicates repeated raw/normalized/conversation ids across requests", async () => {
     discoverSourceMock
       .mockResolvedValueOnce(discoveryPage({ rawSourceItemIds: ["raw-1"], rawInserted: 1 }))
@@ -169,6 +208,19 @@ describe("ingestPublicPartition (Stage 2A shared public-ingestion boundary)", ()
     expect(result.errorCode).toBe("RATE_LIMITED");
     expect(result.queryTelemetry[0]?.executionStatus).toBe("rate_limited");
     expect(result.diagnostics[0]).toMatch(/^query provider_error/);
+  });
+
+  it("does not put normalized query text in durable provider error diagnostics", async () => {
+    const privatePhrase = "private product launch pain";
+    discoverSourceMock.mockRejectedValueOnce(Object.assign(new Error("provider rejected request"), { code: "INVALID_QUERY" }));
+    const result = await ingestPublicPartition({
+      sourceKey: "github",
+      requests: [req({ query: privatePhrase, requestMetadata: { queryPlanId: `qp-github-pain-${privatePhrase.replaceAll(" ", "-")}` } })],
+      traceId: "trace-private-query",
+    });
+    expect(result.diagnostics.join(" ")).not.toContain(privatePhrase);
+    expect(result.diagnostics.join(" ")).not.toContain("qp-github-pain-private-product-launch-pain");
+    expect(result.diagnostics.join(" ")).toMatch(/queryPlanId=[0-9a-f]{64}/);
   });
 
   it("reports zero-result completion status without treating it as a failure", async () => {

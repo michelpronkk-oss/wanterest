@@ -25,6 +25,7 @@ import { enrichSourceMetadata } from "../geography/geo-enrichment";
 import { contentHash, deterministicUuid, normalizedUrl, sha256Json } from "./hash";
 import { replayInputSchema, type ReplayInput } from "./ingestion.schemas";
 import type { IngestionRepository } from "./ingestion.repository";
+import { sourceExecutionObservabilityEnabled } from "../operations/source-execution-telemetry.config";
 
 export type SourceControlGate = { assertDiscoverable(sourceKey: string): Promise<void> };
 
@@ -48,11 +49,14 @@ function sanitizedError(error: unknown): { code: string; summary: string; detail
 
 export type DiscoveryResult = {
   jobRunId: string;
+  attemptCount: number;
   sourceKey: string;
   rawInserted: number;
   rawDuplicates: number;
   rejected: number;
   rawSourceItemIds: string[];
+  /** Provider ID fingerprint is used only for in-memory duplicate measurement; the raw ID is never logged or persisted in telemetry. */
+  rawItemObservations?: Array<{ rawSourceItemId: string; providerItemFingerprint: string; inserted: boolean }>;
   nextCursor?: string;
   rateLimit?: RateLimitMetadata;
   estimatedCost?: number;
@@ -90,7 +94,7 @@ export class IngestionService {
     const requestHash = sha256Json({ sourceKey, request });
     const idempotencyKey = `discover:${sourceKey}:${requestHash}`;
     const existing = await this.repository.getJobRun("discover-source", idempotencyKey);
-    if (existing?.status === "succeeded") return this.resultFromJob(existing.input_reference, existing.id) as DiscoveryResult;
+    if (existing?.status === "succeeded") return { ...(this.resultFromJob(existing.input_reference, existing.id) as DiscoveryResult), attemptCount: existing.attempt_count };
 
     const job = await this.startJob({
       job_type: "discover-source",
@@ -105,6 +109,7 @@ export class IngestionService {
       let rawDuplicates = 0;
       let rejected = 0;
       const rawSourceItemIds: string[] = [];
+      const rawItemObservations = sourceExecutionObservabilityEnabled() ? [] as NonNullable<DiscoveryResult["rawItemObservations"]> : null;
       const diagnostics = [...page.diagnostics.messages];
       for (const envelope of page.items) {
         const parsed = rawSourceItemEnvelopeSchema.safeParse(envelope);
@@ -143,14 +148,17 @@ export class IngestionService {
         await this.repository.insertRawSourceItem(input, evidence);
         if (before) rawDuplicates += 1;
         else rawInserted += 1;
+        rawItemObservations?.push({ rawSourceItemId: rawId, providerItemFingerprint: sha256Json({ sourceKey: raw.sourceKey, externalId: raw.externalId }), inserted: !before });
       }
       const result: DiscoveryResult = {
         jobRunId: job.id,
+        attemptCount: job.attempt_count,
         sourceKey,
         rawInserted,
         rawDuplicates,
         rejected,
         rawSourceItemIds,
+        ...(rawItemObservations ? { rawItemObservations } : {}),
         nextCursor: page.nextCursor,
         rateLimit: page.rateLimit,
         estimatedCost: page.estimatedCost,

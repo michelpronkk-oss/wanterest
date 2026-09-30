@@ -41,7 +41,7 @@ export class CrossProductRoutingRepository {
       route_status: route.status,
       route_score: route.score,
       route_reason: route.reason,
-    }, { onConflict: "workspace_id,product_id,conversation_id,routing_version,profile_fingerprint,evidence_fingerprint" }).select("*");
+    }, { onConflict: "workspace_id,product_id,conversation_id,routing_version,profile_version,evidence_fingerprint,profile_fingerprint" }).select("*");
     const result = await query.maybeSingle();
     if (result.error || !result.data) throw persistenceError(result.error, "edge upsert");
     return {
