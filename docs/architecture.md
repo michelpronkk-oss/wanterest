@@ -5379,3 +5379,37 @@ Company logo URLs are never fetched server-side (F1.6A: no fetch); the image til
 mutations live at `/waitlist/share-cards` because the private status cookie is scoped to `/waitlist`. One
 `ShareCardArtwork` composition renders the private previews, the public page and the 1200×630 / 1080×1350 /
 1080×1080 PNGs with bundled OFL fonts (`assets/fonts`).
+
+
+## 11. Public intelligence boundary (SEO-2.6)
+
+Public intelligence is a separate global read model. It may use only third-party evidence
+whose source policy and individual capture both establish public, context-independent use.
+Workspace selection, product matches, Signals, Demand Gaps, Demand Drifts, CRM, support,
+Actions, experiments, private notes, first-party supply, and raw provider payloads never
+enter this read model.
+
+Provider adapters map to a centrally controlled source-family taxonomy. Provider count is
+not family diversity. An unknown provider, source-rights status, capture context, topic, or
+identity fails closed. Policy approvals are versioned and attributable. Provider IDs and
+author IDs stay private; internal identity keys use server-held HMAC fingerprints. The
+fingerprinting secret is never browser-readable. URLs require an exact approved HTTPS host;
+credentials, ports, fragments, sensitive or unrecognized query parameters, and token-like
+paths are withheld or removed before any projection.
+
+A public episode is an independently identified public conversation, with relational links to
+the canonical conversation, source item, and evidence nodes. Replies and reposts are not
+counted as independent episodes when they share a verified thread or viral event. Deduplication
+uses verified exact content or canonical-URL identity only; semantic similarity can suggest
+human review but cannot remove evidence. Public topic and entity identities are global and
+separate from workspace products.
+
+SEO-2 maturity and eligibility thresholds remain authoritative and unchanged. Search Console
+may reprioritize only an already-eligible candidate. Every candidate review is private and
+attributable to a separately provisioned `organic_reviewer` Admin identity at AAL2; approval
+and rejection write the Admin audit record and review event atomically. Existing Admin roles
+remain read-only. Source-policy, topic-identity, evidence, duplicate, or viral-event changes
+invalidate affected candidate evaluations and write a system audit event. No public route,
+sitemap entry, indexable page, automatic approval, or publication behavior is part of this
+phase. The SEO-2.6 migration is forward-only and remains unapplied until its SQL is independently
+validated against a production-shaped schema and receives release approval.

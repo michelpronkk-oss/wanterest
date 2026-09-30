@@ -66,5 +66,18 @@ describe("admin server authorization", () => {
     await expect(requireAdminPermission("admission.manage")).rejects.toThrow("REDIRECT:/forbidden");
     await expect(requireAdminPermission("share_cards.manage")).rejects.toThrow("REDIRECT:/forbidden");
     await expect(requireAdminPermission("incidents.recover")).rejects.toThrow("REDIRECT:/forbidden");
+    await expect(requireAdminPermission("organic_intelligence.review")).rejects.toThrow("REDIRECT:/forbidden");
+  });
+
+  it("limits the separately granted Organic Reviewer role to readiness review", async () => {
+    mocks.membership = { role: "organic_reviewer" };
+    configureAuth();
+    const { requireAdminPermission } = await import("../../apps/admin/src/server/auth");
+    await expect(requireAdminPermission("operations.summary.read")).resolves.toMatchObject({ role: "organic_reviewer" });
+    await expect(requireAdminPermission("organic_intelligence.review")).resolves.toMatchObject({ role: "organic_reviewer" });
+    await expect(requireAdminPermission("operations.read")).rejects.toThrow("REDIRECT:/forbidden");
+    await expect(requireAdminPermission("lifecycle.read")).rejects.toThrow("REDIRECT:/forbidden");
+    await expect(requireAdminPermission("analytics.read")).rejects.toThrow("REDIRECT:/forbidden");
+    await expect(requireAdminPermission("lifecycle.review")).rejects.toThrow("REDIRECT:/forbidden");
   });
 });

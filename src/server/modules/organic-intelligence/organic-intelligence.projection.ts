@@ -38,8 +38,11 @@ function sanitizeSourceUrl(value: string | null): string | null {
 }
 
 export function createPublicSafeIntelligenceProjection(source: PublicProjectionSource): PublicSafeIntelligenceProjection {
-  if (source.candidate.privacy !== "approved" || !["paraphrase_approved", "excerpt_approved"].includes(source.candidate.copyright)) {
+  if (source.candidate.privacy !== "approved" || !["aggregate_approved", "paraphrase_approved", "excerpt_approved"].includes(source.candidate.copyright)) {
     throw new Error("public_projection_review_required");
+  }
+  if (source.candidate.copyright === "aggregate_approved" && source.summaries.length > 0) {
+    throw new Error("aggregate_projection_cannot_include_source_summaries");
   }
   if (source.eligibility.objectId !== source.candidate.objectId || source.eligibility.family !== source.candidate.family) {
     throw new Error("public_projection_identity_mismatch");

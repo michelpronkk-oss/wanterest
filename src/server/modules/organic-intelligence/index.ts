@@ -57,3 +57,15 @@ export type {
   PublicSafeIntelligenceProjection,
   ReadinessDecisionState,
 } from "./organic-intelligence.schemas";
+
+export {
+  PUBLIC_SOURCE_FAMILIES,
+  PUBLIC_SOURCE_FAMILY_CONTROLS,
+  SOURCE_FAMILY_BY_PROVIDER,
+  evaluatePublicEvidencePolicy,
+  sanitizePublicSourceUrl,
+  exactDuplicateKey,
+} from "./public-source-policy";
+export type { PublicEvidenceDecision, PublicEvidenceIdentity, PublicSourceFamily, PublicSourcePolicy, PublicTopicIdentity, PublicTopicSafetyReview } from "./public-source-policy";
+export { evaluateReviewedPublicCandidate } from "./public-candidate-evaluator";
+export type { PublicCandidateEvidenceRow } from "./public-candidate-evaluator";

@@ -652,3 +652,55 @@
 .admin-scope .source-state.healthy { color: #4b642e; }
 .admin-scope .source-state.degraded, .admin-scope .source-state.blocked, .admin-scope .job-status.failed, .admin-scope .job-status.failed_terminal { color: #963e30; }
 .admin-scope .source-state.stale { color: #766030; }
+
+.admin-scope .organic-readiness-metrics { margin: 26px 0 32px; }
+.admin-scope .organic-readiness-metrics .metric-card { min-height: 150px; }
+.admin-scope .organic-readiness-metrics .metric-card > span { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.admin-scope .organic-readiness-metrics .metric-card > strong { font-size: 38px; }
+.admin-scope .organic-distribution-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 26px 36px; padding: 24px 0 8px; }
+.admin-scope .organic-distribution-grid h3 { margin: 0 0 14px; font-size: 14px; font-weight: 600; }
+.admin-scope .organic-distribution-grid ul { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.admin-scope .organic-distribution-grid li { display: flex; justify-content: space-between; gap: 18px; padding: 9px 0; border-bottom: 1px solid var(--line); color: var(--secondary); font-size: 12px; text-transform: capitalize; }
+.admin-scope .organic-distribution-grid li strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.admin-scope .organic-footnote { margin: 12px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.admin-scope .organic-candidates-panel { margin-top: 28px; padding: 26px; }
+.admin-scope .organic-candidate-list { display: grid; gap: 14px; margin: 22px 0 0; padding: 0; list-style: none; }
+.admin-scope .organic-candidate { min-width: 0; padding: 22px; border: 1px solid var(--line); border-radius: 5px; background: #fffefa; }
+.admin-scope .organic-candidate-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.admin-scope .organic-candidate-heading .eyebrow { margin: 0 0 8px; }
+.admin-scope .organic-candidate-heading h3 { margin: 0; font-family: var(--font-archivo),sans-serif; font-size: 22px; font-weight: 500; letter-spacing: -.025em; }
+.admin-scope .organic-candidate-state { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; margin: 18px 0; padding-bottom: 16px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.admin-scope .organic-candidate-state span { color: var(--muted); }
+.admin-scope .organic-candidate-state strong { margin-right: 12px; color: var(--secondary); font-weight: 600; text-transform: capitalize; }
+.admin-scope .organic-candidate-measures { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; margin: 0; }
+.admin-scope .organic-candidate-measures div { min-width: 0; }
+.admin-scope .organic-candidate-measures dt { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.admin-scope .organic-candidate-measures dd { margin: 5px 0 0; color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; }
+.admin-scope .organic-provenance { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--secondary); font-size: 12px; }
+.admin-scope .organic-provenance summary { width: fit-content; cursor: pointer; font-weight: 600; }
+.admin-scope .organic-provenance summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.admin-scope .organic-provenance p { color: var(--muted); line-height: 1.5; }
+.admin-scope .organic-provenance code { display: block; overflow-wrap: anywhere; color: var(--secondary); font-size: 11px; line-height: 1.7; }
+.admin-scope .organic-blockers { margin: 16px 0 0; color: #7b493f; font-size: 12px; line-height: 1.6; }
+.admin-scope .organic-blockers strong { margin-right: 8px; }
+.admin-scope .organic-candidate-time { margin: 16px 0 0; color: var(--muted); font-size: 11px; }
+.admin-scope .organic-review-form { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.admin-scope .organic-review-form label { display: grid; flex: 1 1 240px; gap: 7px; color: var(--secondary); font-size: 11px; }
+.admin-scope .organic-review-form input { width: 100%; min-height: 42px; padding: 0 11px; border: 1px solid #c9c9be; border-radius: 4px; background: #fff; color: var(--ink); font: inherit; font-size: 14px; }
+.admin-scope .organic-review-form button { min-height: 42px; padding: 0 16px; border: 1px solid var(--ink); border-radius: 4px; background: var(--ink); color: #fff; font: inherit; font-size: 12px; cursor: pointer; }
+.admin-scope .organic-review-form button.secondary { background: transparent; color: var(--ink); }
+.admin-scope .organic-review-form input:focus-visible, .admin-scope .organic-review-form button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.admin-scope .organic-review-notice { margin: 18px 0 0; padding: 13px 16px; border-left: 3px solid #849458; background: #f0f1e9; color: var(--ink); font-size: 13px; line-height: 1.5; }
+.admin-scope .organic-review-notice.error { border-color: #9f4a3e; background: #f6eeeb; }
+@media (max-width: 880px) {
+  .admin-scope .organic-candidate-measures { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 680px) {
+  .admin-scope .organic-distribution-grid { grid-template-columns: 1fr; gap: 24px; }
+  .admin-scope .organic-candidates-panel { padding: 18px; }
+  .admin-scope .organic-candidate { padding: 16px; }
+  .admin-scope .organic-candidate-heading h3 { font-size: 19px; }
+  .admin-scope .organic-candidate-measures { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px 10px; }
+  .admin-scope .organic-review-form { align-items: stretch; flex-direction: column; }
+  .admin-scope .organic-review-form label, .admin-scope .organic-review-form button { width: 100%; }
+}

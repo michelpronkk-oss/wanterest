@@ -426,6 +426,14 @@ describe("public-safe projection", () => {
     expect(() => createPublicSafeIntelligenceProjection(projectionSource(candidate("demand_opportunity", { copyright: "unverified" })))).toThrow("public_projection_review_required");
   });
 
+  it("allows explicitly reviewed aggregate-only output while excluding every source summary", () => {
+    const source = projectionSource(candidate("demand_opportunity", { copyright: "aggregate_approved" }));
+    source.summaries = [];
+    expect(createPublicSafeIntelligenceProjection(source).evidence.summaries).toEqual([]);
+    source.summaries = projectionSource().summaries;
+    expect(() => createPublicSafeIntelligenceProjection(source)).toThrow("aggregate_projection_cannot_include_source_summaries");
+  });
+
   it("rejects long approved excerpts and source URLs containing credentials", () => {
     const longExcerpt = projectionSource();
     longExcerpt.summaries = [{ ...longExcerpt.summaries[0]!, mode: "approved_excerpt", text: "x".repeat(161) }];
