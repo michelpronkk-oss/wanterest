@@ -193,31 +193,6 @@ body{font-family:"Inter",sans-serif;color:var(--ink);-webkit-font-smoothing:anti
 #lb i{position:absolute;inset:0;background:var(--lime);transform:scale(0);border-radius:14px}
 #lb span{position:absolute;left:0;right:0;top:0}
 #ring2{width:310px;height:64px;border-radius:14px;border:3px solid var(--lime);transform-origin:50% 50%;z-index:63}
-/* homepage mockup */
-#mock{width:1500px;height:830px;border-radius:24px;overflow:hidden;background:#fbfaf6;box-shadow:0 70px 130px -60px rgba(17,17,16,.42),0 0 0 1px rgba(17,17,16,.09);transform-origin:50% 50%;z-index:62}
-#mchrome{position:absolute;left:0;top:0;width:1500px;height:52px;background:#fff;border-bottom:1px solid rgba(17,17,16,.08)}
-#mchrome .dots{position:absolute;left:22px;top:20px;display:flex;gap:8px}#mchrome .dots i{width:12px;height:12px;border-radius:50%;background:#e3e2d9;display:block}
-#mchrome .url{position:absolute;left:560px;top:12px;width:380px;height:28px;border-radius:8px;background:#f5f4ee;font:400 14px/28px "Inter";color:#8c8c82;text-align:center}
-#vchip{position:absolute;right:20px;top:10px;height:32px;padding:0 14px 0 12px;border-radius:16px;background:#f3f2ec;display:flex;align-items:center;gap:8px;font:700 13.5px "Inter";white-space:nowrap}
-#vchip i{width:8px;height:8px;border-radius:50%;background:#8c8c82;display:block}
-#vchip .sw3{position:relative;width:118px;height:18px}#vchip .sw3 span{position:absolute;left:0;top:0;line-height:18px}
-#mnav{position:absolute;left:64px;top:84px;width:1372px;height:44px}
-#mnav .lg{position:absolute;left:0;top:4px;display:flex;align-items:center;gap:12px;font:700 22px "Inter"}
-#mnav .lg b{width:36px;height:36px;border-radius:10px;background:#111110;color:#fff;font:700 17px/36px "Inter";text-align:center}
-#mnav .ln2{position:absolute;left:560px;top:12px;display:flex;gap:40px;font:400 17px "Inter";color:#4a4a43}
-#mnav .cta2{position:absolute;right:0;top:0;height:44px;padding:0 20px;border-radius:11px;background:#111110;color:#fff;font:700 16px/44px "Inter"}
-#mhero{position:absolute;left:0;top:210px;width:1500px;text-align:center}
-#mhl{position:relative;width:1500px;height:176px}
-.hl1,.hl2{position:absolute;left:60px;top:0;width:1380px;font:800 76px/1.08 "Archivo";letter-spacing:-.04em;color:#111110}
-.hl1 .w,.hl2 .w{display:inline-block;margin:0 .12em}
-.hl1{top:44px;white-space:nowrap}
-.hl2{padding:0 120px}
-#sel{position:absolute;left:0;top:44px;height:90px;background:rgba(215,255,61,.55);border-radius:6px;transform-origin:0 50%}
-#msub{margin-top:26px;font:400 22px "Inter";color:#6b6b62}
-#mbtns{margin-top:30px;display:flex;justify-content:center;gap:14px}
-#mbtns span{height:54px;padding:0 26px;border-radius:12px;font:700 18px/54px "Inter"}
-#mshot{position:absolute;left:190px;top:600px;width:1120px;height:320px;border-radius:18px;background:#fff;box-shadow:0 0 0 1px rgba(17,17,16,.08),0 30px 60px -40px rgba(17,17,16,.3)}
-#mshot i{position:absolute;display:block;border-radius:8px;background:#f0efe8}
 /* results */
 #chart{position:absolute;left:64px;top:222px;width:830px;height:470px;border-radius:18px;background:#fbfaf6;box-shadow:inset 0 0 0 1px rgba(17,17,16,.07)}
 #chart svg{position:absolute;left:0;top:0}
@@ -252,7 +227,7 @@ body{font-family:"Inter",sans-serif;color:var(--ink);-webkit-font-smoothing:anti
 </style>
 </head>
 <body>
-<div id="root" data-composition-id="root" data-width="1920" data-height="1080" data-start="0" data-duration="25">
+<div id="root" data-composition-id="root" data-width="1920" data-height="1080" data-start="0" data-duration="23">
   <div id="bgw" class="a" style="width:1920px;height:1080px"><div id="g1"></div><div id="g2"></div><div id="vig"></div></div>
 
   <div id="posts"></div>
@@ -359,19 +334,6 @@ body{font-family:"Inter",sans-serif;color:var(--ink);-webkit-font-smoothing:anti
     <div id="lb"><i id="lbf"></i><span id="lbt1">Launch experiment →</span><span id="lbt2" style="opacity:0;color:#111110">Experiment launched</span></div>
   </div>
   <div id="ring2" class="a"></div>
-
-  <!-- homepage mockup (the customer's site, variant going live) -->
-  <div id="mock" class="a">
-    <div id="mchrome"><div class="dots"><i></i><i></i><i></i></div><div class="url">auterim.com</div>
-      <div id="vchip"><i id="vdot"></i><div class="sw3"><span id="vc1">Control</span><span id="vc2" style="opacity:0">Variant B · Live</span></div></div></div>
-    <div id="mnav"><div class="lg"><b>A</b>Auterim</div><div class="ln2"><span>Product</span><span>Pricing</span><span>Customers</span></div><div class="cta2">Start free</div></div>
-    <div id="mhero">
-      <div id="mhl"><div id="sel"></div><div class="hl1" id="hl1"></div><div class="hl2" id="hl2"></div></div>
-      <div id="msub">Inbox and pipeline in one place, set up in an afternoon.</div>
-      <div id="mbtns"><span style="background:#111110;color:#fff">Start free</span><span style="background:#fff;box-shadow:inset 0 0 0 1px rgba(17,17,16,.12)">See how it works</span></div>
-    </div>
-    <div id="mshot"><i style="left:24px;top:24px;width:200px;height:272px"></i><i style="left:248px;top:24px;width:848px;height:60px"></i><i style="left:248px;top:104px;width:410px;height:192px"></i><i style="left:686px;top:104px;width:410px;height:192px"></i></div>
-  </div>
 
   <!-- results -->
   <div id="res" class="a">
@@ -500,9 +462,6 @@ EVT.forEach(function(e,i){var el=document.createElement("div");el.className="ev 
 /* ---------- action detail, results, proof ---------- */
 "The simpler CRM for teams tired of HubSpot complexity.".split(" ").forEach(function(w){var e=document.createElement("span");e.className="w";e.textContent=w;$("#pT").appendChild(e)});
 var PTW=$$("#pT .w");
-"The CRM built for growing teams.".split(" ").forEach(function(w){var e=document.createElement("span");e.className="w";e.textContent=w;$("#hl1").appendChild(e)});
-"The simpler CRM for teams tired of HubSpot complexity.".split(" ").forEach(function(w){var e=document.createElement("span");e.className="w";e.textContent=w;$("#hl2").appendChild(e)});
-var H1=$$("#hl1 .w"), H2=$$("#hl2 .w");
 var A={act:$("#act"),res:$("#res"),a0:$("#a0"),a1:$("#a1"),a2:$("#a2"),evr:$("#evr"),a3:$("#a3"),cL:$("#cL"),cB:$("#cB"),arw:$("#arwp"),pL:$("#pL"),pB:$("#pB"),pbar:$("#pbar"),setup:$("#setup"),a4:$("#a4"),a5:$("#a5"),lb:$("#lb"),lbf:$("#lbf"),lbt1:$("#lbt1"),lbt2:$("#lbt2"),ast1:$("#ast1"),ast2:$("#ast2"),adot:$("#adot"),ring2:$("#ring2"),cur2:$("#cur2"),
   r0:$("#r0"),r1:$("#r1"),r2:$("#r2"),r3:$("#r3"),chart:$("#chart"),m1:$("#m1"),m2:$("#m2"),mcb:$("#mcb"),mab:$("#mab"),mav:$("#mav"),mcv:$("#mcv"),lift:$("#lift"),
   lc:$("#lc"),la:$("#la"),area:$("#area"),dc:$("#dc"),da:$("#da"),da2:$("#da2"),proof:$("#proof"),mg:$("#mg")};
@@ -547,21 +506,7 @@ function renderAct(t){
   var run=sg(t,14.08,14.25);A.ast1.style.opacity=(1-run).toFixed(3);A.ast2.style.opacity=run.toFixed(3);
   A.adot.style.background=run>.5?"#d7ff3d":"#111110";A.adot.style.boxShadow=run>.5?"0 0 0 1.5px #111110":"none";
 
-  /* ---- homepage mockup 14.45 -> 16.75: the live headline changes ---- */
-  var mi=eo(sg(t,14.45,15.05)), mo=ei(sg(t,16.38,16.75));
-  C($("#mock"),1500,830,960,560+(1-mi)*1250-mo*1250,{s:1,b:(1-mi)*10+mo*12,op:mi>0?1:0});
-  var selw=$("#hl1").scrollWidth; // select old headline (15.0), clear it (15.2), write the new one (15.3+)
-  var sp_=cio(sg(t,14.95,15.18)), clr=sg(t,15.2,15.34);
-  var hlw=0;H1.forEach(function(w){hlw+=w.offsetWidth+0.24*76});
-  $("#sel").style.left=(750-hlw/2).toFixed(1)+"px";$("#sel").style.width=hlw.toFixed(1)+"px";
-  $("#sel").style.transform="scaleX("+sp_.toFixed(3)+")";$("#sel").style.opacity=(1-clr).toFixed(3);
-  H1.forEach(function(w){w.style.opacity=(1-clr).toFixed(3);w.style.transform="translateY("+(-clr*18).toFixed(1)+"px)";w.style.filter=clr>0?"blur("+(clr*6).toFixed(1)+"px)":"none"});
-  H2.forEach(function(w,i){var st=15.34+i*.05,p=eo(sg(t,st,st+.5));w.style.opacity=sg(t,st,st+.14).toFixed(3);w.style.transform="translateY("+((1-p)*20).toFixed(1)+"px)";w.style.filter=p<.97?"blur("+((1-p)*6).toFixed(1)+"px)":"none"});
-  var live=sg(t,15.34,15.5);$("#vc1").style.opacity=(1-live).toFixed(3);$("#vc2").style.opacity=live.toFixed(3);
-  $("#vdot").style.background=live>.5?"#d7ff3d":"#8c8c82";$("#vdot").style.boxShadow=live>.5?"0 0 0 1.5px #111110":"none";
-
-  /* ---- results (shifted +2s) ---- */
-  t=t-2;
+  /* ---- results 14.45 -> 18.05 ---- */
   var ri=eo(sg(t,14.45,15.05)), rOut=sg(t,17.8,18.08);
   C(A.res,1440,760,960,560+(1-ri)*1250,{s:1-ci(rOut)*.05,b:(1-ri)*10+rOut*18,op:(ri>0?1:0)*(1-sg(rOut,.35,1))});
   fade(A.r0,t,14.85);fade(A.r1,t,14.9);fade(A.r2,t,14.9,22);fade(A.r3,t,14.95);fade(A.chart,t,14.95);
@@ -581,7 +526,7 @@ function renderAct(t){
   // beat-locked: lift lands on 16.5
   fade(A.lift,t,16.5,18);
 
-  /* ---- proof line (shifted +2s: 20.0 -> 22.0) ---- */
+  /* ---- proof line 18.0 -> 20.0 ---- */
   var pOut=sg(t,19.72,20.0);
   S(A.proof,{x:0,y:490-ei(pOut)*90,b:pOut*20,op:t>=17.95?1-pOut:0});
   words(PRW,t,[18.02,18.52,19.02],.7);
@@ -610,7 +555,7 @@ function winCam(t){
 
 function render(t){
   /* background: slow drift, glow swells at the end */
-  var gs=1+.04*Math.sin(t*.7), gp=L(.88,1,sg(t,21.8,23.2));
+  var gs=1+.04*Math.sin(t*.7), gp=L(.88,1,sg(t,19.8,21.2));
   R.g1.style.transform="translate("+(Math.sin(t*.5)*30).toFixed(1)+"px,"+(Math.cos(t*.4)*20).toFixed(1)+"px) scale("+gs.toFixed(3)+")";
   R.g1.style.opacity=gp.toFixed(3);
   R.g2.style.opacity=(0.6+.4*Math.sin(t*.9)).toFixed(3);
@@ -720,7 +665,7 @@ function render(t){
   renderAct(t);
 
   /* ===== 5. outro (shifted +8s) ===== */
-  var to=t-10;
+  var to=t-8;
   var bp=bo(sg(to,12.05,12.45));
   C(R.badge,300,44,960,250,{s:1.3*L(.7,1,bp),op:sg(to,12.05,12.17),y:0});
   words(O1W,to,[12.1,12.24],.7);
@@ -736,7 +681,7 @@ function render(t){
 }
 
 var proxy={t:0}, tl=gsap.timeline({paused:true});
-tl.to(proxy,{t:25,duration:25,ease:"none",onUpdate:function(){render(proxy.t)}},0);
+tl.to(proxy,{t:23,duration:23,ease:"none",onUpdate:function(){render(proxy.t)}},0);
 render(0);
 window.__render=render;
 window.__timelines=window.__timelines||{};window.__timelines["root"]=tl;

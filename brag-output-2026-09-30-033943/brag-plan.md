@@ -1,4 +1,4 @@
-# Brag Plan: Wanterest (showreel cut, 23s)
+# Brag Plan: Wanterest (showreel cut, 25s)
 
 **What it is:** Wanterest finds real buying intent in public conversations (Reddit, Hacker News, Bluesky, X, GitHub) and tells a product team the one move to make, with the evidence attached.
 **For:** builders, marketers and product teams who need the source behind every signal.
@@ -29,3 +29,11 @@
 
 Audio v2: original score (work/score.py), 120 BPM deep house in F minor, arranged to picture: filtered intro -> drop on "Found." -> arp enters with the app window -> breath under the morph -> stripped, precise ticking under the results with a rising line tone -> bloom on +34% -> stabs on the proof words -> final Db major 9 under the end card. Loudness-normalized to -14 LUFS.
 Experiment copy and numbers are the ones supplied for the launch video (illustrative).
+
+## v3: the change goes live (after "Launch experiment")
+| # | Scene | Time |
+|---|---|---|
+| 4b2 | Vertical pan to a browser mockup of auterim.com. The live hero "The CRM built for growing teams." is selected and cleared, then "The simpler CRM for teams tired of HubSpot complexity." writes in; the browser chip flips Control -> Variant B · Live | 14.45-16.75 |
+| 4c-5 | Results, proof line and outro unchanged, shifted +2s (one bar) | 16.45-25.0 |
+
+Score: same piece with one bar inserted under the mockup (groove continues, in-key ticks on the headline swap); all later cues shift by one bar so they stay on the beat. Auterim site copy is illustrative.

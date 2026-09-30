@@ -1,7 +1,7 @@
 # Original score for the Wanterest film: 120 BPM, F minor, arranged to the picture.
 import numpy as np, wave
 from scipy.signal import butter, sosfilt, lfilter, fftconvolve
-SR=48000; DUR=25.0; N=int(DUR*SR); rng=np.random.default_rng(11)
+SR=48000; DUR=23.0; N=int(DUR*SR); rng=np.random.default_rng(11)
 T=np.arange(N)/SR
 def hz(m): return 440*2**((m-69)/12)
 def buf(): return np.zeros((N,2))
@@ -31,10 +31,10 @@ def ramp(points):  # piecewise-linear automation over the timeline
 BEAT=.5
 CH={'Fm9':[53,56,60,63,67],'Db9':[49,53,56,60,63],'Ab7':[56,60,63,67],'Eb6':[51,55,58,60]}
 ROOT={'Fm9':29,'Db9':37,'Ab7':32,'Eb6':39}
-BARS=['Fm9','Db9','Ab7','Eb6','Fm9','Db9','Ab7','Fm9','Eb6','Fm9','Db9','Db9','Db9']
+BARS=['Fm9','Db9','Ab7','Eb6','Fm9','Db9','Ab7','Eb6','Fm9','Db9','Db9','Db9']
 def chord_at(t): return BARS[min(int(t//2),len(BARS)-1)]
 def inr(t,rs): return any(a<=t<b for a,b in rs)
-KICK=[(2.0,11.5),(12.0,16.5),(18.5,21.75)]
+KICK=[(2.0,11.5),(12.0,14.5),(16.5,19.75)]
 
 # ---------- instruments ----------
 def kick():
@@ -82,29 +82,29 @@ K=kick(); CL=clap()
 kick_env=np.zeros(N)
 for i in range(int(DUR/BEAT)+1):
     t=i*BEAT
-    if inr(t,KICK) or abs(t-22.0)<1e-6:
+    if inr(t,KICK) or abs(t-20.0)<1e-6:
         add(drums,K,t,.95); j=int(t*SR); m=min(N,j+int(.28*SR)); kick_env[j:m]=np.maximum(kick_env[j:m],np.exp(-np.arange(m-j)/SR*9))
-    if inr(t,[(2.5,11.5),(12.0,16.5),(18.5,21.75)]) and (t%2 in (0.5,1.5)):
+    if inr(t,[(2.5,11.5),(12.0,14.5),(16.5,19.75)]) and (t%2 in (0.5,1.5)):
         c=CL*.55; add(drums,c,t,1,.1); add(send,c,t,.5)
 for i in range(int(DUR/.125)):
     t=i*.125
-    if t>=21.75: break
+    if t>=19.75: break
     off=abs((t%0.5)-0.25)<1e-6
-    if off and inr(t,[(2.0,16.5),(18.5,21.75)]): add(drums,hat(.045,.32),t,1,.35)
-    elif inr(t,[(0.0,2.0),(2.0,16.5),(18.5,21.75)]): add(drums,hat(.018,.12*(1.25 if i%4==2 else 1)),t,1,-.3)
-    if inr(t,[(16.5,18.5)]) and i%2==0: add(drums,tick(96,.012)*.10,t,1,.2); add(send,tick(96,.012)*.05,t)
+    if off and inr(t,[(2.0,14.5),(16.5,19.75)]): add(drums,hat(.045,.32),t,1,.35)
+    elif inr(t,[(0.0,2.0),(2.0,14.5),(16.5,19.75)]): add(drums,hat(.018,.12*(1.25 if i%4==2 else 1)),t,1,-.3)
+    if inr(t,[(14.5,16.5)]) and i%2==0: add(drums,tick(96,.012)*.10,t,1,.2); add(send,tick(96,.012)*.05,t)
 # crash-like air on the drop and the outro (lowpassed so it never gets harsh)
 air=lpf(hp(rng.standard_normal((int(2.2*SR),2)),3000),9000)*np.exp(-np.arange(int(2.2*SR))/SR*2.2)[:,None]
-add(fx,air*.10,2.0); add(fx,air*.08,12.0); add(fx,air*.09,22.0)
+add(fx,air*.10,2.0); add(fx,air*.08,12.0); add(fx,air*.09,20.0)
 
 # ---------- bass ----------
 for i in range(int(DUR/BEAT)):
     t=i*BEAT+.25
     if inr(t,KICK): add(bassb,bass(ROOT[chord_at(t)],.19),t,.55)
-for t0,t1,m in [(16.5,18.0,39),(18.0,18.5,29)]:
+for t0,t1,m in [(14.5,16.0,39),(16.0,16.5,29)]:
     n=int((t1-t0)*SR); tt=np.arange(n)/SR; s=np.sin(2*np.pi*hz(m)*tt)*np.minimum(1,tt/.2)*np.minimum(1,(t1-t0-tt)/.05)
     add(bassb,s,t0,.35)
-add(bassb,bass(37,2.2),22.0,.6)   # final Db
+add(bassb,bass(37,2.2),20.0,.6)   # final Db
 # sub drop on "Found."
 n=int(1.0*SR); tt=np.arange(n)/SR; add(bassb,np.sin(2*np.pi*np.cumsum(55*(1+np.exp(-tt*5)))/SR)*np.exp(-tt*3),2.0,.5)
 
@@ -112,21 +112,21 @@ n=int(1.0*SR); tt=np.arange(n)/SR; add(bassb,np.sin(2*np.pi*np.cumsum(55*(1+np.e
 for b,name in enumerate(BARS):
     t=b*2.0
     if t>=22: break
-    dur=2.0 if b<11 else 3.0
+    dur=2.0 if b<10 else 3.0
     for m in CH[name]: add(pad,pad_note(m,dur),t,.045)
-    if b>=11: break
-cut=ramp([(0,260),(1.9,1600),(2.0,2200),(11.3,2400),(11.9,420),(12.05,2600),(16.4,2600),(16.55,900),(18.45,2800),(20,2800),(21.7,1500),(22,2600),(25,700)])
+    if b>=10: break
+cut=ramp([(0,260),(1.9,1600),(2.0,2200),(11.3,2400),(11.9,420),(12.05,2600),(14.4,2600),(14.55,900),(16.45,2800),(18,2800),(19.7,1500),(20,2600),(23,700)])
 pad=tvlp(pad,cut)
 
 # ---------- arp ----------
 PAT=[0,2,1,3,2,4,3,1]
-def arp_on(t): return inr(t,[(6.0,11.5),(12.0,16.5),(17.5,18.5),(18.5,21.75)])
+def arp_on(t): return inr(t,[(6.0,11.5),(12.0,14.5),(15.5,16.5),(16.5,19.75)])
 for i in range(int(DUR/.125)):
     t=i*.125
     if not arp_on(t): continue
     ch=CH[chord_at(t)]; m=ch[PAT[i%8]%len(ch)]+12
-    vel=(1.0 if i%4==0 else .62)*(0.55 if 17.5<=t<18.5 else 1.0)
-    br=1.6 if 12.0<=t<16.5 else 1.0
+    vel=(1.0 if i%4==0 else .62)*(0.55 if 15.5<=t<16.5 else 1.0)
+    br=1.6 if 12.0<=t<14.5 else 1.0
     add(arp,pluck(m,.45,br)*vel,t,.085,[-.35,.35][i%2])
 # ping-pong delay (dotted eighth)
 d=int(.375*SR); dl=np.zeros_like(arp); fb=.34
@@ -141,14 +141,14 @@ add(send,arp*.3,0)
 def stab(chord,t,g=.12):
     s=sum(pluck(m+12,1.2,2.2) for m in CH[chord]); add(fx,s,t,g); add(send,s,t,g*.8)
 stab('Fm9',2.0,.13)                       # "Found."
-stab('Db9',20.0); stab('Eb6',20.5); stab('Fm9',21.0,.14)   # Demand / Action / Measured growth
+stab('Db9',18.0); stab('Eb6',18.5); stab('Fm9',19.0,.14)   # Demand / Action / Measured growth
 fin=sum(pluck(m+12,3.0,2.6) for m in CH['Db9']+[72])
-add(fx,fin,22.0,.14); add(send,fin,22.0,.16)
+add(fx,fin,20.0,.14); add(send,fin,20.0,.16)
 # +34% lift: soft bell (F6 + C7)
-bell=pluck(89,2.0,3.0)+.6*pluck(96,2.0,3.0); add(fx,bell,18.5,.07,.2); add(send,bell,18.5,.08)
+bell=pluck(89,2.0,3.0)+.6*pluck(96,2.0,3.0); add(fx,bell,16.5,.07,.2); add(send,bell,16.5,.08)
 # chart line: gentle rising tone under the Wanterest Action line (15.55 -> 16.5)
 n=int(.95*SR); tt=np.arange(n)/SR; f=hz(72)*2**(tt/.95*(5/12))
-line=np.sin(2*np.pi*np.cumsum(f)/SR)*np.sin(np.pi*tt/.95)**2*.5; add(fx,line,17.55,.035,.25); add(send,line,17.55,.03)
+line=np.sin(2*np.pi*np.cumsum(f)/SR)*np.sin(np.pi*tt/.95)**2*.5; add(fx,line,15.55,.035,.25); add(send,line,15.55,.03)
 
 # risers / swells / whooshes
 add(fx,noise_riser(1.5,300,5000),0.5,.05)
@@ -156,12 +156,12 @@ add(fx,swell(1.5,CH['Fm9']),0.5,.06)
 add(fx,swell(.9,CH['Fm9']),11.1,.08)
 add(fx,noise_riser(.7,500,7000),11.3,.045)
 add(fx,noise_riser(.45,800,8000),14.05,.05)
-add(fx,noise_riser(.6,400,5000),19.4,.04)
-add(fx,swell(.6,CH['Db9']),21.4,.07)
+add(fx,noise_riser(.6,400,5000),17.4,.04)
+add(fx,swell(.6,CH['Db9']),19.4,.07)
 def whoosh(dur):
     n=int(dur*SR); x=rng.standard_normal((n,2)); tt=np.linspace(0,1,n); e=np.sin(np.pi*tt)**2
     return bp(x,250,3500)*e[:,None]
-for t,g in [(2.7,.05),(5.35,.05),(8.9,.06),(14.35,.05),(16.35,.05),(19.75,.04)]: add(fx,whoosh(.55),t,g)
+for t,g in [(2.7,.05),(5.35,.05),(8.9,.06),(14.35,.05),(17.75,.04)]: add(fx,whoosh(.55),t,g)
 
 # ---------- UI details (in key) ----------
 for i,m in enumerate([84,87,89,91]): add(ui,tick(m),3.0+i*.5,.05,-.3+.2*i)
@@ -169,9 +169,6 @@ add(ui,tick(94),4.5,.05); add(ui,tick(96),5.0,.06)
 def mclick():
     n=int(.04*SR); t=np.arange(n)/SR; return bp(rng.standard_normal(n),1500,6000)*np.exp(-t*300)+np.sin(2*np.pi*700*t)*np.exp(-t*140)*.4
 add(ui,mclick(),10.5,.18); add(ui,mclick(),14.0,.18); add(ui,tick(89,.1),14.02,.04)
-add(ui,tick(84,.05),14.95,.035); add(ui,tick(80,.04),15.2,.03)
-for i,m in enumerate([84,87,89,91,94,96,99,101,103]): add(ui,tick(m,.035),15.34+i*.05,.018,-.4+i*.1)
-add(ui,tick(96,.12),15.4,.03)
 add(send,ui,0,.6)
 
 # ---------- mix ----------
