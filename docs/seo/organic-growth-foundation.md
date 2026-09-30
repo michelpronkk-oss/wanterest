@@ -34,8 +34,9 @@ Google Search Console API access requires authorization; its query API distingui
 
 ## Analytics and Bing setup still needed
 
-- **Google Analytics 4:** no analytics property/scope is connected to the current read-only analytics integration. The current Privacy and Cookie policies say Wanterest does not use third-party website analytics or analytics cookies. Do not add GA4 or client-side tracking until the privacy/cookie policy and any consent requirements are reviewed and updated.
-- **Vercel Web Analytics:** no production-project Web Analytics provider or supported API credential is configured in this repository. Visitor/page analytics must remain separate from database lifecycle measurements and from Search Console clicks/impressions.
+- **Google Analytics 4:** no analytics property/scope is connected. Wanterest does not use GA4.
+- **Vercel Web Analytics:** the public production page-view integration and property-free `application_started` event are implemented for the existing `wanterest` project, with strict public-route/query filtering. The Admin server adapter uses Vercel's supported `visits/count`, `visits/aggregate` and `events/count` APIs. Production collection/API access is not confirmed until Analytics is enabled and the server-only `VERCEL_API_TOKEN` and `VERCEL_WEB_ANALYTICS_START_AT` are configured. All traffic remains distinct from lifecycle conversion tables and Search Console clicks/impressions. The Privacy and Cookie policies now disclose the measurement scope.
+- **Vercel plan gates:** custom events require Pro or Enterprise; UTM dimensions require Web Analytics Plus or Enterprise. The Admin renders those dimensions unavailable when the API or plan does not expose them. No session or true entry-page measure is inferred from aggregate endpoints. See the official [Web Analytics API](https://vercel.com/docs/analytics/web-analytics-api) and [pricing](https://vercel.com/docs/analytics/limits-and-pricing).
 - **Bing Webmaster Tools:** the read-only integration reports no API key/site connection. Verify the site in Bing Webmaster Tools, then provide a read-only supported integration before building its weekly report.
 - **AI referrals:** report only observed referrals (including documented `utm_source=chatgpt.com` values) once an authorized analytics source exists. Do not infer referral traffic from crawler access.
 

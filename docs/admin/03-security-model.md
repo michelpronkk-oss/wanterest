@@ -1,6 +1,6 @@
 # Wanterest Admin — Security Model and Findings
 
-Status: implementation/security plan for the existing Wanterest production Supabase project and existing `wanterest` Vercel project. No second or disposable project will be used. This document is not a live Supabase security certification. Read-only Advisor results are in `00-full-audit.md`; Auth settings and effective SQL grants still require operator review. Vercel non-production deployments hard-disable Admin Supabase session and service clients.
+Status: candidate implementation for the existing Wanterest production Supabase project and existing `wanterest` Vercel project. No second or disposable project will be used. This document is not a live Supabase security certification. Candidate SQL passed isolated local PostgreSQL rehearsal; its production migration is unapplied. Read-only Advisor results are in `00-full-audit.md`; Auth settings and effective SQL grants still require operator review. Vercel non-production deployments hard-disable Admin Supabase session and service clients.
 
 ## Trust boundaries
 
@@ -10,14 +10,14 @@ Status: implementation/security plan for the existing Wanterest production Supab
 4. The exact `admin.wanterest.com` Production hostname is the Admin origin. The root Next Proxy rewrites that host to `/admin-internal`; requests directly naming that prefix are not found on any hostname. Admin auth actions also verify the request host. The same Admin host on Vercel Preview/non-production is not found.
 5. Privileged adapters run only on the admin server. Supabase service-role use is wrapped by narrow repository methods, validated command schemas and explicit authorization checks.
 6. Lifecycle domain services remain the mutation authority. The admin UI cannot write arbitrary tables or SQL.
-7. Every admin mutation produces an append-only, attributable audit entry, including denied attempts where useful and safe.
+7. Each approved Early Access mutation produces an append-only, attributable audit entry in the same transaction as its lifecycle write; delivery outcomes are audited separately. Invalid transitions are rejected by the canonical domain service. Request IDs make retries idempotent. Audit context excludes invite tokens, recipient email, and provider responses.
 
 ## Identity, session, and role controls
 
 - Private email/password sign-in using the existing Wanterest production Supabase Auth identity; no duplicate account, public admin registration, or invite-by-email auto-grant.
 - An explicit membership may be provisioned only for the existing Auth UUID, but it grants no page or data access until a verified TOTP factor reaches `aal2`. Require current verified MFA assurance on every protected admin request.
 - Membership keyed to the existing immutable production Supabase Auth UUID; access is denied until an operator explicitly provisions the matching admin membership. Role comes from the server-side membership record, never JWT user metadata or browser form state.
-- Roles anticipated: Founder, Operations Admin, Support, Read-only Analyst. Permission checks are granular and deny by default. Support should see the minimum customer fields required; read-only means no commands.
+- Roles: Founder, Operations Admin, Support, Read-only Analyst, and the separately scoped Organic Reviewer. Founder and Operations Admin receive only the `lifecycle.write` capability for Early Access controls in this release; Support, analysts, and Organic Reviewer remain denied. Permission checks are granular and deny by default.
 - Admin session cookie is secure, HTTP-only, same-site, short-lived and private/no-store. Sensitive operations validate the current session and MFA assurance; membership revocation invalidates access promptly. Add explicit session revocation rather than relying solely on an unexpired JWT.
 - Rate-limit authentication, recovery, search and mutation endpoints. Use CSRF/origin protections for cookie-authenticated writes. Account recovery must not grant membership.
 
@@ -33,13 +33,15 @@ Status: implementation/security plan for the existing Wanterest production Supab
 
 | Command class | Required controls |
 |---|---|
-| Review/approve/reject Early Access | `waitlist.review`; validate state transition; require bounded reason; call existing command; audit actor, transition, target and trace |
+| Approve/hold/reject Early Access | `lifecycle.write`; require active Founder or Operations Admin membership and AAL2; validate current state inside a service-only transaction; require a bounded reason for hold/reject; call canonical transitions and write an append-only audit event |
 | Referral/Priority intervention | `referral.manage`; show verified-referral evidence; preview effect; require reason and elevated confirmation; append grant/revoke event; audit; never rewrite referral counts |
-| Invite issue/revoke | `admission.manage`; verify application authority and current access mode; show target/expiry/delivery; explicit confirmation; existing service and durable audit |
+| Invite send/resend/revoke | `lifecycle.write`; recheck active membership inside the service-only wrapper; call existing issue/revoke RPCs; store only a SHA-256 invite-token hash; deliver through the existing email adapter; record delivery state without tokens or recipient email in audit |
 | Cohort/public identity | Default read-only; no renumbering or implicit profile visibility. A specifically approved command must preserve immutable identity and consent history |
 | Share Card publish/revoke | `share_cards.manage`; show exact variant and public snapshot/URL; explicit publish/revoke confirmation; recheck current authority and consent; audit; never auto-publish |
 | Billing reconciliation | `billing.read` for display; separate permission and dry-run for reconciliation; never convert provider IDs directly into product capabilities or manually mutate normalized entitlements |
-| Job replay/recovery | `incidents.recover`; original idempotency key, bounded input and dry-run when feasible; verify terminal/orphaned state; confirm action and target; preserve trace; audit |
+| Job replay/recovery | Unavailable in this release; no job or routing mutation is added. |
+
+Invitation acceptance already provisions the workspace admission and assigns its permanent cohort in one canonical transaction. The Admin has no separate “Admit” control and cannot supply cohort or seat data.
 
 ## Audit record contract
 
@@ -59,7 +61,7 @@ Record at minimum: generated event UUID, server timestamp (UTC), authenticated u
 ## Required live checks before enabling admin
 
 1. Review the current Supabase Security and Performance Advisor output; triage SECURITY DEFINER exposure, leaked-password protection, and FK indexing with object/function names and deployed ACLs.
-2. Compare remote `schema_migrations` to local migrations, especially the applied Share Cards migration and the production `product_routing_edges` unique constraint.
+2. Before separately approving migration `20261104000000`, compare remote `schema_migrations` with its isolated local rehearsal baseline and confirm the Admin identity/audit migration and SEO-2.6 migration remain unchanged.
 3. Verify Supabase Auth MFA and password policy settings, allowed redirect URLs, session lifetime/revocation behavior and account recovery settings.
 4. Confirm Vercel project roles/environment isolation, analytics status, domain routing and security headers.
-5. Follow `06-production-auth-runbook.md` to verify the applied migration and operator-provisioned existing Auth identity. Validate production integration reads only after the migration and membership grant are separately approved. Do not create a test Auth user or run lifecycle mutations against customer data. Missing credentials or permissions must render unavailable.
+5. Follow `06-production-auth-runbook.md` to verify the applied migration and operator-provisioned existing Auth identity. The candidate requires `VERCEL_API_TOKEN` and `VERCEL_WEB_ANALYTICS_START_AT` for Web Analytics. The inspected Production environment did not contain those variables or the three `SEARCH_CONSOLE_OAUTH_*` variables. Do not create a test Auth user or run lifecycle mutations against customer data. Missing credentials or permissions must render unavailable.

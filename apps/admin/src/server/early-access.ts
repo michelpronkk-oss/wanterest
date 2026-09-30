@@ -19,6 +19,26 @@ export type EarlyAccessRow = {
   cohortNumber: number | null;
 };
 
+export type EarlyAccessHistoryItem = {
+  id: string;
+  kind: "application" | "invitation" | "admin";
+  action: string;
+  createdAt: string;
+  reason: string | null;
+  status: string | null;
+};
+
+export type EarlyAccessDetail = {
+  row: EarlyAccessRow;
+  verifiedAt: string | null;
+  admissionId: string | null;
+  workspaceId: string | null;
+  latestInviteId: string | null;
+  invitations: Array<{ id: string; status: string; issuedAt: string; expiresAt: string }>;
+  history: EarlyAccessHistoryItem[] | null;
+  historyError: string | null;
+};
+
 export async function getEarlyAccessRows(input: { query: string; status: string; now?: Date }): Promise<{ rows: EarlyAccessRow[] | null; checkedAt: string | null; error: string | null }> {
   const client = createAdminServiceClient();
   if (!client) return { rows: null, checkedAt: null, error: "Configure the private server-side Supabase connection to read applicant records." };
@@ -74,4 +94,85 @@ export async function getEarlyAccessRows(input: { query: string; status: string;
     } satisfies EarlyAccessRow;
   });
   return { rows, checkedAt, error: null };
+}
+
+export async function getEarlyAccessDetail(applicationId: string, now = new Date()): Promise<{ detail: EarlyAccessDetail | null; checkedAt: string | null; error: string | null }> {
+  const client = createAdminServiceClient();
+  if (!client) return { detail: null, checkedAt: null, error: "Configure the private server-side Supabase connection to read applicant records." };
+  const checkedAt = now.toISOString();
+  const application = await client.from("waitlist_applications")
+    .select("id,early_access_number,first_name,company_name,status,email_verification_status,created_at,verified_at")
+    .eq("id", applicationId).maybeSingle();
+  if (application.error || !application.data) return { detail: null, checkedAt: null, error: "This application is unavailable or could not be read." };
+
+  const row = application.data;
+  const id = String(row.id);
+  const [events, invitations, admissions, memberships, applicationAudit, referrals, priority] = await Promise.all([
+    client.from("waitlist_application_events").select("id,event_type,from_status,to_status,metadata,created_at")
+      .eq("application_id", id).order("created_at", { ascending: true }).limit(100),
+    client.from("waitlist_admission_invites").select("id,status,issued_at,expires_at,accepted_at,revoked_at")
+      .eq("waitlist_application_id", id).order("issued_at", { ascending: false }).limit(20),
+    client.from("workspace_admissions").select("id,workspace_id,admitted_at,onboarding_status")
+      .eq("waitlist_application_id", id).maybeSingle(),
+    client.from("workspace_cohort_memberships").select("cohort,cohort_number")
+      .eq("source_waitlist_application_id", id).maybeSingle(),
+    client.from("admin_audit_events").select("id,action,created_at,reason,outcome,resource_id")
+      .eq("resource_type", "waitlist_application").eq("resource_id", id).order("created_at", { ascending: true }).limit(100),
+    client.from("waitlist_referrals").select("id", { count: "exact", head: true }).eq("referrer_application_id", id).eq("status", "verified"),
+    client.from("waitlist_priority_access").select("status").eq("waitlist_application_id", id).maybeSingle(),
+  ]);
+  const hasHistoryError = Boolean(events.error || invitations.error || applicationAudit.error || admissions.error || memberships.error);
+  const invitationIds = (invitations.data ?? []).map((invite) => String(invite.id));
+  const inviteAudit = invitationIds.length ? await client.from("admin_audit_events")
+    .select("id,action,created_at,reason,outcome,resource_id")
+    .eq("resource_type", "waitlist_admission_invite").in("resource_id", invitationIds)
+    .order("created_at", { ascending: true }).limit(100) : { data: [], error: null };
+  const historyError = hasHistoryError || inviteAudit.error ? "Some lifecycle history is currently unavailable." : null;
+  const history: EarlyAccessHistoryItem[] = [];
+  for (const event of events.data ?? []) {
+    const metadata = event.metadata && typeof event.metadata === "object" ? event.metadata as Record<string, unknown> : {};
+    const reason = typeof metadata.reason === "string" ? metadata.reason.slice(0, 500) : null;
+    history.push({
+      id: `application-${String(event.id)}`, kind: "application",
+      action: String(event.event_type).replaceAll("_", " "), createdAt: String(event.created_at), reason,
+      status: event.to_status ? String(event.to_status) : null,
+    });
+  }
+  for (const invite of invitations.data ?? []) {
+    history.push({ id: `invite-${String(invite.id)}`, kind: "invitation", action: `Invitation ${String(invite.status)}`,
+      createdAt: String(invite.issued_at), reason: null, status: String(invite.status) });
+  }
+  for (const audit of [...(applicationAudit.data ?? []), ...(inviteAudit.data ?? [])]) {
+    history.push({ id: `admin-${String(audit.id)}`, kind: "admin", action: String(audit.action).replaceAll("_", " "),
+      createdAt: String(audit.created_at), reason: typeof audit.reason === "string" ? audit.reason : null,
+      status: String(audit.outcome) });
+  }
+  history.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+  const latestInvite = invitations.data?.[0];
+  const admission = admissions.data;
+  const cohort = memberships.data;
+  return {
+    checkedAt,
+    error: null,
+    detail: {
+      row: {
+        id, number: typeof row.early_access_number === "number" ? row.early_access_number : row.early_access_number === null ? null : Number(row.early_access_number),
+        firstName: String(row.first_name), company: String(row.company_name), status: String(row.status),
+        emailVerified: row.email_verification_status === "verified", createdAt: String(row.created_at),
+        verifiedReferrals: referrals.error ? null : referrals.count ?? 0,
+        priorityStatus: priority.error ? null : priority.data?.status ? String(priority.data.status) : "normal",
+        inviteStatus: latestInvite ? String(latestInvite.status) : null,
+        admittedAt: admission?.admitted_at ? String(admission.admitted_at) : null,
+        cohort: cohort?.cohort ? String(cohort.cohort) : null,
+        cohortNumber: cohort?.cohort_number === null || cohort?.cohort_number === undefined ? null : Number(cohort.cohort_number),
+      },
+      verifiedAt: row.verified_at ? String(row.verified_at) : null,
+      admissionId: admission?.id ? String(admission.id) : null,
+      workspaceId: admission?.workspace_id ? String(admission.workspace_id) : null,
+      latestInviteId: latestInvite?.id ? String(latestInvite.id) : null,
+      invitations: (invitations.data ?? []).map((invite) => ({ id: String(invite.id), status: String(invite.status), issuedAt: String(invite.issued_at), expiresAt: String(invite.expires_at) })),
+      history: historyError ? null : history,
+      historyError,
+    },
+  };
 }

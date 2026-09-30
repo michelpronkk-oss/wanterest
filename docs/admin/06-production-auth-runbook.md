@@ -1,6 +1,6 @@
 # Wanterest Admin — Production Auth Runbook
 
-**Status: migration applied and verified on 2026-09-30.** The existing Wanterest production Supabase project is the sole Auth and data source. No Founder membership has been provisioned. Membership and Admin deployment remain separate approval steps.
+**Status: foundation migration applied and verified on 2026-09-30; Admin Operations + Growth migration is prepared locally and unapplied.** The existing Wanterest production Supabase project remains the sole Auth and data source. No Founder membership has been provisioned. New migration, membership and deployment remain separate approvals.
 
 ## Reviewed migration
 
@@ -13,6 +13,24 @@ SHA-256: `B2A673ABF1214B9BAF2BD71FA033EFD75E9F2CA9F6E1FA9C99C48079409D74B3`
 Before application, read-only production inspection confirmed migration head `20261101000000_layer13b1_dynamic_share_card_engine_v1` (Postgres 17.6), non-null UUID `auth.users.id`, and availability of `gen_random_uuid()`. The isolated CLI migration list and dry run showed only this admin migration pending. It was recorded as version `20261102000000`.
 
 The migration created no membership. Post-application catalog checks confirm both tables have RLS enabled and zero policies; `anon` and `authenticated` have no table access; `service_role` can select memberships and select/insert audit events but cannot insert memberships or update/delete audit events. `admin_audit_events.actor_user_id` has no foreign key, preserving historical UUID attribution. `admin_memberships.user_id` uses `ON DELETE RESTRICT`; grantor/revoker references use `ON DELETE SET NULL`. The enabled `BEFORE UPDATE OR DELETE` audit trigger has an empty search path. Both tables contain zero rows.
+
+## Pending Admin Operations + Growth V1 migration
+
+The known production migration head is `20261103000000`. This branch is based on current `origin/main` commit `a392de928d9eb2388fb24f6a5683cba0ed8debef` and adds only the forward migration `supabase/migrations/20261104000000_admin_operations_growth_v1.sql` for database changes. SHA-256: `4387D7D2BB5625A0109092AAEA15FE7B1E925100191DD35DF637863B5EFC13A3`. The migration has not been linked, pushed, applied, or executed against production. No customer lifecycle operation or Admin membership was performed.
+
+**Local PostgreSQL rehearsal (2026-09-30):** Supabase CLI `2.75.0` ran against PostgreSQL `17.6.1.075` in a uniquely named local Docker stack. The workdir contained a copied Supabase config and migration directory, with a unique local project ID and ports; it had no linked production ref or credentials. The 58-migration baseline through `20261103000000` completed. The legacy non-production migrations `20261027000000`, `20261028000000`, and `20261029000000` were absent from the repository directory and the isolated sequence. The candidate migration applied once, then `supabase db reset --local` replayed the full sequence from a clean database and applied it successfully again. The local stack and its data volumes were stopped and removed after verification.
+
+Runtime catalog checks found the unique partial audit request index, five candidate RPCs, each `SECURITY DEFINER` with `search_path = ''`, exactly one local ledger row for `20261104000000`, no anon/authenticated execute grants on the RPCs, service-role execute grants, RLS enabled for both existing Admin tables, and no anon/authenticated SELECT on those tables. A local service-role RPC call with no active Founder/Operations Admin membership was rejected before reading a customer record. The migration creates no tables and makes no table-level grant changes. Supabase's local role bootstrap grants `service_role` broader direct table privileges than production's previously inspected Admin-table grants; those local defaults are not a production ACL result. Before production approval, recheck effective production table grants and the sole-pending migration dry run against the live project.
+
+The candidate defines five server-only RPCs: `admin_transition_waitlist_application`, `admin_issue_waitlist_invite`, `admin_revoke_waitlist_invite`, `admin_record_invite_delivery`, and `admin_growth_daily_metrics`. Lifecycle wrappers require active Founder/Operations Admin membership and delegate to canonical transition/invite/revoke functions. Advisory locks plus request IDs make identical lifecycle requests idempotent; mutation audit rows share the transaction. Delivery state is audited separately without tokens, email, or raw provider responses. Daily lifecycle counts read database events only. Visitor analytics remains a separate external aggregate source.
+## Production integration configuration still required
+
+Read-only environment-name inspection of the existing Vercel project's Production scope on 2026-09-30 found these variables absent (no values were viewed):
+
+- Vercel Web Analytics: `VERCEL_API_TOKEN` and `VERCEL_WEB_ANALYTICS_START_AT`.
+- Search Console: `SEARCH_CONSOLE_OAUTH_CLIENT_ID`, `SEARCH_CONSOLE_OAUTH_CLIENT_SECRET`, and `SEARCH_CONSOLE_OAUTH_REFRESH_TOKEN`.
+
+Add only the required values to the existing Vercel project's Production scope after their read-only API/property access is configured. Keep all credentials server-only; do not add Admin-only variables to Preview. `VERCEL_PROJECT_ID` and `VERCEL_TEAM_ID` default to the existing `wanterest` project IDs in code and `.env.example`. Without the Web Analytics token/start time, visitor reporting remains unavailable; without the three OAuth values, the Search Console integration remains unavailable. Search Console property access/API enablement and Web Analytics plan support still need confirmation after configuration.
 
 ## Operator-only identity provisioning
 
@@ -32,7 +50,7 @@ with provisioned_membership as (
     'founder',
     'active',
     '<OPERATOR_AUTH_USER_UUID>'::uuid,
-    'Initial read-only Wanterest Admin access; approval <CHANGE_OR_TICKET_ID>'
+    'Initial Wanterest Admin membership; approval <CHANGE_OR_TICKET_ID>'
   )
   returning user_id, role, status, granted_by_user_id, granted_at, reason
 ), recorded_audit as (
@@ -64,7 +82,7 @@ from provisioned_membership p
 cross join recorded_audit a;
 ```
 
-Expect exactly one returned row. If it returns zero rows or errors, stop and inspect the transaction outcome before retrying; do not replace this with an upsert. `founder` is read-only in the application’s initial permission map. Do not grant access by changing Auth metadata, workspace membership, or a browser-supplied role. No admin membership should be added for ordinary Wanterest users.
+Expect exactly one returned row. If it returns zero rows or errors, stop and inspect the transaction outcome before retrying; do not replace this with an upsert. Once the Admin Operations release is deployed, an active `founder` membership can run the explicitly confirmed Early Access controls described above. Do not grant access by changing Auth metadata, workspace membership, or a browser-supplied role. No admin membership should be added for ordinary Wanterest users.
 
 The membership's `ON DELETE RESTRICT` is intentional: first revoke/remove the admin membership through an authorized operator process, then delete the Auth user if deletion is still required. The append-only audit row retains the operator UUID after Auth deletion; `granted_by_user_id` / `revoked_by_user_id` in membership rows may become null under their existing `ON DELETE SET NULL` constraints.
 
@@ -172,15 +190,16 @@ Expect an enabled `BEFORE UPDATE OR DELETE` trigger with an empty search path. B
 - Confirm a user without an active `admin_memberships` row is denied, even if their Auth metadata or Wanterest workspace role says founder/admin.
 - Confirm the provisioned user is required to enroll a TOTP factor if none is verified; verify the authenticator and require AAL2 before any operational data is rendered.
 - Confirm a verified factor at AAL1 sees only the MFA challenge. Confirm AAL2 can read the Overview projection and that unavailable/stale dependencies are labeled explicitly.
-- Confirm the role exposes read-only permissions. Do not test customer review, invites, admissions, lifecycle changes, billing actions, share publication, retries, or job replays with production records.
+- The currently deployed code exposes read-only permissions. After the separate Admin Operations release, confirm Founder/Operations Admin can see only the described Early Access controls and that Support/Analyst cannot. Do not test mutations with production records; verify commands only against an isolated local fixture database.
 - Keep `SUPABASE_SERVICE_ROLE_KEY` out of browser variables. The existing shared Vercel project currently includes this server-only variable in Preview for the customer app; the Admin Proxy and Admin client factories refuse Admin traffic/client creation on Preview and other non-production deployments. Do not add any Admin-only credentials to Preview. Review any future change to the shared Preview scope separately for customer-preview impact.
 
 ## Approval boundary
 
 Production activation status and remaining approval boundaries:
 
-1. **Completed:** migration `20261102000000` was applied and verified as described above. Do not reapply it or use `--include-all` to run unfinished Layer 13B migrations.
-2. **Next, separate approval:** grant the initial Founder membership to the exact existing Auth UUID and record the operator/audit event with the one-statement CTE above. Run the read-only membership/audit checks afterward. No membership has been granted.
-3. **Separate approval still required:** complete the focused host-routing PR and deploy through the existing `wanterest` Vercel project. Keep production credentials server-side and do not add Admin-only credentials to Preview. Verify ordinary-user denial and mandatory TOTP/AAL2 only after the existing Founder account has been provisioned. Do not run lifecycle mutations as smoke tests.
+1. **Completed:** migration `20261102000000` was applied and verified as described above. Do not reapply it or use `--include-all` to run unrelated unfinished Layer 13B migrations.
+2. **Current review gate:** review and locally rehearse only `20261104000000_admin_operations_growth_v1.sql`, then approve its production application separately. Verify the exact file/hash and sole-pending migration before applying. No production change is authorized by this work.
+3. **Separate approval after migration review:** grant Founder membership to the exact existing Auth UUID and record the operator/audit event with the one-statement CTE above. Once the new code is deployed, this membership enables `lifecycle.write`; test against local fixtures only. No membership has been granted.
+4. **Separate approval:** merge and deploy the focused application release through the existing Vercel project. Keep production credentials server-side and do not add Admin-only credentials to Preview. Verify ordinary-user denial and mandatory TOTP/AAL2; do not run customer lifecycle mutations as smoke tests.
 
 The migration approval has been exercised; membership provisioning and deployment have not.

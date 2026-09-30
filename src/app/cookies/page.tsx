@@ -52,8 +52,11 @@ export default function CookiesPage() {
 
             <h2>Analytics</h2>
             <p>
-              Wanterest does not currently use analytics cookies or any third-party analytics tooling. If we introduce analytics in the future, this page
-              will be updated first, and the technology used will be listed here honestly.
+              Public marketing pages send page views to Vercel Web Analytics in production. It does not set an analytics cookie; Vercel uses a request-derived visitor
+              hash that expires after 24 hours. Analytics is disabled in previews, and page views are suppressed on authenticated product routes, account and
+              invitation flows, and waitlist status pages. We remove URL query parameters before sending page views, and do not send form field values or personal identifiers.
+              Details are in our{" "}<a href="/privacy">Privacy Policy</a> and Vercel&rsquo;s{" "}
+              <a href="https://vercel.com/docs/analytics/privacy-policy" rel="noreferrer">Web Analytics privacy information</a>.
             </p>
 
             <h2>Advertising and marketing cookies</h2>

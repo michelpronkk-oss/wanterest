@@ -26,8 +26,8 @@ export function adminCan(context: AdminContext, permission: string): boolean {
 }
 
 const rolePermissions: Record<AdminRole, ReadonlySet<string>> = {
-  founder: new Set(["operations.read", "operations.summary.read", "analytics.read", "lifecycle.read", "billing.read"]),
-  operations_admin: new Set(["operations.read", "operations.summary.read", "analytics.read", "lifecycle.read", "billing.read"]),
+  founder: new Set(["operations.read", "operations.summary.read", "analytics.read", "lifecycle.read", "lifecycle.write", "billing.read"]),
+  operations_admin: new Set(["operations.read", "operations.summary.read", "analytics.read", "lifecycle.read", "lifecycle.write", "billing.read"]),
   support: new Set(["analytics.read", "lifecycle.read"]),
   read_only_analyst: new Set(["operations.summary.read", "analytics.read", "lifecycle.read", "billing.read"]),
   organic_reviewer: new Set(["operations.summary.read", "organic_intelligence.review"]),
