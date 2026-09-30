@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920, height=1080">
+<title>Wanterest poster</title>
+<style>
+@font-face{font-family:"Archivo";font-weight:800;src:url("assets/fonts/Archivo-800.ttf") format("truetype")}
+@font-face{font-family:"Sora";font-weight:600;src:url("assets/fonts/Sora-600.ttf") format("truetype")}
+@font-face{font-family:"Inter";font-weight:400;src:url("assets/fonts/Inter-400.ttf") format("truetype")}
+@font-face{font-family:"Inter";font-weight:700;src:url("assets/fonts/Inter-700.ttf") format("truetype")}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;overflow:hidden;background:#f3f2ec}
+body{font-family:"Inter",sans-serif;color:#111110;-webkit-font-smoothing:antialiased}
+#root{position:relative;width:1920px;height:1080px;overflow:hidden;background:#f3f2ec}
+.abs{position:absolute}
+#g1{position:absolute;left:-200px;top:-200px;width:2320px;height:1480px;background:radial-gradient(ellipse 62% 70% at 100% 100%,rgba(215,255,61,.85),rgba(215,255,61,.28) 42%,rgba(215,255,61,0) 72%)}
+#g2{position:absolute;left:-200px;top:-200px;width:2320px;height:1480px;background:radial-gradient(ellipse 40% 45% at 0% 110%,rgba(215,255,61,.3),rgba(215,255,61,0) 70%)}
+#grain{position:absolute;inset:-100px;background:url(assets/grain.png);opacity:.06;mix-blend-mode:multiply}
+/* depth posts */
+.post{position:absolute;width:470px;height:128px;border-radius:18px;background:#fff;box-shadow:0 24px 50px -30px rgba(17,17,16,.35),inset 0 0 0 1px rgba(17,17,16,.06);padding:20px 22px}
+.post .hd{display:flex;align-items:center;gap:10px;font:700 16px "Inter"}
+.post .hd img{width:22px;height:22px;border-radius:5px}
+.post .hd span{font:400 15px "Inter";color:#8c8c82}
+.post p{margin-top:12px;font:400 19px/1.4 "Inter";color:#2a2a26}
+.post mark{background:linear-gradient(#d7ff3d,#d7ff3d) no-repeat 0 60%/100% 78%;color:inherit;padding:0 2px;border-radius:3px}
+/* brand */
+#brand{left:120px;top:92px;display:flex;align-items:center;gap:14px;font:600 34px/1 "Sora";letter-spacing:-.02em}
+#brand svg{width:36px;height:36px}
+#badge{left:120px;top:250px;height:48px;padding:0 22px;border-radius:24px;background:#fff;box-shadow:inset 0 0 0 1px rgba(17,17,16,.1);display:flex;align-items:center;gap:12px;font:700 17px "Inter";letter-spacing:.18em;white-space:nowrap}
+#badge i{width:10px;height:10px;border-radius:50%;background:#d7ff3d;box-shadow:0 0 0 1.5px #111110;display:block}
+.hl{left:108px;font:800 178px/.94 "Archivo";letter-spacing:-.055em;white-space:nowrap}
+#found{position:relative;display:inline-block;padding:0 .1em;isolation:isolate}
+#found:before{content:"";position:absolute;left:0;right:0;top:.08em;bottom:-.02em;background:#d7ff3d;border-radius:.07em;z-index:-1}
+#sub{left:122px;top:790px;font:400 30px/1.35 "Inter";color:#3d3d37;width:760px}
+#sub b{color:#111110}
+/* signal card */
+.card{background:#fff;border-radius:22px;box-shadow:0 1px 0 rgba(17,17,16,.04),0 50px 90px -40px rgba(17,17,16,.5),inset 0 0 0 3px #d7ff3d,0 0 0 8px rgba(215,255,61,.4);width:600px;height:212px;padding:0}
+.card .src{position:absolute;left:32px;top:26px;display:flex;align-items:center;gap:12px;font:700 22px "Inter"}
+.card .src img{width:30px;height:30px;border-radius:7px}
+.card .src span{font:400 20px "Inter";color:#8c8c82}
+.card .right{position:absolute;right:32px;top:22px;display:flex;align-items:center;gap:16px}
+.intent{font:700 16px/34px "Inter";letter-spacing:.1em;border-radius:20px;padding:0 16px;background:#111110;color:#fff}
+.pips{display:flex;gap:3px}.pips i{width:5px;height:19px;border-radius:2px;background:#111110;display:block}
+.score{font:600 30px "Sora"}
+.card .ct{position:absolute;left:32px;top:78px;width:540px;font:600 24px/1.3 "Sora";letter-spacing:-.01em}
+.card .tg{position:absolute;left:32px;top:156px;display:flex;gap:10px}
+.chipx{font:400 18px/32px "Inter";background:#f3f2ec;border-radius:20px;padding:0 16px;color:#4a4a43}
+/* result card */
+#res{width:580px;height:330px;border-radius:26px;background:#fff;box-shadow:0 60px 110px -45px rgba(17,17,16,.5),inset 0 0 0 1px rgba(17,17,16,.08)}
+#res .k{position:absolute;left:40px;top:36px;font:700 16px "Inter";letter-spacing:.16em;color:#8c8c82}
+#res .v{position:absolute;left:36px;top:66px;font:600 116px/1 "Sora";letter-spacing:-.05em}
+#res .l{position:absolute;left:40px;top:208px;font:400 21px "Inter";color:#4a4a43}
+#res .row{position:absolute;left:40px;top:258px;display:flex;gap:26px;font:400 19px "Inter";color:#8c8c82;white-space:nowrap}
+#res .row b{color:#111110;font-weight:700}
+#res svg{position:absolute;right:34px;top:40px}
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="root" data-width="1920" data-height="1080" data-start="0" data-duration="1">
+  <div id="g1"></div><div id="g2"></div>
+
+  <!-- conversations in depth (blurred texture) -->
+  <div class="post" style="left:1010px;top:-30px;transform:scale(.7) rotate(-4deg);filter:blur(7px);opacity:.8"><div class="hd"><img src="assets/bluesky.png" alt="">Bluesky <span>3h</span></div><p><mark>switching off HubSpot</mark> this quarter. what are small teams using?</p></div>
+  <div class="post" style="left:1540px;top:20px;transform:scale(.8) rotate(5deg);filter:blur(4px);opacity:.9"><div class="hd"><img src="assets/x.png" alt="">X <span>5h</span></div><p>is there a <mark>simpler CRM sync</mark> for a 4-person sales team?</p></div>
+  <div class="post" style="left:1680px;top:560px;transform:scale(.75) rotate(-3deg);filter:blur(8px);opacity:.75"><div class="hd"><img src="assets/hacker-news.png" alt="">Hacker News <span>4h</span></div><p><mark>looking for an alternative</mark> to our CRM, pricing just doubled</p></div>
+  <div class="post" style="left:860px;top:930px;transform:scale(.8) rotate(3deg);filter:blur(6px);opacity:.8"><div class="hd"><img src="assets/github.png" alt="">GitHub <span>2d</span></div><p>feature request: <mark>two-way sync</mark> without the enterprise plan</p></div>
+  <div class="post" style="left:-120px;top:-40px;transform:scale(.6) rotate(-6deg);filter:blur(9px);opacity:.6"><div class="hd"><img src="assets/reddit.png" alt="">r/startups <span>9h</span></div><p><mark>would pay</mark> for pipeline alerts that aren't 90% noise</p></div>
+
+  <div id="brand" class="abs"><svg viewBox="0 0 120 118"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#111110" stroke-width="16"/></svg>wanterest</div>
+  <div id="badge" class="abs"><i></i>REAL DEMAND. FOUND.</div>
+  <div class="hl abs" style="top:340px">Real demand.</div>
+  <div class="hl abs" style="top:520px"><span id="found">Found.</span></div>
+  <div id="sub" class="abs">Buying intent from real conversations, turned into <b>a change that measurably converts.</b></div>
+
+  <!-- the signal -->
+  <div class="card abs" style="left:1262px;top:176px;transform:rotate(-3deg)">
+    <div class="src"><img src="assets/reddit.png" alt="">r/SaaS <span>1d</span></div>
+    <div class="right"><div class="intent">SWITCHING</div><div class="pips"><i></i><i></i><i></i><i></i><i></i></div><div class="score">91</div></div>
+    <div class="ct">Paying for HubSpot features they never use, wants simpler</div>
+    <div class="tg"><span class="chipx">HubSpot alternative</span><span class="chipx">Pricing</span></div>
+  </div>
+
+  <!-- the outcome -->
+  <div id="res" class="abs" style="left:1290px;top:470px;transform:rotate(2deg)">
+    <div class="k">CONVERSION LIFT</div>
+    <div class="v">+34%</div>
+    <div class="l">Measured from the demand-led change</div>
+    <div class="row"><span>Control <b style="color:#8c8c82">3.8%</b></span><span>Wanterest Action <b>5.1%</b></span></div>
+    <svg width="150" height="95" viewBox="0 0 190 120" style="top:90px">
+      <path d="M6 96 L30 84 L52 80 L76 64 L98 62 L122 46 L146 40 L168 26 L184 22 L184 100 L6 100 Z" fill="rgba(215,255,61,.45)"/>
+      <path d="M6 96 L30 94 L52 99 L76 95 L98 98 L122 94 L146 98 L168 95 L184 96" fill="none" stroke="#b9b8ae" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M6 96 L30 84 L52 80 L76 64 L98 62 L122 46 L146 40 L168 26 L184 22" fill="none" stroke="#111110" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="184" cy="22" r="10" fill="rgba(215,255,61,.7)"/><circle cx="184" cy="22" r="5.5" fill="#111110"/>
+    </svg>
+  </div>
+
+  <div id="grain"></div>
+</div>
+<script src="assets/gsap.min.js"></script>
+<script>window.__timelines={root:gsap.timeline({paused:true}).to({},{duration:1})};</script>
+</body>
+</html>
