@@ -9,7 +9,7 @@
 @font-face{font-family:"Sora";font-weight:600;src:url("assets/fonts/Sora-600.ttf") format("truetype")}
 @font-face{font-family:"Inter";font-weight:400;src:url("assets/fonts/Inter-400.ttf") format("truetype")}
 @font-face{font-family:"Inter";font-weight:700;src:url("assets/fonts/Inter-700.ttf") format("truetype")}
-:root{--ink:#111110;--raised:#1f1f1c;--ivory:#f7f6f1;--paper:#f5f4ee;--stone:#f3f2ec;--lime:#d7ff3d;--ptint:#eff9c4;--pink:#3d4a0e;--muted:#8c8c82;--mdark:#9c9c92;--hair:rgba(17,17,16,.08);--hairs:rgba(17,17,16,.14);--haird:rgba(245,244,238,.14)}
+:root{--ink:#111110;--paper:#f5f4ee;--stone:#f3f2ec;--lime:#d7ff3d;--ptint:#eff9c4;--pink:#3d4a0e;--muted:#8c8c82;--mdark:#9c9c92;--hair:rgba(17,17,16,.08);--haird:rgba(245,244,238,.14)}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{width:1920px;height:1080px;overflow:hidden;background:var(--stone)}
 body{font-family:"Inter",sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased}
@@ -17,130 +17,67 @@ body{font-family:"Inter",sans-serif;color:var(--ink);-webkit-font-smoothing:anti
 .a{position:absolute;left:0;top:0;will-change:transform,filter,opacity}
 #g1{position:absolute;left:-200px;top:-200px;width:2320px;height:1480px;background:radial-gradient(ellipse 62% 70% at 100% 100%,rgba(215,255,61,.72),rgba(215,255,61,.24) 42%,rgba(215,255,61,0) 72%)}
 #g2{position:absolute;left:-200px;top:-200px;width:2320px;height:1480px;background:radial-gradient(ellipse 45% 50% at 0% 105%,rgba(215,255,61,.3),rgba(215,255,61,0) 70%)}
-#vig{position:absolute;inset:0;background:radial-gradient(ellipse 80% 75% at 50% 45%,rgba(255,255,255,.5),rgba(255,255,255,0) 70%)}
+#vig{position:absolute;inset:0;background:radial-gradient(ellipse 80% 75% at 50% 45%,rgba(255,255,255,.55),rgba(255,255,255,0) 70%)}
 #grain{position:absolute;left:-256px;top:-256px;width:2432px;height:1592px;background:url(assets/grain.png);opacity:.06;mix-blend-mode:multiply;z-index:95;pointer-events:none}
 .wm{display:inline-block;overflow:hidden;vertical-align:top;padding:0 .02em .12em;margin-bottom:-.12em}
 .wi{display:inline-block}
-.k{font:700 14px "Inter";letter-spacing:.18em;text-transform:uppercase}
-.hair{height:1px;background:var(--hair)}
+.k{font:700 14px "Inter";letter-spacing:.2em}
 
-/* headline blocks (left column) */
-.hb{width:760px;z-index:50}
-.hb .eb{display:inline-flex;align-items:center;gap:10px;height:36px;padding:0 16px;border-radius:18px;background:#fff;box-shadow:inset 0 0 0 1px rgba(17,17,16,.1);font:700 14px "Inter";letter-spacing:.18em;white-space:nowrap}
-.hb .eb i{width:8px;height:8px;border-radius:50%;background:var(--lime);box-shadow:0 0 0 1.5px var(--ink);display:block}
-.hb .hh{margin-top:26px;font:800 86px/.98 "Archivo";letter-spacing:-.045em}
-.hb .hs{margin-top:26px;font:400 25px/1.4 "Inter";color:#4a4a43;width:620px}
-.hb .hs b{color:var(--ink)}
+/* waitlist pills in depth */
+#field{position:absolute;left:0;top:0;z-index:10}
+.pl{height:64px;padding:0 26px;border-radius:32px;background:#fff;box-shadow:0 24px 44px -26px rgba(17,17,16,.32),inset 0 0 0 1.5px rgba(17,17,16,.12);display:flex;align-items:center;gap:12px;font:400 26px "Inter";color:#6b6b62;white-space:nowrap;transform-origin:50% 50%}
+.pl b{color:#111110;font-weight:700}
+.pl i{width:18px;height:18px;border-radius:50%;box-shadow:inset 0 0 0 2px #a3a399;display:block}
+#hero{z-index:30}
 
-/* ladder rail */
-#rail{top:986px;width:1920px;display:flex;justify-content:center;align-items:center;gap:10px;z-index:70}
-.st{height:42px;padding:0 18px;border-radius:21px;display:flex;align-items:center;gap:9px;font:700 15px "Inter";white-space:nowrap;background:rgba(255,255,255,.6);box-shadow:inset 0 0 0 1px rgba(17,17,16,.1);color:#8c8c82}
-.st i{width:16px;height:16px;border-radius:50%;box-shadow:inset 0 0 0 1.5px #a3a399;display:block;position:relative}
-.st.done{color:#111110;background:#fff}
-.st.done i{background:#111110;box-shadow:none}
-.st.done i:after{content:"";position:absolute;left:5.5px;top:3px;width:3.5px;height:7px;border-right:1.8px solid #d7ff3d;border-bottom:1.8px solid #d7ff3d;transform:rotate(45deg)}
-.st.on{background:#111110;color:#f5f4ee;box-shadow:0 12px 26px -14px rgba(17,17,16,.6)}
-.st.on i{background:#d7ff3d;box-shadow:none}
-.st em{font-style:normal;font-weight:400;opacity:.7}
-.arrow{width:18px;height:2px;background:#c9c8bd;position:relative}
-.arrow:after{content:"";position:absolute;right:-1px;top:-3px;width:6px;height:6px;border-right:2px solid #c9c8bd;border-top:2px solid #c9c8bd;transform:rotate(45deg)}
-
-/* founder pass (horizontal) */
-#pass0{width:1100px;height:480px;border-radius:28px;background:var(--ink);color:var(--paper);box-shadow:0 70px 140px -60px rgba(17,17,16,.55),inset 0 0 0 1px rgba(245,244,238,.06);transform-origin:50% 50%;z-index:40;overflow:hidden}
-.plab{position:absolute;display:flex;align-items:center;gap:14px;font:700 15px "Inter";letter-spacing:.3em;white-space:nowrap}
-.ser{position:absolute;font:800 300px/.8 "Archivo";letter-spacing:-.05em;white-space:nowrap}
-.ser .tot{font:700 88px/1 "Archivo";letter-spacing:-.03em;color:#8c8c82;margin-left:14px}
-.pcol{position:absolute;left:800px;top:0;width:300px;height:480px;border-left:1px solid var(--haird)}
-.prow{position:absolute;left:36px;width:228px;height:50px;border-top:1px solid var(--haird);font:400 16px/50px "Inter";color:var(--mdark)}
-.prow b{position:absolute;right:0;top:0;font:700 16px/50px "Inter";color:var(--paper)}
-.tile{border-radius:24%;display:flex;align-items:center;justify-content:center;font-family:"Sora";font-weight:600}
-.wmk{position:absolute;display:flex;align-items:center;gap:10px;font:600 18px "Sora";letter-spacing:-.01em;white-space:nowrap}
-.wmk svg{width:20px;height:20px}
-#bigA{position:absolute;left:0;top:0;transform-origin:0 0}
-
-/* request form + early access card */
-#form{width:720px;height:78px;border-radius:16px;background:#fff;box-shadow:0 24px 50px -26px rgba(17,17,16,.35),inset 0 0 0 1px rgba(17,17,16,.1);z-index:42}
-#form .in{position:absolute;left:26px;top:0;font:400 22px/78px "Inter";color:#111110;white-space:nowrap}
-#form .in .ph{color:#a3a399}
-#form .caret{display:inline-block;width:2px;height:26px;background:#111110;vertical-align:-5px;margin-left:2px}
-#form .go{position:absolute;right:9px;top:9px;width:236px;height:60px;border-radius:12px;background:#111110;color:#f5f4ee;font:700 19px/60px "Inter";text-align:center}
-.card{border-radius:24px;background:#fff;box-shadow:0 60px 120px -55px rgba(17,17,16,.45),inset 0 0 0 1px rgba(17,17,16,.08);transform-origin:50% 50%}
-#ea{width:620px;height:560px;z-index:42}
-#ea .lay{position:absolute;inset:0;border-radius:24px}
-#eaP{background:var(--ptint);opacity:0}
-.chip6{position:absolute;height:34px;padding:0 12px;border-radius:6px;display:flex;align-items:center;gap:8px;font:700 15px "Inter";white-space:nowrap}
-.bign{position:absolute;font:800 150px/.9 "Archivo";letter-spacing:-.05em;white-space:nowrap}
-.body{position:absolute;font:400 20px/1.45 "Inter";color:#4a4a43}
-.btn{position:absolute;height:54px;border-radius:12px;font:700 18px/54px "Inter";text-align:center;white-space:nowrap}
-.pill{position:absolute;height:34px;padding:0 14px;border-radius:17px;display:flex;align-items:center;gap:8px;font:400 15px "Inter";white-space:nowrap}
-.pill b{font-weight:700}
-
-/* referral panel */
-#ref{width:500px;height:390px;z-index:48}
-#ref .lk{position:absolute;left:28px;top:62px;width:444px;height:52px;border-radius:12px;background:var(--stone);font:400 17px/52px "Inter";padding-left:16px;color:#4a4a43}
-#ref .lk b{position:absolute;right:8px;top:8px;height:36px;padding:0 14px;border-radius:9px;background:#111110;color:#fff;font:700 14px/36px "Inter"}
-.seg{position:absolute;top:0;height:6px;width:140px;border-radius:3px;background:#ecebe3;overflow:hidden}
+/* protagonist card (front: early access / priority) */
+#front{width:620px;height:560px;border-radius:28px;background:#fff;box-shadow:0 70px 130px -60px rgba(17,17,16,.45),inset 0 0 0 1px rgba(17,17,16,.08);z-index:40;overflow:hidden;transform-origin:50% 50%}
+#fA,#fB{position:absolute;inset:0}
+#fB{background:var(--ptint)}
+.chip6{position:absolute;height:38px;padding:0 14px;border-radius:6px;display:flex;align-items:center;gap:8px;font:700 16px "Inter";white-space:nowrap}
+.bign{position:absolute;font:800 168px/.9 "Archivo";letter-spacing:-.05em;white-space:nowrap}
+.segs{position:absolute;left:44px;top:470px;width:532px;height:6px}
+.seg{position:absolute;top:0;height:6px;width:170px;border-radius:3px;background:#ecebe3;overflow:hidden}
 .seg i{display:block;height:100%;width:100%;background:#111110;transform-origin:0 50%;transform:scaleX(0)}
-.rr{position:absolute;left:28px;width:444px;height:56px;border-top:1px solid var(--hair)}
-.mono{position:absolute;left:0;top:10px;width:36px;height:36px;border-radius:50%;background:var(--stone);box-shadow:inset 0 0 0 1px rgba(17,17,16,.08);font:600 13px/36px "Sora";text-align:center}
-.rr .nm{position:absolute;left:50px;top:0;font:700 17px/56px "Inter"}
-.rr .s1,.rr .s2{position:absolute;right:0;top:0;font:400 15px/56px "Inter";white-space:nowrap}
-.rr .s1{color:#a3a399}
-.rr .s2{color:#111110;font-weight:700;opacity:0}
+.tok{width:84px;height:84px;border-radius:50%;background:#fff;box-shadow:0 20px 40px -18px rgba(17,17,16,.45),inset 0 0 0 1.5px rgba(17,17,16,.1);font:600 26px/84px "Sora";text-align:center;z-index:45}
+.tok b{position:absolute;right:-4px;bottom:-4px;width:30px;height:30px;border-radius:50%;background:#111110;box-shadow:0 0 0 3px #f3f2ec;transform:scale(0)}
+.tok b:after{content:"";position:absolute;left:11px;top:6px;width:6px;height:12px;border-right:2.5px solid #d7ff3d;border-bottom:2.5px solid #d7ff3d;transform:rotate(45deg)}
 
-/* invitation + reveal */
-#inv{width:620px;height:440px;z-index:42}
-#rv{width:620px;height:560px;border-radius:24px;background:var(--ink);color:var(--paper);box-shadow:0 70px 130px -55px rgba(17,17,16,.55);transform-origin:50% 50%;z-index:44;overflow:hidden}
+/* passes */
+.pass{width:440px;height:600px;border-radius:28px;overflow:hidden;transform-origin:50% 50%;z-index:40}
+#back{background:var(--ink);color:var(--paper);box-shadow:0 70px 140px -55px rgba(17,17,16,.6)}
+#pe{background:#fff;color:var(--ink);box-shadow:0 70px 130px -55px rgba(17,17,16,.38),inset 0 0 0 1.5px rgba(17,17,16,.14)}
+.plab{position:absolute;left:38px;top:40px;display:flex;align-items:center;gap:12px;font:700 13px "Inter";letter-spacing:.28em;white-space:nowrap}
+.ser{position:absolute;left:32px;top:132px;font:800 190px/.8 "Archivo";letter-spacing:-.05em;white-space:nowrap}
+.ser .tot{font:700 58px/1 "Archivo";letter-spacing:-.03em;color:#8c8c82;margin-left:10px}
+.hr{position:absolute;left:38px;right:38px;height:1px}
+.who{position:absolute;left:38px;top:376px;display:flex;align-items:center;gap:16px}
+.tile{border-radius:24%;display:flex;align-items:center;justify-content:center;font-family:"Sora";font-weight:600}
+.who .nm{font:600 26px "Sora";letter-spacing:-.01em}
+.who .ad{font:400 16px "Inter";opacity:.6;margin-top:4px}
+.ft{position:absolute;left:38px;right:38px;top:522px;display:flex;justify-content:space-between;align-items:center;font:400 15px "Inter"}
+.wmk{display:flex;align-items:center;gap:9px;font:600 17px "Sora";letter-spacing:-.01em}
+.wmk svg{width:18px;height:18px}
+.sheen{position:absolute;left:-60%;top:-20%;width:40%;height:140%;background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.14),rgba(255,255,255,0));transform:rotate(18deg)}
+.ben{height:56px;padding:0 24px;border-radius:28px;display:flex;align-items:center;gap:10px;font:400 20px "Inter";white-space:nowrap;z-index:44}
+.ben b{font:600 23px "Sora"}
 
-/* vertical passes */
-.vp{width:400px;height:560px;border-radius:24px;transform-origin:50% 50%;z-index:44;overflow:hidden}
-#pf{background:var(--ink);color:var(--paper);box-shadow:0 60px 120px -50px rgba(17,17,16,.55)}
-#pe{background:#fff;color:var(--ink);box-shadow:0 60px 120px -50px rgba(17,17,16,.35),inset 0 0 0 1.5px var(--hairs)}
-.vp .plab{left:34px;top:36px;font-size:12.5px;gap:10px;letter-spacing:.26em}
-.vp .ser{left:28px;top:112px;font-size:170px}
-.vp .ser .tot{font-size:52px;margin-left:8px}
-.vp .hr1{position:absolute;left:34px;top:318px;width:332px}
-.vp .who{position:absolute;left:34px;top:344px;display:flex;align-items:center;gap:14px}
-.vp .who .nm{font:600 24px "Sora";letter-spacing:-.01em}
-.vp .who .ad{font:400 15px "Inter";opacity:.62;margin-top:4px}
-.vp .hr2{position:absolute;left:34px;top:450px;width:332px}
-.vp .ft{position:absolute;left:34px;top:478px;width:332px;display:flex;justify-content:space-between;align-items:center;font:400 14px "Inter"}
-.ben{height:52px;padding:0 22px;border-radius:26px;display:flex;align-items:center;gap:10px;font:700 19px "Inter";white-space:nowrap;z-index:44}
-.ben b{font:600 21px "Sora"}
-#fnote{font:400 18px "Inter";color:#6b6b62;white-space:nowrap;z-index:44}
-
-/* members wall */
-#wall{width:1000px;height:640px;border-radius:22px;overflow:hidden;background:var(--ivory);box-shadow:0 70px 130px -60px rgba(17,17,16,.42),0 0 0 1px rgba(17,17,16,.09);z-index:42}
-#wall .ch{position:absolute;left:0;top:0;width:1000px;height:44px;background:#fff;border-bottom:1px solid var(--hair)}
-#wall .ch .dots{position:absolute;left:18px;top:16px;display:flex;gap:7px}#wall .ch .dots i{width:11px;height:11px;border-radius:50%;background:#e3e2d9;display:block}
-#wall .ch .url{position:absolute;left:330px;top:9px;width:340px;height:26px;border-radius:7px;background:#f5f4ee;font:400 13px/26px "Inter";color:#8c8c82;text-align:center}
-.wnav{position:absolute;left:40px;top:66px;width:920px;height:30px;font:400 14px/30px "Inter";color:#6b6b62}
-.wnav .lg{position:absolute;left:0;top:0;display:flex;align-items:center;gap:8px;font:600 17px/30px "Sora";color:#111110}
-.wnav .lg svg{width:18px;height:18px}
-.wnav .ln{position:absolute;left:330px;display:flex;gap:28px}
-.wnav .ln b{color:#111110}
-.wbadge{position:absolute;left:40px;top:124px;height:26px;padding:0 12px;border-radius:13px;background:#111110;color:#f5f4ee;display:flex;align-items:center;gap:8px;font:700 11px "Inter";letter-spacing:.18em}
-.wbadge i{width:6px;height:6px;border-radius:50%;background:#d7ff3d;display:block}
-.wh{position:absolute;left:40px;top:162px;font:800 44px/1 "Archivo";letter-spacing:-.045em;white-space:nowrap}
-.wtab{position:absolute;right:40px;top:118px;height:38px;padding:4px;border-radius:12px;background:#fff;box-shadow:inset 0 0 0 1px rgba(17,17,16,.08);display:flex;gap:4px;font:700 14px/30px "Inter"}
-.wtab span{padding:0 14px;border-radius:9px;display:flex;align-items:center;gap:7px}
-.wc{position:absolute;width:296px;height:170px;border-radius:14px;background:var(--ink);color:var(--paper)}
+/* members wall (3D) */
+#wall{width:1600px;height:640px;z-index:20;transform-origin:50% 50%}
+.wc{position:absolute;width:296px;height:190px;border-radius:16px;background:var(--ink);color:var(--paper);box-shadow:0 30px 50px -30px rgba(17,17,16,.5)}
 .wc .l{position:absolute;left:20px;top:18px;display:flex;align-items:center;gap:8px;font:700 11px "Inter";letter-spacing:.2em;color:var(--mdark)}
-.wc .n{position:absolute;left:18px;top:42px;font:800 60px/1 "Archivo";letter-spacing:-.05em;white-space:nowrap}
-.wc .n span{font:700 20px "Archivo";color:#8c8c82;margin-left:4px}
-.wc .hr{position:absolute;left:20px;right:20px;top:112px;height:1px;background:var(--haird)}
-.wc .who{position:absolute;left:20px;top:124px;display:flex;align-items:center;gap:10px;font:600 15px "Sora"}
-.wc .who .t{width:26px;height:26px;font-size:11px}
-.wc .vp2{position:absolute;right:18px;top:128px;font:700 13px "Inter";color:var(--paper);opacity:0}
-#set{width:470px;height:260px;z-index:48}
-#set .tt{position:absolute;left:28px;top:24px;font:600 20px "Sora"}
-.tr2{position:absolute;left:28px;width:414px;height:88px;border-top:1px solid var(--hair)}
-.tr2 .a1{position:absolute;left:0;top:18px;font:700 17px "Inter"}
-.tr2 .a2{position:absolute;left:0;top:44px;font:400 14px "Inter";color:#8c8c82;width:320px}
-.tg{position:absolute;right:0;top:26px;width:54px;height:32px;border-radius:16px;background:#dcdbd2}
+.wc .n{position:absolute;left:18px;top:44px;font:800 68px/1 "Archivo";letter-spacing:-.05em;white-space:nowrap}
+.wc .n span{font:700 22px "Archivo";color:#8c8c82;margin-left:4px}
+.wc .h{position:absolute;left:20px;right:20px;top:128px;height:1px;background:var(--haird)}
+.wc .who2{position:absolute;left:20px;top:142px;display:flex;align-items:center;gap:10px;font:600 15px "Sora";white-space:nowrap}
+.wc .who2 .tile{width:28px;height:28px;font-size:11px;background:#f5f4ee;color:#111110}
+.wc .vp{position:absolute;right:18px;top:148px;font:700 14px "Inter";opacity:0}
+#tgp{width:520px;height:76px;border-radius:38px;background:#fff;box-shadow:0 30px 60px -30px rgba(17,17,16,.45),inset 0 0 0 1px rgba(17,17,16,.08);display:flex;align-items:center;justify-content:space-around;padding:0 18px;z-index:60}
+.tgr{display:flex;align-items:center;gap:14px;font:700 18px "Inter";white-space:nowrap}
+.tg{position:relative;width:54px;height:32px;border-radius:16px;background:#dcdbd2}
 .tg i{position:absolute;left:3px;top:3px;width:26px;height:26px;border-radius:50%;background:#fff;box-shadow:0 2px 5px rgba(0,0,0,.2)}
-#urlchip{height:44px;padding:0 16px;border-radius:12px;background:#fff;box-shadow:0 20px 40px -20px rgba(17,17,16,.4),inset 0 0 0 1px rgba(17,17,16,.08);display:flex;align-items:center;gap:10px;font:400 16px "Inter";color:#4a4a43;white-space:nowrap;z-index:49}
-#urlchip b{color:#111110}
+#slug{height:46px;padding:0 18px;border-radius:12px;background:#fff;box-shadow:0 20px 40px -20px rgba(17,17,16,.45),inset 0 0 0 1px rgba(17,17,16,.08);display:flex;align-items:center;gap:10px;font:400 17px "Inter";color:#4a4a43;white-space:nowrap;z-index:61}
+#slug b{color:#111110}
 
 /* outro */
 .oln{position:absolute;left:0;width:1920px;text-align:center;font:800 124px/1 "Archivo";letter-spacing:-.05em;white-space:nowrap;z-index:50}
@@ -153,125 +90,59 @@ body{font-family:"Inter",sans-serif;color:var(--ink);-webkit-font-smoothing:anti
 </style>
 </head>
 <body>
-<div id="root" data-composition-id="root" data-width="1920" data-height="1080" data-start="0" data-duration="25">
+<div id="root" data-composition-id="root" data-width="1920" data-height="1080" data-start="0" data-duration="21">
   <div id="bgw" class="a" style="width:1920px;height:1080px"><div id="g1"></div><div id="g2"></div><div id="vig"></div></div>
 
-  <!-- headline blocks -->
-  <div id="h1" class="hb a"><div class="eb"><i></i>APEX · FOUNDING 25</div><div class="hh">Permanent identity for Wanterest's earliest members.</div></div>
-  <div id="h2" class="hb a"><div class="eb"><i></i>01 · EARLY ACCESS</div><div class="hh">Everyone starts in Early Access.</div><div class="hs">Request access, confirm your email, and your place is recorded.</div></div>
-  <div id="h3" class="hb a"><div class="eb"><i></i>02 · PRIORITY</div><div class="hh">Three verified referrals move you up.</div><div class="hs">Priority moves you forward in review. <b>It doesn't guarantee admission.</b></div></div>
-  <div id="h4" class="hb a"><div class="eb"><i></i>03 · ADMISSION</div><div class="hh">Your number is earned at admission.</div><div class="hs">Cohort identity is assigned only when you're admitted. <b>Never before.</b></div></div>
-  <div id="h5" class="hb a"><div class="eb"><i></i>04 · COHORTS</div><div class="hh">Two cohorts. Permanent and numbered.</div><div class="hs">Founding 25 is the first 25 admitted workspaces. Early 100 is the next 100.</div></div>
-  <div id="h6" class="hb a"><div class="eb"><i></i>05 · PUBLIC, OPT-IN</div><div class="hh">Public only if you choose.</div><div class="hs">The Members Wall and your Founder Pass are <b>separate choices.</b></div></div>
+  <div id="field"></div>
+  <div id="hero" class="pl a"><i></i>Early access <b>#0184</b></div>
 
-  <!-- 0. hook: founder pass reveal -->
-  <div id="pass0" class="a">
-    <div class="plab" id="p0lab" style="left:56px;top:50px"><span style="width:26px;height:26px;display:block"></span><span id="p0lt">FOUNDING MEMBER</span></div>
-    <div class="ser" id="p0ser" style="left:44px;top:150px">07<span class="tot" id="p0tot">/25</span></div>
-    <div class="pcol" id="p0col">
-      <div class="tile" style="position:absolute;left:36px;top:46px;width:64px;height:64px;background:#f5f4ee;color:#111110;font-size:28px">A</div>
-      <div style="position:absolute;left:116px;top:52px;font:600 24px 'Sora'">Auterim</div>
-      <div style="position:absolute;left:116px;top:86px;font:400 15px 'Inter';color:#9c9c92">Demand intelligence</div>
-      <div class="prow" style="top:160px">Cohort<b>Founding 25</b></div>
-      <div class="prow" style="top:210px">Serial<b>No. 07 of 25</b></div>
-      <div class="prow" style="top:260px;border-bottom:1px solid rgba(245,244,238,.14)">Admitted<b>March 2026</b></div>
-      <div class="wmk" style="left:36px;top:410px;color:#f5f4ee"><svg viewBox="0 0 120 118"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#f5f4ee" stroke-width="16"/></svg>wanterest</div>
+  <!-- protagonist card: front -->
+  <div id="front" class="a">
+    <div id="fA">
+      <div class="chip6" id="fchip" style="left:44px;top:42px;background:var(--stone)"><svg width="15" height="15" viewBox="0 0 14 14"><path d="M2.5 7.5l3 3 6-7" fill="none" stroke="#111110" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Email confirmed</div>
+      <div class="k" id="fk" style="position:absolute;left:44px;top:176px;color:#8c8c82">YOUR PLACE</div>
+      <div class="bign" id="fnum" style="left:36px;top:210px"><span style="color:#a3a399">#</span>0184</div>
+      <div class="segs" id="segs"><div class="seg" style="left:0"><i id="sg0"></i></div><div class="seg" style="left:181px"><i id="sg1"></i></div><div class="seg" style="left:362px"><i id="sg2"></i></div></div>
+      <div id="rlab" style="position:absolute;left:44px;top:416px;font:700 16px 'Inter';color:#8c8c82;letter-spacing:.02em">Verified referrals <span id="rcnt" style="color:#111110">0/3</span></div>
     </div>
-    <svg id="bigA" viewBox="18 18.65 84 84" width="84" height="84"><polygon id="bAp" points="25.3,102 49.2,45 70.8,45 94.7,102 77.3,102 60,60.7 42.7,102" fill="#F5F4EE"/><polygon id="bAk" points="60,19.3 50.5,42 69.5,42" fill="#D7FF3D"/></svg>
-  </div>
-
-  <!-- 1. early access -->
-  <div id="form" class="a"><div class="in"><span id="typed"></span><span class="caret" id="caret"></span><span class="ph" id="ph">you@company.com</span></div><div class="go">Request access →</div></div>
-  <div id="ea" class="card a">
-    <div class="lay" id="eaP"></div>
-    <div id="eaA">
-      <div class="chip6" style="left:40px;top:38px;background:var(--stone)" id="ec"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M2.5 7.5l3 3 6-7" fill="none" stroke="#111110" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Email confirmed</div>
-      <div style="position:absolute;right:40px;top:44px;font:400 16px 'Inter';color:#8c8c82" id="eaTag">Early access</div>
-      <div class="k" style="position:absolute;left:40px;top:130px;color:#8c8c82" id="eaK">YOUR PLACE</div>
-      <div class="bign" id="eaN" style="left:34px;top:160px"><span style="color:#a3a399">#</span>0184</div>
-      <div class="body" id="eaB" style="left:40px;top:318px;width:540px">Your place is recorded and the number is yours. This isn't dashboard access yet — we'll email you when an invitation is ready.</div>
-      <div class="btn" id="eaV" style="left:40px;top:448px;width:156px;background:#111110;color:#fff">View status</div>
-      <div class="btn" id="eaS" style="left:210px;top:448px;width:196px;background:#fff;box-shadow:inset 0 0 0 1px rgba(17,17,16,.14)">Share my place</div>
-    </div>
-    <div id="eaB2" style="opacity:0">
-      <div style="position:absolute;left:40px;top:44px;display:flex;align-items:center;gap:10px;font:700 16px 'Inter';color:#3d4a0e"><i style="width:9px;height:9px;border-radius:50%;background:#3d4a0e;display:block"></i>Priority <span style="font-weight:400">#0184</span></div>
-      <div style="position:absolute;right:40px;top:44px;font:400 16px 'Inter';color:#3d4a0e">Can change</div>
-      <div class="k" style="position:absolute;left:40px;top:130px;color:#3d4a0e">PRIORITY ACCESS</div>
-      <div class="bign" id="mvup" style="left:34px;top:166px;color:#3d4a0e;font-size:112px">Moved up.</div>
-      <div class="body" style="left:40px;top:318px;width:540px;color:#3d4a0e">Three verified referrals moved you ahead in review. Early access #0184 stays yours. Priority doesn't guarantee an invitation.</div>
-      <div class="btn" style="left:40px;top:448px;width:230px;background:#3d4a0e;color:#eff9c4">View priority status</div>
+    <div id="fB">
+      <div style="position:absolute;left:44px;top:50px;display:flex;align-items:center;gap:10px;font:700 18px 'Inter';color:#3d4a0e"><i style="width:10px;height:10px;border-radius:50%;background:#3d4a0e;display:block"></i>Priority <span style="font-weight:400">#0184</span></div>
+      <div class="k" style="position:absolute;left:44px;top:176px;color:#3d4a0e">PRIORITY ACCESS</div>
+      <div class="bign" id="mvup" style="left:36px;top:214px;color:#3d4a0e;font-size:106px">Moved up.</div>
+      <div style="position:absolute;left:44px;top:440px;font:400 22px 'Inter';color:#3d4a0e">Doesn't guarantee admission.</div>
     </div>
   </div>
+  <div id="t0" class="tok a">JB<b></b></div>
+  <div id="t1" class="tok a">SL<b></b></div>
+  <div id="t2" class="tok a">NV<b></b></div>
 
-  <!-- 2. referrals -->
-  <div id="ref" class="card a">
-    <div style="position:absolute;left:28px;top:26px;font:600 20px 'Sora'">Your referral link</div>
-    <div class="lk">wanterest.com/r/0184<b id="copyb">Copy link</b></div>
-    <div style="position:absolute;left:28px;top:142px;font:700 16px 'Inter'">Verified referrals</div>
-    <div id="rcnt" style="position:absolute;right:28px;top:138px;font:600 22px 'Sora'">0/3</div>
-    <div style="position:absolute;left:28px;top:178px;width:444px;height:6px">
-      <div class="seg" style="left:0"><i id="sg0"></i></div><div class="seg" style="left:152px"><i id="sg1"></i></div><div class="seg" style="left:304px"><i id="sg2"></i></div>
-    </div>
-    <div class="rr" id="r0" style="top:206px"><div class="mono">JB</div><div class="nm">Jonas Berg</div><div class="s1">Pending</div><div class="s2">✓ Email confirmed</div></div>
-    <div class="rr" id="r1" style="top:262px"><div class="mono">SL</div><div class="nm">Sara Lind</div><div class="s1">Pending</div><div class="s2">✓ Email confirmed</div></div>
-    <div class="rr" id="r2" style="top:318px"><div class="mono">NV</div><div class="nm">Noa Vries</div><div class="s1">Pending</div><div class="s2">✓ Email confirmed</div></div>
+  <!-- back: founding pass (revealed by the flip) -->
+  <div id="back" class="pass a">
+    <div class="plab"><span style="width:24px;height:24px;display:block"></span><span id="blt">FOUNDING MEMBER</span></div>
+    <div class="ser" id="bser">07<span class="tot" id="btot">/25</span></div>
+    <div class="hr" style="top:350px;background:var(--haird)" id="bhr1"></div>
+    <div class="who" id="bwho"><div class="tile" style="width:58px;height:58px;background:#f5f4ee;color:#111110;font-size:26px">A</div><div><div class="nm">Auterim</div><div class="ad">Admitted March 2026</div></div></div>
+    <div class="hr" style="top:494px;background:var(--haird)" id="bhr2"></div>
+    <div class="ft" id="bft"><span class="wmk"><svg viewBox="0 0 120 118"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#f5f4ee" stroke-width="16"/></svg>wanterest</span><span style="color:#9c9c92">No. 07 of 25</span></div>
+    <svg id="bA" viewBox="18 18.65 84 84" width="84" height="84" style="position:absolute;left:0;top:0;transform-origin:0 0"><polygon id="bAp" points="25.3,102 49.2,45 70.8,45 94.7,102 77.3,102 60,60.7 42.7,102" fill="#F5F4EE"/><polygon id="bAk" points="60,19.3 50.5,42 69.5,42" fill="#D7FF3D"/></svg>
+    <div class="sheen" id="bsh"></div>
   </div>
+  <div id="pe" class="pass a">
+    <div class="plab"><span style="width:24px;height:24px;display:block"></span><span id="elt">EARLY 100 MEMBER</span></div>
+    <div class="ser" id="eser" style="font-size:150px;top:150px">042<span class="tot">/100</span></div>
+    <div class="hr" style="top:350px;background:rgba(17,17,16,.1)"></div>
+    <div class="who" id="ewho"><div class="tile" style="width:58px;height:58px;background:#fff;box-shadow:inset 0 0 0 1px rgba(17,17,16,.14);color:#111110;font-size:26px">F</div><div><div class="nm">Fennwick Labs</div><div class="ad">Admitted April 2026</div></div></div>
+    <div class="hr" style="top:494px;background:rgba(17,17,16,.1)"></div>
+    <div class="ft" id="eft"><span class="wmk"><svg viewBox="0 0 120 118"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#111110" stroke-width="16"/></svg>wanterest</span><span style="color:#8c8c82">No. 042 of 100</span></div>
+    <svg id="eA" viewBox="18 18.65 84 84" width="84" height="84" style="position:absolute;left:0;top:0;transform-origin:0 0"><polygon id="eAp" points="25.3,102 49.2,45 70.8,45 94.7,102 77.3,102 60,60.7 42.7,102" fill="#111110"/><polygon id="eAk" points="60,19.3 50.5,42 69.5,42" fill="#111110"/></svg>
+  </div>
+  <div id="bf" class="ben a" style="background:#111110;color:#f5f4ee"><b>30%</b>off · 24 months</div>
+  <div id="be" class="ben a" style="background:#fff;box-shadow:inset 0 0 0 1.5px rgba(17,17,16,.14)"><b>15%</b>off · 12 months</div>
 
-  <!-- 3. invitation + admission reveal -->
-  <div id="inv" class="card a">
-    <div class="chip6" style="left:40px;top:38px;background:var(--ptint);color:#3d4a0e"><i style="width:8px;height:8px;border-radius:50%;background:#3d4a0e;display:block"></i>Invitation ready</div>
-    <div style="position:absolute;left:40px;top:112px;font:600 50px/1.1 'Sora';letter-spacing:-.03em;width:540px">Your invitation is ready.</div>
-    <div class="body" style="left:40px;top:252px;width:540px">Accept to create your workspace. Cohort is assigned at admission if a seat remains.</div>
-    <div class="btn" id="acc" style="left:40px;top:344px;width:220px;background:#111110;color:#fff">Accept invitation</div>
-  </div>
-  <div id="rv" class="a">
-    <div class="plab" id="rvlab" style="left:40px;top:40px;font-size:13px;gap:12px;letter-spacing:.28em"><span style="width:22px;height:22px;display:block"></span><span id="rvlt">FOUNDING MEMBER</span></div>
-    <div class="ser" id="rvser" style="left:36px;top:110px;font-size:200px">07<span class="tot" id="rvtot" style="font-size:62px">/25</span></div>
-    <div id="rvyou" style="position:absolute;left:40px;top:316px;font:600 38px 'Sora';letter-spacing:-.02em">You're Founding 07.</div>
-    <div id="rvbody" style="position:absolute;left:40px;top:374px;width:520px;font:400 20px/1.45 'Inter';color:#9c9c92">One of the first 25 workspaces. This number is permanent.</div>
-    <div id="rvbtn" class="btn" style="left:40px;top:464px;width:210px;background:#f5f4ee;color:#111110">Open Wanterest</div>
-    <svg id="rvA" viewBox="18 18.65 84 84" width="84" height="84" style="position:absolute;left:0;top:0;transform-origin:0 0"><polygon id="rvp" points="25.3,102 49.2,45 70.8,45 94.7,102 77.3,102 60,60.7 42.7,102" fill="#F5F4EE"/><polygon id="rvk" points="60,19.3 50.5,42 69.5,42" fill="#D7FF3D"/></svg>
-  </div>
-
-  <!-- 4. two cohorts -->
-  <div id="pf" class="vp a">
-    <div class="plab"><svg viewBox="18 18.65 84 84" width="22" height="22"><polygon points="25.3,102 49.2,45 70.8,45 94.7,102 77.3,102 60,60.7 42.7,102" fill="#F5F4EE"/><polygon points="60,19.3 50.5,42 69.5,42" fill="#D7FF3D"/></svg>FOUNDING MEMBER</div>
-    <div class="ser">07<span class="tot">/25</span></div>
-    <div class="hr1" style="height:1px;background:rgba(245,244,238,.14)"></div>
-    <div class="who"><div class="tile" style="width:56px;height:56px;background:#f5f4ee;color:#111110;font-size:25px">A</div><div><div class="nm">Auterim</div><div class="ad">Admitted March 2026</div></div></div>
-    <div class="hr2" style="height:1px;background:rgba(245,244,238,.14)"></div>
-    <div class="ft"><span class="wmk" style="position:static;font-size:16px"><svg viewBox="0 0 120 118" style="width:17px;height:17px"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#f5f4ee" stroke-width="16"/></svg>wanterest</span><span style="color:#9c9c92">No. 07 of 25</span></div>
-  </div>
-  <div id="pe" class="vp a">
-    <div class="plab"><svg viewBox="18 18.65 84 84" width="22" height="22"><polygon points="25.3,102 49.2,45 70.8,45 94.7,102 77.3,102 60,60.7 42.7,102" fill="#111110"/><polygon points="60,19.3 50.5,42 69.5,42" fill="#111110"/></svg>EARLY 100 MEMBER</div>
-    <div class="ser" style="font-size:124px;top:138px">042<span class="tot">/100</span></div>
-    <div class="hr1 hair"></div>
-    <div class="who"><div class="tile" style="width:56px;height:56px;background:#fff;box-shadow:inset 0 0 0 1px rgba(17,17,16,.12);color:#111110;font-size:25px">F</div><div><div class="nm">Fennwick Labs</div><div class="ad">Admitted April 2026</div></div></div>
-    <div class="hr2 hair"></div>
-    <div class="ft"><span class="wmk" style="position:static;font-size:16px"><svg viewBox="0 0 120 118" style="width:17px;height:17px"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#111110" stroke-width="16"/></svg>wanterest</span><span style="color:#8c8c82">No. 042 of 100</span></div>
-  </div>
-  <div id="bf" class="ben a" style="background:#111110;color:#f5f4ee"><b>30% off</b>for 24 months</div>
-  <div id="be" class="ben a" style="background:#fff;box-shadow:inset 0 0 0 1.5px rgba(17,17,16,.14)"><b>15% off</b>for 12 months</div>
-  <div id="fnote" class="a">Current cohort benefit, from the first paid subscription.</div>
-
-  <!-- 5. members wall + consent -->
-  <div id="wall" class="a">
-    <div class="ch"><div class="dots"><i></i><i></i><i></i></div><div class="url">wanterest.com/members</div></div>
-    <div class="wnav"><div class="lg"><svg viewBox="0 0 120 118"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#111110" stroke-width="16"/></svg>wanterest</div><div class="ln"><span>Product</span><span>Pricing</span><b>Members</b><span>About</span></div></div>
-    <div class="wbadge"><i></i>PUBLIC MEMBERS WALL</div>
-    <div class="wh">The first workspaces to find real demand.</div>
-    <div class="wtab"><span style="background:#111110;color:#f5f4ee">Founding 25</span><span style="color:#8c8c82">Early 100</span></div>
-    <div id="wgrid"></div>
-  </div>
-  <div id="set" class="card a">
-    <div class="tt">Public profile</div>
-    <div class="tr2" style="top:70px"><div class="a1">Show on Members Wall</div><div class="a2">Name, logo and serial appear on /members.</div><div class="tg" id="tg1"><i></i></div></div>
-    <div class="tr2" style="top:158px"><div class="a1">Public Founder Pass</div><div class="a2">Creates /members/auterim. Independent of the wall.</div><div class="tg" id="tg2"><i></i></div></div>
-  </div>
-  <div id="urlchip" class="a"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.8 2.8 0 014 4L11 8.5M9 11.5l-1.2 1.2a2.8 2.8 0 01-4-4L5 7.5" fill="none" stroke="#111110" stroke-width="1.6" stroke-linecap="round"/></svg>wanterest.com/members/<b>auterim</b></div>
-
-  <!-- rail -->
-  <div id="rail" class="a"></div>
+  <!-- members wall -->
+  <div id="wall" class="a"></div>
+  <div id="tgp" class="a"><div class="tgr">Members Wall<div class="tg" id="tg1"><i></i></div></div><div style="width:1px;height:34px;background:rgba(17,17,16,.1)"></div><div class="tgr">Founder Pass<div class="tg" id="tg2"><i></i></div></div></div>
+  <div id="slug" class="a"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.8 2.8 0 014 4L11 8.5M9 11.5l-1.2 1.2a2.8 2.8 0 01-4-4L5 7.5" fill="none" stroke="#111110" stroke-width="1.6" stroke-linecap="round"/></svg>wanterest.com/members/<b>auterim</b></div>
 
   <!-- outro -->
   <div id="o1" class="oln a" style="color:#8c8c82"><span class="wm"><span class="wi">Referrals</span></span> <span class="wm"><span class="wi">move</span></span> <span class="wm"><span class="wi">you</span></span> <span class="wm"><span class="wi">up.</span></span></div>
@@ -293,8 +164,8 @@ function L(a,b,p){return a+(b-a)*p}
 var eo=function(x){return x>=1?1:1-Math.pow(2,-10*x)}, ei=function(x){return x<=0?0:Math.pow(2,10*x-10)},
     co=function(x){return 1-Math.pow(1-x,3)}, ci=function(x){return x*x*x},
     cio=function(x){return x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2},
+    qio=function(x){return x<.5?8*x*x*x*x:1-Math.pow(-2*x+2,4)/2},
     bo=function(x){var c1=1.4,c3=c1+1;return 1+c3*Math.pow(x-1,3)+c1*Math.pow(x-1,2)},
-    // the identity system's own easing: cubic-bezier(.2,0,0,1) ~ strong ease-out
     idE=function(x){return x>=1?1:1-Math.pow(1-x,4)};
 function S(el,o){
   var tr="translate("+(o.x||0).toFixed(2)+"px,"+(o.y||0).toFixed(2)+"px)";
@@ -307,159 +178,154 @@ function S(el,o){
   el.style.visibility=op<=0.001?"hidden":"visible";
 }
 function C(el,w,h,cx,cy,o){o.x=cx-w/2;o.y=cy-h/2;S(el,o)}
-function fade(el,t,a,dy){var p=eo(sg(t,a,a+.55));el.style.opacity=sg(t,a,a+.2).toFixed(3);el.style.transform="translateY("+((1-p)*(dy===undefined?12:dy)).toFixed(1)+"px)";el.style.filter=p<.97?"blur("+((1-p)*6).toFixed(2)+"px)":"none"}
-function words(ws,t,starts,dur){ws.forEach(function(w,i){var st=starts[Math.min(i,starts.length-1)]+(i>=starts.length?(i-starts.length+1)*.06:0);var p=eo(sg(t,st,st+(dur||.6)));
+function words(ws,t,starts,dur){ws.forEach(function(w,i){var st=starts[i];var p=eo(sg(t,st,st+(dur||.6)));
   w.style.transform="translateY("+((1-p)*105).toFixed(2)+"%)";w.style.filter=p<.98?"blur("+((1-p)*10).toFixed(2)+"px)":"none"})}
+function fadeIn(el,t,a,dy){var p=idE(sg(t,a,a+.5));el.style.opacity=sg(t,a,a+.2).toFixed(3);el.style.transform="translateY("+((1-p)*(dy===undefined?8:dy)).toFixed(1)+"px)"}
 
 /* ---------- build ---------- */
-// headline words into masks
-$$(".hb .hh").forEach(function(h){var ws=h.textContent.split(" ");h.innerHTML=ws.map(function(w){return '<span class="wm"><span class="wi">'+w+'</span></span>'}).join(" ")});
-var HB=[["#h1",2.05,3.85],["#h2",4.05,6.85],["#h3",7.05,10.85],["#h4",11.05,14.85],["#h5",15.05,17.85],["#h6",18.05,21.75]].map(function(d){
-  var el=$(d[0]);return {el:el,a:d[1],b:d[2],ws:$$(d[0]+" .wi"),eb:el.querySelector(".eb"),hs:el.querySelector(".hs")}});
-// rail
-var STEPS=["Early Access","Priority","Review","Admission","Founding 25 · Early 100","Members Wall · Pass <em>optional</em>"];
-$("#rail").innerHTML=STEPS.map(function(s,i){return (i?'<div class="arrow"></div>':'')+'<div class="st" id="st'+i+'"><i></i><span>'+s+'</span></div>'}).join("");
-var ST=STEPS.map(function(s,i){return $("#st"+i)});
-// wall grid (illustrative members)
-var WC=[["02","N","Northwind Labs"],["05","HC","Halden & Co"],["07","A","Auterim"],["09","PNS","Parallel North Studio"],["12","L","Loma Systems"],["14","O","Oriel Studio"]];
-$("#wgrid").innerHTML=WC.map(function(c,i){var x=40+(i%3)*310,y=236+Math.floor(i/3)*184;
-  return '<div class="wc" id="wc'+i+'" style="left:'+x+'px;top:'+y+'px"><div class="l"><svg viewBox="18 18.65 84 84" width="14" height="14"><polygon points="25.3,102 49.2,45 70.8,45 94.7,102 77.3,102 60,60.7 42.7,102" fill="#F5F4EE"/><polygon points="60,19.3 50.5,42 69.5,42" fill="#D7FF3D"/></svg>FOUNDING 25</div><div class="n">'+c[0]+'<span>/25</span></div><div class="hr"></div><div class="who"><div class="tile t" style="background:#f5f4ee;color:#111110">'+c[1]+'</div>'+c[2]+'</div>'+(i===2?'<div class="vp2" id="vpass">View pass →</div>':'')+'</div>'}).join("");
+var seed=5; function rnd(){seed=(seed*16807)%2147483647;return (seed-1)/2147483646}
+var NUMS=["0002","0417","1293","0088","2210","0731","12408","0356","0999","1874","0045","3102","0613","2754","0271","1560","0820","4419","0137","2043","0592","1188","3907","0064","0725","1416","2881","0309","5120","0947","1732","0450"];
+var F=$("#field"), P=[];
+NUMS.forEach(function(n,i){var el=document.createElement("div");el.className="pl a";
+  var pr=(i%9===4);
+  el.innerHTML=pr?'<i style="background:#3d4a0e;box-shadow:none;width:12px;height:12px"></i><b style="color:#3d4a0e">Priority</b> <span style="color:#3d4a0e">#'+n+'</span>':'<i></i>Early access <b>#'+n+'</b>';
+  if(pr){el.style.background="#eff9c4";el.style.boxShadow="0 24px 44px -26px rgba(17,17,16,.25)"}
+  F.appendChild(el);
+  var ang=rnd()*Math.PI*2, rad=.5+rnd()*.75, x=Math.cos(ang)*1200*rad, y=Math.sin(ang)*700*rad;
+  if(Math.abs(y)<170&&Math.abs(x)<520) y=(y<0?-1:1)*(170+rnd()*200);
+  P.push({el:el,x:x,y:y,z:-2400+rnd()*2300,ph:rnd()*6.28,w:0});
+});
+P.sort(function(a,b){return a.z-b.z});P.forEach(function(p,i){p.el.style.zIndex=i});
+// members wall: 5x3, Founding 25, numbered; our 07 lands in its slot on consent
+var WALL=[["01","N","Northwind Labs"],["02","O","Oriel Studio"],["03","HC","Halden & Co"],["05","K","Kestrel Analytics"],["07","A","Auterim"],
+          ["09","PNS","Parallel North"],["11","L","Loma Systems"],["12","B","Brightline"],["14","Q","Quill Research"],["16","T","Tessellate"],
+          ["18","V","Vantor"],["19","M","Marrow & Co"],["21","C","Corvid Data"],["23","S","Solace Health"],["25","AL","Ardent Labs"]];
+$("#wall").innerHTML=WALL.map(function(c,i){var x=(i%5)*320,y=Math.floor(i/5)*214;
+  return '<div class="wc" id="w'+i+'" style="left:'+x+'px;top:'+y+'px"><div class="l"><svg viewBox="18 18.65 84 84" width="14" height="14"><polygon points="25.3,102 49.2,45 70.8,45 94.7,102 77.3,102 60,60.7 42.7,102" fill="#F5F4EE"/><polygon points="60,19.3 50.5,42 69.5,42" fill="#D7FF3D"/></svg>FOUNDING 25</div><div class="n">'+c[0]+'<span>/25</span></div><div class="h"></div><div class="who2"><div class="tile">'+c[1]+'</div>'+c[2]+'</div>'+(i===4?'<div class="vp" id="vp">View pass →</div>':'')+'</div>'}).join("");
+var WC=WALL.map(function(c,i){return $("#w"+i)});
 
-var R={};["g1","g2","grain","pass0","p0lab","p0ser","p0tot","p0col","p0lt","bigA","bAp","bAk","form","typed","caret","ph","ea","eaP","eaA","eaB2","ec","eaK","eaN","eaB","eaV","eaS","eaTag","ref","copyb","rcnt","inv","acc","rv","rvlab","rvlt","rvser","rvtot","rvyou","rvbody","rvbtn","rvA","rvp","rvk","pf","pe","bf","be","fnote","wall","set","tg1","tg2","urlchip","vpass","rail","o1","o2","perm","brand","bm","cta","cur","mvup"].forEach(function(k){R[k]=document.getElementById(k)});
-var SGS=[0,1,2].map(function(i){return $("#sg"+i)}), RR=[0,1,2].map(function(i){return $("#r"+i)});
-var O1W=$$("#o1 .wi"), O2W=$$("#o2 .wi"), WCE=[0,1,2,3,4,5].map(function(i){return $("#wc"+i)});
+var R={};["g1","g2","grain","hero","front","fA","fB","fchip","fk","fnum","segs","rlab","rcnt","mvup","t0","t1","t2","back","blt","bser","btot","bhr1","bwho","bhr2","bft","bA","bAp","bAk","bsh","pe","elt","eser","ewho","eft","eA","eAp","eAk","bf","be","wall","tgp","tg1","tg2","slug","vp","o1","o2","perm","brand","bm","cta","cur"].forEach(function(k){R[k]=document.getElementById(k)});
+var SGS=[0,1,2].map(function(i){return $("#sg"+i)}), TK=[R.t0,R.t1,R.t2];
+var O1W=$$("#o1 .wi"), O2W=$$("#o2 .wi");
 
-/* Apex reveal: big mark centred in a card, then it settles into the label slot while the serial resolves.
-   Timing follows Board 14 (keystone 120 · peak 360 · serial 640 · label 900 · still 1200), scaled by k. */
-function apexReveal(svg,kEl,pEl,t,t0,k,big,lab,labT){
-  var tk=t0+.12*k, tp=t0+.36*k, ts=t0+.64*k;
-  var kp=idE(sg(t,tk,tk+.28*k)), pp=idE(sg(t,tp,tp+.28*k)), mv=cio(sg(t,ts-.1*k,ts+.25*k));
-  kEl.style.opacity=kp.toFixed(3); kEl.setAttribute("transform","translate(0,"+((1-kp)*-14).toFixed(2)+")");
+/* Board 14 reveal: keystone 120, peak 360, serial 640, label 900, still 1200 (x k), Apex settles into the label slot */
+function apex(svg,kEl,pEl,t,t0,k,big,lab){
+  var kp=idE(sg(t,t0+.12*k,t0+.4*k)), pp=idE(sg(t,t0+.36*k,t0+.64*k)), mv=cio(sg(t,t0+.62*k,t0+.95*k));
+  if(kEl){kEl.style.opacity=kp.toFixed(3);kEl.setAttribute("transform","translate(0,"+((1-kp)*-16).toFixed(2)+")")}
   pEl.style.opacity=pp.toFixed(3); pEl.setAttribute("transform","translate(0,"+((1-pp)*8).toFixed(2)+")");
-  var sz=L(big.s,lab.s,mv), x=L(big.x,lab.x,mv), y=L(big.y,lab.y,mv);
-  svg.style.transform="translate("+x.toFixed(2)+"px,"+y.toFixed(2)+"px) scale("+(sz/84).toFixed(4)+")";
-  svg.style.opacity=(t>=t0?1:0);
-  labT.style.opacity=sg(t,t0+1.0*k,t0+1.15*k).toFixed(3);
-  return {serial:ts+.3*k, label:t0+1.0*k, still:t0+1.25*k};
-}
-
-function railRender(t){
-  var shown=eo(sg(t,4.0,4.5))*(1-sg(t,21.7,22.0));
-  S(R.rail,{y:(1-shown)*40,op:shown});
-  var act=t<9.5?0:t<11.0?1:t<12.55?2:t<13.9?3:t<18.0?4:5;
-  ST.forEach(function(el,i){el.className="st"+(i<act?" done":i===act?" on":"")});
+  var sz=L(big.s,lab.s,mv);
+  svg.style.transform="translate("+L(big.x,lab.x,mv).toFixed(2)+"px,"+L(big.y,lab.y,mv).toFixed(2)+"px) scale("+(sz/84).toFixed(4)+")";
+  return {ser:t0+.95*k,lab:t0+1.05*k,still:t0+1.3*k};
 }
 
 function render(t){
   R.g1.style.transform="translate("+(Math.sin(t*.5)*30).toFixed(1)+"px,"+(Math.cos(t*.4)*20).toFixed(1)+"px) scale("+(1+.04*Math.sin(t*.7)).toFixed(3)+")";
-  R.g1.style.opacity=(L(.85,1,sg(t,21.8,23))).toFixed(3); R.g2.style.opacity=(.6+.4*Math.sin(t*.9)).toFixed(3);
+  R.g1.style.opacity=L(.85,1,sg(t,17.6,19)).toFixed(3); R.g2.style.opacity=(.6+.4*Math.sin(t*.9)).toFixed(3);
   var fr=Math.floor(t*24); R.grain.style.transform="translate("+((fr*97)%256)+"px,"+((fr*53)%256)+"px)";
 
-  /* headline blocks */
-  HB.forEach(function(h){
-    var on=t>=h.a-.05&&t<h.b+.4, out=sg(t,h.b,h.b+.32);
-    S(h.el,{x:120,y:250-ei(out)*50,b:out*16,op:on?1-out:0});
-    if(!on)return;
-    fade(h.eb,t,h.a,10);
-    words(h.ws,t,[h.a+.05],.7);
-    h.ws.forEach(function(w,i){var st=h.a+.05+i*.06,p=eo(sg(t,st,st+.7));w.style.transform="translateY("+((1-p)*105).toFixed(2)+"%)";w.style.filter=p<.98?"blur("+((1-p)*10).toFixed(2)+"px)":"none"});
-    if(h.hs)fade(h.hs,t,h.a+.45+h.ws.length*.06,14);
+  /* ===== 1. the waitlist in depth -> rack focus onto #0184 (0 -> 2.6) ===== */
+  var Fz=1500, cz=L(0,700,co(sg(t,0,2.6))), focus=L(-1600,-500,cio(sg(t,0,1.6)));
+  var fOut=sg(t,2.0,2.6);
+  P.forEach(function(p){
+    var z=p.z+cz, dz=Fz-z; if(dz<80){S(p.el,{op:0});return}
+    var s=Fz/dz, sx=960+(p.x+Math.sin(t*.7+p.ph)*16)*s, sy=540+(p.y+Math.cos(t*.5+p.ph)*12)*s;
+    var b=Math.min(20,Math.abs(z-(focus+cz))*.012)+fOut*10;
+    var op=cl(sg(z,-2500,-1800))*cl(1-sg(s,2.3,3.2))*(1-fOut);
+    // on the drop the crowd parts outward
+    sx=960+(sx-960)*(1+ei(fOut)*.6); sy=540+(sy-540)*(1+ei(fOut)*.6);
+    C(p.el,340,64,sx,sy,{s:s,b:b,op:op});
   });
-  railRender(t);
+  // the protagonist pill: far and soft, pulled into focus, flies to centre; expands into the card on the drop (2.0)
+  var hp=cio(sg(t,.7,1.75)), hx=L(1420,960,hp), hy=L(300,540,hp), hs=L(.55,1.25,hp), hb=L(12,0,sg(t,.7,1.4));
+  var morph=cio(sg(t,1.95,2.45));
+  C(R.hero,340,64,hx,hy,{s:hs,b:hb,op:(1-sg(t,2.05,2.2))*sg(t,.1,.4)});
+  R.hero.style.zIndex=30;
 
-  /* ===== 0. hook 0 -> 4.15: Founding 25 admission reveal, then pull back ===== */
-  var fin=idE(sg(t,0,.35)), pull=cio(sg(t,1.95,2.75)), pOut=sg(t,3.82,4.15);
-  C(R.pass0,1100,480,L(960,1392,pull),L(540,560,pull),{s:L(L(.96,1,fin),.68,pull)*(1+ci(pOut)*.25),pre:"perspective(2400px) rotateY("+L(0,-9,pull).toFixed(3)+"deg)",b:pOut*24,op:fin*(1-sg(pOut,.3,1))});
-  var rv0=apexReveal(R.bigA,R.bAk,R.bAp,t,.25,1.4,{x:550-120,y:240-130,s:240},{x:56,y:50,s:26},R.p0lt);
-  var sp=idE(sg(t,rv0.serial,rv0.serial+.45));
-  R.p0ser.style.opacity=sg(t,rv0.serial,rv0.serial+.15).toFixed(3);R.p0ser.style.transform="translateY("+((1-sp)*8).toFixed(1)+"px)";
-  R.p0tot.style.opacity=sg(t,rv0.label,rv0.label+.2).toFixed(3);
-  fade(R.p0col,t,rv0.label+.05,8);
-
-  /* ===== 1. early access 4.05 -> 7 ===== */
-  var fi=eo(sg(t,4.1,4.55)), fo=ei(sg(t,5.1,5.4));
-  C(R.form,720,78,1250,470-fo*120,{s:L(.94,1,fi),b:(1-fi)*10+fo*14,op:fi*(1-fo)});
-  var email="elin@auterim.com", nch=Math.floor(cl((t-4.35)/.5)*email.length);
-  R.typed.textContent=email.slice(0,nch); R.ph.style.display=nch>0?"none":"inline"; R.caret.style.opacity=(Math.floor(t*4)%2===0||nch<email.length)?1:0;
-  // EA card; flips to Priority at 9.5 (beat); exits at 10.95
-  var ei_=eo(sg(t,5.25,5.8)), eOut=ei(sg(t,10.95,11.3));
-  C(R.ea,620,560,1250,520-eOut*1200,{s:L(.94,1,ei_),b:(1-ei_)*12+eOut*12,op:ei_});
-  fade(R.ec,t,5.35,6); fade(R.eaTag,t,5.4,6); fade(R.eaK,t,5.5,6);
-  R.eaN.style.opacity=sg(t,5.7,6.02).toFixed(3);  // number fades in 320ms after "Email confirmed", no counting
-  fade(R.eaB,t,5.85,10); fade(R.eaV,t,5.95,10); fade(R.eaS,t,6.02,10);
-  var pr=cio(sg(t,9.5,9.74));  // pill cross-fades 240ms
-  R.eaP.style.opacity=pr.toFixed(3); R.eaA.style.opacity=(1-pr).toFixed(3);
-  R.eaB2.style.opacity=sg(t,9.62,9.86).toFixed(3); R.mvup.style.transform="translateY("+((1-idE(sg(t,9.62,10.1)))*8).toFixed(1)+"px)";
-
-  /* ===== 2. referrals 7.5 -> 10.1 ===== */
-  var ri=eo(sg(t,7.55,8.05)), rOut=ei(sg(t,9.85,10.15));
-  C(R.ref,500,390,1610+(1-ri)*260+rOut*500,700,{s:1,b:(1-ri)*14+rOut*16,op:(ri>0?1:0)*(1-sg(rOut,.4,1))});
-  R.copyb.textContent=t>=7.95?"Copied ✓":"Copy link";
+  /* ===== 2. place card -> referrals -> priority (2.0 -> 7.4) ===== */
+  var cw=L(340*1.25,620,morph), ch=L(64*1.25,560,morph), cr=L(40,28,morph);
+  var shift=cio(sg(t,3.3,3.8)), back2=cio(sg(t,6.6,7.1));  // card slides left for the referrals, returns to centre
+  var fcx=960-230*shift+230*back2, fcy=540;
+  var flip=qio(sg(t,7.45,8.15)), ang=flip*180;   // admission: the card turns over
+  var push=L(1,1.06,cio(sg(t,6.8,7.45)));
+  R.front.style.width=cw.toFixed(1)+"px";R.front.style.height=ch.toFixed(1)+"px";R.front.style.borderRadius=cr.toFixed(1)+"px";
+  C(R.front,cw,ch,fcx,fcy,{s:push*L(1,1.18,morph)*(1+.08*Math.sin(Math.PI*flip)),pre:"perspective(2200px) rotateX("+(6*Math.sin(Math.PI*flip)).toFixed(2)+"deg) rotateY("+Math.min(ang,90).toFixed(2)+"deg)",op:(t>=1.95&&ang<90)?1:0});
+  fadeIn(R.fchip,t,2.35); fadeIn(R.fk,t,2.4);
+  R.fnum.style.opacity=sg(t,2.5,2.82).toFixed(3);   // number fades in (no counting)
+  fadeIn(R.rlab,t,3.6); fadeIn(R.segs,t,3.6);
+  // referrals arc in and dock on the beat: 4.0 / 4.5 / 5.0
   var nver=0;
-  RR.forEach(function(r,i){var ta=7.85+i*.18, tv=8.25+i*.5;  // beat-grid confirmations 8.25 / 8.75 / 9.25
-    fade(r,t,ta,8); var v=sg(t,tv,tv+.14);
-    r.querySelector(".s1").style.opacity=(1-v).toFixed(3); r.querySelector(".s2").style.opacity=v.toFixed(3);
-    SGS[i].style.transform="scaleX("+eo(sg(t,tv,tv+.35)).toFixed(3)+")"; if(t>=tv)nver++});
+  TK.forEach(function(tk,i){var td=4.0+i*.5, ta=td-.62, p=co(sg(t,ta,td));
+    var dx=1395, dy=L(360,720,i/2), sx=2080, sy=[-120,540,1200][i];
+    var mx=L(sx,dx,p)+Math.sin(p*Math.PI)*[-160,-220,-160][i], my=L(sy,dy,p);
+    var out=sg(t,5.6+i*.05,5.95+i*.05);
+    C(tk,84,84,mx+out*120,my,{s:L(.6,1,p)*(1-.3*out),b:(1-p)*10+out*12,op:(p>0?1:0)*(1-out)});
+    var ck=bo(sg(t,td+.04,td+.34)); tk.querySelector("b").style.transform="scale("+ck.toFixed(3)+")";
+    SGS[i].style.transform="scaleX("+eo(sg(t,td,td+.35)).toFixed(3)+")"; if(t>=td)nver++});
   R.rcnt.textContent=nver+"/3";
+  // lime wash: Priority blooms out from the third referral (5.5, beat)
+  var wash=cio(sg(t,5.5,6.0)), wr=wash*1100;
+  R.fB.style.clipPath="circle("+wr.toFixed(1)+"px at 640px 470px)"; R.fB.style.opacity=wash>0?1:0;
+  R.mvup.style.transform="translateY("+((1-idE(sg(t,5.62,6.1)))*10).toFixed(1)+"px)";
 
-  /* ===== 3. invitation + admission reveal 11.2 -> 15.2 ===== */
-  var ii=eo(sg(t,11.2,11.7)), iOut=sg(t,12.62,12.92);
-  C(R.inv,620,440,1250,500,{s:L(.94,1,ii)*(1-.06*ci(iOut)),b:(1-ii)*12+iOut*18,op:ii*(1-sg(iOut,.3,1))});
-  var aPress=sg(t,12.5,12.56)-sg(t,12.6,12.72); R.acc.style.transform="scale("+(1-aPress*.06).toFixed(3)+")";
-  var rvIn=idE(sg(t,12.9,13.05)), rvOut=sg(t,14.95,15.3);
-  C(R.rv,620,560,L(1250,1100,cio(rvOut)),520,{s:1-.1*cio(rvOut),b:rvOut*8,op:rvIn*(1-sg(rvOut,.5,1))});
-  var r1=apexReveal(R.rvA,R.rvk,R.rvp,t,13.0,1.0,{x:310-80,y:190-85,s:160},{x:40,y:40,s:22},R.rvlt);
-  var sp2=idE(sg(t,r1.serial,r1.serial+.4));
-  R.rvser.style.opacity=sg(t,r1.serial,r1.serial+.14).toFixed(3); R.rvser.style.transform="translateY("+((1-sp2)*8).toFixed(1)+"px)";
-  R.rvtot.style.opacity=sg(t,r1.label,r1.label+.18).toFixed(3);
-  fade(R.rvyou,t,r1.still,8); fade(R.rvbody,t,r1.still+.12,8); fade(R.rvbtn,t,r1.still+.24,8);
+  /* ===== 3. admission: the card turns over into a Founder Pass (7.45 -> 10.5) ===== */
+  var bIn=ang>=90, bang=ang-180;
+  var pOut2=cio(sg(t,10.4,10.95));
+  var bcx=L(960,700,pOut2), bs=push*L(1.14,1,pOut2)*(1+.08*Math.sin(Math.PI*flip));
+  var hover=Math.sin(Math.max(0,t-8.2)*1.4)*3*(1-pOut2);
+  C(R.back,440,600,bcx,540,{s:bs,pre:"perspective(2200px) rotateY("+(bIn?bang+hover:0).toFixed(2)+"deg) rotateX("+(bIn?Math.sin(Math.max(0,t-8.2))*2:0).toFixed(2)+"deg)",op:bIn&&t<14.3?1-sg(t,13.8,14.2):0,b:sg(t,13.8,14.2)*14});
+  var rv=apex(R.bA,R.bAk,R.bAp,t,8.0,1.0,{x:220-75,y:230-80,s:150},{x:38,y:36,s:24});
+  R.bA.style.opacity=t>=8.0?1:0;
+  R.bser.style.opacity=sg(t,rv.ser,rv.ser+.15).toFixed(3); R.bser.style.transform="translateY("+((1-idE(sg(t,rv.ser,rv.ser+.45)))*8).toFixed(1)+"px)";
+  R.btot.style.opacity=sg(t,rv.lab,rv.lab+.18).toFixed(3); R.blt.style.opacity=sg(t,rv.lab,rv.lab+.18).toFixed(3);
+  [R.bhr1,R.bwho,R.bhr2,R.bft].forEach(function(e,i){fadeIn(e,t,rv.still+i*.08)});
+  R.bsh.style.transform="translateX("+(L(0,1700,cio(sg(t,9.55,10.35)))).toFixed(1)+"px) rotate(18deg)";
 
-  /* ===== 4. two cohorts 15.05 -> 18.1 ===== */
-  var cOut=sg(t,17.85,18.15);
-  [[R.pf,1100,15.1],[R.pe,1540,15.35]].forEach(function(p){var q=eo(sg(t,p[2],p[2]+.6));
-    C(p[0],400,560,p[1]+(1-q)*(p[0]===R.pf?0:180),470,{s:L(p[0]===R.pf?.96:.92,1,q)*(1-.08*ci(cOut)),b:(1-q)*12+cOut*16,op:(q>0?1:0)*(1-sg(cOut,.35,1))})});
-  [[R.bf,1100,16.0,300],[R.be,1540,16.5,300]].forEach(function(b){var q=bo(sg(t,b[2],b[2]+.45));
-    C(b[0],b[3],52,b[1],800+(1-q)*20,{s:L(.85,1,q),op:sg(t,b[2],b[2]+.12)*(1-sg(cOut,.3,1)),b:cOut*12})});
-  C(R.fnote,470,24,1320,866,{op:sg(t,16.7,16.95)*(1-sg(cOut,.3,1)),b:cOut*10});
+  /* ===== 4. the second edition: Early 100 (10.6 -> 14.2) ===== */
+  var eIn=eo(sg(t,10.6,11.3)), eOut=sg(t,13.8,14.2);
+  C(R.pe,440,600,L(1600,1220,eIn),540,{s:L(.92,1,eIn),pre:"perspective(2200px) rotateY("+L(-24,0,eIn).toFixed(2)+"deg)",b:(1-eIn)*12+eOut*14,op:(eIn>0?1:0)*(1-sg(eOut,.3,1))});
+  var er=apex(R.eA,R.eAk,R.eAp,t,11.0,.8,{x:220-60,y:230-64,s:120},{x:38,y:36,s:24});
+  R.eA.style.opacity=t>=11.0?1:0; R.eAk.style.opacity=R.eAp.style.opacity;   // no keystone moment: ink keystone arrives with the peak
+  R.eser.style.opacity=sg(t,er.ser,er.ser+.15).toFixed(3); R.elt.style.opacity=sg(t,er.lab,er.lab+.18).toFixed(3);
+  [R.ewho,R.eft].forEach(function(e,i){fadeIn(e,t,er.still+i*.08)});
+  [[R.bf,700,12.0,280],[R.be,1220,12.5,280]].forEach(function(b){var q=bo(sg(t,b[2],b[2]+.45));
+    C(b[0],b[3],56,b[1],880+(1-q)*20,{s:L(.85,1,q),op:sg(t,b[2],b[2]+.12)*(1-sg(eOut,.3,1)),b:eOut*12})});
 
-  /* ===== 5. members wall + consent 18.0 -> 21.8 ===== */
-  var wi=eo(sg(t,18.05,18.6)), wOut=sg(t,21.72,22.02);
-  C(R.wall,1000,640,1340,450+(1-wi)*60,{s:(1-.05*ci(wOut)),b:(1-wi)*12+wOut*20,op:wi*(1-sg(wOut,.35,1))});
-  var si=eo(sg(t,18.35,18.85));
-  S(R.set,{x:860-(1-si)*40,y:650,b:(1-si)*10+wOut*20,op:si*(1-sg(wOut,.35,1))});
-  // consent 1 (beat 19.0): card joins the wall; consent 2 (beat 20.0): pass link appears
-  var t1=sg(t,19.0,19.18), t2=sg(t,20.0,20.18);
-  [[R.tg1,t1],[R.tg2,t2]].forEach(function(g){var p=cio(g[1]);g[0].style.background=p>.5?"#111110":"#dcdbd2";g[0].querySelector("i").style.transform="translateX("+(22*p).toFixed(1)+"px)"});
-  var jp=idE(sg(t,19.1,19.5));
-  WCE[2].style.opacity=sg(t,19.1,19.34).toFixed(3); WCE[2].style.transform="translateY("+((1-jp)*8).toFixed(1)+"px)";
-  WCE.forEach(function(c,i){if(i!==2)c.style.opacity=1});
-  R.vpass.style.opacity=sg(t,20.1,20.3).toFixed(3);
-  var up=eo(sg(t,20.2,20.65));
-  S(R.urlchip,{x:1480,y:792+(1-up)*14,op:sg(t,20.2,20.35)*(1-sg(wOut,.3,1)),b:(1-up)*6+wOut*14});
-  // cursor path: form button -> Share my place -> Accept invitation -> toggles
-  var P=[[4.45,1700,900],[4.9,1492,478],[5.1,1492,478],[5.3,1492,478],[7.0,1420,860],[7.4,1246,742],[7.7,1246,742],[11.6,1320,760],[12.35,1096,665],[12.75,1096,665],[18.55,1500,900],[18.92,1325,758],[19.4,1325,758],[19.88,1325,846],[20.4,1325,846]];
-  var cx=P[0][1],cy=P[0][2],vis=0;
-  for(var k=0;k<P.length-1;k++){ if(t>=P[k][0]&&t<P[k+1][0]){var q=cio(sg(t,P[k][0],P[k+1][0]));cx=L(P[k][1],P[k+1][1],q);cy=L(P[k][2],P[k+1][2],q);} if(t>=P[P.length-1][0]){cx=P[P.length-1][1];cy=P[P.length-1][2];}}
-  vis=sg(t,4.45,4.6)*(1-sg(t,5.2,5.35))+sg(t,7.0,7.15)*(1-sg(t,7.7,7.85))+sg(t,11.6,11.75)*(1-sg(t,12.75,12.9))+sg(t,18.55,18.7)*(1-sg(t,20.4,20.6));
-  var press=0;[5.0,7.5,12.5,19.0,20.0].forEach(function(c){press=Math.max(press,sg(t,c,c+.06)-sg(t,c+.1,c+.22))});
-  S(R.cur,{x:cx,y:cy,s:1-press*.14,op:vis}); R.cur.style.transformOrigin="4px 3px";
-  var sPress=sg(t,7.5,7.56)-sg(t,7.6,7.72); R.eaS.style.transform=(t>7.4&&t<7.8)?"scale("+(1-sPress*.06).toFixed(3)+")":R.eaS.style.transform;
+  /* ===== 5. the Members Wall, opt-in (14.0 -> 17.7) ===== */
+  var wIn=cio(sg(t,13.95,14.9)), wOut=sg(t,17.5,17.85);
+  var ws=L(1.9,1,wIn)*(1+.03*cio(sg(t,14.9,17.5))), wry=L(-8,-4,wIn);
+  C(R.wall,1600,640,960+L(260,0,wIn),500,{s:ws,pre:"perspective(2400px) rotateX("+L(34,22,wIn).toFixed(2)+"deg) rotateZ("+wry.toFixed(2)+"deg)",b:(1-wIn)*12+wOut*20,op:sg(t,13.95,14.3)*(1-sg(wOut,.35,1))});
+  WC.forEach(function(c,i){ if(i===4)return; var d=Math.abs((i%5)-2)*.05+Math.floor(i/5)*.06; var q=idE(sg(t,14.1+d,14.6+d)); c.style.opacity=sg(t,14.1+d,14.3+d).toFixed(3); c.style.transform="translateY("+((1-q)*14).toFixed(1)+"px)"});
+  var tIn=eo(sg(t,14.6,15.0));
+  C(R.tgp,520,76,960,950+(1-tIn)*30,{op:tIn*(1-sg(wOut,.3,1)),b:wOut*14});
+  var c1=sg(t,15.5,15.68), c2=sg(t,16.5,16.68);   // consent 1 (beat 15.5) and consent 2 (beat 16.5), independent
+  [[R.tg1,c1],[R.tg2,c2]].forEach(function(g){var p=cio(g[1]);g[0].style.background=p>.5?"#111110":"#dcdbd2";g[0].querySelector("i").style.transform="translateX("+(22*p).toFixed(1)+"px)"});
+  var jq=idE(sg(t,15.6,16.0));
+  WC[4].style.opacity=sg(t,15.6,15.8).toFixed(3); WC[4].style.transform="translateY("+((1-jq)*8).toFixed(1)+"px)";
+  WC[4].style.boxShadow="0 30px 50px -30px rgba(17,17,16,.5),0 0 0 "+(4*(sg(t,15.6,15.9)-sg(t,16.2,16.8))).toFixed(2)+"px rgba(215,255,61,.7)";
+  R.vp.style.opacity=sg(t,16.6,16.8).toFixed(3);
+  var sq=eo(sg(t,16.7,17.1));
+  S(R.slug,{x:1420,y:92+(1-sq)*14,op:sg(t,16.7,16.85)*(1-sg(wOut,.3,1)),b:(1-sq)*6+wOut*14});
+  // cursor for the two toggles
+  var cp=cio(sg(t,15.0,15.42)), cq=cio(sg(t,15.85,16.42));
+  var cx=L(L(1300,975,cp),1223,cq), cy=L(L(1140,960,cp),960,cq);
+  var press=Math.max(sg(t,15.5,15.56)-sg(t,15.6,15.72),sg(t,16.5,16.56)-sg(t,16.6,16.72));
+  S(R.cur,{x:cx,y:cy,s:1-press*.14,op:sg(t,15.0,15.15)*(1-sg(t,16.9,17.1))}); R.cur.style.transformOrigin="4px 3px";
 
-  /* ===== 6. outro 22.0 -> 25 ===== */
-  var push=1+.03*cio(sg(t,22,25));
-  S(R.o1,{y:330,s:push,op:t>=22.0?1:0}); R.o1.style.transformOrigin="50% 50%";
-  S(R.o2,{y:480,s:push,op:t>=22.4?1:0}); R.o2.style.transformOrigin="50% 50%";
-  words(O1W,t,[22.05,22.13,22.21,22.29],.7);
-  words(O2W,t,[22.5,22.58,22.66,22.74],.7);
-  R.perm.style.setProperty("--u",eo(sg(t,23.0,23.4)).toFixed(3));
-  var lp=eo(sg(t,23.25,23.9)), cpp=eo(sg(t,23.4,24.05));
+  /* ===== 6. outro (17.8 -> 21) ===== */
+  var pu=1+.03*cio(sg(t,17.8,21));
+  S(R.o1,{y:330,s:pu,op:t>=17.8?1:0}); R.o1.style.transformOrigin="50% 50%";
+  S(R.o2,{y:480,s:pu,op:t>=18.2?1:0}); R.o2.style.transformOrigin="50% 50%";
+  words(O1W,t,[17.85,17.93,18.01,18.09],.7);
+  words(O2W,t,[18.3,18.38,18.46,18.54],.7);
+  R.perm.style.setProperty("--u",eo(sg(t,19.0,19.4)).toFixed(3));
+  var lp=eo(sg(t,19.25,19.9)), cpp=eo(sg(t,19.4,20.05));
   S(R.brand,{x:960-330,y:700+(1-lp)*40,op:lp,b:(1-lp)*8});
   S(R.cta,{x:960+70,y:692+(1-cpp)*40,op:cpp,b:(1-cpp)*8});
-  R.bm.style.strokeDasharray="400";R.bm.style.strokeDashoffset=(400*(1-eo(sg(t,23.3,23.9)))).toFixed(1);
+  R.bm.style.strokeDasharray="400";R.bm.style.strokeDashoffset=(400*(1-eo(sg(t,19.3,19.9)))).toFixed(1);
 }
 
 var proxy={t:0}, tl=gsap.timeline({paused:true});
-tl.to(proxy,{t:25,duration:25,ease:"none",onUpdate:function(){render(proxy.t)}},0);
+tl.to(proxy,{t:21,duration:21,ease:"none",onUpdate:function(){render(proxy.t)}},0);
 render(0);
 window.__timelines=window.__timelines||{};window.__timelines["root"]=tl;
 })();
