@@ -4,6 +4,13 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createAdminServiceClient, createAdminSessionClient, getAdminAuthRecoveryRedirectUrl } from "./supabase";
 import { assertAdminHostnameRequest } from "./request";
+import {
+  ADMIN_TOTP_FRIENDLY_NAME,
+  findPendingAdminTotp,
+  logMfaFailure,
+  safeMfaFailureMessage,
+  type MfaFailureReason,
+} from "./mfa-flow";
 
 const credentialsSchema = z.object({
   email: z.string().trim().email().max(254),
@@ -93,28 +100,106 @@ async function requireActiveMembership() {
   return session;
 }
 
+type EnrollmentFailure = {
+  ok: false;
+  reason: MfaFailureReason;
+  message: string;
+};
+
+function enrollmentFailure(reason: MfaFailureReason): EnrollmentFailure {
+  return { ok: false, reason, message: safeMfaFailureMessage(reason, "enrollment") };
+}
+
+function pendingEnrollmentResult(pending: Array<{ id: string }>) {
+  if (pending.length === 1) return { ok: true as const, mode: "resume" as const, factorId: pending[0].id };
+  if (pending.length > 1) return enrollmentFailure("multiple_pending");
+  return null;
+}
+
 export async function startMfaEnrollment() {
   await assertAdminHostnameRequest();
   const session = await requireActiveMembership();
-  const { data, error } = await session.auth.mfa.enroll({ factorType: "totp", friendlyName: "Wanterest Admin" });
-  if (error || !data) return { ok: false as const, qrCode: null, factorId: null };
-  return { ok: true as const, qrCode: data.totp.qr_code, factorId: data.id };
+
+  const { data: listed, error: listError } = await session.auth.mfa.listFactors();
+  if (listError || !listed) {
+    const reason = logMfaFailure("factor_list", listError);
+    return enrollmentFailure(reason);
+  }
+
+  const pending = findPendingAdminTotp(listed.totp);
+  const existing = pendingEnrollmentResult(pending);
+  if (existing) return existing;
+
+  const { data, error } = await session.auth.mfa.enroll({
+    factorType: "totp",
+    friendlyName: ADMIN_TOTP_FRIENDLY_NAME,
+  });
+  if (!error && data?.totp?.qr_code && data.id) {
+    return { ok: true as const, mode: "setup" as const, qrCode: data.totp.qr_code, factorId: data.id };
+  }
+
+  const reason = logMfaFailure("enrollment", error);
+  if (reason === "pending_factor") {
+    // A parallel request or an earlier attempt may have created it after listFactors().
+    const { data: refreshed, error: refreshError } = await session.auth.mfa.listFactors();
+    if (refreshError || !refreshed) {
+      logMfaFailure("factor_list", refreshError);
+      return enrollmentFailure("unavailable");
+    }
+    const recovered = pendingEnrollmentResult(findPendingAdminTotp(refreshed.totp));
+    if (recovered) return recovered;
+  }
+
+  return enrollmentFailure(reason);
 }
 
-export async function verifyMfa(formData: FormData) {
+export type MfaVerificationFailure = {
+  ok: false;
+  reason: MfaFailureReason;
+  message: string;
+};
+
+function verificationFailure(reason: MfaFailureReason): MfaVerificationFailure {
+  return { ok: false, reason, message: safeMfaFailureMessage(reason, "verification") };
+}
+
+export async function verifyMfa(formData: FormData): Promise<MfaVerificationFailure> {
   await assertAdminHostnameRequest();
   const parsed = z.object({ factorId: z.string().uuid(), code: z.string().trim().regex(/^\d{6,8}$/) }).safeParse({
     factorId: formData.get("factorId"),
     code: formData.get("code"),
   });
-  if (!parsed.success) redirect("/mfa-required?error=mfa");
+  if (!parsed.success) return verificationFailure("code_rejected");
+
   const session = await requireActiveMembership();
   const { data: factors, error: factorsError } = await session.auth.mfa.listFactors();
-  const factor = factors?.totp.find((item) => item.id === parsed.data.factorId);
-  if (factorsError || !factor) redirect("/mfa-required?error=mfa");
+  if (factorsError || !factors) {
+    const reason = logMfaFailure("factor_list", factorsError);
+    return verificationFailure(reason);
+  }
+
+  const factor = factors.totp.find((item) =>
+    item.id === parsed.data.factorId &&
+    (item.status === "verified" || item.status === "unverified")
+  );
+  if (!factor) return verificationFailure("factor_missing");
+
   const { data: challenge, error: challengeError } = await session.auth.mfa.challenge({ factorId: factor.id });
-  if (challengeError || !challenge) redirect("/mfa-required?error=mfa");
-  const { error: verifyError } = await session.auth.mfa.verify({ factorId: factor.id, challengeId: challenge.id, code: parsed.data.code });
-  if (verifyError) redirect("/mfa-required?error=mfa");
+  if (challengeError || !challenge) {
+    const reason = logMfaFailure("challenge", challengeError);
+    return verificationFailure(reason);
+  }
+
+  const { error: verifyError } = await session.auth.mfa.verify({
+    factorId: factor.id,
+    challengeId: challenge.id,
+    code: parsed.data.code,
+  });
+  if (verifyError) {
+    const reason = logMfaFailure("verification", verifyError);
+    return verificationFailure(reason);
+  }
+
+  // Supabase SSR persists the elevated AAL2 session through the Server Action's cookie adapter.
   redirect("/");
 }
