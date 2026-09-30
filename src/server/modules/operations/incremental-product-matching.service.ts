@@ -17,6 +17,12 @@ import { crossProductRoutingShadowEnabled } from "./cross-product-routing.config
 import { runCrossProductRoutingShadowForRefresh } from "./cross-product-routing-runtime.service";
 import type { CrossProductRoutingTelemetry } from "./cross-product-routing.schemas";
 import {
+  listQueryResultAttributionsForJob,
+  persistProductQueryResultOutcomes,
+  type ProductQueryResultOutcome,
+} from "./source-execution-telemetry.repository";
+import { sourceExecutionObservabilityEnabled } from "./source-execution-telemetry.config";
+import {
   INCREMENTAL_MATCH_INTEREST_WINDOW_MS,
   INCREMENTAL_MATCH_MAX_EVALUATIONS_PER_PRODUCT,
   INCREMENTAL_MATCH_MAX_INTEREST_ARTIFACTS,
@@ -76,6 +82,11 @@ export type IncrementalMatchingDependencies = {
   partitionInterests?: Pick<SupplyPartitionInterestRepository, "listActive"> | null;
   /** Layer 12A.4: explicit shadow-only routing seam; it never runs unless allowlisted. */
   routingShadow?: (input: { workspaceIds: string[]; products: ProductRow[]; conversationIds: string[] }) => Promise<CrossProductRoutingTelemetry | null>;
+  /** Observational query→root→qualification attribution; persistence failures never affect matching. */
+  queryAttribution?: {
+    listForJob: (parentJobRunId: string, conversationIds: string[]) => Promise<Array<{ id: string; conversationId: string }>>;
+    persistOutcomes: (rows: ProductQueryResultOutcome[]) => Promise<void>;
+  };
 };
 
 export type ProductIncrementalMatchResult = {
@@ -95,6 +106,7 @@ export type ProductIncrementalMatchResult = {
   qualifiedCount: number;
   evaluationIds: string[];
   signalIds: string[];
+  queryAttributionRows: number;
   demandRebuilt: boolean;
   /** Layer 10: Actions created/superseded/expired by the gated pass after the rebuild (0 when gated off). */
   actionsUpdated: number;
@@ -117,6 +129,8 @@ export type IncrementalPartitionMatchOutcome = {
   products: ProductIncrementalMatchResult[];
   totals: { candidateConversations: number; evaluations: number; signals: number; productsWithNewEvidence: number };
   routingShadow?: CrossProductRoutingTelemetry | null;
+  routingShadowWarning?: string;
+  queryAttributionWarning?: string;
   durationMs: number;
 };
 
@@ -132,6 +146,10 @@ function defaultDependencies(): IncrementalMatchingDependencies {
     generateActions: generateActionsForScan,
     now: () => new Date(),
     routingShadow: (input) => runCrossProductRoutingShadowForRefresh({ client, env: process.env, ...input }),
+    queryAttribution: client && sourceExecutionObservabilityEnabled() ? {
+      listForJob: (parentJobRunId, conversationIds) => listQueryResultAttributionsForJob(client, parentJobRunId, conversationIds),
+      persistOutcomes: (rows) => persistProductQueryResultOutcomes(client, rows),
+    } : undefined,
   };
 }
 
@@ -153,6 +171,7 @@ function baseProductResult(interest: InterestedProduct, refreshConversationCount
     workspaceId: interest.workspaceId, productId: interest.productId, jobRunId: null, status: "skipped", interestArtifactId: interest.interestArtifactId,
     refreshConversationCount, alreadyMatchedCount: 0, candidateCount: 0, overflowCount: 0, selectedCount: 0, evaluations: 0, signals: 0, qualifiedCount: 0,
     evaluationIds: [], signalIds: [], demandRebuilt: false, actionsUpdated: 0, actionWarnings: [], durationMs: 0,
+    queryAttributionRows: 0,
   };
 }
 
@@ -164,6 +183,7 @@ async function matchOneProduct(input: {
   sourceKey: string;
   conversationIds: string[];
   normalizedSourceItemIds: string[];
+  queryResultAttributions: Array<{ id: string; conversationId: string }>;
   traceId: string;
 }): Promise<ProductIncrementalMatchResult> {
   const { deps, interest } = input;
@@ -210,6 +230,7 @@ async function matchOneProduct(input: {
     result.alreadyMatchedCount = candidates.alreadyMatchedCount;
     result.candidateCount = candidates.candidates.length;
     result.overflowCount = candidates.overflowCount;
+    let processedOutcomes: Array<{ conversationId: string; selected: boolean; evaluated: boolean; qualificationStatus: "qualified" | "weak_candidate" | "rejected" | null; evaluationId?: string | null }> = [];
 
     if (candidates.candidates.length) {
       const processed = await deps.processCandidates({
@@ -228,6 +249,7 @@ async function matchOneProduct(input: {
       result.evaluationIds = processed.evaluationIds;
       result.signalIds = processed.signalIds.filter((id): id is string => typeof id === "string");
       outcomeStatuses = processed.outcomes.map((outcome) => outcome.qualificationStatus);
+      processedOutcomes = processed.outcomes;
       reasoningCalls = processed.semanticReasoningShadow ? processed.semanticReasoningShadow.llmExecutedCount : null;
       reasoningCostUsd = processed.semanticReasoningShadow?.reasoningCostUsd ?? null;
       if (processed.signals > 0) {
@@ -257,6 +279,38 @@ async function matchOneProduct(input: {
       }
     } else {
       result.reason = "no_new_evidence";
+    }
+    if (deps.queryAttribution && input.queryResultAttributions.length) {
+      const outcomeByConversation = new Map(processedOutcomes.map((outcome) => [outcome.conversationId, outcome]));
+      const evaluationByConversation = new Map<string, string>();
+      processedOutcomes.forEach((outcome, index) => {
+        const evaluationId = outcome.evaluationId ?? (result.evaluationIds.length === processedOutcomes.length ? result.evaluationIds[index] : null);
+        if (evaluationId) evaluationByConversation.set(outcome.conversationId, evaluationId);
+      });
+      const signalByEvaluation = new Map<string, string | null>(result.evaluationIds.map((evaluationId, index) => [evaluationId, result.signalIds[index] ?? null]));
+      const rows: ProductQueryResultOutcome[] = input.queryResultAttributions.map((attribution) => {
+        const outcome = outcomeByConversation.get(attribution.conversationId);
+        const evaluationId = outcome?.evaluationId ?? evaluationByConversation.get(attribution.conversationId) ?? null;
+        return {
+          sourceResultAttributionId: attribution.id,
+          conversationId: attribution.conversationId,
+          workspaceId: interest.workspaceId,
+          productId: interest.productId,
+          matchJobRunId: job.id,
+          attemptNumber: job.attempt_count,
+          selected: outcome?.selected ?? false,
+          evaluated: outcome?.evaluated ?? false,
+          qualificationStatus: outcome?.qualificationStatus ?? null,
+          evaluationId,
+          signalId: evaluationId ? signalByEvaluation.get(evaluationId) ?? null : null,
+        };
+      });
+      try {
+        await deps.queryAttribution.persistOutcomes(rows);
+        result.queryAttributionRows = rows.length;
+      } catch {
+        // Telemetry is observational; a write failure never rolls back a product match.
+      }
     }
     result.status = "succeeded";
     result.durationMs = Date.now() - startedAt;
@@ -319,57 +373,88 @@ export async function matchRefreshedPartitionIncrementally(
     productId: null,
     inputReference: { policyVersion: INCREMENTAL_PRODUCT_MATCHING_POLICY_VERSION, refreshJobRunId: input.refreshJobRunId, partitionKey },
   });
+  try {
+    const since = new Date(deps.now().getTime() - INCREMENTAL_MATCH_INTEREST_WINDOW_MS).toISOString();
+    const artifacts = await deps.repository.listInterestArtifacts(partitionKey, since, INCREMENTAL_MATCH_MAX_INTEREST_ARTIFACTS);
+    const explicitInterests = deps.partitionInterests
+      ? (await deps.partitionInterests.listActive([partitionKey], deps.now().toISOString(), INCREMENTAL_MATCH_MAX_INTEREST_ARTIFACTS)).map(interestAsArtifact)
+      : [];
+    const interest = selectInterestedProducts([...artifacts, ...explicitInterests], deps.maxProducts ?? INCREMENTAL_MATCH_MAX_PRODUCTS_PER_REFRESH);
 
-  const since = new Date(deps.now().getTime() - INCREMENTAL_MATCH_INTEREST_WINDOW_MS).toISOString();
-  const artifacts = await deps.repository.listInterestArtifacts(partitionKey, since, INCREMENTAL_MATCH_MAX_INTEREST_ARTIFACTS);
-  const explicitInterests = deps.partitionInterests
-    ? (await deps.partitionInterests.listActive([partitionKey], deps.now().toISOString(), INCREMENTAL_MATCH_MAX_INTEREST_ARTIFACTS)).map(interestAsArtifact)
-    : [];
-  const interest = selectInterestedProducts([...artifacts, ...explicitInterests], deps.maxProducts ?? INCREMENTAL_MATCH_MAX_PRODUCTS_PER_REFRESH);
+    let queryResultAttributions: Array<{ id: string; conversationId: string }> = [];
+    let queryAttributionWarning: string | undefined;
+    if (deps.queryAttribution) {
+      try {
+        queryResultAttributions = await deps.queryAttribution.listForJob(input.refreshJobRunId, conversationIds);
+      } catch {
+        queryAttributionWarning = "query_result_attribution_unavailable";
+      }
+    }
 
-  let routingShadow: CrossProductRoutingTelemetry | null = null;
-  if (deps.routingShadow && interest.selected.some((item) => crossProductRoutingShadowEnabled(process.env, item.workspaceId))) {
-    const products = (await Promise.all(interest.selected.map(async (item) => {
-      try { return await deps.loadProduct(item.workspaceId, item.productId); } catch { return null; }
-    }))).filter((product): product is ProductRow => Boolean(product));
-    routingShadow = await deps.routingShadow({ workspaceIds: [...new Set(interest.selected.map((item) => item.workspaceId))], products, conversationIds });
+    let routingShadow: CrossProductRoutingTelemetry | null = null;
+    let routingShadowWarning: string | undefined;
+    if (deps.routingShadow && interest.selected.some((item) => crossProductRoutingShadowEnabled(process.env, item.workspaceId))) {
+      try {
+        const products = (await Promise.all(interest.selected.map(async (item) => {
+          try { return await deps.loadProduct(item.workspaceId, item.productId); } catch { return null; }
+        }))).filter((product): product is ProductRow => Boolean(product));
+        routingShadow = await deps.routingShadow({ workspaceIds: [...new Set(interest.selected.map((item) => item.workspaceId))], products, conversationIds });
+      } catch (error) {
+        // Routing is an observational sidecar. A persistence or shadow-read
+        // error must not prevent the existing product matcher from running.
+        const code = error && typeof error === "object" && "code" in error && typeof error.code === "string" ? error.code : null;
+        routingShadowWarning = `routing_shadow_failed${code ? `:${code.slice(0, 32)}` : ""}`;
+      }
+    }
+
+    const products: ProductIncrementalMatchResult[] = [];
+    for (const interestedProduct of interest.selected) {
+      products.push(await matchOneProduct({ deps, interest: interestedProduct, refreshJobRunId: input.refreshJobRunId, partitionKey, sourceKey: stored.data.sourceKey, conversationIds, normalizedSourceItemIds, queryResultAttributions, traceId: input.traceId }));
+    }
+
+    const failed = products.filter((product) => product.status === "failed");
+    const outcome: IncrementalPartitionMatchOutcome = {
+      status: failed.length ? "failed" : "succeeded",
+      ...(failed.length ? { reason: "product_match_failed" } : {}),
+      policyVersion: INCREMENTAL_PRODUCT_MATCHING_POLICY_VERSION,
+      refreshJobRunId: input.refreshJobRunId,
+      fanoutJobRunId: fanoutJob.id,
+      partitionKey,
+      sourceKey: stored.data.sourceKey,
+      refreshConversationCount: conversationIds.length,
+      interestedProductCount: interest.interestedProductCount,
+      consideredProductCount: interest.selected.length,
+      skipped: [
+        ...interest.skipped,
+        ...products.filter((product) => product.status === "skipped").map((product) => ({ workspaceId: product.workspaceId, productId: product.productId, reason: product.reason ?? "skipped" })),
+      ],
+      products,
+      totals: {
+        candidateConversations: products.reduce((sum, product) => sum + product.candidateCount, 0),
+        evaluations: products.reduce((sum, product) => sum + product.evaluations, 0),
+        signals: products.reduce((sum, product) => sum + product.signals, 0),
+        productsWithNewEvidence: products.filter((product) => product.candidateCount > 0).length,
+      },
+      ...(routingShadow ? { routingShadow } : {}),
+      ...(routingShadowWarning ? { routingShadowWarning } : {}),
+      ...(queryAttributionWarning ? { queryAttributionWarning } : {}),
+      durationMs: Date.now() - startedAt,
+    };
+    await deps.repository.completeJob(fanoutJob.id, {
+      status: outcome.status === "failed" ? "failed" : "succeeded",
+      inputReference: outcome as unknown as Record<string, unknown>,
+      ...(failed.length ? { errorMessage: `${failed.length} product incremental match(es) failed.` } : {}),
+    });
+    return outcome;
+  } catch (error) {
+    const message = safeMessage(error);
+    // Once a fanout row exists, unexpected orchestration failures are terminal
+    // and auditable before Trigger.dev retries the bounded task attempt.
+    await deps.repository.completeJob(fanoutJob.id, {
+      status: "failed",
+      inputReference: { policyVersion: INCREMENTAL_PRODUCT_MATCHING_POLICY_VERSION, refreshJobRunId: input.refreshJobRunId, partitionKey, failure: message },
+      errorMessage: message,
+    });
+    throw error;
   }
-
-  const products: ProductIncrementalMatchResult[] = [];
-  for (const interestedProduct of interest.selected) {
-    products.push(await matchOneProduct({ deps, interest: interestedProduct, refreshJobRunId: input.refreshJobRunId, partitionKey, sourceKey: stored.data.sourceKey, conversationIds, normalizedSourceItemIds, traceId: input.traceId }));
-  }
-
-  const failed = products.filter((product) => product.status === "failed");
-  const outcome: IncrementalPartitionMatchOutcome = {
-    status: failed.length ? "failed" : "succeeded",
-    ...(failed.length ? { reason: "product_match_failed" } : {}),
-    policyVersion: INCREMENTAL_PRODUCT_MATCHING_POLICY_VERSION,
-    refreshJobRunId: input.refreshJobRunId,
-    fanoutJobRunId: fanoutJob.id,
-    partitionKey,
-    sourceKey: stored.data.sourceKey,
-    refreshConversationCount: conversationIds.length,
-    interestedProductCount: interest.interestedProductCount,
-    consideredProductCount: interest.selected.length,
-    skipped: [
-      ...interest.skipped,
-      ...products.filter((product) => product.status === "skipped").map((product) => ({ workspaceId: product.workspaceId, productId: product.productId, reason: product.reason ?? "skipped" })),
-    ],
-    products,
-    totals: {
-      candidateConversations: products.reduce((sum, product) => sum + product.candidateCount, 0),
-      evaluations: products.reduce((sum, product) => sum + product.evaluations, 0),
-      signals: products.reduce((sum, product) => sum + product.signals, 0),
-      productsWithNewEvidence: products.filter((product) => product.candidateCount > 0).length,
-    },
-    ...(routingShadow ? { routingShadow } : {}),
-    durationMs: Date.now() - startedAt,
-  };
-  await deps.repository.completeJob(fanoutJob.id, {
-    status: outcome.status === "failed" ? "failed" : "succeeded",
-    inputReference: outcome as unknown as Record<string, unknown>,
-    ...(failed.length ? { errorMessage: `${failed.length} product incremental match(es) failed.` } : {}),
-  });
-  return outcome;
 }

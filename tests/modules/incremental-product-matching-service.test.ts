@@ -162,6 +162,23 @@ describe("matchRefreshedPartitionIncrementally (Stage 2D)", () => {
     expect(outcome.products[0]).toMatchObject({ status: "succeeded", reason: "no_new_evidence", candidateCount: 0, alreadyMatchedCount: 3 });
   });
 
+  it("attributes every fetched root for a product, including already-matched roots that are not re-evaluated", async () => {
+    const { repository } = makeRepository({ refresh: refreshJob(), artifacts: [artifact(WS_A, "prod-a")], matched: new Map([[`${WS_A}:prod-a`, new Set([C1, C2, C3])]]) });
+    const persistOutcomes = vi.fn(async (rows: Array<Record<string, unknown>>) => { void rows; });
+    const queryAttribution = {
+      listForJob: vi.fn(async () => [C1, C2, C3].map((conversationId, index) => ({ id: `attribution-${index + 1}`, conversationId }))),
+      persistOutcomes,
+    };
+    const outcome = await matchRefreshedPartitionIncrementally({ refreshJobRunId: REFRESH_JOB, traceId: "t" }, { repository, loadProduct, processCandidates, rebuildDemand, queryAttribution, now } as never);
+    const rows = persistOutcomes.mock.calls[0]?.[0] as Array<Record<string, unknown>>;
+
+    expect(queryAttribution.listForJob).toHaveBeenCalledWith(REFRESH_JOB, [C1, C2, C3]);
+    expect(rows).toHaveLength(3);
+    expect(rows.every((row) => row.selected === false && row.evaluated === false && row.qualificationStatus === null)).toBe(true);
+    expect(outcome.products[0]?.queryAttributionRows).toBe(3);
+    expect(processCandidates).not.toHaveBeenCalled();
+  });
+
   it("re-aggregates demand only when new signals materialized", async () => {
     processCandidates = vi.fn(async (input: { conversationIds: string[] }) => processResult(input.conversationIds, 1));
     const { repository } = makeRepository({ refresh: refreshJob(), artifacts: [artifact(WS_A, "prod-a")], matched: new Map() });
@@ -205,6 +222,36 @@ describe("matchRefreshedPartitionIncrementally (Stage 2D)", () => {
     expect(second.fanoutJobRunId).toBe(first.fanoutJobRunId);
     expect(jobs.filter((job) => job.job_type === "match-product-incremental")).toHaveLength(1);
     expect(jobs.filter((job) => job.job_type === "match-partition-incremental")).toHaveLength(1);
+  });
+
+  it("keeps the core matcher running when the routing shadow sidecar fails", async () => {
+    vi.stubEnv("CROSS_PRODUCT_ROUTING_MODE", "shadow");
+    vi.stubEnv("CROSS_PRODUCT_ROUTING_WORKSPACE_IDS", WS_A);
+    try {
+      const { repository, jobs } = makeRepository({ refresh: refreshJob(), artifacts: [artifact(WS_A, "prod-a")], matched: new Map() });
+      const routingShadow = vi.fn(async () => { throw Object.assign(new Error("edge upsert conflict"), { code: "42P10" }); });
+      const outcome = await matchRefreshedPartitionIncrementally({ refreshJobRunId: REFRESH_JOB, traceId: "t" }, { repository, loadProduct, processCandidates, rebuildDemand, routingShadow, now } as never);
+
+      expect(routingShadow).toHaveBeenCalledTimes(1);
+      expect(processCandidates).toHaveBeenCalledTimes(1);
+      expect(outcome.status).toBe("succeeded");
+      expect(outcome.routingShadowWarning).toBe("routing_shadow_failed:42P10");
+      expect(jobs.find((job) => job.job_type === "match-partition-incremental")?.status).toBe("succeeded");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("records the fanout as failed before propagating unexpected orchestration errors", async () => {
+    const { repository, jobs } = makeRepository({ refresh: refreshJob(), artifacts: [artifact(WS_A, "prod-a")], matched: new Map() });
+    repository.listInterestArtifacts.mockRejectedValueOnce(new Error("interest lookup unavailable"));
+
+    await expect(matchRefreshedPartitionIncrementally({ refreshJobRunId: REFRESH_JOB, traceId: "t" }, { repository, loadProduct, processCandidates, rebuildDemand, now } as never))
+      .rejects.toThrow("interest lookup unavailable");
+
+    expect(jobs.find((job) => job.job_type === "match-partition-incremental")?.status).toBe("failed");
+    expect(repository.completeJob).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ status: "failed" }));
+    expect(processCandidates).not.toHaveBeenCalled();
   });
 
   it("retries only the failed product after a partial failure", async () => {

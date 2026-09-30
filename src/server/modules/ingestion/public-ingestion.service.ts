@@ -19,6 +19,19 @@ import { prepareStackExchangeFeatureRequest } from "@/server/providers/source/st
 import { g2MappingsFromSourceFilters, g2SourceFiltersWithMappings, type G2ProductMapping } from "@/server/providers/source/g2/product-resolution";
 import { deriveMarketPartitionIdentity } from "@/server/modules/ingestion/market-partition-identity";
 import { MarketPartitionRepository } from "@/server/modules/ingestion/market-partition.repository";
+import { sha256Json } from "@/server/modules/ingestion/hash";
+import {
+  persistSourceQueryExecution,
+  sourceExecutionId,
+  sourceExecutionPageId,
+  sourceResultAttributionId,
+  type SourceQueryExecutionAttribution,
+  type SourceQueryPageAttribution,
+  type SourceQueryResultAttribution,
+} from "@/server/modules/operations/source-execution-telemetry.repository";
+import { sourceExecutionObservabilityEnabled } from "@/server/modules/operations/source-execution-telemetry.config";
+
+export type { SourceQueryResultAttribution };
 
 type Client = SupabaseClient<Database>;
 
@@ -109,7 +122,7 @@ export function safeSummary(error: unknown): string {
 
 function queryPlanIdForRequest(request: SourceDiscoveryRequest, source: string): string {
   const metadata = objectValue(request.requestMetadata);
-  return typeof metadata.queryPlanId === "string" ? metadata.queryPlanId : `fallback:${source}:${request.query ?? "default"}`;
+  return typeof metadata.queryPlanId === "string" ? metadata.queryPlanId : `fallback:${source}:${sha256Json(request.query ?? "default").slice(0, 32)}`;
 }
 
 function queryTelemetryForRequest(input: {
@@ -159,7 +172,9 @@ function queryTelemetryForRequest(input: {
 function queryFailureDiagnostic(error: unknown, request: SourceDiscoveryRequest, source: string): string {
   const value = error && typeof error === "object" ? error as { code?: unknown; providerDetails?: { status?: unknown; message?: unknown } } : {};
   const metadata = objectValue(request.requestMetadata);
-  const queryPlanId = queryPlanIdForRequest(request, source).slice(0, 180);
+  // Planner IDs contain a slug of the normalized query. Error diagnostics are
+  // durable, so include only a stable fingerprint instead of query-derived text.
+  const queryPlanId = sha256Json(queryPlanIdForRequest(request, source));
   const code = typeof value.code === "string" ? value.code : "REQUEST_FAILED";
   const status = typeof value.providerDetails?.status === "number" ? String(value.providerDetails.status) : "unknown";
   const providerMessage = typeof value.providerDetails?.message === "string" ? value.providerDetails.message : safeSummary(error);
@@ -253,6 +268,8 @@ export type SourceExecutionResult = {
   rateLimitRemaining: number | null;
   estimatedCost: number | null;
   queryTelemetry: QueryYieldTelemetry[];
+  /** Stable query→provider row→normalized item→canonical root links for later product-outcome attribution. */
+  resultAttributions?: SourceQueryResultAttribution[];
   failedQueryCount?: number;
   errorCode?: string | null;
   providerMetrics?: Record<string, unknown>;
@@ -266,6 +283,33 @@ export type SourceExecutionResult = {
     resolvedAt: string;
     resolverVersion: string;
   }>;
+};
+
+type PageResultObservation = {
+  rawSourceItemId: string;
+  providerItemFingerprint: string;
+  rawSnapshotInserted: boolean | null;
+  sourceItemId: string | null;
+  conversationId: string | null;
+};
+
+type PageObservation = {
+  pageNumber: number;
+  sourceJobRunId: string | null;
+  cursorRequested: boolean;
+  providerResultsReturned: number;
+  rawSnapshotsAccepted: number;
+  rawSnapshotsInserted: number;
+  rawSnapshotsDuplicate: number;
+  normalizedItems: number;
+  rateLimitRemaining: number | null;
+  retryAfterMs: number | null;
+  attemptCount: number;
+  durationMs: number;
+  observedAt: string;
+  continuationAvailable: boolean;
+  failed: boolean;
+  items: PageResultObservation[];
 };
 
 export type SourceExecutionBatchResult = {
@@ -323,6 +367,7 @@ export function mergeProviderMetrics(target: Record<string, unknown>, incoming: 
  */
 export async function ingestPublicPartition(input: PublicIngestionInput): Promise<PublicIngestionResult> {
   const client = createSupabaseServiceClient();
+  const captureSourceTelemetry = sourceExecutionObservabilityEnabled();
   const ingestionRepository = new SupabaseIngestionRepository(client);
   const ingestion = new IngestionService(ingestionRepository, undefined, new SourceControlService(new SupabaseSourceControlStore(client)));
   const marketPartitionRepository = new MarketPartitionRepository(client);
@@ -337,6 +382,7 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
   let estimatedCost: number | null = null;
   const providerMetrics: Record<string, unknown> = {};
   const queryTelemetry: QueryYieldTelemetry[] = [];
+  const resultAttributions: SourceQueryResultAttribution[] = [];
   let failedQueryCount = 0;
   let firstQueryErrorCode: string | null = null;
   if (input.sourceKey === "x" && input.operationalContext?.workspaceId) logXDiscoveryOverride(input.operationalContext.workspaceId, input.requests);
@@ -357,6 +403,8 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
     let marketPartitionKey: string | null = null;
     let marketPartitionIneligibleReason: string | null = null;
     let discoveryProvenance: DiscoveryProvenanceTemplate | null = null;
+    const queryStartedAt = Date.now();
+    const pageObservations: PageObservation[] = [];
     try {
       request = input.sourceKey === "stack-exchange" ? prepareStackExchangeFeatureRequest(parsedRequest) : parsedRequest;
       metadata = request.requestMetadata as Record<string, unknown>;
@@ -384,33 +432,119 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
         marketPartitionIneligibleReason = partitionIdentity.reason;
       }
       for (let page = 1; page <= maxPages; page += 1) {
+        const pageStartedAt = Date.now();
+        const cursorRequested = Boolean(cursor);
         const pageRequest = { ...request, ...(cursor ? { cursor } : {}) };
         const scopedRequest = input.operationalContext
           ? requestScopedToScan(pageRequest, input.operationalContext.jobRunId, input.sourceKey, input.operationalContext.workspaceId)
           : sourceDiscoveryRequestSchema.parse(pageRequest);
-        const discovery = await ingestion.discoverSource(input.sourceKey, scopedRequest, input.traceId);
-        rawSourceItemIds.push(...discovery.rawSourceItemIds);
-        rawItems += discovery.rawSourceItemIds.length;
-        rawInserted += discovery.rawInserted;
-        queryRawInserted += discovery.rawInserted;
-        diagnostics.push(...discovery.diagnostics);
-        if (discovery.resolutions) resolutions.push(...discovery.resolutions);
-        const normalizationVersion = input.sourceKey === "stack-exchange" && metadata.stackExchangeV2 === true ? "stack-exchange-v2" : `${input.sourceKey}-v1`;
-        const replay = await ingestion.replayDetailed({ rawSourceItemIds: discovery.rawSourceItemIds, normalizationVersion, canonicalizationVersion: "canonical-v1", limit: 100 });
-        normalizedSourceItemIds.push(...replay.normalizedSourceItemIds);
-        normalizedItems += replay.normalizedSourceItemIds.length;
-        pagesCompleted += 1;
-        conversationIds.push(...replay.canonicalizedConversationIds);
-        queryConversationIds.push(...replay.canonicalizedConversationIds);
-        provenance.push(...provenanceForReplay(request, input.sourceKey, replay.replayMappings));
-        if (typeof metadata.estimatedCost === "number") estimatedCost = (estimatedCost ?? 0) + metadata.estimatedCost;
-        if (typeof metadata.rateLimitRemaining === "number") rateLimitRemaining = metadata.rateLimitRemaining;
-        if (typeof discovery.estimatedCost === "number") { estimatedCost = (estimatedCost ?? 0) + discovery.estimatedCost; queryCost = (queryCost ?? 0) + discovery.estimatedCost; }
-        if (typeof discovery.rateLimit?.remaining === "number") rateLimitRemaining = discovery.rateLimit.remaining;
-        if (discovery.providerMetrics) mergeProviderMetrics(providerMetrics, discovery.providerMetrics);
-        cursor = discovery.nextCursor;
-        if (!cursor) break;
-        continuations += 1;
+        try {
+          const discovery = await ingestion.discoverSource(input.sourceKey, scopedRequest, input.traceId);
+          rawSourceItemIds.push(...discovery.rawSourceItemIds);
+          rawItems += discovery.rawSourceItemIds.length;
+          rawInserted += discovery.rawInserted;
+          queryRawInserted += discovery.rawInserted;
+          diagnostics.push(...discovery.diagnostics);
+          if (discovery.resolutions) resolutions.push(...discovery.resolutions);
+          const normalizationVersion = input.sourceKey === "stack-exchange" && metadata.stackExchangeV2 === true ? "stack-exchange-v2" : `${input.sourceKey}-v1`;
+          const replay = await ingestion.replayDetailed({ rawSourceItemIds: discovery.rawSourceItemIds, normalizationVersion, canonicalizationVersion: "canonical-v1", limit: 100 });
+          normalizedSourceItemIds.push(...replay.normalizedSourceItemIds);
+          normalizedItems += replay.normalizedSourceItemIds.length;
+          pagesCompleted += 1;
+          conversationIds.push(...replay.canonicalizedConversationIds);
+          queryConversationIds.push(...replay.canonicalizedConversationIds);
+          provenance.push(...provenanceForReplay(request, input.sourceKey, replay.replayMappings));
+          const nextCursor = discovery.nextCursor ?? null;
+
+          if (captureSourceTelemetry) {
+          let observations: Array<{ rawSourceItemId: string; providerItemFingerprint: string; inserted: boolean | null }> = discovery.rawItemObservations ?? [];
+          if (observations.length !== discovery.rawSourceItemIds.length) {
+            let byId = new Map<string, string>();
+            try {
+              const rawRows = discovery.rawSourceItemIds.length
+                ? await client.from("raw_source_items").select("id,external_id").in("id", discovery.rawSourceItemIds)
+                : { data: [], error: null };
+              byId = new Map((rawRows.error ? [] : rawRows.data ?? []).map((row) => [String(row.id), String(row.external_id)]));
+              if (rawRows.error) diagnostics.push("source result attribution lookup unavailable for a replayed discovery page.");
+            } catch {
+              diagnostics.push("source result attribution lookup unavailable for a replayed discovery page.");
+            }
+            observations = discovery.rawSourceItemIds.map((rawSourceItemId) => {
+              const externalId = byId.get(rawSourceItemId);
+              return { rawSourceItemId, providerItemFingerprint: externalId ? sha256Json({ sourceKey: input.sourceKey, externalId }) : rawSourceItemId, inserted: null };
+            });
+          }
+          const mappingByRawId = new Map<string, { sourceItemId: string; conversationId: string }>();
+          replay.replayMappings.forEach((mapping, index) => {
+            const rawSourceItemId = typeof mapping.rawSourceItemId === "string" ? mapping.rawSourceItemId : discovery.rawSourceItemIds[index];
+            if (rawSourceItemId && typeof mapping.sourceItemId === "string" && typeof mapping.conversationId === "string") {
+              mappingByRawId.set(rawSourceItemId, { sourceItemId: mapping.sourceItemId, conversationId: mapping.conversationId });
+            }
+          });
+          const observationByIndex = discovery.rawItemObservations && discovery.rawItemObservations.length === discovery.rawSourceItemIds.length
+            ? discovery.rawItemObservations
+            : observations;
+          const items = discovery.rawSourceItemIds.map((rawSourceItemId, index) => {
+            const mapping = mappingByRawId.get(rawSourceItemId);
+            const observation = observationByIndex[index];
+            return {
+              rawSourceItemId,
+              providerItemFingerprint: observation?.providerItemFingerprint ?? rawSourceItemId,
+              rawSnapshotInserted: observation?.inserted ?? null,
+              sourceItemId: mapping?.sourceItemId ?? null,
+              conversationId: mapping?.conversationId ?? null,
+            };
+          });
+          const observedAt = new Date().toISOString();
+          pageObservations.push({
+            pageNumber: page,
+            sourceJobRunId: typeof discovery.jobRunId === "string" ? discovery.jobRunId : null,
+            cursorRequested,
+            providerResultsReturned: discovery.rawSourceItemIds.length + (discovery.rejected ?? 0),
+            rawSnapshotsAccepted: discovery.rawSourceItemIds.length,
+            rawSnapshotsInserted: discovery.rawInserted ?? 0,
+            rawSnapshotsDuplicate: discovery.rawDuplicates ?? Math.max(0, discovery.rawSourceItemIds.length - (discovery.rawInserted ?? 0)),
+            normalizedItems: replay.normalizedSourceItemIds.length,
+            rateLimitRemaining: discovery.rateLimit?.remaining ?? null,
+            retryAfterMs: discovery.rateLimit?.retryAfterMs ?? null,
+            attemptCount: discovery.attemptCount ?? 1,
+            durationMs: Date.now() - pageStartedAt,
+            observedAt,
+            continuationAvailable: Boolean(nextCursor),
+            failed: false,
+            items,
+          });
+          }
+
+          if (typeof metadata.estimatedCost === "number") estimatedCost = (estimatedCost ?? 0) + metadata.estimatedCost;
+          if (typeof metadata.rateLimitRemaining === "number") rateLimitRemaining = metadata.rateLimitRemaining;
+          if (typeof discovery.estimatedCost === "number") { estimatedCost = (estimatedCost ?? 0) + discovery.estimatedCost; queryCost = (queryCost ?? 0) + discovery.estimatedCost; }
+          if (typeof discovery.rateLimit?.remaining === "number") rateLimitRemaining = discovery.rateLimit.remaining;
+          if (discovery.providerMetrics) mergeProviderMetrics(providerMetrics, discovery.providerMetrics);
+          cursor = nextCursor ?? undefined;
+          if (!cursor) break;
+          continuations += 1;
+        } catch (error) {
+          if (captureSourceTelemetry) pageObservations.push({
+            pageNumber: page,
+            sourceJobRunId: null,
+            cursorRequested,
+            providerResultsReturned: 0,
+            rawSnapshotsAccepted: 0,
+            rawSnapshotsInserted: 0,
+            rawSnapshotsDuplicate: 0,
+            normalizedItems: 0,
+            rateLimitRemaining: null,
+            retryAfterMs: null,
+            attemptCount: 1,
+            durationMs: Date.now() - pageStartedAt,
+            observedAt: new Date().toISOString(),
+            continuationAvailable: false,
+            failed: true,
+            items: [],
+          });
+          throw error;
+        }
       }
     } catch (error) {
       queryError = error;
@@ -419,6 +553,90 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
       diagnostics.push(queryFailureDiagnostic(error, request, input.sourceKey));
     }
     const executionStatus: QueryYieldExecutionStatus = queryError ? errorCodeOf(queryError) === "RATE_LIMITED" ? "rate_limited" : "provider_error" : rawItems ? "completed_with_results" : "completed_zero_results";
+
+    if (captureSourceTelemetry) {
+    // Compute the per-execution item/root overlap locally. Only booleans and
+    // database UUIDs are persisted; query strings and provider cursors stay out.
+    const queryPlanId = queryPlanIdForRequest(request, input.sourceKey);
+    const pageAttemptKeys = pageObservations.map((page) => `${page.sourceJobRunId ?? `page-${page.pageNumber}`}:${page.attemptCount}`);
+    const executionKey = sha256Json({ parentJobRunId: input.operationalContext?.jobRunId ?? null, sourceKey: input.sourceKey, queryPlanId, pageAttemptKeys });
+    const executionId = sourceExecutionId(executionKey);
+    const providerItemsSeen = new Set<string>();
+    const rootsSeen = new Set<string>();
+    const persistedPages: SourceQueryPageAttribution[] = [];
+    const persistedResults: SourceQueryResultAttribution[] = [];
+    for (const [pageIndex, page] of pageObservations.entries()) {
+      const pageId = sourceExecutionPageId(executionId, page.pageNumber);
+      let pageUniqueProviderItems = 0;
+      let pageDuplicateProviderItems = 0;
+      let pageUniqueRoots = 0;
+      let pageDuplicateRoots = 0;
+      page.items.slice(0, 500).forEach((item, index) => {
+        const firstProviderItemInExecution = !providerItemsSeen.has(item.providerItemFingerprint);
+        providerItemsSeen.add(item.providerItemFingerprint);
+        if (firstProviderItemInExecution) pageUniqueProviderItems += 1; else pageDuplicateProviderItems += 1;
+        const firstRootInExecution = item.conversationId !== null && !rootsSeen.has(item.conversationId);
+        if (item.conversationId) rootsSeen.add(item.conversationId);
+        if (firstRootInExecution) pageUniqueRoots += 1;
+        else if (item.conversationId) pageDuplicateRoots += 1;
+        persistedResults.push({
+          id: sourceResultAttributionId(pageId, index + 1), pageId, resultOrdinal: index + 1,
+          rawSourceItemId: item.rawSourceItemId, sourceItemId: item.sourceItemId, conversationId: item.conversationId,
+          rawSnapshotInserted: item.rawSnapshotInserted, firstProviderItemInExecution, firstRootInExecution,
+        });
+      });
+      const continuationFollowed = pageIndex < pageObservations.length - 1 && page.continuationAvailable && pageObservations[pageIndex + 1]?.cursorRequested === true;
+      const stopReason: SourceQueryPageAttribution["stopReason"] = continuationFollowed ? "continuation_followed" : page.failed ? "error" : page.continuationAvailable ? "page_cap_reached" : page.providerResultsReturned === 0 ? "zero_results" : "no_cursor";
+      persistedPages.push({
+        id: pageId, pageNumber: page.pageNumber, sourceJobRunId: page.sourceJobRunId,
+        cursorRequested: page.cursorRequested, providerResultsReturned: page.providerResultsReturned,
+        rawSnapshotsAccepted: page.rawSnapshotsAccepted, rawSnapshotsInserted: page.rawSnapshotsInserted, rawSnapshotsDuplicate: page.rawSnapshotsDuplicate,
+        normalizedItems: page.normalizedItems, uniqueProviderItems: pageUniqueProviderItems, duplicateProviderItems: pageDuplicateProviderItems,
+        uniqueRoots: pageUniqueRoots, duplicateRoots: pageDuplicateRoots, continuationAvailable: page.continuationAvailable,
+        continuationFollowed, stopReason, rateLimitRemaining: page.rateLimitRemaining, retryAfterMs: page.retryAfterMs, attemptCount: page.attemptCount,
+        durationMs: page.durationMs, observedAt: page.observedAt,
+      });
+    }
+    const errorCode = errorCodeOf(queryError);
+    const safeErrorCode = errorCode && /^[A-Z0-9_-]{1,80}$/.test(errorCode) ? errorCode : null;
+    if (input.operationalContext && pageObservations.length) {
+      const sourceCounts = pageObservations.reduce((counts, page) => ({
+        providerResultsReturned: counts.providerResultsReturned + page.providerResultsReturned,
+        rawSnapshotsAccepted: counts.rawSnapshotsAccepted + page.rawSnapshotsAccepted,
+        rawSnapshotsInserted: counts.rawSnapshotsInserted + page.rawSnapshotsInserted,
+        rawSnapshotsDuplicate: counts.rawSnapshotsDuplicate + page.rawSnapshotsDuplicate,
+        normalizedItems: counts.normalizedItems + page.normalizedItems,
+      }), { providerResultsReturned: 0, rawSnapshotsAccepted: 0, rawSnapshotsInserted: 0, rawSnapshotsDuplicate: 0, normalizedItems: 0 });
+      const queryRoots = new Set(pageObservations.flatMap((page) => page.items.map((item) => item.conversationId).filter((id): id is string => id !== null)));
+      const continuationsFollowed = persistedPages.filter((page) => page.continuationFollowed).length;
+      const summary: SourceQueryExecutionAttribution = {
+        id: executionId, executionKey, parentJobRunId: input.operationalContext.jobRunId, queryPlanFingerprint: sha256Json(queryPlanId), sourceKey: input.sourceKey,
+        queryFamily: typeof metadata.queryFamily === "string" ? metadata.queryFamily.trim().slice(0, 80) || "fallback" : "fallback",
+        demandSurface: typeof metadata.demandSurface === "string" ? metadata.demandSurface.trim().slice(0, 80) || "unknown" : "unknown",
+        pagesRequested: maxPages, pagesCompleted, continuationCount: continuationsFollowed,
+        stopReason: queryError ? "error" : cursor ? "page_cap_reached" : rawItems ? "no_cursor" : "zero_results",
+        executionStatus, providerResultsReturned: sourceCounts.providerResultsReturned, rawSnapshotsAccepted: sourceCounts.rawSnapshotsAccepted,
+        rawSnapshotsInserted: sourceCounts.rawSnapshotsInserted, rawSnapshotsDuplicate: sourceCounts.rawSnapshotsDuplicate,
+        uniqueProviderItems: providerItemsSeen.size, duplicateProviderItems: Math.max(0, sourceCounts.rawSnapshotsAccepted - providerItemsSeen.size),
+        normalizedItems: sourceCounts.normalizedItems, uniqueRoots: queryRoots.size,
+        duplicateRoots: Math.max(0, pageObservations.reduce((count, page) => count + page.items.filter((item) => item.conversationId !== null).length, 0) - queryRoots.size),
+        errorCode: safeErrorCode, startedAt: new Date(queryStartedAt).toISOString(), completedAt: new Date().toISOString(), durationMs: Date.now() - queryStartedAt,
+        pages: persistedPages, results: persistedResults,
+      };
+      // Failed pages have no child job ID but still receive a page row; result
+      // rows only exist for provider envelopes accepted into raw evidence.
+      resultAttributions.push(...persistedResults);
+      try {
+        await persistSourceQueryExecution(client, summary);
+      } catch {
+        diagnostics.push("source execution telemetry persistence unavailable; provider ingestion and matching continued.");
+      }
+    } else {
+      // No durable parent job means there is no safe idempotency scope for the
+      // new telemetry tables. Keep the in-memory result links for this caller.
+      resultAttributions.push(...persistedResults);
+    }
+    }
     queryTelemetry.push(queryTelemetryForRequest({
       request,
       source: input.sourceKey,
@@ -454,6 +672,7 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
     rateLimitRemaining,
     estimatedCost,
     queryTelemetry,
+    ...(captureSourceTelemetry ? { resultAttributions } : {}),
     ...(failedQueryCount ? { failedQueryCount, errorCode: firstQueryErrorCode } : {}),
     ...(Object.keys(providerMetrics).length ? { providerMetrics } : {}),
     ...(resolutions.length ? { resolutions } : {}),

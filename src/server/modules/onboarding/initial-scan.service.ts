@@ -24,7 +24,10 @@ import {
   type SourceExecutionBatchResult,
   type SourceExecutionInput,
   type SourceExecutionResult,
+  type SourceQueryResultAttribution,
 } from "@/server/modules/ingestion/public-ingestion.service";
+import { persistProductQueryResultOutcomes } from "@/server/modules/operations/source-execution-telemetry.repository";
+import { sourceExecutionObservabilityEnabled } from "@/server/modules/operations/source-execution-telemetry.config";
 import { SupabaseIntelligenceRepository } from "@/server/modules/intelligence/intelligence.repository";
 import { IntelligenceService } from "@/server/modules/intelligence/intelligence.service";
 import { qualificationFromEvidence, readBusinessClassification, readDemandProfileV2, readDemandProfileV2RoutingModel } from "@/server/modules/intelligence";
@@ -1213,6 +1216,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
   const conversationIds: string[] = [];
   const scanProvenance: ScanDiscoveryProvenance[] = [];
   const queryYieldTelemetry: QueryYieldTelemetry[] = [];
+  const queryResultAttributions: SourceQueryResultAttribution[] = [];
   const githubPainRetrievalV1: GithubPainQueryCompilation[] = [];
   let adaptiveAllocatorTelemetry: AdaptiveAllocatorTelemetry | null = null;
   if (queryPlan && queryPlanningInput) {
@@ -1319,6 +1323,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
         conversationIds.push(...result.execution.conversationIds);
         scanProvenance.push(...(result.execution.provenance ?? []));
         queryYieldTelemetry.push(...result.execution.queryTelemetry);
+        queryResultAttributions.push(...(result.execution.resultAttributions ?? []));
         if (result.fallback) diagnostics.push({ sourceKey: result.sourceKey, state: "fallback", message: "Query Planning produced no executable query; using the existing conservative request." });
         diagnostics.push({ sourceKey: result.sourceKey, state: "complete", message: `${result.execution.rawInserted} new raw item${result.execution.rawInserted === 1 ? "" : "s"}.` });
       }
@@ -1442,6 +1447,31 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
     }
     const candidateOutcomesByConversation = normalizeCandidateProcessingOutcomes(candidateResult.outcomes);
     diagnostics.push({ sourceKey: "candidate-outcomes", state: "resolved", message: `${candidateOutcomesByConversation.size} current-scan candidate outcome${candidateOutcomesByConversation.size === 1 ? "" : "s"} normalized for provenance attribution.` });
+    if (sourceExecutionObservabilityEnabled() && queryResultAttributions.length) {
+      const signalByEvaluation = new Map(candidateResult.evaluationIds.map((evaluationId, index) => [evaluationId, candidateResult.signalIds[index] ?? null]));
+      const outcomeRows = queryResultAttributions.flatMap((attribution) => {
+        if (!attribution.conversationId) return [];
+        const outcome = candidateOutcomesByConversation.get(attribution.conversationId);
+        return [{
+          sourceResultAttributionId: attribution.id,
+          conversationId: attribution.conversationId,
+          workspaceId: product.workspace_id,
+          productId: product.id,
+          matchJobRunId: job.id,
+          attemptNumber: job.attempt_count,
+          selected: outcome?.selected ?? false,
+          evaluated: outcome?.evaluated ?? false,
+          qualificationStatus: outcome?.qualificationStatus ?? null,
+          evaluationId: outcome?.evaluationId ?? null,
+          signalId: outcome?.evaluationId ? signalByEvaluation.get(outcome.evaluationId) ?? null : null,
+        }];
+      });
+      try {
+        await persistProductQueryResultOutcomes(client, outcomeRows);
+      } catch {
+        diagnostics.push({ sourceKey: "query-outcome-attribution", state: "warning", message: "Query-to-qualification telemetry could not be persisted; scan outcomes were not affected." });
+      }
+    }
     const plannedQueryYield = queryPlan?.source_plans.flatMap((source) => source.queries.map((query) => ({ queryPlanId: query.query_id, source: query.source_key, family: query.query_family, surface: query.demand_surface, concepts: query.concept_keys, competitorSpecific: query.competitor_specific }))) ?? queryYieldTelemetry.map((row) => ({ queryPlanId: row.queryPlanId, source: row.source, family: row.family, surface: row.surface, concepts: row.concepts, competitorSpecific: row.competitorSpecific }));
     const queryYieldReconciliation = reconcileQueryYieldTelemetry(
       plannedQueryYield,
