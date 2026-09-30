@@ -5,3 +5,6 @@ snaps2/
 render.log
 comp/snapshots/
 work-*/
+snaps*/
+.*hf-transaction*/
+spec.png
