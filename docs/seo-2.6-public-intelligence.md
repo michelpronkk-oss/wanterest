@@ -3,11 +3,11 @@
 ## Release state
 
 - Code is based on `f681e5c0fe57a6fd4053a7a5916f00cb93fa1e44` (`origin/main` in the isolated worktree).
-- Production Supabase migration head is `20261102000000` (`admin_console_foundation`).
-- `20261103000000_seo26_public_intelligence_feed.sql` is a new forward-only migration and is **not applied**.
+- The production pre-release baseline was confirmed read-only at `20261102000000` (`admin_console_foundation`), PostgreSQL 17.6, with 57 recorded migrations and no organic feed tables.
+- `20261103000000_seo26_public_intelligence_feed.sql` is a new forward-only migration, runtime-validated locally and authorized for the dormant foundation release. Its final SHA-256 is `27CF5508A6D3F00D9FE6BF21369480664747020AA5B1884BBA47C85CB401186E`.
 - No source policies, topics, episodes, candidates, memberships, customer rows, or publication settings were written.
 - The existing `stash@{0}` and dirty primary checkout were not accessed or changed.
-- No SEO-2.6 PR was opened, merged, or deployed. Production activation is blocked by missing source-rights decisions, the empty public read model, and unavailable local PostgreSQL migration validation.
+- The release scope is the dormant private foundation and Admin read surface. Source-policy approval, ingestion, candidate evaluation, and public publication remain separately gated and inactive.
 
 ## Legacy Layer 13B decisions
 
@@ -52,7 +52,7 @@ The existing SEO-2 independent episode measurement is reused. It requires a reli
 
 Lineage remains relational: source item/conversation/evidence nodes → episode → verified duplicate/event links → global topic/entity → candidate evaluation → normalized episode contribution refs. No raw source is copied into SEO tables. Topic identity uses a global `intelligence_family`, not a customer product identity.
 
-The pure `evaluateReviewedPublicCandidate()` adapter validates reviewed global topic identity, attributable topic privacy/copyright review, and each source policy, maps only accepted episodes into `measureIndependentEpisodes()` and the existing `evaluateOrganicEligibility()` function, preserves normalized episode references, and applies Search Console priority only after eligibility. It does not infer topics or source rights and does not write data. Production materialization is not active because the migration and all source policies are still pending.
+The pure `evaluateReviewedPublicCandidate()` adapter validates reviewed global topic identity, attributable topic privacy/copyright review, and each source policy, maps only accepted episodes into `measureIndependentEpisodes()` and the existing `evaluateOrganicEligibility()` function, preserves normalized episode references, and applies Search Console priority only after eligibility. It does not infer topics or source rights and does not write data. No production materializer or evaluation schedule is activated; source policies remain unreviewed.
 
 ## Production read-only inventory (2026-09-30)
 
@@ -93,8 +93,12 @@ Pre-apply requirements:
 
 Containment: if the migration transaction fails, make no follow-up history edits and keep the release blocked. If it is later approved and applies but an issue is detected before any policy/evidence/candidate data is seeded, keep all policies `unknown`, do not run the materializer, revoke the migration's service-role grants and reviewer RPC execution through a separately reviewed forward migration, and disable the Admin readiness entry if needed. Do not delete migration history or reverse tables that may have acquired data. If a failure occurs after data is present, preserve the records and use a reviewed forward correction; involve the Supabase operator for point-in-time recovery only if the database itself is damaged.
 
-The current environment has no local `psql`, Docker, or installed PostgreSQL parser, so an isolated SQL execution was not possible. The forward migration must not be applied based solely on static tests or a CLI dry run.
+The isolated runtime rehearsal used Supabase CLI 2.75.0 and PostgreSQL 17.6 on Docker. Its temporary migration sequence contained the 57 production-valid migrations through `20261102000000`, with `20261027000000`, `20261028000000`, and `20261029000000` excluded. The baseline, candidate migration, containment reset to the baseline, and complete clean rerun succeeded. The temporary stack and data volumes were removed afterward.
+
+Runtime verification found and fixed two SQL defects in commit `0cd3e1c8691531eea3cfc034f0c5e0aa21d3e18c`: the provider-key constraint rejected the registered one-character `x` key, and Supabase default table ACLs retained overly broad `service_role` grants. The migration now accepts 1–80 character provider keys and revokes default service-role privileges before its explicit grants.
+
+The final schema has 11 RLS-enabled tables, 27 indexes, 129 constraints including 23 foreign keys, and 12 enabled triggers. All nine organic routines have empty search paths; PUBLIC execution and browser table grants are revoked. Service-role privileges match the declared per-table rights, and review-event access is SELECT-only. The summary RPC is service-role-only; the authenticated review RPC requires AAL2 and an active `organic_reviewer` membership. Local authorization fixtures were rolled back without creating candidates or evaluations. The focused organic, Admin, and Share Card migration contracts passed 17/17 tests. This establishes technical migration readiness; it does not approve evidence use or candidate evaluation.
 
 ## Current recommendation
 
-**NO-GO** for a controlled 20–50 page cohort. There are no approved source policies, public topic identities, public episodes, candidate evaluations, or candidate projections. The public-safe evidence count is zero for eligibility purposes, even though production has 322 raw source rows. Do not lower thresholds. The next gates are source-rights/privacy decisions, a reviewed source-to-family map, secure HMAC key provisioning, a production-shaped migration run, and a read-only evaluator result based on reviewed evidence.
+**Technically RELEASE-READY** for the dormant private foundation migration. **NO-GO** for a controlled 20–50 page cohort. There are no approved source policies, public topic identities, public episodes, candidate evaluations, or candidate projections. Do not lower thresholds. Evidence use, source-to-family mapping, secure HMAC key provisioning, and candidate evaluation require separate approvals; the dormant release does not begin those activities.
