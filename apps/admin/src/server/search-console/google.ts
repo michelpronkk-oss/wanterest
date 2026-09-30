@@ -1,6 +1,6 @@
 import "server-only";
 
-import { SEARCH_CONSOLE_PROPERTY, type SearchConsoleMetrics, type SearchConsoleRow } from "./model";
+import { SEARCH_CONSOLE_PROPERTY, type SearchConsoleMetrics, type SearchConsolePermission, type SearchConsoleRow } from "./model";
 
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const API_ROOT = "https://www.googleapis.com/webmasters/v3";
@@ -113,7 +113,7 @@ function normalizeMetrics(rows: SearchConsoleRow[]): SearchConsoleMetrics | null
 function safeProviderMessage(status: number, endpoint: "oauth" | "property" | "query"): string {
   if (endpoint === "oauth") return "Google could not refresh Search Console access. Review the production OAuth configuration.";
   if (status === 401) return "Google rejected Search Console authorization. Review the production OAuth configuration.";
-  if (status === 403) return "Search Console denied this read. Confirm the account has Restricted access to the Wanterest domain property and the API is enabled.";
+  if (status === 403) return "Google denied this Search Console read. Check the account's property access and confirm the Search Console API is enabled.";
   if (status === 404) return "The Wanterest Search Console domain property was not found.";
   if (status === 429) return "Search Console rate-limited this request. Try again later.";
   return "Search Console is temporarily unavailable. Try again later.";
@@ -168,7 +168,7 @@ export class GoogleSearchConsoleProvider {
     return token;
   }
 
-  async verifyProperty(): Promise<void> {
+  async verifyProperty(): Promise<SearchConsolePermission> {
     const accessToken = await this.getAccessToken();
     const endpoint = API_ROOT + "/sites/" + encodeURIComponent(SEARCH_CONSOLE_PROPERTY);
     let response: Response;
@@ -183,9 +183,10 @@ export class GoogleSearchConsoleProvider {
     }
     const value = await readJson(response, "property");
     const permission = isRecord(value) ? value.permissionLevel : null;
-    if (permission !== "siteRestrictedUser") {
-      throw new SearchConsoleProviderError("The connected Google account must have Restricted access to the Wanterest Search Console property.");
+    if (permission !== "siteRestrictedUser" && permission !== "siteFullUser" && permission !== "siteOwner") {
+      throw new SearchConsoleProviderError("The connected Google account needs verified read access to the Wanterest Search Console property.");
     }
+    return permission;
   }
 
   async query(request: SearchAnalyticsRequest): Promise<SearchAnalyticsResult> {

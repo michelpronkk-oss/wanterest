@@ -26,6 +26,8 @@ export type SearchConsoleFreshness = {
   detail: string;
 };
 
+export type SearchConsolePermission = "siteOwner" | "siteFullUser" | "siteRestrictedUser";
+
 type SnapshotBase = {
   property: string;
   source: string;
@@ -41,7 +43,7 @@ export type SearchConsoleUnavailableSnapshot = SnapshotBase & {
 
 export type SearchConsoleReadySnapshot = SnapshotBase & {
   state: "available" | "empty";
-  permission: "restricted";
+  permission: SearchConsolePermission;
   metrics: SearchConsoleMetrics | null;
   previousMetrics: SearchConsoleMetrics | null;
   queries: SearchConsoleRow[];

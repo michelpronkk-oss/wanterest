@@ -172,7 +172,7 @@ export async function getSearchConsoleSnapshot(options: {
   if (setup.state === "unavailable") return unavailable("unavailable", setup.reason, null, ranges);
 
   try {
-    await setup.provider.verifyProperty();
+    const permission = await setup.provider.verifyProperty();
     const [current, previous, freshness] = await Promise.all([
       loadWindow(setup.provider, ranges.period),
       loadWindow(setup.provider, ranges.comparison),
@@ -186,7 +186,7 @@ export async function getSearchConsoleSnapshot(options: {
       property: SEARCH_CONSOLE_PROPERTY,
       source: SEARCH_CONSOLE_SOURCE,
       checkedAt,
-      permission: "restricted",
+      permission,
       period: ranges.period,
       comparison: ranges.comparison,
       metrics,
