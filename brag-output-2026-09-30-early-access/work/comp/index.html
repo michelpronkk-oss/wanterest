@@ -309,7 +309,7 @@ WCARDS[6].style.boxShadow="0 26px 44px -26px rgba(17,17,16,.55),inset 0 0 0 2px 
 var WW=2568, WH=1046, C7=[6*324+150,95];
 function renderWall(t){
   // camera: from a close-up on card 07 (matches the Founding pass) pulling slowly back over the wall
-  var wIn=sg(t,18.55,18.85), z=sg(t,18.6,21.9), zp=1-Math.pow(1-z,2.2);
+  var wIn=sg(t,18.72,18.98), z=sg(t,18.6,21.9), zp=1-Math.pow(1-z,2.2);
   var s0=3.1, s1=.72, sc=s0*Math.pow(s1/s0,zp)*(1-.04*cio(sg(t,21.9,24.5)));
   var fx=L(C7[0],WW/2,cio(z)), fy=Math.max(L(C7[1],WH/2,cio(z)),(545-140)/sc);
   var dim=sg(t,21.35,21.8);
@@ -416,7 +416,7 @@ function render(t){
   var bcy=L(610,600,pOut2);
   var hover=Math.sin(Math.max(0,t-13.2)*1.4)*3*(1-pOut2);
   var byOut=sg(t,18.5,18.95);
-  C(R.back,440,600,bcx+ (960-bcx)*cio(byOut),bcy,{s:bs*(1+ei(byOut)*1.6),pre:"perspective(2200px) rotateY("+(bIn?bang+hover:0).toFixed(2)+"deg) rotateX("+(bIn?Math.sin(Math.max(0,t-13.2))*2:0).toFixed(2)+"deg)",op:bIn?1-sg(byOut,.55,1):0,b:byOut*14});
+  C(R.back,440,600,bcx+ (960-bcx)*cio(byOut),bcy,{s:bs*(1+ei(byOut)*1.6),pre:"perspective(2200px) rotateY("+(bIn?bang+hover:0).toFixed(2)+"deg) rotateX("+(bIn?Math.sin(Math.max(0,t-13.2))*2:0).toFixed(2)+"deg)",op:bIn?1-sg(t,18.58,18.76):0,b:byOut*18});
   var rv=apex(R.bA,R.bAk,R.bAp,t,13.0,1.0,{x:220-75,y:230-80,s:150},{x:38,y:36,s:24});
   R.bA.style.opacity=t>=13.0?1:0;
   R.bser.style.opacity=sg(t,rv.ser,rv.ser+.15).toFixed(3); R.bser.style.transform="translateY("+((1-idE(sg(t,rv.ser,rv.ser+.45)))*8).toFixed(1)+"px)";
@@ -429,7 +429,7 @@ function render(t){
   S(R.b6,{y:100-ei(yOut)*50,b:yOut*16,op:(t>=16.0?1:0)*(1-yOut)});
   words(B6W,t,[16.02,16.14],.7);
   var eIn=eo(sg(t,16.3,17.0));
-  C(R.pe,440,600,L(1600,1175,eIn)+ei(byOut)*900,600,{s:.96*L(.92,1,eIn),pre:"perspective(2200px) rotateY("+L(-24,0,eIn).toFixed(2)+"deg)",b:(1-eIn)*12+byOut*16,op:(eIn>0?1:0)*(1-sg(byOut,.4,1))});
+  C(R.pe,440,600,L(1600,1175,eIn)+ei(byOut)*900,600,{s:.96*L(.92,1,eIn),pre:"perspective(2200px) rotateY("+L(-24,0,eIn).toFixed(2)+"deg)",b:(1-eIn)*12+byOut*16,op:(eIn>0?1:0)*(1-sg(t,18.48,18.68))});
   var er=apex(R.eA,R.eAk,R.eAp,t,16.6,.8,{x:220-60,y:230-64,s:120},{x:38,y:36,s:24});
   R.eA.style.opacity=t>=16.6?1:0; R.eAk.style.opacity=R.eAp.style.opacity;
   R.eser.style.opacity=sg(t,er.ser,er.ser+.15).toFixed(3); R.elt.style.opacity=sg(t,er.lab,er.lab+.18).toFixed(3);
