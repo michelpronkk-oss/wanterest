@@ -2,8 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import robots from "../../src/app/robots";
-import sitemap from "../../src/app/sitemap";
+import { robotsForHostname, sitemapForHostname } from "../../src/shared/config/seo-host";
 import { organizationJsonLd, softwareApplicationJsonLd, websiteJsonLd } from "../../src/components/marketing/structured-data";
 import { SITE_ORIGIN, SUPPORT_EMAIL, X_PROFILE_URL } from "../../src/shared/config/site";
 
@@ -31,7 +30,7 @@ const NOINDEX_AUTH_FILES = [
 
 describe("sitemap.xml", () => {
   it("includes only indexable public marketing routes", () => {
-    const urls = sitemap().map((entry) => entry.url);
+    const urls = sitemapForHostname("www.wanterest.com").map((entry) => entry.url);
     expect(urls).toEqual([
       SITE_ORIGIN,
       `${SITE_ORIGIN}/product`,
@@ -45,14 +44,14 @@ describe("sitemap.xml", () => {
   });
 
   it("never includes app, auth, or API routes", () => {
-    const urls = sitemap().map((entry) => entry.url);
+    const urls = sitemapForHostname("www.wanterest.com").map((entry) => entry.url);
     for (const url of urls) {
       expect(url).not.toMatch(/\/app\/|\/login|\/signup|\/start|\/api\/|\/auth\//);
     }
   });
 
   it("only assigns lastModified where a real, meaningful date is shown on the page", () => {
-    const entries = sitemap();
+    const entries = sitemapForHostname("www.wanterest.com");
     const withDate = entries.filter((entry) => entry.lastModified !== undefined);
     expect(withDate.map((entry) => entry.url)).toEqual([
       `${SITE_ORIGIN}/privacy`,
@@ -64,22 +63,43 @@ describe("sitemap.xml", () => {
 
 describe("robots.txt", () => {
   it("allows public crawling and references the sitemap on the canonical marketing host", () => {
-    const result = robots();
+    const result = robotsForHostname("www.wanterest.com");
     const rules = Array.isArray(result.rules) ? result.rules[0] : result.rules;
     expect(rules?.allow).toBe("/");
     expect(rules?.disallow).toEqual(expect.arrayContaining(["/app/", "/login", "/signup", "/start", "/forgot-password", "/auth/", "/api/"]));
     expect(result.sitemap).toBe(`${SITE_ORIGIN}/sitemap.xml`);
     expect(result.host).toBe(SITE_ORIGIN);
+    const searchRule = Array.isArray(result.rules) ? result.rules.find((rule) => rule.userAgent === "OAI-SearchBot") : undefined;
+    expect(searchRule?.allow).toBe("/");
+    expect(searchRule?.disallow).toEqual(expect.arrayContaining(["/admin-internal", "/api/"]));
   });
 
   it("does not disallow the homepage or any indexable marketing page", () => {
-    const result = robots();
+    const result = robotsForHostname("www.wanterest.com");
     const rules = Array.isArray(result.rules) ? result.rules[0] : result.rules;
     const disallow = Array.isArray(rules?.disallow) ? rules.disallow : [rules?.disallow].filter(Boolean);
     for (const path of ["/", "/product", "/pricing", "/about", "/contact", "/privacy", "/terms", "/cookies"]) {
       expect(disallow.some((rule) => rule && path.startsWith(rule as string) && rule !== "/")).toBe(false);
     }
   });
+
+  it("does not change GPTBot's existing inherited policy while allowing ChatGPT Search", () => {
+    const result = robotsForHostname("www.wanterest.com");
+    const rules = Array.isArray(result.rules) ? result.rules : [result.rules];
+    expect(rules.some((rule) => rule.userAgent === "GPTBot")).toBe(false);
+    expect(rules.some((rule) => rule.userAgent === "OAI-SearchBot")).toBe(true);
+  });
+
+  it.each(["app.wanterest.com", "admin.wanterest.com", "wanterest-git-main.vercel.app"])(
+    "disallows all crawling and omits the public sitemap on non-marketing host %s",
+    (hostname) => {
+      const robots = robotsForHostname(hostname);
+      const rules = Array.isArray(robots.rules) ? robots.rules[0] : robots.rules;
+      expect(rules?.disallow).toBe("/");
+      expect(robots.sitemap).toBeUndefined();
+      expect(sitemapForHostname(hostname)).toEqual([]);
+    },
+  );
 });
 
 describe("structured data", () => {
@@ -125,6 +145,17 @@ describe("marketing page metadata", () => {
     const source = read("src/app/page.tsx");
     expect(source).toContain("title: { absolute: DEFAULT_TITLE }");
     expect(source).toContain('alternates: { canonical: "/" }');
+  });
+});
+
+describe("illustrative public product data", () => {
+  it("visibly identifies homepage, product, and about-page figures as examples", () => {
+    const home = read("src/components/marketing/marketing-home.tsx");
+    const product = read("src/app/product/page.tsx");
+    const about = read("src/app/about/page.tsx");
+    expect(home).toContain("not live customer or market data");
+    expect(product).toContain("not live customer or market data");
+    expect(about).toContain("not live customer or market measurements");
   });
 });
 

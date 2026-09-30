@@ -85,26 +85,31 @@ export default function ProductPage() {
             </div>
           </div>
 
-          <div className="marketing-product-hero-visual" aria-hidden="true">
-            <div className="marketing-product-hero-visual-glow" />
+          <div className="marketing-product-hero-visual-wrap">
+            <div className="marketing-product-hero-visual" aria-hidden="true">
+              <div className="marketing-product-hero-visual-glow" />
 
-            <div className="marketing-product-movement-chip">
-              <span className="marketing-product-movement-chip-label">MARKET MOVEMENT</span>
-              <span className="marketing-product-movement-chip-value">+31%</span>
-            </div>
-
-            <svg className="marketing-product-hero-trajectory" viewBox="0 0 500 200" preserveAspectRatio="none">
-              <path d="M -10,150 C 60,158 90,130 140,132 C 190,134 210,90 270,92 C 330,94 350,50 420,42 C 460,37 480,30 510,20" fill="none" stroke="#D7FF3D" strokeWidth="2" opacity="0.35" />
-              <circle cx="420" cy="42" r="4" fill="#D7FF3D" opacity="0.9" />
-            </svg>
-
-            <div className="marketing-product-demand-card">
-              <div className="marketing-product-demand-card-eyebrow">
-                <span className="marketing-product-demand-card-dot" />
-                SWITCHING INTENT · 94%
+              <div className="marketing-product-movement-chip">
+                <span className="marketing-product-movement-chip-label">MARKET MOVEMENT</span>
+                <span className="marketing-product-movement-chip-value">+31%</span>
               </div>
-              <p className="marketing-product-demand-card-quote">&ldquo;Looking for a cheaper HubSpot alternative with SSO.&rdquo;</p>
+
+              <svg className="marketing-product-hero-trajectory" viewBox="0 0 500 200" preserveAspectRatio="none">
+                <path d="M -10,150 C 60,158 90,130 140,132 C 190,134 210,90 270,92 C 330,94 350,50 420,42 C 460,37 480,30 510,20" fill="none" stroke="#D7FF3D" strokeWidth="2" opacity="0.35" />
+                <circle cx="420" cy="42" r="4" fill="#D7FF3D" opacity="0.9" />
+              </svg>
+
+              <div className="marketing-product-demand-card">
+                <div className="marketing-product-demand-card-eyebrow">
+                  <span className="marketing-product-demand-card-dot" />
+                  SWITCHING INTENT · 94%
+                </div>
+                <p className="marketing-product-demand-card-quote">&ldquo;Looking for a cheaper HubSpot alternative with SSO.&rdquo;</p>
+              </div>
             </div>
+            <p className="marketing-illustrative-note">
+              Product visuals and figures on this page are illustrative examples, not live customer or market data.
+            </p>
           </div>
         </section>
 

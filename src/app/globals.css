@@ -1390,6 +1390,9 @@ body {
 /* About page */
 .marketing-about-hero { padding-top: 96px; padding-bottom: 88px; align-items: center; }
 .marketing-about-hero-copy { flex: 0 0 48%; }
+.marketing-about-hero-visual-wrap { flex: 1 1 0; min-width: 0; }
+.marketing-about-hero-visual-wrap .marketing-about-hero-visual { width: 100%; }
+.marketing-about-hero-visual-wrap .marketing-illustrative-note { margin-top: 12px; }
 .marketing-about-hero-title { font-family: var(--font-archivo), sans-serif; font-weight: 800; font-size: clamp(40px, 4.5vw, 52px); line-height: 1.08; letter-spacing: -0.03em; margin: 0 0 22px; }
 .marketing-about-hero-body { font-size: 16.5px; color: var(--color-ink-muted); line-height: 1.6; max-width: 440px; margin: 0; }
 .marketing-about-hero-visual { flex: 1; position: relative; background: #111110; border-radius: 20px; padding: 44px; min-height: 340px; overflow: hidden; }
@@ -1430,7 +1433,7 @@ body {
 .marketing-about-closing-link:hover { color: #f5f4ee; }
 
 @media (max-width: 860px) {
-  .marketing-about-hero-copy, .marketing-about-hero-visual { flex: 1 1 auto; max-width: 100%; }
+  .marketing-about-hero-copy, .marketing-about-hero-visual-wrap { flex: 1 1 auto; max-width: 100%; width: 100%; }
   .marketing-about-belief-label, .marketing-about-belief-copy { flex: 1 1 auto; max-width: 100%; }
   .marketing-about-principles-grid { grid-template-columns: 1fr; }
   .marketing-about-closing-inner { align-items: flex-start; }
@@ -1483,6 +1486,9 @@ body {
 /* 1. Hero */
 .marketing-product-hero { display: flex; gap: 56px; max-width: 1240px; margin: 0 auto; padding: 96px 32px 88px; align-items: center; }
 .marketing-product-hero-copy { flex: 0 0 47%; }
+.marketing-product-hero-visual-wrap { flex: 1 1 0; min-width: 0; }
+.marketing-product-hero-visual-wrap .marketing-product-hero-visual { width: 100%; }
+.marketing-product-hero-visual-wrap .marketing-illustrative-note { margin-top: 12px; }
 .marketing-product-hero-title { font-family: var(--font-archivo), sans-serif; font-weight: 800; font-size: clamp(36px, 4.2vw, 50px); line-height: 1.1; letter-spacing: -0.03em; margin: 0 0 22px; }
 .marketing-product-hero-body { font-size: 16.5px; color: var(--color-ink-muted); line-height: 1.6; max-width: 440px; margin: 0 0 32px; }
 .marketing-product-hero-actions { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
@@ -1617,7 +1623,7 @@ body {
 
 @media (max-width: 860px) {
   .marketing-product-hero { flex-direction: column; padding: 72px 20px 64px; gap: 40px; }
-  .marketing-product-hero-copy, .marketing-product-hero-visual { flex: 1 1 auto; max-width: 100%; }
+  .marketing-product-hero-copy, .marketing-product-hero-visual-wrap { flex: 1 1 auto; max-width: 100%; width: 100%; }
   .marketing-product-hero-title { font-size: 36px; }
   .marketing-product-section { padding: 56px 20px; }
   .marketing-product-flow { grid-template-columns: 1fr; gap: 28px; }
@@ -1748,7 +1754,8 @@ body {
    Its canvas is the "Today" overview from "Wanterest App Redesign.dc.html", laid out at the
    design's native app width (~1320px) and scaled down by --app-scale, so the dashboard keeps its
    real proportions. Each breakpoint picks a scale that keeps roughly that native width. */
-.marketing-hero-preview-slot { position: relative; z-index: 1; flex: 1 0 120px; display: flex; justify-content: center; margin-top: 32px; }
+.marketing-hero-preview-group { position: relative; z-index: 1; flex: 1 0 120px; width: 100%; display: flex; flex-direction: column; align-items: center; margin-top: 32px; }
+.marketing-hero-preview-slot { position: relative; z-index: 1; width: 100%; display: flex; justify-content: center; }
 .marketing-hero-preview { --app-scale: 0.8;width: min(1120px, calc(100% - 64px)); height: 420px; flex-shrink: 0; overflow: hidden; border-radius: 16px 16px 0 0; background: #f7f6f1; box-shadow: 0 -24px 70px -30px rgba(17, 17, 16, 0.28), 0 0 0 1px rgba(17, 17, 16, 0.09); color: var(--color-ink); text-align: left; }
 .marketing-app-canvas { width: calc(100% / var(--app-scale)); transform: scale(var(--app-scale)); transform-origin: 0 0; text-align: left; }
 .marketing-app-chrome { height: 34px; display: flex; align-items: center; gap: 12px; padding: 0 14px; background: #ffffff; border-bottom: 1px solid rgba(17, 17, 16, 0.08); }
@@ -1898,7 +1905,9 @@ body {
   .marketing-hero-audience { flex-direction: column; gap: 10px; margin-top: 52px; }
   .marketing-hero-avatar { width: 26px; height: 26px; margin-left: -7px; }
   .marketing-hero-audience-copy { font-size: 12px; line-height: 1.4; text-align: center; }
-  .marketing-hero-preview-slot { flex: 1 0 auto; flex-direction: column; margin: 28px 14px 16px; min-width: 0; }
+  .marketing-hero-preview-group { flex: 1 0 auto; width: calc(100% - 28px); margin: 28px 14px 16px; min-width: 0; }
+  .marketing-hero-preview-slot { flex: 1 0 auto; flex-direction: column; margin: 0; min-width: 0; }
+  .marketing-hero-preview-group > .marketing-illustrative-note { width: 100%; }
   .marketing-hero-preview { display: none; }
   /* Phones: one light "Today" card rising from the glow — white surface, hairlines, ink type and
      lime only as the signal highlight. Inset 14px and fully rounded, like the stage. */
@@ -2118,6 +2127,9 @@ body {
 
 /* Beyond Signals tabs */
 .marketing-beyond-visual { max-width: var(--marketing-wide-max); margin: 0 auto; }
+.marketing-illustrative-note { max-width: var(--marketing-wide-max); margin: 12px auto 0; padding-left: 12px; border-left: 2px solid var(--color-accent); color: var(--color-ink-muted); font-size: 12px; line-height: 1.5; text-wrap: pretty; }
+.marketing-hero-preview-group > .marketing-illustrative-note { width: min(1120px, calc(100% - 64px)); margin-top: 10px; }
+.marketing-beyond-disclosure { padding-left: 12px; }
 .marketing-tabs { display: inline-flex; gap: 2px; background: var(--color-chip); border-radius: 20px; padding: 4px; max-width: 100%; overflow-x: auto; }
 .marketing-tab { display: flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 600; padding: 10px 18px; border-radius: 16px; cursor: pointer; white-space: nowrap; background: transparent; color: var(--color-ink-muted); border: 0; font: inherit; transition: background 0.2s ease, color 0.2s ease; }
 .marketing-tab.is-active { background: var(--color-ink); color: var(--color-dark-ink); }
