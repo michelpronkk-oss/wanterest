@@ -1,7 +1,7 @@
 # Original score for the Wanterest film: 120 BPM, F minor, arranged to the picture.
 import numpy as np, wave
 from scipy.signal import butter, sosfilt, lfilter, fftconvolve
-SR=48000; DUR=24.5; N=int(DUR*SR); rng=np.random.default_rng(11)
+SR=48000; DUR=22.0; N=int(DUR*SR); rng=np.random.default_rng(11)
 T=np.arange(N)/SR
 def hz(m): return 440*2**((m-69)/12)
 def buf(): return np.zeros((N,2))
@@ -81,44 +81,44 @@ DUR_=DUR
 # ---------- arrangement: Early Access film (120 BPM, Db major colour) ----------
 CH={'Db9':[49,53,56,60,63],'Bbm9':[49,53,56,58,60],'Gb7':[49,53,54,58],'Ab6':[48,51,53,56]}
 ROOT={'Db9':37,'Bbm9':34,'Gb7':30,'Ab6':32}
-BARS=['Db9','Bbm9','Gb7','Ab6','Db9','Bbm9','Gb7','Ab6','Db9','Bbm9','Gb7','Db9']
+BARS=['Db9','Bbm9','Gb7','Ab6','Db9','Bbm9','Gb7','Ab6','Db9','Bbm9','Db9']
 def chord_at(t): return BARS[min(int(t//2),len(BARS)-1)]
-KICK=[(2.0,12.25),(14.0,21.75)]
+KICK=[(2.0,12.25),(14.0,19.75)]
 kick_env=np.zeros(N)
 for i in range(int(DUR/BEAT)+1):
     t=i*BEAT
-    if inr(t,KICK) or abs(t-22.0)<1e-6:
+    if inr(t,KICK) or abs(t-20.0)<1e-6:
         add(drums,K,t,.95); j=int(t*SR); m=min(N,j+int(.28*SR)); kick_env[j:m]=np.maximum(kick_env[j:m],np.exp(-np.arange(m-j)/SR*9))
-    if inr(t,[(4.0,12.25),(14.0,21.75)]) and (t%2 in (0.5,1.5)):
+    if inr(t,[(4.0,12.25),(14.0,19.75)]) and (t%2 in (0.5,1.5)):
         c=CL*.5; add(drums,c,t,1,.1); add(send,c,t,.5)
 def shaker(g):
     n=int(.07*SR); tt=np.arange(n)/SR; return bp(rng.standard_normal(n),4000,9000)*np.minimum(1,tt/.012)*np.exp(-tt/.022)*g
 for i in range(int(DUR/.125)):
     t=i*.125
-    if t>=21.75: break
+    if t>=19.75: break
     off=abs((t%0.5)-0.25)<1e-6
-    if off and inr(t,[(2.0,12.25),(14.0,21.75)]): add(drums,hat(.045,.3),t,1,.35)
-    if inr(t,[(2.0,12.25),(14.0,21.75)]): add(drums,shaker(.16*(1.3 if i%2 else .8)),t,1,-.35)
+    if off and inr(t,[(2.0,12.25),(14.0,19.75)]): add(drums,hat(.045,.3),t,1,.35)
+    if inr(t,[(2.0,12.25),(14.0,19.75)]): add(drums,shaker(.16*(1.3 if i%2 else .8)),t,1,-.35)
     if inr(t,[(12.25,14.0)]) and i%2==0: add(drums,tick(96,.012)*.09,t,1,.2); add(send,tick(96,.012)*.05,t)
 air=lpf(hp(rng.standard_normal((int(2.2*SR),2)),3000),9000)*np.exp(-np.arange(int(2.2*SR))/SR*2.2)[:,None]
-add(fx,air*.10,2.0); add(fx,air*.08,14.0); add(fx,air*.07,18.6); add(fx,air*.09,22.0)
+add(fx,air*.10,2.0); add(fx,air*.08,14.0); add(fx,air*.09,20.0)
 # bass
 for i in range(int(DUR/BEAT)):
     t=i*BEAT+.25
     if inr(t,KICK): add(bassb,bass(ROOT[chord_at(t)],.19),t,.55)
 n=int(1.25*SR); tt=np.arange(n)/SR; s=np.sin(2*np.pi*hz(30)*tt)*np.minimum(1,tt/.25)*np.minimum(1,(1.25-tt)/.05); add(bassb,s,12.25,.3); add(bassb,s,13.25,.3)
-add(bassb,bass(37,2.2),22.0,.6)
+add(bassb,bass(37,2.2),20.0,.6)
 n=int(1.0*SR); tt=np.arange(n)/SR; add(bassb,np.sin(2*np.pi*np.cumsum(55*(1+np.exp(-tt*5)))/SR)*np.exp(-tt*3),2.0,.45)
 # pad
 for b,name in enumerate(BARS):
-    t=b*2.0; dur=2.0 if b<11 else 2.5
+    t=b*2.0; dur=2.0 if b<10 else 2.5
     for m in CH[name]: add(pad,pad_note(m,dur),t,.045)
-    if b>=11: break
-cut=ramp([(0,260),(1.9,1600),(2.0,2200),(12.1,2400),(12.4,480),(13.95,2400),(14.05,2700),(18.5,2700),(21.0,3400),(21.7,2400),(22,2600),(24.5,800)])
+    if b>=10: break
+cut=ramp([(0,260),(1.9,1600),(2.0,2200),(12.1,2400),(12.4,480),(13.95,2400),(14.05,2700),(19.7,2400),(20,2600),(22,800)])
 pad=tvlp(pad,cut)
 # arp (new pattern)
 PAT=[0,3,1,4,2,3,1,2]
-def arp_on(t): return inr(t,[(3.0,12.25),(14.0,21.75)])
+def arp_on(t): return inr(t,[(3.0,12.25),(14.0,19.75)])
 for i in range(int(DUR/.125)):
     t=i*.125
     if not arp_on(t): continue
@@ -170,15 +170,10 @@ add(fx,sh,14.55,.02,.4)
 # 6. Yours forever (16.0): Early 100 enters 16.3, ink apex; benefit chips 17.5 / 18.0
 stab('Db9',16.0,.07); add(fx,whoosh(.6),16.2,.05); thud(16.89,.2); add(ui,tick(92,.05),17.36,.045)
 add(ui,tick(89,.06),17.5,.05); add(ui,tick(93,.06),18.0,.05)
-# 6b. Members Wall: push into the pass (18.5), slow pull-back with a swell; cards arrive outward from 07
-add(fx,whoosh(.7),18.35,.06); add(fx,swell(1.2,CH['Gb7']),19.0,.05); bellnote(92,18.8,.05,.1)
-for k in range(10): add(ui,tick(96+(k%4)*2,.02)*.6,18.85+k*.12,.025,-.4+.08*k)
-add(ui,tick(89,.06),19.6,.04)
-n=int(2.4*SR); tt=np.arange(n)/SR; shim=bp(rng.standard_normal(n),5000,11000)*np.sin(np.pi*tt/2.4)**2; add(fx,shim,19.0,.018,.3)
-# 7. CTA (+2.5s): whoosh 21.3, words 21.5, final chord 22.0, click 23.0 + lime ripple chime
-add(fx,whoosh(.55),21.3,.05); add(fx,swell(.5,CH['Db9']),21.95,.06)
-fin=sum(pluck(m+12,3.0,2.6) for m in CH['Db9']+[73]); add(fx,fin,22.0,.14); add(send,fin,22.0,.16)
-add(ui,mclick(),23.0,.2); bellnote(96,23.02,.06); bellnote(101,23.1,.035,.2)
+# 7. CTA: whoosh 18.85, words 19.0, final chord 20.0 (button lands), click 20.5 + lime ripple chime
+add(fx,whoosh(.55),18.8,.05); add(fx,swell(.5,CH['Db9']),19.45,.06)
+fin=sum(pluck(m+12,3.0,2.6) for m in CH['Db9']+[73]); add(fx,fin,20.0,.14); add(send,fin,20.0,.16)
+add(ui,mclick(),20.5,.2); bellnote(96,20.52,.06); bellnote(101,20.6,.035,.2)
 add(send,ui,0,.6)
 # mix
 duck=1-.6*kick_env
