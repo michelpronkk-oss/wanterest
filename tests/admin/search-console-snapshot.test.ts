@@ -18,7 +18,7 @@ function mockGoogle(options: { empty?: boolean; freshness?: "provisional" | "set
   const fetcher: typeof fetch = vi.fn(async (input, init) => {
     const url = String(input);
     if (url === "https://oauth2.googleapis.com/token") return Response.json({ access_token: "snapshot-access-token" });
-    if (url.endsWith("/sites/sc-domain%3Awanterest.com")) return Response.json({ permissionLevel: "siteRestrictedUser" });
+    if (url.endsWith("/sites/sc-domain%3Awanterest.com")) return Response.json({ permissionLevel: "siteOwner" });
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     requests.push(body);
     const dimensions = body.dimensions as string[] | undefined;
@@ -78,6 +78,7 @@ describe("Search Console snapshot", () => {
     expect(ranges.comparison).toEqual({ startDate: "2026-08-02", endDate: "2026-08-29", days: 28 });
     expect(snapshot.state).toBe("available");
     if (snapshot.state !== "available") return;
+    expect(snapshot.permission).toBe("siteOwner");
     expect(snapshot.metrics).toEqual({ clicks: 12, impressions: 440, ctr: 12 / 440, position: 9.3 });
     expect(snapshot.freshness).toMatchObject({ state: "provisional", latestAvailableDate: "2026-09-29", firstIncompleteDate: "2026-09-28" });
     expect(snapshot.period).toEqual(ranges.period);

@@ -102,13 +102,22 @@ describe("Google Search Console provider", () => {
     await expect(setup.provider.query({ startDate: "2026-09-01", endDate: "2026-09-28", dimensions: ["query"], dataState: "final" }))
       .rejects.toThrow("invalid metrics");
   });
-  it("requires Restricted property access", async () => {
+  it.each(["siteOwner", "siteFullUser", "siteRestrictedUser"] as const)("accepts Google read permission %s and reports the actual role", async (permissionLevel) => {
     const fetcher: typeof fetch = vi.fn(async (input) => String(input) === "https://oauth2.googleapis.com/token"
       ? Response.json({ access_token: "temporary-token" })
-      : Response.json({ permissionLevel: "siteFullUser" }));
+      : Response.json({ permissionLevel }));
     const setup = createSearchConsoleSetup({ environment: credentials, fetcher });
     if (setup.state !== "configured") throw new Error("expected configured provider");
-    await expect(setup.provider.verifyProperty()).rejects.toThrow("must have Restricted access");
+    await expect(setup.provider.verifyProperty()).resolves.toBe(permissionLevel);
+  });
+
+  it("rejects an unverified Search Console property role with accurate guidance", async () => {
+    const fetcher: typeof fetch = vi.fn(async (input) => String(input) === "https://oauth2.googleapis.com/token"
+      ? Response.json({ access_token: "temporary-token" })
+      : Response.json({ permissionLevel: "siteUnverifiedUser" }));
+    const setup = createSearchConsoleSetup({ environment: credentials, fetcher });
+    if (setup.state !== "configured") throw new Error("expected configured provider");
+    await expect(setup.provider.verifyProperty()).rejects.toThrow("verified read access");
   });
 
   it("sanitizes Google error bodies and never returns credential values", async () => {
@@ -121,7 +130,8 @@ describe("Google Search Console provider", () => {
     try { await setup.provider.verifyProperty(); } catch (error) { caught = error; }
     expect(caught).toBeInstanceOf(SearchConsoleProviderError);
     const message = (caught as Error).message;
-    expect(message).toContain("Restricted access");
+    expect(message).toContain("Google denied this Search Console read");
+    expect(message).not.toContain("Restricted access");
     expect(message).not.toContain("fixture-client-secret");
     expect(message).not.toContain("private-search-phrase");
   });

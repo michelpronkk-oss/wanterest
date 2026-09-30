@@ -16,7 +16,7 @@ function ready(overrides: Partial<SearchConsoleReadySnapshot> = {}): SearchConso
     property: "sc-domain:wanterest.com",
     source: "Google Search Console · Search Analytics API",
     checkedAt: "2026-09-30T12:00:00.000Z",
-    permission: "restricted",
+    permission: "siteRestrictedUser",
     period: { startDate: "2026-08-30", endDate: "2026-09-26", days: 28 },
     comparison: { startDate: "2026-08-02", endDate: "2026-08-29", days: 28 },
     metrics: { clicks: 20, impressions: 400, ctr: 0.05, position: 10 },

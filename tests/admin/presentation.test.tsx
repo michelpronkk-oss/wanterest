@@ -39,7 +39,7 @@ const base = {
 function ready(overrides: Partial<SearchConsoleReadySnapshot> = {}): SearchConsoleReadySnapshot {
   const query = { key: "TEST FIXTURE demand intelligence", clicks: 3, impressions: 240, ctr: 3 / 240, position: 12 };
   return {
-    ...base, state: "available", permission: "restricted", rowLimit: 1000,
+    ...base, state: "available", permission: "siteRestrictedUser", rowLimit: 1000,
     metrics: { clicks: 12, impressions: 480, ctr: .025, position: 11.5 },
     previousMetrics: { clicks: 8, impressions: 320, ctr: .025, position: 12.5 },
     queries: [query, { ...query, key: "wanterest TEST FIXTURE", clicks: 9, ctr: 9 / 240, position: 3 }],
