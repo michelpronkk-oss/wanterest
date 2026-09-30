@@ -145,12 +145,13 @@ function Overview({ snapshot, sort }: { snapshot: SearchConsoleReadySnapshot; so
 
   return (
     <>
+      <nav className="section-nav" aria-label="Search Console sections"><a href="#performance">Performance</a><a href="#opportunities">Opportunities</a><a href="#queries">Queries</a><a href="#pages">Pages</a><a href="#query-pages">Query / page evidence</a></nav>
       {snapshot.state === "empty" && <div className="seo-state-banner" role="status"><strong>No rows in the finalized period.</strong><span>This is an empty API result, not a confirmed zero-traffic measurement. Google may omit anonymized or low-volume query rows.</span></div>}
       <section className="seo-connection-row" aria-label="Search Console connection">
         <span className="seo-connected-dot" aria-hidden="true" />
         <strong>Connected</strong><span>Restricted property access</span><span className="seo-property">{snapshot.property}</span>
       </section>
-      <section className="metric-grid seo-metric-grid" aria-label="Search Console performance">
+      <section className="metric-grid seo-metric-grid" id="performance" aria-label="Search Console performance">
         {tiles.map((tile) => <article className="metric-card seo-metric" key={tile.label}>
           <div className="metric-top"><span>{tile.label}</span><span className="seo-final-tag">FINAL</span></div>
           <strong>{tile.value}</strong>
@@ -171,7 +172,7 @@ function Overview({ snapshot, sort }: { snapshot: SearchConsoleReadySnapshot; so
         </div>
         <p className="seo-footnote">Classification recognizes the literal brand forms “wanterest” and “wanterest.com” at word boundaries. Totals describe only returned query rows; anonymized queries and rows outside the set returned by the API are not inferred.</p>
       </section> : <section className="panel seo-brand-panel"><div className="panel-heading"><div><p className="eyebrow">QUERY CLASSIFICATION</p><h2>Branded and non-branded</h2></div></div><DataState state="empty" detail="No query rows are available for classification." /></section>}
-      <section className="panel seo-opportunities" aria-labelledby="opportunity-heading">
+      <section className="panel seo-opportunities" id="opportunities" aria-labelledby="opportunity-heading">
         <div className="panel-heading"><div><p className="eyebrow">PRIVATE OPPORTUNITY REPORT</p><h2 id="opportunity-heading">Review-worthy signals</h2></div><span className="panel-meta">Generated on request · no changes are applied</span></div>
         {report.opportunities.length === 0 ? <DataState state="empty" detail="No opportunity met the conservative evidence thresholds for these returned rows." /> :
           <div className="seo-opportunity-list">{report.opportunities.map((opportunity) => <article className="seo-opportunity" key={opportunity.id}>
@@ -218,13 +219,15 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
     <ConsoleShell context={context} active="/search-console">
       <PageHeading eyebrow="ORGANIC / SEARCH CONSOLE" title="Search, measured carefully." detail="Private, read-only Google Search performance and evidence-backed review signals." aside={<Link className="quiet-link" href="/">← Overview</Link>} />
       {snapshot.state === "not_configured" ? <section className="panel seo-setup-panel" aria-labelledby="gsc-not-configured">
-        <span className="seo-setup-mark" aria-hidden="true">○</span><p className="eyebrow">PRIVATE DATA SOURCE</p><h2 id="gsc-not-configured">Search Console not configured</h2>
+        <span className="seo-setup-mark" aria-hidden="true">↗</span><p className="eyebrow">PRIVATE DATA SOURCE · NOT CONNECTED</p><h2 id="gsc-not-configured">Search Console not configured</h2>
         <p>{snapshot.reason}</p><p>No search metrics or sample rows are shown. The page remains available for authorized Admin members while production OAuth access is configured.</p>
+        <div className="seo-setup-footer"><span>Google Search Console</span><span>Awaiting production configuration</span></div>
       </section> : null}
       {snapshot.state === "unavailable" ? <section className="panel seo-setup-panel" aria-labelledby="gsc-unavailable">
         <span className="seo-setup-mark" aria-hidden="true">◷</span><p className="eyebrow">SOURCE UNAVAILABLE</p><h2 id="gsc-unavailable">Search Console could not be read</h2>
         <p>{snapshot.reason}</p><p>Check the connection and try again. Credentials and raw Google responses are not included here.</p>
         <SourceStamp source={snapshot.source} range={snapshot.period.startDate + " – " + snapshot.period.endDate + " PT"} refreshedAt={snapshot.checkedAt} />
+        <a className="text-link" href="/search-console">Retry connection <span aria-hidden="true">↗</span></a>
       </section> : null}
       {snapshot.state === "available" || snapshot.state === "empty" ? <Overview snapshot={snapshot} sort={sort} /> : null}
     </ConsoleShell>
