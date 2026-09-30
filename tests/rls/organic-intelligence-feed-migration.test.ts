@@ -37,6 +37,11 @@ describe("SEO-2.6 private public-intelligence schema contract", () => {
     expect(migration).toContain("organic_public_source_family_event_collapse_required");
   });
 
+  it("accepts the registered one-character x provider key", () => {
+    expect(migration).toContain("provider_key ~ '^[a-z][a-z0-9_-]{0,79}$'");
+    expect(migration).toContain("('x','social_platform')");
+  });
+
   it("keeps global identities and canonical provenance separate from workspace products", () => {
     expect(migration).toContain("organic_public_entities");
     expect(migration).toContain("organic_public_topics");
@@ -55,7 +60,7 @@ describe("SEO-2.6 private public-intelligence schema contract", () => {
 
   it("locks every new table to server access and enables RLS", () => {
     expect(migration.match(/enable row level security/g)).toHaveLength(11);
-    expect(migration).toContain("from public,anon,authenticated");
+    expect(migration).toContain("from public,anon,authenticated,service_role");
     expect(migration).toContain("grant select,insert,update on public.organic_public_source_policies");
   });
 

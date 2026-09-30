@@ -41,7 +41,7 @@ insert into public.organic_public_source_families values
  ('first_party_company','First-party company source','first_party','May confirm supply claims but never counts as independent third-party demand evidence.');
 
 create table public.organic_public_source_policies (
-  provider_key text primary key check (provider_key ~ '^[a-z][a-z0-9_-]{1,79}$'),
+  provider_key text primary key check (provider_key ~ '^[a-z][a-z0-9_-]{0,79}$'),
   family_key text not null references public.organic_public_source_families(family_key) on delete restrict,
   policy_state text not null default 'unknown' check (policy_state in ('unknown','restricted','approved','blocked')),
   context_scope text not null default 'unknown' check (context_scope in ('unknown','context_independent_public','workspace_selected_public','tenant_private','first_party')),
@@ -700,7 +700,7 @@ alter table public.organic_candidate_review_events enable row level security;
 revoke all on public.organic_public_source_families,public.organic_public_source_policies,public.organic_public_entities,
  public.organic_public_topics,public.organic_public_viral_events,public.organic_public_episodes,public.organic_public_episode_links,
  public.organic_readiness_candidates,public.organic_readiness_evaluations,public.organic_candidate_evidence,public.organic_candidate_review_events
- from public,anon,authenticated;
+ from public,anon,authenticated,service_role;
 grant select on public.organic_public_source_families to service_role;
 grant select,insert,update on public.organic_public_source_policies,public.organic_public_entities,public.organic_public_topics,
  public.organic_public_viral_events,public.organic_public_episodes,public.organic_public_episode_links,public.organic_readiness_candidates to service_role;
