@@ -79,7 +79,12 @@ function Hero({ accessState }: { accessState: HomepageAccessState }) {
             </p>
           </div>
         </div>
-        <HeroDashboardPreview />
+        <div className="marketing-hero-preview-group">
+          <HeroDashboardPreview />
+          <p className="marketing-illustrative-note">
+            Product preview · Figures and activity are illustrative examples, not live customer or market data.
+          </p>
+        </div>
       </div>
     </header>
   );
@@ -364,6 +369,9 @@ function BeyondSignals() {
       <div className="marketing-beyond-visual">
         <BeyondSignalsTabs />
       </div>
+      <p className="marketing-illustrative-note marketing-beyond-disclosure">
+        Illustrative examples · Figures are not live customer or market measurements.
+      </p>
     </section>
   );
 }

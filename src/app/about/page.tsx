@@ -38,25 +38,30 @@ export default function AboutPage() {
               Wanterest turns real public conversations into qualified demand intelligence, so teams can see what buyers want, where markets are moving, and what to act on next.
             </p>
           </div>
-          <div className="marketing-about-hero-visual" aria-hidden="true">
-            <div className="marketing-about-hero-visual-glow" />
-            <svg className="marketing-about-hero-visual-line" viewBox="0 0 500 260" width="100%" height="100%" preserveAspectRatio="none" focusable="false">
-              <polyline points="20,190 110,170 190,200 270,130 350,150 430,70" fill="none" stroke="#d7ff3d" strokeWidth="1.5" opacity="0.22" />
-            </svg>
-            <div className="marketing-about-hero-visual-content">
-              <div className="marketing-about-quote-card">
-                <div className="marketing-about-quote-eyebrow">
-                  <span className="marketing-about-quote-dot" />
-                  QUALIFIED DEMAND
+          <div className="marketing-about-hero-visual-wrap">
+            <div className="marketing-about-hero-visual" aria-hidden="true">
+              <div className="marketing-about-hero-visual-glow" />
+              <svg className="marketing-about-hero-visual-line" viewBox="0 0 500 260" width="100%" height="100%" preserveAspectRatio="none" focusable="false">
+                <polyline points="20,190 110,170 190,200 270,130 350,150 430,70" fill="none" stroke="#d7ff3d" strokeWidth="1.5" opacity="0.22" />
+              </svg>
+              <div className="marketing-about-hero-visual-content">
+                <div className="marketing-about-quote-card">
+                  <div className="marketing-about-quote-eyebrow">
+                    <span className="marketing-about-quote-dot" />
+                    QUALIFIED DEMAND
+                  </div>
+                  <p className="marketing-about-quote-text">&ldquo;Looking for a cheaper alternative with SSO.&rdquo;</p>
                 </div>
-                <p className="marketing-about-quote-text">&ldquo;Looking for a cheaper alternative with SSO.&rdquo;</p>
-              </div>
-              <div style={{ display: "flex", gap: 10, marginLeft: 16 }}>
-                <div className="marketing-about-movement-chip">
-                  MARKET MOVEMENT <strong>+28%</strong>
+                <div style={{ display: "flex", gap: 10, marginLeft: 16 }}>
+                  <div className="marketing-about-movement-chip">
+                    MARKET MOVEMENT <strong>+28%</strong>
+                  </div>
                 </div>
               </div>
             </div>
+            <p className="marketing-illustrative-note">
+              Illustrative product example · The figures shown are not live customer or market measurements.
+            </p>
           </div>
         </section>
 

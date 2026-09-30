@@ -1,17 +1,9 @@
 import type { MetadataRoute } from "next";
+import { headers } from "next/headers";
 
-import { SITE_ORIGIN } from "@/shared/config/site";
+import { robotsForHostname } from "@/shared/config/seo-host";
 
-export default function robots(): MetadataRoute.Robots {
-  return {
-    rules: {
-      userAgent: "*",
-      allow: "/",
-      // Disallow is a path-prefix match, so each entry also covers its sub-routes
-      // (e.g. "/forgot-password" covers "/forgot-password/update").
-      disallow: ["/app/", "/login", "/signup", "/start", "/forgot-password", "/auth/", "/api/"],
-    },
-    sitemap: `${SITE_ORIGIN}/sitemap.xml`,
-    host: SITE_ORIGIN,
-  };
+export default async function robots(): Promise<MetadataRoute.Robots> {
+  const requestHeaders = await headers();
+  return robotsForHostname(requestHeaders.get("host"));
 }

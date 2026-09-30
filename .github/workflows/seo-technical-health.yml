@@ -1,0 +1,80 @@
+name: SEO technical health
+
+on:
+  schedule:
+    - cron: "23 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  public-site-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Check public SEO and hostname boundaries
+        id: health
+        continue-on-error: true
+        env:
+          SEO_HEALTH_REPORT_PATH: ${{ runner.temp }}/seo-health-report.json
+        run: node scripts/seo-health.mjs
+
+      - name: Update the single open technical incident
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT_PATH: ${{ runner.temp }}/seo-health-report.json
+          ACTIONS_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          title="SEO technical health incident"
+          if [[ ! -s "$REPORT_PATH" ]]; then
+            echo "The health script did not produce a report." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          failed="$(jq -r '.summary.failed' "$REPORT_PATH")"
+          issues="$(gh issue list --state open --search 'is:open in:title "SEO technical health incident"' --json number,title)"
+          numbers="$(jq -r --arg title "$title" '.[] | select(.title == $title) | .number' <<< "$issues")"
+
+          if [[ "$failed" -gt 0 ]]; then
+            body_file="$RUNNER_TEMP/seo-health-incident.md"
+            {
+              echo "Daily public-site checks found technical SEO or hostname-boundary failures."
+              echo
+              echo "This issue is updated in place to avoid duplicate alerts. It contains public-route check identifiers and status details only."
+              echo
+              echo "Run: $ACTIONS_RUN_URL"
+              echo
+              echo "Failing checks:"
+              jq -r '.failures[] | "- `\(.id)` — \(.detail)"' "$REPORT_PATH"
+            } > "$body_file"
+
+            primary="$(head -n 1 <<< "$numbers" || true)"
+            if [[ -n "$primary" ]]; then
+              gh issue edit "$primary" --body-file "$body_file"
+              while IFS= read -r duplicate; do
+                [[ -z "$duplicate" || "$duplicate" == "$primary" ]] || gh issue close "$duplicate" --reason duplicate
+              done <<< "$numbers"
+            else
+              gh issue create --title "$title" --body-file "$body_file"
+            fi
+            jq -r '"SEO technical health: " + (.summary.passed|tostring) + " passed, " + (.summary.failed|tostring) + " failed."' "$REPORT_PATH" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.failures[] | "- `\(.id)`"' "$REPORT_PATH" >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::Public SEO technical health is degraded. The existing incident issue was updated."
+          else
+            while IFS= read -r issue; do
+              [[ -z "$issue" ]] || gh issue close "$issue" --reason completed
+            done <<< "$numbers"
+            jq -r '"SEO technical health: " + (.summary.passed|tostring) + " passed, 0 failed."' "$REPORT_PATH" >> "$GITHUB_STEP_SUMMARY"
+          fi

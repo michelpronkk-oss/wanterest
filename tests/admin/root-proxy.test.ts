@@ -33,6 +33,11 @@ describe("root hostname Proxy", () => {
     expect(updateSupabaseSession).toHaveBeenCalledWith(request);
     expect(createAdminProxyResponse).not.toHaveBeenCalled();
     expect(await response.text()).toBe("customer");
+    if (hostname === "www.wanterest.com") {
+      expect(response.headers.has("x-robots-tag")).toBe(false);
+    } else {
+      expect(response.headers.get("x-robots-tag")).toContain("noindex");
+    }
   });
 
   it("returns a non-cacheable not-found for the internal route on customer hosts", async () => {

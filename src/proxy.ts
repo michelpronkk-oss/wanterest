@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { resolveAdminHostRequest } from "@admin/host-routing";
 import { createAdminProxyResponse } from "@admin/proxy";
 import { updateSupabaseSession } from "@/server/providers/supabase/proxy";
+import { isCanonicalMarketingRequest } from "@/shared/config/seo-host";
 
 export async function proxy(request: NextRequest) {
   const decision = resolveAdminHostRequest({
@@ -24,7 +25,11 @@ export async function proxy(request: NextRequest) {
 
   if (decision.kind === "admin") return createAdminProxyResponse(request, decision.rewritePath);
 
-  return updateSupabaseSession(request);
+  const response = await updateSupabaseSession(request);
+  if (!isCanonicalMarketingRequest(request.headers.get("host") ?? request.nextUrl.hostname)) {
+    response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+  }
+  return response;
 }
 
 export const config = {
