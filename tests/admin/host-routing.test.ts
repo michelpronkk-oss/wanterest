@@ -22,6 +22,14 @@ describe("Admin hostname routing", () => {
     },
   );
 
+  it("rewrites Search Console only through the Admin hostname", () => {
+    expect(resolveAdminHostRequest({ hostname: "admin.wanterest.com", pathname: "/search-console", isVercel: true, vercelEnvironment: "production" }))
+      .toEqual({ kind: "admin", rewritePath: "/admin-internal/search-console" });
+    expect(resolveAdminHostRequest({ hostname: "app.wanterest.com", pathname: "/search-console", isVercel: true, vercelEnvironment: "production" }))
+      .toEqual({ kind: "customer" });
+    expect(resolveAdminHostRequest({ hostname: "app.wanterest.com", pathname: "/admin-internal/search-console", isVercel: true, vercelEnvironment: "production" }))
+      .toEqual({ kind: "blocked" });
+  });
   it.each(["preview", "development", ""])("denies admin routes on Vercel %s deployments", (vercelEnvironment) => {
     expect(resolveAdminHostRequest({ hostname: "admin.wanterest.com", pathname: "/login", isVercel: true, vercelEnvironment }))
       .toEqual({ kind: "blocked" });
