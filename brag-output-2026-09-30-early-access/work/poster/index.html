@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=1920, height=1080"><title>Wanterest Early Access poster</title>
+<style>
+@font-face{font-family:"Archivo";font-weight:800;src:url("assets/fonts/Archivo-800.ttf")}
+@font-face{font-family:"Sora";font-weight:600;src:url("assets/fonts/Sora-600.ttf")}
+@font-face{font-family:"Inter";font-weight:400;src:url("assets/fonts/Inter-400.ttf")}
+@font-face{font-family:"Inter";font-weight:700;src:url("assets/fonts/Inter-700.ttf")}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;overflow:hidden;background:#f3f2ec;font-family:"Inter";color:#111110;-webkit-font-smoothing:antialiased}
+#root{position:relative;width:1920px;height:1080px;overflow:hidden}
+.abs{position:absolute}
+#g1{position:absolute;left:-200px;top:-200px;width:2320px;height:1480px;background:radial-gradient(ellipse 62% 70% at 100% 100%,rgba(215,255,61,.85),rgba(215,255,61,.28) 42%,rgba(215,255,61,0) 72%)}
+#g2{position:absolute;left:-200px;top:-200px;width:2320px;height:1480px;background:radial-gradient(ellipse 40% 45% at 0% 110%,rgba(215,255,61,.3),rgba(215,255,61,0) 70%)}
+#grain{position:absolute;inset:-100px;background:url(assets/grain.png);opacity:.06;mix-blend-mode:multiply}
+#brand{left:120px;top:92px;display:flex;align-items:center;gap:14px;font:600 34px/1 "Sora";letter-spacing:-.02em}
+#brand svg{width:36px;height:36px}
+.eb{left:120px;top:250px;height:48px;padding:0 22px;border-radius:24px;background:#fff;box-shadow:inset 0 0 0 1px rgba(17,17,16,.1);display:flex;align-items:center;gap:12px;font:700 17px "Inter";letter-spacing:.18em;white-space:nowrap}
+.eb i{width:10px;height:10px;border-radius:50%;background:#d7ff3d;box-shadow:0 0 0 1.5px #111110;display:block}
+.hl{left:108px;font:800 146px/.94 "Archivo";letter-spacing:-.055em;white-space:nowrap}
+#ern{position:relative;display:inline-block;padding:0 .1em;isolation:isolate}
+#ern:before{content:"";position:absolute;left:0;right:0;top:.08em;bottom:-.02em;background:#d7ff3d;border-radius:.07em;z-index:-1}
+#sub{left:122px;top:760px;font:400 30px/1.35 "Inter";color:#3d3d37;width:780px}
+#sub b{color:#111110}
+#pass{left:1150px;top:180px;width:680px;height:470px;border-radius:30px;background:#111110;color:#f5f4ee;box-shadow:0 70px 130px -50px rgba(17,17,16,.6);transform:perspective(2400px) rotateY(-10deg) rotate(-2deg)}
+.plab{position:absolute;left:48px;top:44px;display:flex;align-items:center;gap:14px;font:700 16px "Inter";letter-spacing:.3em}
+.ser{position:absolute;left:38px;top:120px;font:800 250px/.8 "Archivo";letter-spacing:-.05em}
+.ser span{font:700 76px "Archivo";color:#8c8c82;margin-left:12px}
+.hr{position:absolute;left:48px;right:48px;top:352px;height:1px;background:rgba(245,244,238,.14)}
+.who{position:absolute;left:48px;top:376px;display:flex;align-items:center;gap:16px}
+.tile{width:58px;height:58px;border-radius:24%;background:#f5f4ee;color:#111110;font:600 26px/58px "Sora";text-align:center}
+.nm{font:600 26px "Sora"}.ad{font:400 16px "Inter";color:#9c9c92;margin-top:4px}
+.num{position:absolute;right:48px;top:398px;font:400 17px "Inter";color:#9c9c92}
+#ladder{left:1090px;top:720px;display:flex;align-items:center;gap:14px}
+.pl{height:52px;padding:0 20px;border-radius:26px;display:flex;align-items:center;gap:10px;font:400 19px "Inter";white-space:nowrap}
+.pl b{font-weight:700}
+.ar{width:22px;height:2px;background:#9c9c92;position:relative}.ar:after{content:"";position:absolute;right:-1px;top:-4px;width:8px;height:8px;border-right:2px solid #9c9c92;border-top:2px solid #9c9c92;transform:rotate(45deg)}
+</style></head><body>
+<div id="root" data-composition-id="root" data-width="1920" data-height="1080" data-start="0" data-duration="1">
+<div id="g1"></div><div id="g2"></div>
+<div id="brand" class="abs"><svg viewBox="0 0 120 118"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#111110" stroke-width="16"/></svg>wanterest</div>
+<div class="eb abs"><i></i>EARLY ACCESS</div>
+<div class="hl abs" style="top:340px">Your number</div>
+<div class="hl abs" style="top:490px">is <span id="ern">earned.</span></div>
+<div id="sub" class="abs">Everyone starts in Early Access. <b>Founding 25 and Early 100 are permanent, and only issued at admission.</b></div>
+<div id="pass" class="abs">
+  <div class="plab"><svg viewBox="18 18.65 84 84" width="28" height="28"><polygon points="25.3,102 49.2,45 70.8,45 94.7,102 77.3,102 60,60.7 42.7,102" fill="#F5F4EE"/><polygon points="60,19.3 50.5,42 69.5,42" fill="#D7FF3D"/></svg>FOUNDING MEMBER</div>
+  <div class="ser">07<span>/25</span></div>
+  <div class="hr"></div>
+  <div class="who"><div class="tile">A</div><div><div class="nm">Auterim</div><div class="ad">Admitted March 2026</div></div></div>
+  <div class="num">No. 07 of 25</div>
+</div>
+<div id="ladder" class="abs">
+  <div class="pl" style="background:#fff;box-shadow:inset 0 0 0 1.5px rgba(17,17,16,.14)">Early access <b>#0184</b></div><div class="ar"></div>
+  <div class="pl" style="background:#eff9c4;color:#3d4a0e"><i style="width:9px;height:9px;border-radius:50%;background:#3d4a0e;display:block"></i><b>Priority</b> #0184</div><div class="ar"></div>
+  <div class="pl" style="background:#111110;color:#f5f4ee;font-weight:700;letter-spacing:.12em;font-size:16px"><svg viewBox="18 18.65 84 84" width="18" height="18"><polygon points="25.3,102 49.2,45 70.8,45 94.7,102 77.3,102 60,60.7 42.7,102" fill="#F5F4EE"/><polygon points="60,19.3 50.5,42 69.5,42" fill="#D7FF3D"/></svg>FOUNDING <span style="opacity:.35">|</span> 07</div>
+</div>
+<div id="grain"></div>
+</div>
+<script src="assets/gsap.min.js"></script>
+<script>window.__timelines={root:gsap.timeline({paused:true}).to({},{duration:1})};</script>
+</body></html>

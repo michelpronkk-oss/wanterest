@@ -1,0 +1,10 @@
+raw120.mp4
+blend.mp4
+*.wav
+snaps*/
+psnap/
+.*hf-transaction*/
+work-*/
+render.log
+comp/snapshots/
+poster/assets/
