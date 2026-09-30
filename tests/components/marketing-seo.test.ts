@@ -149,11 +149,12 @@ describe("marketing page metadata", () => {
 });
 
 describe("illustrative public product data", () => {
-  it("visibly identifies homepage, product, and about-page figures as examples", () => {
+  it("omits the homepage disclosures while identifying product and about-page figures as examples", () => {
     const home = read("src/components/marketing/marketing-home.tsx");
     const product = read("src/app/product/page.tsx");
     const about = read("src/app/about/page.tsx");
-    expect(home).toContain("not live customer or market data");
+    expect(home).not.toContain("Product preview · Figures and activity are illustrative examples, not live customer or market data.");
+    expect(home).not.toContain("Illustrative examples · Figures are not live customer or market measurements.");
     expect(product).toContain("not live customer or market data");
     expect(about).toContain("not live customer or market measurements");
   });
