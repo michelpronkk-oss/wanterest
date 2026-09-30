@@ -36,6 +36,12 @@ export function resolveAdminHostRequest(input: {
   // Vercel aliases and preview deployments must not expose the control center.
   if (input.isVercel && input.vercelEnvironment !== "production") return { kind: "blocked" };
 
-  const suffix = input.pathname === "/" ? "" : input.pathname;
+  // Keep the organic-readiness entry point aligned with the existing
+  // publication-readiness implementation, while exposing it only on Admin host.
+  const suffix = input.pathname === "/"
+    ? ""
+    : input.pathname === "/organic-readiness"
+      ? "/publication-readiness"
+      : input.pathname;
   return { kind: "admin", rewritePath: `${ADMIN_INTERNAL_PREFIX}${suffix}` };
 }

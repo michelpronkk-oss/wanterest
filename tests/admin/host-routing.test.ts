@@ -34,6 +34,10 @@ describe("Admin hostname routing", () => {
   it("rewrites Organic Readiness to its private implementation on the Admin hostname only", () => {
     expect(resolveAdminHostRequest({ hostname: "admin.wanterest.com", pathname: "/publication-readiness", isVercel: true, vercelEnvironment: "production" }))
       .toEqual({ kind: "admin", rewritePath: "/admin-internal/publication-readiness" });
+    expect(resolveAdminHostRequest({ hostname: "admin.wanterest.com", pathname: "/organic-readiness", isVercel: true, vercelEnvironment: "production" }))
+      .toEqual({ kind: "admin", rewritePath: "/admin-internal/publication-readiness" });
+    expect(resolveAdminHostRequest({ hostname: "app.wanterest.com", pathname: "/organic-readiness", isVercel: true, vercelEnvironment: "production" }))
+      .toEqual({ kind: "customer" });
     expect(resolveAdminHostRequest({ hostname: "app.wanterest.com", pathname: "/publication-readiness", isVercel: true, vercelEnvironment: "production" }))
       .toEqual({ kind: "customer" });
   });
