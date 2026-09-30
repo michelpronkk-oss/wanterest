@@ -32,7 +32,7 @@ function mockFetch({ brokenAppRobots = false } = {}) {
 
     if (url.pathname === "/sitemap.xml") {
       if (pageHost) {
-        return new Response(`<urlset>${routes.map((route) => `<url><loc>https://www.wanterest.com${route}</loc></url>`).join("")}</urlset>`);
+        return new Response(`<urlset>${routes.map((route) => `<url><loc>${route === "/" ? "https://www.wanterest.com" : `https://www.wanterest.com${route}`}</loc></url>`).join("")}</urlset>`);
       }
       return new Response("not found", { status: 404 });
     }
@@ -43,7 +43,7 @@ function mockFetch({ brokenAppRobots = false } = {}) {
     if (adminHost && url.pathname === "/login") return new Response("<h1>Sign in</h1>", { headers: { "x-robots-tag": "noindex, nofollow, noarchive" } });
     if (!pageHost || !routes.includes(url.pathname)) return new Response("not found", { status: 404 });
 
-    const canonical = `https://www.wanterest.com${url.pathname}`;
+    const canonical = url.pathname === "/" ? "https://www.wanterest.com" : `https://www.wanterest.com${url.pathname}`;
     const jsonLd = url.pathname === "/" ? '<script type="application/ld+json">{"@context":"https://schema.org"}</script>' : "";
     return new Response(`<!doctype html><html><head><title>Wanterest ${url.pathname}</title><meta name="description" content="Public Wanterest page"><link rel="canonical" href="${canonical}"></head><body><h1>Page heading</h1>${jsonLd}</body></html>`, { headers: { "content-type": "text/html" } });
   };
