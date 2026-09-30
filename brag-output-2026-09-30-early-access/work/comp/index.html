@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=1920, height=1080">
-<title>Wanterest — Early Access</title>
+<title>Wanterest — Only 25 will ever be first</title>
 <style>
 @font-face{font-family:"Archivo";font-weight:800;src:url("assets/fonts/Archivo-800.ttf") format("truetype")}
 @font-face{font-family:"Sora";font-weight:600;src:url("assets/fonts/Sora-600.ttf") format("truetype")}
 @font-face{font-family:"Inter";font-weight:400;src:url("assets/fonts/Inter-400.ttf") format("truetype")}
 @font-face{font-family:"Inter";font-weight:700;src:url("assets/fonts/Inter-700.ttf") format("truetype")}
-:root{--ink:#111110;--paper:#f5f4ee;--stone:#f3f2ec;--lime:#d7ff3d;--ptint:#eff9c4;--pink:#3d4a0e;--muted:#8c8c82;--mdark:#9c9c92;--hair:rgba(17,17,16,.08);--haird:rgba(245,244,238,.14)}
+:root{--ink:#111110;--paper:#f5f4ee;--stone:#f3f2ec;--cream:#f7f6f1;--lime:#d7ff3d;--ptint:#eff9c4;--pink:#3d4a0e;--muted:#8c8c82;--mdark:#9c9c92;--hair:rgba(17,17,16,.08);--haird:rgba(245,244,238,.14)}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{width:1920px;height:1080px;overflow:hidden;background:var(--stone)}
 body{font-family:"Inter",sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased}
@@ -22,34 +22,21 @@ body{font-family:"Inter",sans-serif;color:var(--ink);-webkit-font-smoothing:anti
 .wm{display:inline-block;overflow:hidden;vertical-align:top;padding:0 .02em .12em;margin-bottom:-.12em}
 .wi{display:inline-block}
 .k{font:700 14px "Inter";letter-spacing:.2em}
+.big{position:absolute;left:0;width:1920px;text-align:center;font:800 104px/1 "Archivo";letter-spacing:-.05em;white-space:nowrap;z-index:50}
 
-/* waitlist pills in depth */
-#field{position:absolute;left:0;top:0;z-index:10}
-.pl{height:64px;padding:0 26px;border-radius:32px;background:#fff;box-shadow:0 24px 44px -26px rgba(17,17,16,.32),inset 0 0 0 1.5px rgba(17,17,16,.12);display:flex;align-items:center;gap:12px;font:400 26px "Inter";color:#6b6b62;white-space:nowrap;transform-origin:50% 50%}
-.pl b{color:#111110;font-weight:700}
-.pl i{width:18px;height:18px;border-radius:50%;box-shadow:inset 0 0 0 2px #a3a399;display:block}
-#hero{z-index:30}
-
-/* protagonist card (front: early access / priority) */
-#front{width:620px;height:560px;border-radius:28px;background:#fff;box-shadow:0 70px 130px -60px rgba(17,17,16,.45),inset 0 0 0 1px rgba(17,17,16,.08);z-index:40;overflow:hidden;transform-origin:50% 50%}
-#fA,#fB{position:absolute;inset:0}
-#fB{background:var(--ptint)}
-.chip6{position:absolute;height:38px;padding:0 14px;border-radius:6px;display:flex;align-items:center;gap:8px;font:700 16px "Inter";white-space:nowrap}
-.bign{position:absolute;font:800 168px/.9 "Archivo";letter-spacing:-.05em;white-space:nowrap}
-.segs{position:absolute;left:44px;top:470px;width:532px;height:6px}
-.seg{position:absolute;top:0;height:6px;width:170px;border-radius:3px;background:#ecebe3;overflow:hidden}
-.seg i{display:block;height:100%;width:100%;background:#111110;transform-origin:0 50%;transform:scaleX(0)}
-.tok{width:84px;height:84px;border-radius:50%;background:#fff;box-shadow:0 20px 40px -18px rgba(17,17,16,.45),inset 0 0 0 1.5px rgba(17,17,16,.1);font:600 26px/84px "Sora";text-align:center;z-index:45}
-.tok b{position:absolute;right:-4px;bottom:-4px;width:30px;height:30px;border-radius:50%;background:#111110;box-shadow:0 0 0 3px #f3f2ec;transform:scale(0)}
-.tok b:after{content:"";position:absolute;left:11px;top:6px;width:6px;height:12px;border-right:2.5px solid #d7ff3d;border-bottom:2.5px solid #d7ff3d;transform:rotate(45deg)}
-
-/* passes */
+/* hook */
+#hl{left:120px;top:236px;font:800 158px/.93 "Archivo";letter-spacing:-.055em;z-index:50}
+#hl .ln{display:block;white-space:nowrap}
+#first{position:relative;display:inline-block;padding:0 .1em;margin-left:-.1em;isolation:isolate}
+#first:before{content:"";position:absolute;left:0;right:0;top:.1em;bottom:-.01em;background:var(--lime);border-radius:.07em;transform-origin:0 50%;transform:scaleX(var(--f,0));z-index:-1}
 .pass{width:440px;height:600px;border-radius:28px;overflow:hidden;transform-origin:50% 50%;z-index:40}
-#back{background:var(--ink);color:var(--paper);box-shadow:0 70px 140px -55px rgba(17,17,16,.6)}
-#pe{background:#fff;color:var(--ink);box-shadow:0 70px 130px -55px rgba(17,17,16,.38),inset 0 0 0 1.5px rgba(17,17,16,.14)}
+.ink{background:var(--ink);color:var(--paper);box-shadow:0 70px 140px -55px rgba(17,17,16,.6)}
 .plab{position:absolute;left:38px;top:40px;display:flex;align-items:center;gap:12px;font:700 13px "Inter";letter-spacing:.28em;white-space:nowrap}
 .ser{position:absolute;left:32px;top:132px;font:800 190px/.8 "Archivo";letter-spacing:-.05em;white-space:nowrap}
 .ser .tot{font:700 58px/1 "Archivo";letter-spacing:-.03em;color:#8c8c82;margin-left:10px}
+#roll{position:absolute;left:32px;top:112px;width:250px;height:190px;overflow:hidden}
+#roll span{position:absolute;left:0;top:20px;font:800 190px/.8 "Archivo";letter-spacing:-.05em;white-space:nowrap}
+#htot{position:absolute;left:270px;top:224px;font:700 58px/1 "Archivo";letter-spacing:-.03em;color:#8c8c82}
 .hr{position:absolute;left:38px;right:38px;height:1px}
 .who{position:absolute;left:38px;top:376px;display:flex;align-items:center;gap:16px}
 .tile{border-radius:24%;display:flex;align-items:center;justify-content:center;font-family:"Sora";font-weight:600}
@@ -59,65 +46,134 @@ body{font-family:"Inter",sans-serif;color:var(--ink);-webkit-font-smoothing:anti
 .wmk{display:flex;align-items:center;gap:9px;font:600 17px "Sora";letter-spacing:-.01em}
 .wmk svg{width:18px;height:18px}
 .sheen{position:absolute;left:-60%;top:-20%;width:40%;height:140%;background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.14),rgba(255,255,255,0));transform:rotate(18deg)}
-.ben{height:56px;padding:0 24px;border-radius:28px;display:flex;align-items:center;gap:10px;font:400 20px "Inter";white-space:nowrap;z-index:44}
-.ben b{font:600 23px "Sora"}
+#kglow{position:absolute;left:18px;top:14px;width:70px;height:70px;border-radius:50%;background:radial-gradient(circle,rgba(215,255,61,.55),rgba(215,255,61,0) 70%);opacity:0}
 
-/* members wall (3D) */
-#wall{width:1600px;height:640px;z-index:20;transform-origin:50% 50%}
-.wc{position:absolute;width:296px;height:190px;border-radius:16px;background:var(--ink);color:var(--paper);box-shadow:0 30px 50px -30px rgba(17,17,16,.5)}
-.wc .l{position:absolute;left:20px;top:18px;display:flex;align-items:center;gap:8px;font:700 11px "Inter";letter-spacing:.2em;color:var(--mdark)}
-.wc .n{position:absolute;left:18px;top:44px;font:800 68px/1 "Archivo";letter-spacing:-.05em;white-space:nowrap}
-.wc .n span{font:700 22px "Archivo";color:#8c8c82;margin-left:4px}
-.wc .h{position:absolute;left:20px;right:20px;top:128px;height:1px;background:var(--haird)}
-.wc .who2{position:absolute;left:20px;top:142px;display:flex;align-items:center;gap:10px;font:600 15px "Sora";white-space:nowrap}
-.wc .who2 .tile{width:28px;height:28px;font-size:11px;background:#f5f4ee;color:#111110}
-.wc .vp{position:absolute;right:18px;top:148px;font:700 14px "Inter";opacity:0}
-#tgp{width:520px;height:76px;border-radius:38px;background:#fff;box-shadow:0 30px 60px -30px rgba(17,17,16,.45),inset 0 0 0 1px rgba(17,17,16,.08);display:flex;align-items:center;justify-content:space-around;padding:0 18px;z-index:60}
-.tgr{display:flex;align-items:center;gap:14px;font:700 18px "Inter";white-space:nowrap}
-.tg{position:relative;width:54px;height:32px;border-radius:16px;background:#dcdbd2}
-.tg i{position:absolute;left:3px;top:3px;width:26px;height:26px;border-radius:50%;background:#fff;box-shadow:0 2px 5px rgba(0,0,0,.2)}
-#slug{height:46px;padding:0 18px;border-radius:12px;background:#fff;box-shadow:0 20px 40px -20px rgba(17,17,16,.45),inset 0 0 0 1px rgba(17,17,16,.08);display:flex;align-items:center;gap:10px;font:400 17px "Inter";color:#4a4a43;white-space:nowrap;z-index:61}
-#slug b{color:#111110}
+/* product glimpse */
+#sub2{position:absolute;left:0;width:1920px;text-align:center;font:400 30px "Inter";color:#4a4a43;z-index:50;white-space:nowrap}
+#win{width:1300px;height:820px;border-radius:22px;overflow:hidden;background:var(--cream);box-shadow:0 -30px 90px -30px rgba(17,17,16,.35),0 0 0 1px rgba(17,17,16,.09);transform-origin:50% 0;z-index:30}
+#chrome{position:absolute;left:0;top:0;width:1300px;height:40px;background:#fff;border-bottom:1px solid var(--hair)}
+#chrome .dots{position:absolute;left:18px;top:15px;display:flex;gap:7px}#chrome .dots i{width:10px;height:10px;border-radius:50%;background:#e3e2d9;display:block}
+#chrome .url{position:absolute;left:480px;top:9px;width:340px;height:22px;border-radius:6px;background:#f9f8f4;font:400 12px/22px "Inter";color:#8c8c82;text-align:center}
+#side{position:absolute;left:0;top:40px;width:250px;height:780px;background:#fff;border-right:1px solid var(--hair)}
+.lg2{position:absolute;left:24px;top:22px;display:flex;align-items:center;gap:10px;font:600 17px "Sora"}
+.lg2 svg{width:20px;height:20px}
+.nv{position:absolute;left:16px;width:218px;height:38px;border-radius:10px;font:400 14.5px/38px "Inter";color:#4a4a43;padding-left:20px}
+.nv.on{background:var(--chip,#f3f2ec);box-shadow:inset 2px 0 0 var(--lime);font-weight:700;color:#111110}
+.nv b{position:absolute;right:14px;font:400 12px/38px "Inter";color:#8c8c82}
+.ttl{position:absolute;left:290px;top:92px;font:800 30px "Archivo";letter-spacing:-.01em}
+.panel{position:absolute;left:290px;top:146px;width:970px;height:180px;border-radius:16px;background:var(--ink);color:#f5f4ee;overflow:hidden}
+.panel .kk{position:absolute;left:28px;top:24px;font:700 11.5px "Inter";letter-spacing:.16em;color:var(--lime)}
+.panel .ps{position:absolute;left:28px;top:52px;width:560px;font:600 23px/1.3 "Sora";letter-spacing:-.01em}
+.panel .st{position:absolute;top:24px;font:400 12px "Inter";color:#9c9c92}
+.panel .sn{position:absolute;top:48px;font:600 46px/1 "Sora";letter-spacing:-.03em}
+.card2{position:absolute;left:290px;width:600px;height:96px;background:#fff;border-radius:14px;box-shadow:inset 0 0 0 1px rgba(17,17,16,.08)}
+.card2 .src{position:absolute;left:20px;top:16px;display:flex;align-items:center;gap:8px;font:700 13px "Inter"}
+.card2 .src img{width:18px;height:18px;border-radius:4px}
+.card2 .src span{font:400 12px "Inter";color:#8c8c82}
+.card2 .ct{position:absolute;left:20px;top:46px;font:600 15px "Sora";white-space:nowrap}
+.card2 .rt{position:absolute;right:20px;top:14px;display:flex;align-items:center;gap:10px}
+.intent{font:700 10px/22px "Inter";letter-spacing:.1em;border-radius:20px;padding:0 10px}
+.sc{font:600 15px "Sora"}
 
-/* outro */
-.oln{position:absolute;left:0;width:1920px;text-align:center;font:800 124px/1 "Archivo";letter-spacing:-.05em;white-space:nowrap;z-index:50}
-#perm{position:relative;display:inline-block}
-#perm:after{content:"";position:absolute;left:.02em;right:.08em;bottom:.02em;height:.1em;background:var(--lime);border-radius:.05em;transform-origin:0 50%;transform:scaleX(var(--u,0));box-shadow:0 0 0 1.5px var(--ink)}
-#brand{display:flex;align-items:center;gap:16px;font:600 44px/1 "Sora";letter-spacing:-.02em;white-space:nowrap;z-index:50}
-#brand svg{width:44px;height:44px}
-#cta{height:64px;padding:0 30px;border-radius:14px;background:var(--ink);color:#f5f4ee;font:700 22px/64px "Inter";white-space:nowrap;box-shadow:0 22px 40px -22px rgba(17,17,16,.6);z-index:50}
-#cur{width:54px;height:54px;z-index:90;filter:drop-shadow(0 4px 6px rgba(0,0,0,.25))}
+/* step chip */
+#chip{height:78px;padding:0 34px 0 14px;border-radius:39px;background:#fff;box-shadow:0 24px 50px -28px rgba(17,17,16,.4),inset 0 0 0 1px rgba(17,17,16,.08);display:flex;align-items:center;gap:18px;z-index:60;white-space:nowrap}
+#cnum{position:relative;width:52px;height:52px;border-radius:50%;background:var(--ink);overflow:hidden}
+#cnum span{position:absolute;left:0;top:0;width:52px;text-align:center;font:800 26px/52px "Archivo";color:var(--lime)}
+#clab{position:relative;height:40px;width:560px;overflow:visible}
+#clab span{position:absolute;left:0;top:0;font:700 30px/40px "Inter";letter-spacing:-.01em;white-space:nowrap;opacity:0}
+#cav{font:400 21px "Inter";color:#6b6b62;z-index:60;white-space:nowrap}
+
+/* request form + protagonist card */
+#form{width:760px;height:86px;border-radius:18px;background:#fff;box-shadow:0 30px 60px -30px rgba(17,17,16,.4),inset 0 0 0 1px rgba(17,17,16,.1);z-index:42}
+#form .in{position:absolute;left:28px;top:0;font:400 24px/86px "Inter";white-space:nowrap}
+#form .ph{color:#a3a399}
+#form .caret{display:inline-block;width:2px;height:28px;background:#111110;vertical-align:-5px;margin-left:2px}
+#form .go{position:absolute;right:10px;top:10px;width:250px;height:66px;border-radius:13px;background:#111110;color:#f5f4ee;font:700 20px/66px "Inter";text-align:center;overflow:hidden}
+#front{width:620px;height:520px;border-radius:28px;background:#fff;box-shadow:0 70px 130px -60px rgba(17,17,16,.45),inset 0 0 0 1px rgba(17,17,16,.08);z-index:40;overflow:hidden;transform-origin:50% 50%}
+#fA,#fB{position:absolute;inset:0}
+#fB{background:var(--ptint)}
+.chip6{position:absolute;height:38px;padding:0 14px;border-radius:6px;display:flex;align-items:center;gap:8px;font:700 16px "Inter";white-space:nowrap}
+.bign{position:absolute;font:800 168px/.9 "Archivo";letter-spacing:-.05em;white-space:nowrap}
+.segs{position:absolute;left:44px;top:444px;width:532px;height:6px}
+.seg{position:absolute;top:0;height:6px;width:170px;border-radius:3px;background:#ecebe3;overflow:hidden}
+.seg i{display:block;height:100%;width:100%;background:#111110;transform-origin:0 50%;transform:scaleX(0)}
+.tok{width:88px;height:88px;border-radius:50%;background:#fff;box-shadow:0 20px 40px -18px rgba(17,17,16,.45),inset 0 0 0 1.5px rgba(17,17,16,.1);font:600 27px/88px "Sora";text-align:center;z-index:45}
+.tok b{position:absolute;right:-4px;bottom:-4px;width:32px;height:32px;border-radius:50%;background:#111110;box-shadow:0 0 0 3px #f3f2ec;transform:scale(0)}
+.tok b:after{content:"";position:absolute;left:12px;top:6px;width:6px;height:13px;border-right:2.5px solid #d7ff3d;border-bottom:2.5px solid #d7ff3d;transform:rotate(45deg)}
+#pe{background:#fff;color:var(--ink);box-shadow:0 70px 130px -55px rgba(17,17,16,.38),inset 0 0 0 1.5px rgba(17,17,16,.14)}
+.ben{height:58px;padding:0 26px;border-radius:29px;display:flex;align-items:center;gap:10px;font:400 21px "Inter";white-space:nowrap;z-index:44}
+.ben b{font:600 24px "Sora"}
+
+/* CTA */
+#brand{display:flex;align-items:center;gap:16px;font:600 46px/1 "Sora";letter-spacing:-.02em;white-space:nowrap;z-index:50}
+#brand svg{width:46px;height:46px}
+#cta{height:88px;padding:0 40px;border-radius:18px;background:var(--ink);color:#f5f4ee;font:700 28px/88px "Inter";white-space:nowrap;box-shadow:0 26px 50px -24px rgba(17,17,16,.6);z-index:50;overflow:hidden}
+#cta i{position:absolute;inset:0;background:var(--lime);border-radius:18px;transform:scale(0)}
+#cta span{position:relative}
+#url{font:400 24px "Inter";color:#6b6b62;z-index:50;white-space:nowrap}
+.ring{border:3px solid var(--lime);transform-origin:50% 50%;z-index:62}
+#cur{width:56px;height:56px;z-index:90;filter:drop-shadow(0 4px 6px rgba(0,0,0,.25))}
 </style>
 </head>
 <body>
-<div id="root" data-composition-id="root" data-width="1920" data-height="1080" data-start="0" data-duration="21">
+<div id="root" data-composition-id="root" data-width="1920" data-height="1080" data-start="0" data-duration="22">
   <div id="bgw" class="a" style="width:1920px;height:1080px"><div id="g1"></div><div id="g2"></div><div id="vig"></div></div>
 
-  <div id="field"></div>
-  <div id="hero" class="pl a"><i></i>Early access <b>#0184</b></div>
+  <!-- 1. HOOK -->
+  <div id="hl" class="a"><span class="ln"><span class="wm"><span class="wi">Only</span></span> <span class="wm"><span class="wi">25</span></span></span><span class="ln"><span class="wm"><span class="wi">will</span></span> <span class="wm"><span class="wi">ever</span></span></span><span class="ln"><span class="wm"><span class="wi">be</span></span> <span class="wm" style="overflow:visible"><span class="wi" id="first">first.</span></span></span></div>
+  <div id="hp" class="pass ink a">
+    <div id="kglow"></div>
+    <div class="plab"><svg viewBox="18 18.65 84 84" width="24" height="24"><polygon points="25.3,102 49.2,45 70.8,45 94.7,102 77.3,102 60,60.7 42.7,102" fill="#F5F4EE"/><polygon id="hk" points="60,19.3 50.5,42 69.5,42" fill="#3a3a36"/></svg>FOUNDING MEMBER</div>
+    <div id="roll"><span id="ra">01</span><span id="rb">01</span></div>
+    <div id="htot">/25</div>
+    <div class="hr" style="top:350px;background:var(--haird)" id="hhr"></div>
+    <div id="hlow" style="position:absolute;left:38px;top:380px;font:600 26px 'Sora';opacity:0">Founding 25<div style="font:400 16px 'Inter';color:#9c9c92;margin-top:6px">Permanent · numbered</div></div>
+    <div class="hr" style="top:494px;background:var(--haird)"></div>
+    <div class="ft"><span class="wmk"><svg viewBox="0 0 120 118"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#f5f4ee" stroke-width="16"/></svg>wanterest</span><span style="color:#9c9c92" id="hno">No. 07 of 25</span></div>
+    <div class="sheen" id="hsh"></div>
+  </div>
 
-  <!-- protagonist card: front -->
+  <!-- 2. WHAT IS WANTEREST -->
+  <div id="b2" class="big a"><span class="wm"><span class="wi">Wanterest</span></span> <span class="wm"><span class="wi">is</span></span> <span class="wm"><span class="wi">opening</span></span> <span class="wm"><span class="wi">early</span></span> <span class="wm"><span class="wi">access.</span></span></div>
+  <div id="sub2" class="a">Find real buying intent in public conversations.</div>
+  <div id="win" class="a">
+    <div id="chrome"><div class="dots"><i></i><i></i><i></i></div><div class="url">app.wanterest.com</div></div>
+    <div id="side"><div class="lg2"><svg viewBox="0 0 120 118"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#111110" stroke-width="16"/></svg>wanterest</div>
+      <div class="nv on" style="top:74px">Home</div><div class="nv" style="top:116px">Signals<b>12</b></div><div class="nv" style="top:158px">Saved<b>3</b></div><div class="nv" style="top:200px">Insights</div><div class="nv" style="top:242px">Actions<b>1</b></div></div>
+    <div class="ttl">Today</div>
+    <div class="panel"><div class="kk">● MARKET STATE</div><div class="ps">Teams are actively looking for a simpler CRM-sync tool.</div>
+      <div class="st" style="left:640px">Qualified</div><div class="sn" style="left:640px;color:#d7ff3d">12</div><div class="st" style="left:790px">High intent</div><div class="sn" style="left:790px">5</div></div>
+    <div class="card2" id="k0" style="top:350px"><div class="src"><img src="assets/reddit.png" alt="">r/sales <span>7h</span></div><div class="rt"><div class="intent" style="background:#eff9c4;color:#3d4a0e">HIGH INTENT</div><div class="sc">88</div></div><div class="ct">Asking for one tool that watches inbox and CRM together</div></div>
+    <div class="card2" id="k1" style="top:462px"><div class="src"><img src="assets/reddit.png" alt="">r/SaaS <span>1d</span></div><div class="rt"><div class="intent" style="background:#111110;color:#fff">SWITCHING</div><div class="sc">91</div></div><div class="ct">Paying for HubSpot features they never use, wants simpler</div></div>
+    <div class="card2" id="k2" style="top:574px"><div class="src"><img src="assets/hacker-news.png" alt="">Hacker News <span>1d</span></div><div class="rt"><div class="intent" style="background:#f3f2ec;color:#4a4a43">PROBLEM</div><div class="sc">81</div></div><div class="ct">Reconciles the same invoices across three spreadsheets weekly</div></div>
+    <div style="position:absolute;left:920px;top:350px;width:340px;height:320px;border-radius:14px;background:#fff;box-shadow:inset 0 0 0 1.5px #111110"><div style="position:absolute;left:20px;top:18px;font:700 10px/22px 'Inter';letter-spacing:.12em;background:#eff9c4;color:#3d4a0e;border-radius:20px;padding:0 11px">POSITIONING</div><div style="position:absolute;left:20px;top:58px;width:300px;font:600 19px/1.3 'Sora'">Make “simpler than HubSpot” explicit on your homepage.</div></div>
+  </div>
+
+  <!-- 3-5. STEPS -->
+  <div id="chip" class="a"><div id="cnum"><span id="cn1">1</span><span id="cn2">2</span><span id="cn3">3</span></div><div id="clab"><span id="cl1">Request access</span><span id="cl2">Invite 3 to move up</span><span id="cl3">Get admitted, get your number</span></div></div>
+  <div id="cav" class="a">Priority, not a guarantee.</div>
+
+  <div id="form" class="a"><div class="in"><span id="typed"></span><span class="caret" id="caret"></span><span class="ph" id="ph">you@company.com</span></div><div class="go" id="go">Request access →</div></div>
   <div id="front" class="a">
     <div id="fA">
       <div class="chip6" id="fchip" style="left:44px;top:42px;background:var(--stone)"><svg width="15" height="15" viewBox="0 0 14 14"><path d="M2.5 7.5l3 3 6-7" fill="none" stroke="#111110" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Email confirmed</div>
-      <div class="k" id="fk" style="position:absolute;left:44px;top:176px;color:#8c8c82">YOUR PLACE</div>
-      <div class="bign" id="fnum" style="left:36px;top:210px"><span style="color:#a3a399">#</span>0184</div>
+      <div class="k" id="fk" style="position:absolute;left:44px;top:160px;color:#8c8c82">YOUR PLACE</div>
+      <div class="bign" id="fnum" style="left:36px;top:194px"><span style="color:#a3a399">#</span>0184</div>
       <div class="segs" id="segs"><div class="seg" style="left:0"><i id="sg0"></i></div><div class="seg" style="left:181px"><i id="sg1"></i></div><div class="seg" style="left:362px"><i id="sg2"></i></div></div>
-      <div id="rlab" style="position:absolute;left:44px;top:416px;font:700 16px 'Inter';color:#8c8c82;letter-spacing:.02em">Verified referrals <span id="rcnt" style="color:#111110">0/3</span></div>
+      <div id="rlab" style="position:absolute;left:44px;top:392px;font:700 17px 'Inter';color:#8c8c82">Verified referrals <span id="rcnt" style="color:#111110">0/3</span></div>
     </div>
     <div id="fB">
       <div style="position:absolute;left:44px;top:50px;display:flex;align-items:center;gap:10px;font:700 18px 'Inter';color:#3d4a0e"><i style="width:10px;height:10px;border-radius:50%;background:#3d4a0e;display:block"></i>Priority <span style="font-weight:400">#0184</span></div>
-      <div class="k" style="position:absolute;left:44px;top:176px;color:#3d4a0e">PRIORITY ACCESS</div>
-      <div class="bign" id="mvup" style="left:36px;top:214px;color:#3d4a0e;font-size:106px">Moved up.</div>
-      <div style="position:absolute;left:44px;top:440px;font:400 22px 'Inter';color:#3d4a0e">Doesn't guarantee admission.</div>
+      <div class="k" style="position:absolute;left:44px;top:160px;color:#3d4a0e">PRIORITY ACCESS</div>
+      <div class="bign" id="mvup" style="left:36px;top:198px;color:#3d4a0e;font-size:106px">Moved up.</div>
+      <div style="position:absolute;left:44px;top:420px;font:400 22px 'Inter';color:#3d4a0e">Moved forward in review.</div>
     </div>
   </div>
   <div id="t0" class="tok a">JB<b></b></div>
   <div id="t1" class="tok a">SL<b></b></div>
   <div id="t2" class="tok a">NV<b></b></div>
 
-  <!-- back: founding pass (revealed by the flip) -->
-  <div id="back" class="pass a">
+  <div id="back" class="pass ink a">
     <div class="plab"><span style="width:24px;height:24px;display:block"></span><span id="blt">FOUNDING MEMBER</span></div>
     <div class="ser" id="bser">07<span class="tot" id="btot">/25</span></div>
     <div class="hr" style="top:350px;background:var(--haird)" id="bhr1"></div>
@@ -127,6 +183,9 @@ body{font-family:"Inter",sans-serif;color:var(--ink);-webkit-font-smoothing:anti
     <svg id="bA" viewBox="18 18.65 84 84" width="84" height="84" style="position:absolute;left:0;top:0;transform-origin:0 0"><polygon id="bAp" points="25.3,102 49.2,45 70.8,45 94.7,102 77.3,102 60,60.7 42.7,102" fill="#F5F4EE"/><polygon id="bAk" points="60,19.3 50.5,42 69.5,42" fill="#D7FF3D"/></svg>
     <div class="sheen" id="bsh"></div>
   </div>
+
+  <!-- 6. YOURS FOREVER -->
+  <div id="b6" class="big a" style="font-size:120px"><span class="wm"><span class="wi">Yours</span></span> <span class="wm"><span class="wi">forever.</span></span></div>
   <div id="pe" class="pass a">
     <div class="plab"><span style="width:24px;height:24px;display:block"></span><span id="elt">EARLY 100 MEMBER</span></div>
     <div class="ser" id="eser" style="font-size:150px;top:150px">042<span class="tot">/100</span></div>
@@ -136,19 +195,15 @@ body{font-family:"Inter",sans-serif;color:var(--ink);-webkit-font-smoothing:anti
     <div class="ft" id="eft"><span class="wmk"><svg viewBox="0 0 120 118"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#111110" stroke-width="16"/></svg>wanterest</span><span style="color:#8c8c82">No. 042 of 100</span></div>
     <svg id="eA" viewBox="18 18.65 84 84" width="84" height="84" style="position:absolute;left:0;top:0;transform-origin:0 0"><polygon id="eAp" points="25.3,102 49.2,45 70.8,45 94.7,102 77.3,102 60,60.7 42.7,102" fill="#111110"/><polygon id="eAk" points="60,19.3 50.5,42 69.5,42" fill="#111110"/></svg>
   </div>
-  <div id="bf" class="ben a" style="background:#111110;color:#f5f4ee"><b>30%</b>off · 24 months</div>
-  <div id="be" class="ben a" style="background:#fff;box-shadow:inset 0 0 0 1.5px rgba(17,17,16,.14)"><b>15%</b>off · 12 months</div>
+  <div id="bf" class="ben a" style="background:#111110;color:#f5f4ee"><b>30% off</b>for 24 months</div>
+  <div id="be" class="ben a" style="background:#fff;box-shadow:inset 0 0 0 1.5px rgba(17,17,16,.14)"><b>15% off</b>for 12 months</div>
 
-  <!-- members wall -->
-  <div id="wall" class="a"></div>
-  <div id="tgp" class="a"><div class="tgr">Members Wall<div class="tg" id="tg1"><i></i></div></div><div style="width:1px;height:34px;background:rgba(17,17,16,.1)"></div><div class="tgr">Founder Pass<div class="tg" id="tg2"><i></i></div></div></div>
-  <div id="slug" class="a"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.8 2.8 0 014 4L11 8.5M9 11.5l-1.2 1.2a2.8 2.8 0 01-4-4L5 7.5" fill="none" stroke="#111110" stroke-width="1.6" stroke-linecap="round"/></svg>wanterest.com/members/<b>auterim</b></div>
-
-  <!-- outro -->
-  <div id="o1" class="oln a" style="color:#8c8c82"><span class="wm"><span class="wi">Referrals</span></span> <span class="wm"><span class="wi">move</span></span> <span class="wm"><span class="wi">you</span></span> <span class="wm"><span class="wi">up.</span></span></div>
-  <div id="o2" class="oln a"><span class="wm"><span class="wi">Admission</span></span> <span class="wm"><span class="wi">makes</span></span> <span class="wm"><span class="wi">it</span></span> <span class="wm" style="padding-bottom:.16em;margin-bottom:-.16em"><span class="wi" id="perm">permanent.</span></span></div>
+  <!-- 7. CTA -->
+  <div id="b7" class="big a" style="font-size:150px"><span class="wm"><span class="wi">Claim</span></span> <span class="wm"><span class="wi">your</span></span> <span class="wm" style="overflow:visible"><span class="wi" id="place">place.</span></span></div>
   <div id="brand" class="a"><svg viewBox="0 0 120 118"><polyline id="bm" points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#111110" stroke-width="16"/></svg>wanterest</div>
-  <div id="cta" class="a">Request access →</div>
+  <div id="cta" class="a"><i id="ctf"></i><span id="ctt">Request access →</span></div>
+  <div id="url" class="a">wanterest.com</div>
+  <div id="ring" class="ring a" style="width:380px;height:88px;border-radius:18px"></div>
 
   <svg id="cur" class="a" viewBox="0 0 24 24"><path d="M4 2.5l15 8.6-6.6 1.9-2.9 6.5z" fill="#111110" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>
   <div id="grain"></div>
@@ -181,34 +236,6 @@ function C(el,w,h,cx,cy,o){o.x=cx-w/2;o.y=cy-h/2;S(el,o)}
 function words(ws,t,starts,dur){ws.forEach(function(w,i){var st=starts[i];var p=eo(sg(t,st,st+(dur||.6)));
   w.style.transform="translateY("+((1-p)*105).toFixed(2)+"%)";w.style.filter=p<.98?"blur("+((1-p)*10).toFixed(2)+"px)":"none"})}
 function fadeIn(el,t,a,dy){var p=idE(sg(t,a,a+.5));el.style.opacity=sg(t,a,a+.2).toFixed(3);el.style.transform="translateY("+((1-p)*(dy===undefined?8:dy)).toFixed(1)+"px)"}
-
-/* ---------- build ---------- */
-var seed=5; function rnd(){seed=(seed*16807)%2147483647;return (seed-1)/2147483646}
-var NUMS=["0002","0417","1293","0088","2210","0731","12408","0356","0999","1874","0045","3102","0613","2754","0271","1560","0820","4419","0137","2043","0592","1188","3907","0064","0725","1416","2881","0309","5120","0947","1732","0450"];
-var F=$("#field"), P=[];
-NUMS.forEach(function(n,i){var el=document.createElement("div");el.className="pl a";
-  var pr=(i%9===4);
-  el.innerHTML=pr?'<i style="background:#3d4a0e;box-shadow:none;width:12px;height:12px"></i><b style="color:#3d4a0e">Priority</b> <span style="color:#3d4a0e">#'+n+'</span>':'<i></i>Early access <b>#'+n+'</b>';
-  if(pr){el.style.background="#eff9c4";el.style.boxShadow="0 24px 44px -26px rgba(17,17,16,.25)"}
-  F.appendChild(el);
-  var ang=rnd()*Math.PI*2, rad=.5+rnd()*.75, x=Math.cos(ang)*1200*rad, y=Math.sin(ang)*700*rad;
-  if(Math.abs(y)<170&&Math.abs(x)<520) y=(y<0?-1:1)*(170+rnd()*200);
-  P.push({el:el,x:x,y:y,z:-2400+rnd()*2300,ph:rnd()*6.28,w:0});
-});
-P.sort(function(a,b){return a.z-b.z});P.forEach(function(p,i){p.el.style.zIndex=i});
-// members wall: 5x3, Founding 25, numbered; our 07 lands in its slot on consent
-var WALL=[["01","N","Northwind Labs"],["02","O","Oriel Studio"],["03","HC","Halden & Co"],["05","K","Kestrel Analytics"],["07","A","Auterim"],
-          ["09","PNS","Parallel North"],["11","L","Loma Systems"],["12","B","Brightline"],["14","Q","Quill Research"],["16","T","Tessellate"],
-          ["18","V","Vantor"],["19","M","Marrow & Co"],["21","C","Corvid Data"],["23","S","Solace Health"],["25","AL","Ardent Labs"]];
-$("#wall").innerHTML=WALL.map(function(c,i){var x=(i%5)*320,y=Math.floor(i/5)*214;
-  return '<div class="wc" id="w'+i+'" style="left:'+x+'px;top:'+y+'px"><div class="l"><svg viewBox="18 18.65 84 84" width="14" height="14"><polygon points="25.3,102 49.2,45 70.8,45 94.7,102 77.3,102 60,60.7 42.7,102" fill="#F5F4EE"/><polygon points="60,19.3 50.5,42 69.5,42" fill="#D7FF3D"/></svg>FOUNDING 25</div><div class="n">'+c[0]+'<span>/25</span></div><div class="h"></div><div class="who2"><div class="tile">'+c[1]+'</div>'+c[2]+'</div>'+(i===4?'<div class="vp" id="vp">View pass →</div>':'')+'</div>'}).join("");
-var WC=WALL.map(function(c,i){return $("#w"+i)});
-
-var R={};["g1","g2","grain","hero","front","fA","fB","fchip","fk","fnum","segs","rlab","rcnt","mvup","t0","t1","t2","back","blt","bser","btot","bhr1","bwho","bhr2","bft","bA","bAp","bAk","bsh","pe","elt","eser","ewho","eft","eA","eAp","eAk","bf","be","wall","tgp","tg1","tg2","slug","vp","o1","o2","perm","brand","bm","cta","cur"].forEach(function(k){R[k]=document.getElementById(k)});
-var SGS=[0,1,2].map(function(i){return $("#sg"+i)}), TK=[R.t0,R.t1,R.t2];
-var O1W=$$("#o1 .wi"), O2W=$$("#o2 .wi");
-
-/* Board 14 reveal: keystone 120, peak 360, serial 640, label 900, still 1200 (x k), Apex settles into the label slot */
 function apex(svg,kEl,pEl,t,t0,k,big,lab){
   var kp=idE(sg(t,t0+.12*k,t0+.4*k)), pp=idE(sg(t,t0+.36*k,t0+.64*k)), mv=cio(sg(t,t0+.62*k,t0+.95*k));
   if(kEl){kEl.style.opacity=kp.toFixed(3);kEl.setAttribute("transform","translate(0,"+((1-kp)*-16).toFixed(2)+")")}
@@ -218,114 +245,146 @@ function apex(svg,kEl,pEl,t,t0,k,big,lab){
   return {ser:t0+.95*k,lab:t0+1.05*k,still:t0+1.3*k};
 }
 
+var R={};["g1","g2","grain","hl","first","hp","hk","kglow","ra","rb","htot","hlow","hno","hsh","b2","sub2","win","k1","chip","cn1","cn2","cn3","cl1","cl2","cl3","cav","form","typed","caret","ph","go","front","fA","fB","fchip","fk","fnum","segs","rlab","rcnt","mvup","t0","t1","t2","back","blt","bser","btot","bhr1","bwho","bhr2","bft","bA","bAp","bAk","bsh","b6","pe","elt","eser","ewho","eft","eA","eAp","eAk","bf","be","b7","place","brand","bm","cta","ctf","ctt","url","ring","cur"].forEach(function(k){R[k]=document.getElementById(k)});
+var LW=[0,0,0]; var HLW=$$("#hl .wi"), B2W=$$("#b2 .wi"), B6W=$$("#b6 .wi"), B7W=$$("#b7 .wi"), SGS=[0,1,2].map(function(i){return $("#sg"+i)}), TK=[R.t0,R.t1,R.t2];
+
+/* split-flap roll: serials decelerate and land on 07 exactly on the drop (2.0) */
+var SEQ=["18","03","22","11","25","09","14","02","20","05","16","12","24","07"], TIMES=[];
+TIMES=[0.2986, 0.3389, 0.3864, 0.4426, 0.5088, 0.5869, 0.6791, 0.7879, 0.9163, 1.0677, 1.2465, 1.4574, 1.7063, 2.0];
+window.__flapTimes=TIMES;
+
 function render(t){
+  if(!LW[0]){LW=[R.cl1.offsetWidth,R.cl2.offsetWidth,R.cl3.offsetWidth];}
   R.g1.style.transform="translate("+(Math.sin(t*.5)*30).toFixed(1)+"px,"+(Math.cos(t*.4)*20).toFixed(1)+"px) scale("+(1+.04*Math.sin(t*.7)).toFixed(3)+")";
-  R.g1.style.opacity=L(.85,1,sg(t,17.6,19)).toFixed(3); R.g2.style.opacity=(.6+.4*Math.sin(t*.9)).toFixed(3);
+  R.g1.style.opacity=L(.85,1,sg(t,18.8,20.2)).toFixed(3); R.g2.style.opacity=(.6+.4*Math.sin(t*.9)).toFixed(3);
   var fr=Math.floor(t*24); R.grain.style.transform="translate("+((fr*97)%256)+"px,"+((fr*53)%256)+"px)";
 
-  /* ===== 1. the waitlist in depth -> rack focus onto #0184 (0 -> 2.6) ===== */
-  var Fz=1500, cz=L(0,700,co(sg(t,0,2.6))), focus=L(-1600,-500,cio(sg(t,0,1.6)));
-  var fOut=sg(t,2.0,2.6);
-  P.forEach(function(p){
-    var z=p.z+cz, dz=Fz-z; if(dz<80){S(p.el,{op:0});return}
-    var s=Fz/dz, sx=960+(p.x+Math.sin(t*.7+p.ph)*16)*s, sy=540+(p.y+Math.cos(t*.5+p.ph)*12)*s;
-    var b=Math.min(20,Math.abs(z-(focus+cz))*.012)+fOut*10;
-    var op=cl(sg(z,-2500,-1800))*cl(1-sg(s,2.3,3.2))*(1-fOut);
-    // on the drop the crowd parts outward
-    sx=960+(sx-960)*(1+ei(fOut)*.6); sy=540+(sy-540)*(1+ei(fOut)*.6);
-    C(p.el,340,64,sx,sy,{s:s,b:b,op:op});
-  });
-  // the protagonist pill: far and soft, pulled into focus, flies to centre; expands into the card on the drop (2.0)
-  var hp=cio(sg(t,.7,1.75)), hx=L(1420,960,hp), hy=L(300,540,hp), hs=L(.55,1.25,hp), hb=L(12,0,sg(t,.7,1.4));
-  var morph=cio(sg(t,1.95,2.45));
-  C(R.hero,340,64,hx,hy,{s:hs,b:hb,op:(1-sg(t,2.05,2.2))*sg(t,.1,.4)});
-  R.hero.style.zIndex=30;
+  /* ===== 1. HOOK 0 -> 3.1: "Only 25 will ever be first." + the number rolling onto 07/25 ===== */
+  var hOut=sg(t,2.82,3.12);
+  S(R.hl,{x:120,y:236-ei(hOut)*80,b:hOut*20,op:1-hOut});
+  words(HLW,t,[.12,.24,.42,.54,.72,1.98],.7);
+  R.first.style.setProperty("--f",eo(sg(t,2.0,2.3)).toFixed(3));
+  var slam=sg(t,1.98,2.3); HLW[5].style.opacity=t>=1.98?1:0; HLW[5].style.transform="translateY("+((1-eo(slam))*105).toFixed(1)+"%) scale("+L(1.25,1,eo(slam)).toFixed(3)+")";
+  var pin=idE(sg(t,0,.45)), hpush=1+.05*cio(sg(t,.3,2.8)), zoom=ei(hOut);
+  C(R.hp,440,600,1345,545,{s:L(.92,1.12,pin)*hpush*(1+zoom*1.6),pre:"perspective(2400px) rotateY("+L(-22,-11,pin).toFixed(2)+"deg) rotateX(4deg)",b:zoom*26,op:pin*(1-sg(hOut,.4,1))});
+  // flap
+  var k=0; for(var i=0;i<TIMES.length;i++){ if(t>=TIMES[i])k=i; }
+  var prev=k>0?SEQ[k-1]:SEQ[0], cur=SEQ[k], dt=(k+1<TIMES.length?TIMES[k+1]-TIMES[k]:.2), rp=t<TIMES[0]?1:eo(sg(t,TIMES[k],TIMES[k]+Math.min(.12,dt*.8)));
+  if(k===SEQ.length-1) rp=bo(sg(t,TIMES[k],TIMES[k]+.3));
+  R.ra.textContent=prev; R.rb.textContent=cur;
+  R.ra.style.transform="translateY("+(-rp*110).toFixed(1)+"%)"; R.ra.style.opacity=(1-rp).toFixed(3);
+  R.rb.style.transform="translateY("+((1-rp)*110).toFixed(1)+"%)";
+  var lit=sg(t,2.0,2.12); R.hk.setAttribute("fill",lit>.5?"#D7FF3D":"#3a3a36");
+  R.kglow.style.opacity=(lit*(1-.6*sg(t,2.2,2.8))).toFixed(3);
+  R.htot.style.opacity=L(.35,1,sg(t,2.0,2.2)).toFixed(3);
+  fadeIn(R.hlow,t,2.12); R.hno.style.opacity=sg(t,2.2,2.4).toFixed(3);
+  R.hsh.style.transform="translateX("+(L(0,1700,cio(sg(t,2.15,2.85)))).toFixed(1)+"px) rotate(18deg)";
 
-  /* ===== 2. place card -> referrals -> priority (2.0 -> 7.4) ===== */
-  var cw=L(340*1.25,620,morph), ch=L(64*1.25,560,morph), cr=L(40,28,morph);
-  var shift=cio(sg(t,3.3,3.8)), back2=cio(sg(t,6.6,7.1));  // card slides left for the referrals, returns to centre
-  var fcx=960-230*shift+230*back2, fcy=540;
-  var flip=qio(sg(t,7.45,8.15)), ang=flip*180;   // admission: the card turns over
-  var push=L(1,1.06,cio(sg(t,6.8,7.45)));
-  R.front.style.width=cw.toFixed(1)+"px";R.front.style.height=ch.toFixed(1)+"px";R.front.style.borderRadius=cr.toFixed(1)+"px";
-  C(R.front,cw,ch,fcx,fcy,{s:push*L(1,1.18,morph)*(1+.08*Math.sin(Math.PI*flip)),pre:"perspective(2200px) rotateX("+(6*Math.sin(Math.PI*flip)).toFixed(2)+"deg) rotateY("+Math.min(ang,90).toFixed(2)+"deg)",op:(t>=1.95&&ang<90)?1:0});
-  fadeIn(R.fchip,t,2.35); fadeIn(R.fk,t,2.4);
-  R.fnum.style.opacity=sg(t,2.5,2.82).toFixed(3);   // number fades in (no counting)
-  fadeIn(R.rlab,t,3.6); fadeIn(R.segs,t,3.6);
-  // referrals arc in and dock on the beat: 4.0 / 4.5 / 5.0
+  /* ===== 2. WHAT WANTEREST IS 3.0 -> 5.7 ===== */
+  var bOut=sg(t,5.45,5.75);
+  S(R.b2,{y:120-ei(bOut)*60,b:bOut*18,op:(t>=3.0?1:0)*(1-bOut)});
+  words(B2W,t,[3.02,3.1,3.18,3.26,3.34],.7);
+  S(R.sub2,{y:250+(1-idE(sg(t,3.55,4.1)))*10,op:sg(t,3.55,3.8)*(1-bOut),b:bOut*14});
+  var wr=cio(sg(t,3.05,3.9)), wpan=cio(sg(t,3.9,5.5)), wOut=ei(sg(t,5.4,5.75));
+  var wx=(1920-1300*.98)/2-L(0,60,wpan), wy=L(1150,360,wr)+wOut*700;
+  S(R.win,{x:wx,y:wy,pre:"perspective(2400px) rotateX("+L(32,10,wr).toFixed(2)+"deg)",s:.98*L(1,1.04,wpan),b:(1-sg(t,3.05,3.5))*14+wOut*10,op:sg(t,3.05,3.3)*(1-sg(t,5.6,5.75))});
+  var kl=eo(sg(t,4.5,4.9));
+  R.k1.style.transform="translateY("+(-6*kl).toFixed(1)+"px) scale("+(1+.03*kl).toFixed(3)+")";
+  R.k1.style.boxShadow="0 24px 40px -20px rgba(17,17,16,"+(.4*kl).toFixed(2)+"),inset 0 0 0 "+(2*kl).toFixed(2)+"px #d7ff3d,0 0 0 "+(5*kl).toFixed(2)+"px rgba(215,255,61,.4)";
+
+  /* ===== step chip 5.6 -> 16.0 ===== */
+  var ci_=eo(sg(t,5.6,6.05)), cOut=sg(t,15.8,16.1);
+  var lw=t<8.38?LW[0]:t<8.62?L(LW[0],LW[1],cio(sg(t,8.38,8.62))):t<11.88?LW[1]:t<12.12?L(LW[1],LW[2],cio(sg(t,11.88,12.12))):LW[2];
+  $("#clab").style.width=lw.toFixed(1)+"px"; var cwid=14+52+18+lw+34;
+  C(R.chip,cwid,78,960,120+(1-ci_)*-30-ei(cOut)*40,{op:ci_*(1-cOut),b:(1-ci_)*8+cOut*14});
+  [[R.cn1,R.cl1,5.6,8.5],[R.cn2,R.cl2,8.5,12.0],[R.cn3,R.cl3,12.0,99]].forEach(function(s,i){
+    var a=s[2], b=s[3], pin2=eo(sg(t,a,a+.4)), pout=ei(sg(t,b-.12,b+.12));
+    s[0].style.transform="translateY("+((1-pin2)*100-pout*100).toFixed(1)+"%)"; s[0].style.opacity=(t>=a-.01&&t<b+.12)?1:0;
+    s[1].style.opacity=(sg(t,a,a+.25)*(1-sg(t,b-.12,b+.05))).toFixed(3);
+    s[1].style.transform="translateY("+((1-pin2)*14-pout*10).toFixed(1)+"px)";
+    s[1].style.filter=(pin2<.97||pout>.02)?"blur("+((1-pin2)*6+pout*6).toFixed(1)+"px)":"none";
+  });
+  C(R.cav,300,26,960,196,{op:sg(t,8.75,9.0)*(1-sg(t,11.85,12.05))});
+
+  /* ===== step 1: request access 5.7 -> 8.5 ===== */
+  var fi=eo(sg(t,5.75,6.2)), fo=sg(t,6.55,6.8);
+  C(R.form,760,86,960,610,{s:L(.94,1,fi)*(1-.1*fo),b:(1-fi)*10+fo*14,op:fi*(1-fo)});
+  var email="elin@auterim.com", nch=Math.floor(cl((t-5.95)/.45)*email.length);
+  R.typed.textContent=email.slice(0,nch); R.ph.style.display=nch>0?"none":"inline"; R.caret.style.opacity=(Math.floor(t*4)%2===0||nch<email.length)?1:0;
+  var gp=sg(t,6.5,6.56)-sg(t,6.6,6.72); R.go.style.transform="scale("+(1-gp*.06).toFixed(3)+")";
+
+  // protagonist card: born from the form (6.6), shifts for referrals, turns Priority, flips at admission
+  var born=eo(sg(t,6.6,7.15));
+  var shift=cio(sg(t,8.6,9.05)), back2=cio(sg(t,11.7,12.2));
+  var fcx=960-200*shift+200*back2, fcy=610;
+  var flip=qio(sg(t,12.45,13.15)), ang=flip*180;
+  var push=L(1,1.06,cio(sg(t,11.9,12.45)));
+  C(R.front,620,520,fcx,fcy,{s:1.08*L(.55,1,born)*push*(1+.08*Math.sin(Math.PI*flip)),pre:"perspective(2200px) rotateX("+(6*Math.sin(Math.PI*flip)).toFixed(2)+"deg) rotateY("+Math.min(ang,90).toFixed(2)+"deg)",b:(1-born)*10,op:(t>=6.6&&ang<90)?born:0});
+  fadeIn(R.fchip,t,6.9); fadeIn(R.fk,t,6.95);
+  R.fnum.style.opacity=sg(t,7.15,7.47).toFixed(3);
+  fadeIn(R.rlab,t,8.85); fadeIn(R.segs,t,8.85);
+
+  /* ===== step 2: three verified referrals dock on 9.5 / 10.0 / 10.5; Priority at 11.0 ===== */
   var nver=0;
-  TK.forEach(function(tk,i){var td=4.0+i*.5, ta=td-.62, p=co(sg(t,ta,td));
-    var dx=1395, dy=L(360,720,i/2), sx=2080, sy=[-120,540,1200][i];
+  TK.forEach(function(tk,i){var td=9.5+i*.5, ta=td-.62, p=co(sg(t,ta,td));
+    var dx=1245, dy=L(440,780,i/2), sx=2080, sy=[-120,610,1260][i];
     var mx=L(sx,dx,p)+Math.sin(p*Math.PI)*[-160,-220,-160][i], my=L(sy,dy,p);
-    var out=sg(t,5.6+i*.05,5.95+i*.05);
-    C(tk,84,84,mx+out*120,my,{s:L(.6,1,p)*(1-.3*out),b:(1-p)*10+out*12,op:(p>0?1:0)*(1-out)});
-    var ck=bo(sg(t,td+.04,td+.34)); tk.querySelector("b").style.transform="scale("+ck.toFixed(3)+")";
+    var out=sg(t,11.2+i*.05,11.55+i*.05);
+    C(tk,88,88,mx+out*120,my,{s:L(.6,1,p)*(1-.3*out),b:(1-p)*10+out*12,op:(p>0?1:0)*(1-out)});
+    tk.querySelector("b").style.transform="scale("+bo(sg(t,td+.04,td+.34)).toFixed(3)+")";
     SGS[i].style.transform="scaleX("+eo(sg(t,td,td+.35)).toFixed(3)+")"; if(t>=td)nver++});
   R.rcnt.textContent=nver+"/3";
-  // lime wash: Priority blooms out from the third referral (5.5, beat)
-  var wash=cio(sg(t,5.5,6.0)), wr=wash*1100;
-  R.fB.style.clipPath="circle("+wr.toFixed(1)+"px at 640px 470px)"; R.fB.style.opacity=wash>0?1:0;
-  R.mvup.style.transform="translateY("+((1-idE(sg(t,5.62,6.1)))*10).toFixed(1)+"px)";
+  var wash=cio(sg(t,11.0,11.5));
+  R.fB.style.clipPath="circle("+(wash*1100).toFixed(1)+"px at 640px 440px)"; R.fB.style.opacity=wash>0?1:0;
+  R.mvup.style.transform="translateY("+((1-idE(sg(t,11.12,11.6)))*10).toFixed(1)+"px)";
 
-  /* ===== 3. admission: the card turns over into a Founder Pass (7.45 -> 10.5) ===== */
-  var bIn=ang>=90, bang=ang-180;
-  var pOut2=cio(sg(t,10.4,10.95));
-  var bcx=L(960,700,pOut2), bs=push*L(1.14,1,pOut2)*(1+.08*Math.sin(Math.PI*flip));
-  var hover=Math.sin(Math.max(0,t-8.2)*1.4)*3*(1-pOut2);
-  C(R.back,440,600,bcx,540,{s:bs,pre:"perspective(2200px) rotateY("+(bIn?bang+hover:0).toFixed(2)+"deg) rotateX("+(bIn?Math.sin(Math.max(0,t-8.2))*2:0).toFixed(2)+"deg)",op:bIn&&t<14.3?1-sg(t,13.8,14.2):0,b:sg(t,13.8,14.2)*14});
-  var rv=apex(R.bA,R.bAk,R.bAp,t,8.0,1.0,{x:220-75,y:230-80,s:150},{x:38,y:36,s:24});
-  R.bA.style.opacity=t>=8.0?1:0;
+  /* ===== step 3: admission. The card turns over: Founding 07/25 (13.0 -> 16.0) ===== */
+  var bIn=ang>=90, bang=ang-180, pOut2=cio(sg(t,15.95,16.5));
+  var bcx=L(960,745,pOut2), bs=push*L(1.08,.96,pOut2)*(1+.08*Math.sin(Math.PI*flip));
+  var bcy=L(610,600,pOut2);
+  var hover=Math.sin(Math.max(0,t-13.2)*1.4)*3*(1-pOut2);
+  var byOut=sg(t,18.85,19.2);
+  C(R.back,440,600,bcx,bcy+ei(byOut)*500,{s:bs,pre:"perspective(2200px) rotateY("+(bIn?bang+hover:0).toFixed(2)+"deg) rotateX("+(bIn?Math.sin(Math.max(0,t-13.2))*2:0).toFixed(2)+"deg)",op:bIn?1-sg(byOut,.4,1):0,b:byOut*16});
+  var rv=apex(R.bA,R.bAk,R.bAp,t,13.0,1.0,{x:220-75,y:230-80,s:150},{x:38,y:36,s:24});
+  R.bA.style.opacity=t>=13.0?1:0;
   R.bser.style.opacity=sg(t,rv.ser,rv.ser+.15).toFixed(3); R.bser.style.transform="translateY("+((1-idE(sg(t,rv.ser,rv.ser+.45)))*8).toFixed(1)+"px)";
   R.btot.style.opacity=sg(t,rv.lab,rv.lab+.18).toFixed(3); R.blt.style.opacity=sg(t,rv.lab,rv.lab+.18).toFixed(3);
   [R.bhr1,R.bwho,R.bhr2,R.bft].forEach(function(e,i){fadeIn(e,t,rv.still+i*.08)});
-  R.bsh.style.transform="translateX("+(L(0,1700,cio(sg(t,9.55,10.35)))).toFixed(1)+"px) rotate(18deg)";
+  R.bsh.style.transform="translateX("+(L(0,1700,cio(sg(t,14.55,15.35)))).toFixed(1)+"px) rotate(18deg)";
 
-  /* ===== 4. the second edition: Early 100 (10.6 -> 14.2) ===== */
-  var eIn=eo(sg(t,10.6,11.3)), eOut=sg(t,13.8,14.2);
-  C(R.pe,440,600,L(1600,1220,eIn),540,{s:L(.92,1,eIn),pre:"perspective(2200px) rotateY("+L(-24,0,eIn).toFixed(2)+"deg)",b:(1-eIn)*12+eOut*14,op:(eIn>0?1:0)*(1-sg(eOut,.3,1))});
-  var er=apex(R.eA,R.eAk,R.eAp,t,11.0,.8,{x:220-60,y:230-64,s:120},{x:38,y:36,s:24});
-  R.eA.style.opacity=t>=11.0?1:0; R.eAk.style.opacity=R.eAp.style.opacity;   // no keystone moment: ink keystone arrives with the peak
+  /* ===== 6. Yours forever (16.0 -> 19.2) ===== */
+  var yOut=sg(t,18.85,19.15);
+  S(R.b6,{y:100-ei(yOut)*50,b:yOut*16,op:(t>=16.0?1:0)*(1-yOut)});
+  words(B6W,t,[16.02,16.14],.7);
+  var eIn=eo(sg(t,16.3,17.0));
+  C(R.pe,440,600,L(1600,1175,eIn),600+ei(byOut)*500,{s:.96*L(.92,1,eIn),pre:"perspective(2200px) rotateY("+L(-24,0,eIn).toFixed(2)+"deg)",b:(1-eIn)*12+byOut*16,op:(eIn>0?1:0)*(1-sg(byOut,.4,1))});
+  var er=apex(R.eA,R.eAk,R.eAp,t,16.6,.8,{x:220-60,y:230-64,s:120},{x:38,y:36,s:24});
+  R.eA.style.opacity=t>=16.6?1:0; R.eAk.style.opacity=R.eAp.style.opacity;
   R.eser.style.opacity=sg(t,er.ser,er.ser+.15).toFixed(3); R.elt.style.opacity=sg(t,er.lab,er.lab+.18).toFixed(3);
   [R.ewho,R.eft].forEach(function(e,i){fadeIn(e,t,er.still+i*.08)});
-  [[R.bf,700,12.0,280],[R.be,1220,12.5,280]].forEach(function(b){var q=bo(sg(t,b[2],b[2]+.45));
-    C(b[0],b[3],56,b[1],880+(1-q)*20,{s:L(.85,1,q),op:sg(t,b[2],b[2]+.12)*(1-sg(eOut,.3,1)),b:eOut*12})});
+  [[R.bf,745,17.5,340],[R.be,1175,18.0,340]].forEach(function(b){var q=bo(sg(t,b[2],b[2]+.45));
+    C(b[0],b[3],58,b[1],960+(1-q)*20,{s:L(.85,1,q),op:sg(t,b[2],b[2]+.12)*(1-yOut),b:yOut*12})});
 
-  /* ===== 5. the Members Wall, opt-in (14.0 -> 17.7) ===== */
-  var wIn=cio(sg(t,13.95,14.9)), wOut=sg(t,17.5,17.85);
-  var ws=L(1.9,1,wIn)*(1+.03*cio(sg(t,14.9,17.5))), wry=L(-8,-4,wIn);
-  C(R.wall,1600,640,960+L(260,0,wIn),500,{s:ws,pre:"perspective(2400px) rotateX("+L(34,22,wIn).toFixed(2)+"deg) rotateZ("+wry.toFixed(2)+"deg)",b:(1-wIn)*12+wOut*20,op:sg(t,13.95,14.3)*(1-sg(wOut,.35,1))});
-  WC.forEach(function(c,i){ if(i===4)return; var d=Math.abs((i%5)-2)*.05+Math.floor(i/5)*.06; var q=idE(sg(t,14.1+d,14.6+d)); c.style.opacity=sg(t,14.1+d,14.3+d).toFixed(3); c.style.transform="translateY("+((1-q)*14).toFixed(1)+"px)"});
-  var tIn=eo(sg(t,14.6,15.0));
-  C(R.tgp,520,76,960,950+(1-tIn)*30,{op:tIn*(1-sg(wOut,.3,1)),b:wOut*14});
-  var c1=sg(t,15.5,15.68), c2=sg(t,16.5,16.68);   // consent 1 (beat 15.5) and consent 2 (beat 16.5), independent
-  [[R.tg1,c1],[R.tg2,c2]].forEach(function(g){var p=cio(g[1]);g[0].style.background=p>.5?"#111110":"#dcdbd2";g[0].querySelector("i").style.transform="translateX("+(22*p).toFixed(1)+"px)"});
-  var jq=idE(sg(t,15.6,16.0));
-  WC[4].style.opacity=sg(t,15.6,15.8).toFixed(3); WC[4].style.transform="translateY("+((1-jq)*8).toFixed(1)+"px)";
-  WC[4].style.boxShadow="0 30px 50px -30px rgba(17,17,16,.5),0 0 0 "+(4*(sg(t,15.6,15.9)-sg(t,16.2,16.8))).toFixed(2)+"px rgba(215,255,61,.7)";
-  R.vp.style.opacity=sg(t,16.6,16.8).toFixed(3);
-  var sq=eo(sg(t,16.7,17.1));
-  S(R.slug,{x:1420,y:92+(1-sq)*14,op:sg(t,16.7,16.85)*(1-sg(wOut,.3,1)),b:(1-sq)*6+wOut*14});
-  // cursor for the two toggles
-  var cp=cio(sg(t,15.0,15.42)), cq=cio(sg(t,15.85,16.42));
-  var cx=L(L(1300,975,cp),1223,cq), cy=L(L(1140,960,cp),960,cq);
-  var press=Math.max(sg(t,15.5,15.56)-sg(t,15.6,15.72),sg(t,16.5,16.56)-sg(t,16.6,16.72));
-  S(R.cur,{x:cx,y:cy,s:1-press*.14,op:sg(t,15.0,15.15)*(1-sg(t,16.9,17.1))}); R.cur.style.transformOrigin="4px 3px";
-
-  /* ===== 6. outro (17.8 -> 21) ===== */
-  var pu=1+.03*cio(sg(t,17.8,21));
-  S(R.o1,{y:330,s:pu,op:t>=17.8?1:0}); R.o1.style.transformOrigin="50% 50%";
-  S(R.o2,{y:480,s:pu,op:t>=18.2?1:0}); R.o2.style.transformOrigin="50% 50%";
-  words(O1W,t,[17.85,17.93,18.01,18.09],.7);
-  words(O2W,t,[18.3,18.38,18.46,18.54],.7);
-  R.perm.style.setProperty("--u",eo(sg(t,19.0,19.4)).toFixed(3));
-  var lp=eo(sg(t,19.25,19.9)), cpp=eo(sg(t,19.4,20.05));
-  S(R.brand,{x:960-330,y:700+(1-lp)*40,op:lp,b:(1-lp)*8});
-  S(R.cta,{x:960+70,y:692+(1-cpp)*40,op:cpp,b:(1-cpp)*8});
-  R.bm.style.strokeDasharray="400";R.bm.style.strokeDashoffset=(400*(1-eo(sg(t,19.3,19.9)))).toFixed(1);
+  /* ===== 7. CTA 19.0 -> 22 ===== */
+  S(R.b7,{y:270,s:1+.025*cio(sg(t,19,22)),op:t>=19.0?1:0}); R.b7.style.transformOrigin="50% 50%";
+  words(B7W,t,[19.02,19.12,19.24],.7);
+  var bi=eo(sg(t,19.55,20.15)), ci2=eo(sg(t,19.7,20.3));
+  S(R.brand,{x:960-470,y:548+(1-bi)*40,op:bi,b:(1-bi)*8});
+  S(R.cta,{x:960+10,y:520+(1-ci2)*40,op:ci2,b:(1-ci2)*8});
+  R.bm.style.strokeDasharray="400";R.bm.style.strokeDashoffset=(400*(1-eo(sg(t,19.6,20.2)))).toFixed(1);
+  C(R.url,200,30,960,700,{op:sg(t,20.0,20.3)});
+  var cp=cio(sg(t,19.85,20.4)), press=sg(t,20.5,20.56)-sg(t,20.6,20.72);
+  S(R.cur,{x:L(1500,1200,cp)+Math.sin(cp*Math.PI)*-40,y:L(900,575,cp),s:1-press*.14,op:sg(t,19.85,20.0)*(1-sg(t,21.2,21.5))});
+  R.cur.style.transformOrigin="4px 3px";
+  var cf=eo(sg(t,20.52,20.85));
+  R.ctf.style.transform="scale("+cf.toFixed(3)+")"; R.ctt.style.color=cf>.5?"#111110":"#f5f4ee";
+  R.cta.style.transform+=" scale("+(1-press*.05).toFixed(3)+")";
+  var rp2=co(sg(t,20.52,21.2));
+  C(R.ring,380,88,970+190,564,{s:L(1,1.5,rp2),op:rp2>0?(1-rp2)*.9:0});
 }
 
 var proxy={t:0}, tl=gsap.timeline({paused:true});
-tl.to(proxy,{t:21,duration:21,ease:"none",onUpdate:function(){render(proxy.t)}},0);
+tl.to(proxy,{t:22,duration:22,ease:"none",onUpdate:function(){render(proxy.t)}},0);
 render(0);
 window.__timelines=window.__timelines||{};window.__timelines["root"]=tl;
 })();

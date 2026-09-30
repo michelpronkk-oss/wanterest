@@ -8,3 +8,5 @@ work-*/
 render.log
 comp/snapshots/
 poster/assets/
+flap.json
+render.done
