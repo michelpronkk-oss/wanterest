@@ -1,0 +1,606 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+@font-face { font-family: Archivo; font-weight: 700; src: url(Archivo-700.ttf); }
+@font-face { font-family: Archivo; font-weight: 800; src: url(Archivo-800.ttf); }
+@font-face { font-family: Inter; font-weight: 400; src: url(Inter-400.ttf); }
+@font-face { font-family: Inter; font-weight: 700; src: url(Inter-700.ttf); }
+@font-face { font-family: Sora; font-weight: 600; src: url(Sora-600.ttf); }
+:root {
+  --page: #f7f6f1; --surface: #fff; --border: rgba(17,17,16,.08); --ink: #111110; --muted: #8c8c82;
+  --faint: #a3a399; --sec: #4a4a43; --chip: #f3f2ec; --subtle: #f9f8f4; --lime: #d7ff3d;
+  --lime-tint: #eff9c4; --lime-ink: #3d4a0e; --pos: #5c6b1a; --track: #f0efe8; --dark: #111110; --dark-ink: #f5f4ee;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--ink); }
+body { font-family: Inter, sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+#stage { position: absolute; inset: 0; overflow: hidden; background: var(--page); }
+.layer { position: absolute; inset: 0; overflow: hidden; isolation: isolate; }
+.abs { position: absolute; }
+.display { font-family: Archivo; font-weight: 800; letter-spacing: -0.045em; line-height: 1.02; }
+.w { display: inline-block; overflow: hidden; vertical-align: top; padding: 0 0.02em 0.12em; margin-bottom: -0.12em; }
+.w > span { display: inline-block; will-change: transform; }
+mark.hl { background: none; position: relative; color: inherit; }
+mark.hl::before { content: ""; position: absolute; left: -0.08em; right: -0.08em; top: 0.08em; bottom: 0.02em; background: var(--lime); border-radius: 0.12em; z-index: -1; transform-origin: left center; transform: scaleX(var(--hl, 0)); }
+mark.hl { z-index: 0; isolation: isolate; }
+
+/* ---------- Scene 1: the noise ---------- */
+#s1 { background: radial-gradient(ellipse at 50% 55%, #1c1c1a 0%, #0b0b0a 70%); }
+#field { position: absolute; inset: 0; perspective: 900px; perspective-origin: 50% 50%; }
+.snip { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 14px; padding: 16px 22px; border-radius: 16px;
+  background: rgba(245,244,238,.06); border: 1px solid rgba(245,244,238,.09); color: rgba(245,244,238,.72); font-size: 24px; white-space: nowrap; }
+.snip img { width: 26px; height: 26px; border-radius: 6px; }
+#scan { position: absolute; top: 0; bottom: 0; width: 3px; background: var(--lime); box-shadow: 0 0 40px 12px rgba(215,255,61,.35), 0 0 4px 1px var(--lime); }
+#scanGlow { position: absolute; top: 0; bottom: 0; width: 420px; background: linear-gradient(90deg, rgba(215,255,61,0), rgba(215,255,61,.07)); }
+#s1cap { position: absolute; left: 0; right: 0; top: 190px; text-align: center; color: var(--dark-ink); font-size: 92px; }
+#hero { position: absolute; left: 960px; top: 0; width: 1180px; padding: 34px 44px 40px; border-radius: 28px; background: #fff;
+  box-shadow: 0 50px 120px -30px rgba(0,0,0,.6); transform-origin: 50% 50%; }
+#hero .meta { display: flex; align-items: center; gap: 14px; font-size: 22px; font-weight: 700; color: var(--ink); }
+#hero .meta img { width: 34px; height: 34px; border-radius: 8px; }
+#hero .meta span { color: var(--faint); font-weight: 400; }
+#hero .q { margin-top: 20px; font-size: 50px; line-height: 1.25; letter-spacing: -0.02em; color: var(--ink); font-family: Inter; }
+#dot { position: absolute; left: 960px; top: 640px; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; background: var(--lime); }
+
+/* ---------- Scene 2: reveal ---------- */
+#s2 { background: var(--page); }
+#grid { position: absolute; inset: -200px; background-image:
+  linear-gradient(rgba(17,17,16,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(17,17,16,.045) 1px, transparent 1px);
+  background-size: 80px 80px; }
+#brand { position: absolute; left: 50%; top: 50%; display: flex; align-items: center; gap: 34px; }
+#brand svg { width: 190px; height: 187px; overflow: visible; }
+#wordmark { font-family: Sora; font-weight: 600; font-size: 150px; letter-spacing: -0.035em; color: var(--ink); line-height: 1; display: flex; }
+#wordmark span { display: inline-block; }
+#s2head { position: absolute; left: 0; right: 0; top: 610px; text-align: center; font-size: 104px; color: var(--ink); }
+
+/* ---------- App chrome ---------- */
+.win { position: absolute; left: 0; top: 0; width: 1180px; height: 800px; border-radius: 18px; background: var(--page); overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(17,17,16,.1), 0 60px 140px -40px rgba(17,17,16,.45), 0 20px 50px -30px rgba(17,17,16,.3); transform-origin: 0 0; }
+.chrome { height: 34px; background: #f1f0ea; border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 14px; gap: 7px; position: relative; }
+.chrome i { width: 11px; height: 11px; border-radius: 50%; background: #d9d8d0; }
+.chrome .url { position: absolute; left: 50%; transform: translateX(-50%); width: 300px; height: 21px; border-radius: 6px; background: #e8e7e0; font-size: 11.5px; color: var(--muted); display: grid; place-items: center; }
+.side { position: absolute; left: 0; top: 34px; bottom: 0; width: 200px; background: #fff; border-right: 1px solid var(--border); padding: 18px 14px; }
+.side .logo { display: flex; align-items: center; gap: 8px; font-family: Sora; font-weight: 600; font-size: 16px; padding: 0 6px; }
+.ws { margin: 20px 0 16px; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--border); display: flex; gap: 9px; align-items: center; background: var(--subtle); }
+.ws b { width: 26px; height: 26px; border-radius: 7px; background: var(--ink); color: #fff; display: grid; place-items: center; font-size: 12px; }
+.ws small { display: block; font-size: 8.5px; letter-spacing: .12em; color: var(--muted); font-weight: 700; }
+.ws span { font-size: 13px; font-weight: 700; }
+.nav { display: grid; gap: 3px; }
+.nav div { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-radius: 8px; font-size: 13px; color: var(--sec); }
+.nav div.on { background: var(--chip); color: var(--ink); font-weight: 700; box-shadow: inset 2px 0 0 var(--lime); }
+.nav em { font-style: normal; font-size: 11px; color: var(--muted); }
+.plan { position: absolute; left: 14px; right: 14px; bottom: 16px; padding: 11px; border-radius: 10px; border: 1px solid var(--border); background: var(--subtle); font-size: 11px; }
+.plan .bar { height: 4px; background: var(--track); border-radius: 3px; margin: 7px 0; } .plan .bar i { display: block; height: 100%; width: 75%; background: var(--ink); border-radius: 3px; }
+.top { position: absolute; left: 200px; right: 0; top: 34px; height: 54px; border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 24px; gap: 12px; }
+.top .search { width: 330px; height: 32px; border-radius: 8px; background: #fff; border: 1px solid var(--border); font-size: 12px; color: var(--faint); display: flex; align-items: center; padding: 0 12px; }
+.top .sp { flex: 1; }
+.top .scanned { font-size: 12px; color: var(--sec); display: flex; align-items: center; gap: 6px; } .top .scanned i { width: 6px; height: 6px; border-radius: 50%; background: var(--pos); }
+.top .btn { height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border); background: #fff; font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+.main { position: absolute; left: 200px; right: 0; top: 88px; bottom: 0; padding: 26px 28px; }
+.eyebrow { font-size: 11.5px; color: var(--muted); font-weight: 700; }
+.h1 { font-family: Archivo; font-weight: 800; font-size: 30px; letter-spacing: -0.02em; margin: 4px 0 4px; }
+.sub { font-size: 13px; color: var(--muted); }
+.chips { display: flex; gap: 8px; margin: 18px 0 16px; align-items: center; }
+.chips .kw { width: 280px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: #fff; font-size: 12px; color: var(--faint); display: flex; align-items: center; padding: 0 12px; margin-right: 6px; }
+.chips span { height: 30px; padding: 0 12px; border-radius: 15px; background: var(--chip); font-size: 12px; font-weight: 700; color: var(--sec); display: flex; align-items: center; gap: 6px; }
+.chips span i { font-style: normal; color: var(--muted); font-weight: 400; }
+.chips span.on { background: var(--ink); color: #fff; } .chips span.on i { color: #bbb; }
+
+.cards { position: absolute; left: 28px; top: 178px; width: 560px; display: grid; gap: 10px; }
+.card { background: #fff; border-radius: 12px; padding: 14px 18px; box-shadow: inset 0 0 0 1px var(--border); height: 118px; position: relative; }
+.card.sel { box-shadow: inset 0 0 0 1.5px var(--ink), 0 10px 30px -18px rgba(17,17,16,.4); }
+.card .r1 { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; }
+.card .r1 img { width: 15px; height: 15px; border-radius: 3px; }
+.card .r1 .age { color: var(--faint); font-weight: 400; }
+.card .r1 .sp { flex: 1; }
+.badge { font-size: 9.5px; font-weight: 700; letter-spacing: .08em; padding: 4px 8px; border-radius: 10px; }
+.badge.hi { background: var(--lime-tint); color: var(--lime-ink); } .badge.sw { background: var(--ink); color: #fff; } .badge.pr, .badge.al { background: var(--chip); color: var(--sec); }
+.bars { display: inline-flex; gap: 2px; } .bars i { width: 3px; height: 11px; border-radius: 1px; background: #d8d7cf; } .bars i.f { background: var(--ink); }
+.score { font-weight: 700; width: 20px; text-align: right; }
+.card .t { font-size: 14px; font-weight: 700; margin: 8px 0 4px; }
+.card .qq { font-size: 12px; color: var(--sec); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .tags { display: flex; gap: 6px; margin-top: 10px; }
+.tag { font-size: 10.5px; padding: 3px 8px; border-radius: 9px; background: var(--chip); color: var(--sec); }
+.card .acts { position: absolute; right: 16px; bottom: 12px; display: flex; gap: 12px; align-items: center; font-size: 11px; }
+.card .acts b { padding: 5px 10px; border-radius: 7px; border: 1px solid rgba(17,17,16,.12); } .card .acts span { color: var(--faint); }
+
+.detail { position: absolute; left: 604px; top: 178px; width: 348px; background: #fff; border-radius: 14px; box-shadow: inset 0 0 0 1px var(--border), 0 30px 60px -30px rgba(17,17,16,.35); }
+.detail .hd { display: flex; gap: 10px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.detail .hd img { width: 20px; height: 20px; border-radius: 4px; }
+.detail .hd b { font-size: 13px; display: block; } .detail .hd small { font-size: 10.5px; color: var(--faint); }
+.detail .bd { padding: 16px; }
+.detail .quote { font-size: 16.5px; line-height: 1.45; margin: 12px 0 14px; }
+.why { border-radius: 10px; background: var(--subtle); box-shadow: inset 0 0 0 1px var(--border); padding: 11px 12px; font-size: 11.5px; line-height: 1.5; color: var(--sec); }
+.why b { display: block; font-size: 9.5px; letter-spacing: .1em; color: var(--ink); margin-bottom: 3px; }
+.kv { display: flex; justify-content: space-between; font-size: 11.5px; padding: 8px 0; border-bottom: 1px solid var(--border); } .kv span { color: var(--muted); } .kv b { font-size: 11.5px; }
+.detail .ft { display: flex; gap: 8px; margin-top: 14px; }
+.btn-ink { background: var(--ink); color: #fff; font-weight: 700; font-size: 12px; padding: 9px 14px; border-radius: 9px; }
+.btn-line { border: 1px solid rgba(17,17,16,.14); font-weight: 700; font-size: 12px; padding: 9px 14px; border-radius: 9px; background: #fff; }
+
+.cursor { position: absolute; left: 0; top: 0; width: 34px; height: 40px; z-index: 50; filter: drop-shadow(0 4px 8px rgba(0,0,0,.25)); }
+.ripple { position: absolute; width: 80px; height: 80px; margin: -40px 0 0 -40px; border-radius: 50%; border: 3px solid var(--lime); z-index: 49; }
+
+.cap { position: absolute; color: var(--ink); font-size: 72px; white-space: nowrap; }
+
+/* ---------- Scene 4: insights ---------- */
+.board { position: absolute; left: 180px; top: 248px; width: 1560px; }
+.mkt { position: relative; height: 250px; border-radius: 22px; background: var(--dark); color: var(--dark-ink); display: grid; grid-template-columns: 1fr 250px 300px; overflow: hidden; }
+.mkt .l { padding: 34px 40px; }
+.mkt .lab { font-size: 15px; font-weight: 700; letter-spacing: .12em; color: var(--lime); display: flex; align-items: center; gap: 10px; }
+.mkt .lab i { width: 8px; height: 8px; border-radius: 50%; background: var(--lime); }
+.mkt .txt { font-family: Archivo; font-weight: 700; font-size: 36px; line-height: 1.22; letter-spacing: -0.02em; margin-top: 16px; }
+.mkt .c { border-left: 1px solid rgba(245,244,238,.12); padding: 34px 30px; }
+.mkt .c small { font-size: 15px; color: var(--dark-ink-muted, #9c9c92); }
+.mkt .c b { display: block; font-family: Archivo; font-weight: 800; font-size: 84px; letter-spacing: -0.04em; margin-top: 30px; line-height: 1; }
+.mkt .c b.sm { font-size: 50px; margin-top: 44px; }
+.mkt .c em { font-style: normal; font-size: 15px; color: var(--lime); display: block; margin-top: 8px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; margin-top: 24px; }
+.ic { height: 330px; border-radius: 22px; background: #fff; box-shadow: inset 0 0 0 1px var(--border), 0 30px 60px -40px rgba(17,17,16,.3); padding: 30px 32px; position: relative; overflow: hidden; }
+.ic .lab { font-size: 14px; font-weight: 700; letter-spacing: .1em; color: var(--muted); }
+.ic .ti { font-family: Sora; font-weight: 600; font-size: 32px; letter-spacing: -0.02em; margin-top: 12px; }
+.ic .big { font-family: Archivo; font-weight: 800; font-size: 80px; letter-spacing: -0.04em; color: var(--pos); margin-top: 8px; display: flex; align-items: baseline; gap: 12px; line-height: 1; }
+.ic .big small { font-family: Inter; font-weight: 400; font-size: 17px; letter-spacing: 0; color: var(--muted); }
+.spark { position: absolute; left: 32px; right: 32px; bottom: 30px; height: 70px; display: flex; align-items: flex-end; gap: 10px; }
+.spark i { flex: 1; background: #e4e3db; border-radius: 4px; transform-origin: bottom; }
+.spark i:last-child { background: var(--ink); }
+.gap .rw { margin-top: 26px; font-size: 18px; } .gap .rw div { display: flex; justify-content: space-between; } .gap .rw b { font-weight: 700; }
+.track { height: 10px; border-radius: 5px; background: var(--track); margin-top: 10px; overflow: hidden; } .track i { display: block; height: 100%; border-radius: 5px; background: var(--ink); transform-origin: left; }
+.track.soft i { background: #c9c8bf; }
+.gap .foot { position: absolute; left: 32px; bottom: 28px; font-size: 16px; color: var(--muted); }
+.gap .foot b { color: var(--ink); }
+.th { margin-top: 14px; }
+.th div { display: grid; grid-template-columns: 26px 1fr 110px 40px 56px; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 17px; }
+.th div:last-child { border-bottom: 0; }
+.th span.n { color: var(--faint); font-weight: 700; font-size: 15px; } .th b { text-align: right; } .th em { font-style: normal; font-size: 14px; color: var(--pos); text-align: right; }
+.th .tb { height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; } .th .tb i { display: block; height: 100%; background: var(--ink); transform-origin: left; }
+
+/* ---------- Scene 5: actions ---------- */
+.act { position: absolute; left: 260px; top: 250px; width: 1400px; border-radius: 26px; background: #fff; padding: 40px 48px 34px;
+  box-shadow: inset 0 0 0 2px var(--ink), 0 60px 120px -50px rgba(17,17,16,.45); transform-origin: 50% 50%; }
+.act .r1 { display: flex; align-items: center; gap: 16px; font-size: 18px; color: var(--muted); }
+.act .r1 .pos { background: var(--lime-tint); color: var(--lime-ink); font-weight: 700; font-size: 15px; letter-spacing: .1em; padding: 7px 14px; border-radius: 16px; }
+.act .r1 .sp { flex: 1; } .act .r1 b { color: var(--ink); font-size: 20px; }
+.act h3 { font-family: Archivo; font-weight: 800; font-size: 50px; letter-spacing: -0.03em; margin: 18px 0 10px; }
+.act p.d { font-size: 20px; color: var(--sec); line-height: 1.5; max-width: 960px; }
+.nowsug { display: grid; grid-template-columns: 1fr 60px 1fr; align-items: center; margin-top: 28px; }
+.nowsug > div { border-radius: 16px; padding: 20px 24px; min-height: 108px; }
+.nowsug .now { background: var(--subtle); box-shadow: inset 0 0 0 1px var(--border); color: var(--sec); }
+.nowsug .sug { box-shadow: inset 0 0 0 2px var(--ink); }
+.nowsug small { display: block; font-size: 13px; font-weight: 700; letter-spacing: .1em; color: var(--muted); margin-bottom: 8px; }
+.nowsug .sug small { color: var(--pos); }
+.nowsug .arr { text-align: center; font-size: 28px; color: var(--faint); }
+.nowsug q { quotes: none; font-size: 23px; font-weight: 700; color: var(--ink); line-height: 1.35; }
+.nowsug .now q { font-weight: 400; color: var(--sec); }
+.caret { display: inline-block; width: 3px; height: 1.05em; background: var(--ink); vertical-align: -0.15em; margin-left: 2px; }
+.act .ft { display: flex; align-items: center; gap: 14px; margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--border); font-size: 17px; color: var(--muted); }
+.act .ft img { width: 22px; height: 22px; border-radius: 5px; }
+.act .ft .sp { flex: 1; }
+.act .ft .b1 { border: 1px solid rgba(17,17,16,.16); color: var(--ink); font-weight: 700; padding: 14px 22px; border-radius: 12px; font-size: 18px; }
+#accept { background: var(--ink); color: #fff; font-weight: 700; padding: 14px 26px; border-radius: 12px; font-size: 18px; position: relative; overflow: hidden; min-width: 150px; text-align: center; }
+#acceptFill { position: absolute; inset: 0; background: var(--lime); color: var(--ink); display: grid; place-items: center; }
+.done { position: absolute; left: 260px; top: 870px; width: 1400px; height: 84px; border-radius: 20px; background: #fff; box-shadow: inset 0 0 0 1px var(--border);
+  display: flex; align-items: center; gap: 18px; padding: 0 32px; font-size: 22px; font-weight: 700; }
+.done .tg { font-size: 13px; letter-spacing: .1em; background: var(--chip); color: var(--sec); padding: 6px 12px; border-radius: 12px; }
+.done .sp { flex: 1; } .done .m { color: var(--pos); font-size: 20px; }
+
+/* ---------- Scene 6: outro ---------- */
+#s6 { background: #0d0d0c; color: var(--dark-ink); }
+#s6a { position: absolute; left: 0; right: 0; top: 300px; text-align: center; font-size: 112px; }
+#s6b { position: absolute; left: 0; right: 0; top: 440px; text-align: center; font-size: 210px; color: var(--lime); }
+#s6c { position: absolute; left: 50%; top: 820px; display: flex; align-items: center; gap: 18px; transform: translateX(-50%); font-family: Sora; font-weight: 600; font-size: 44px; letter-spacing: -0.02em; }
+#s6c svg { width: 44px; height: 43px; }
+#s6c .url { margin-left: 18px; padding-left: 26px; border-left: 2px solid rgba(245,244,238,.2); font-family: Inter; font-weight: 400; font-size: 34px; color: #b8b7ad; letter-spacing: 0; }
+#underline { position: absolute; left: 50%; top: 690px; height: 10px; width: 640px; margin-left: -320px; background: var(--lime); border-radius: 5px; transform-origin: left; }
+
+#grain { position: absolute; inset: 0; pointer-events: none; opacity: .06; mix-blend-mode: multiply; z-index: 100; }
+#vig { position: absolute; inset: 0; pointer-events: none; z-index: 99; background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) 60%, rgba(0,0,0,.14) 100%); }
+#flash { position: absolute; inset: 0; background: #fff; z-index: 98; pointer-events: none; opacity: 0; }
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <!-- Scene 2/3/4/5 share the cream world -->
+  <div class="layer" id="s2"><div id="grid"></div>
+    <div id="brand">
+      <svg viewBox="0 0 120 118"><polyline id="wpath" points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#111110" stroke-width="16" stroke-linejoin="miter" stroke-linecap="butt"/></svg>
+      <div id="wordmark"></div>
+    </div>
+    <div id="s2head" class="display kin">Know what buyers want next.</div>
+  </div>
+
+  <div class="layer" id="s3">
+    <div class="cap display kin" id="cap3" style="left:0;right:0;top:78px;text-align:center">Real conversations. Scored for <mark class="hl" id="hl3">intent.</mark></div>
+    <div class="win" id="win3">
+      <div class="chrome"><i></i><i></i><i></i><div class="url">app.wanterest.com/signals</div></div>
+      <div class="side">
+        <div class="logo"><svg viewBox="0 0 120 118" width="18" height="18"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#111110" stroke-width="16"/></svg>wanterest</div>
+        <div class="ws"><b>A</b><div><small>AUTERIM</small><span>Auterim Flow</span></div></div>
+        <div class="nav">
+          <div>Home</div><div class="on">Signals <em>12</em></div><div>Saved <em>3</em></div><div>Insights</div><div>Actions <em>1</em></div><div>Experiments</div><div>Settings</div>
+        </div>
+        <div class="plan"><b>Free plan</b> <span style="float:right;color:#8c8c82">3 of 4 scans</span><div class="bar"><i></i></div><span style="color:#8c8c82">Resets 1 Oct · </span><u>Upgrade</u></div>
+      </div>
+      <div class="top"><div class="search">Search signals, themes, actions</div><div class="sp"></div><div class="scanned"><i></i>Scanned 2h ago</div><div class="btn">↻ Rescan</div></div>
+      <div class="main">
+        <div class="eyebrow">Auterim Flow</div><div class="h1">Signals</div><div class="sub">12 qualified · 3 saved · 2 dismissed</div>
+        <div class="chips"><div class="kw">Filter by keyword</div><span class="on">All <i>12</i></span><span>High intent <i>5</i></span><span>Switching <i>2</i></span><span>Problem <i>4</i></span><span>Alternative <i>1</i></span></div>
+      </div>
+      <div class="cards" id="cards" style="left:228px;top:266px"></div>
+      <div class="detail" id="detail" style="left:806px;top:266px">
+        <div class="hd"><img src="reddit.png"><div><b>r/SaaS</b><small>1 day ago · 34 upvotes</small></div></div>
+        <div class="bd">
+          <div style="display:flex;gap:8px;align-items:center"><span class="badge sw">SWITCHING</span><span class="bars"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i></span><b style="font-size:12px">91</b></div>
+          <div class="quote">“We're paying for half of HubSpot we never use. Has anyone moved to something <mark class="hl" id="hlD">simpler</mark>?”</div>
+          <div class="why"><b>WHY IT MATTERS</b>Names a direct competitor, a reason to leave (unused complexity) and asks for alternatives. Your positioning covers the reason.</div>
+          <div class="kv" style="margin-top:8px"><span>Matched</span><b>HubSpot alternative, Pricing</b></div>
+          <div class="kv"><span>Intent evidence</span><b>"moved to something simpler"</b></div>
+          <div class="kv"><span>Author</span><b>Ops lead · 40-person team</b></div>
+          <div class="ft"><span class="btn-ink">Open thread ↗</span><span class="btn-line">Save</span></div>
+        </div>
+      </div>
+      <svg class="cursor" id="cur3" viewBox="0 0 34 40"><path d="M3 2 L3 32 L11 25 L16 37 L22 34 L17 23 L28 23 Z" fill="#111110" stroke="#fff" stroke-width="2.4" stroke-linejoin="round"/></svg>
+      <div class="ripple" id="rip3"></div>
+    </div>
+  </div>
+
+  <div class="layer" id="s4">
+    <div class="cap display kin" id="cap4" style="left:0;right:0;top:86px;text-align:center">Demand, mapped. Gaps, <mark class="hl" id="hl4">measured.</mark></div>
+    <div class="board" id="board">
+      <div class="mkt" id="mkt">
+        <div class="l"><div class="lab"><i></i>MARKET STATE</div><div class="txt">Demand is concentrated around CRM sync for small sales teams. Buyers want fewer tools, and they're increasingly price-sensitive.</div></div>
+        <div class="c"><small>Signals</small><b id="n48">48</b><small>30 days</small></div>
+        <div class="c"><small>Confidence</small><b class="sm">Directional</b><em>3 of 5 sources</em></div>
+      </div>
+      <div class="row2">
+        <div class="ic" id="ic1"><div class="lab">BIGGEST CHANGE</div><div class="ti">Pricing pressure</div>
+          <div class="big">↑<span id="n31">31</span>% <small>share of demand</small></div>
+          <div class="spark" id="spark"><i style="height:28%"></i><i style="height:38%"></i><i style="height:33%"></i><i style="height:45%"></i><i style="height:54%"></i><i style="height:62%"></i><i style="height:100%"></i></div></div>
+        <div class="ic gap" id="ic2"><div class="lab">LARGEST POSITIONING GAP</div><div class="ti">Simplicity</div>
+          <div class="rw"><div><span>Buyers ask for it</span><b id="n42">42%</b></div><div class="track"><i id="g1" style="width:42%"></i></div></div>
+          <div class="rw"><div><span>Your site says it</span><b id="n12">12%</b></div><div class="track soft"><i id="g2" style="width:12%"></i></div></div>
+          <div class="foot"><b id="n30">30</b>-point gap</div></div>
+        <div class="ic" id="ic3"><div class="lab">TOP DEMAND THEMES</div>
+          <div class="th" id="themes">
+            <div><span class="n">1</span><span>CRM sync</span><span class="tb"><i style="width:100%"></i></span><b>18</b><em>↑ 12%</em></div>
+            <div><span class="n">2</span><span>HubSpot alternative</span><span class="tb"><i style="width:61%"></i></span><b>11</b><em>↑ 31%</em></div>
+            <div><span class="n">3</span><span>Manual reconciliation</span><span class="tb"><i style="width:44%"></i></span><b>8</b><em style="color:#8c6b3a">↓ 4%</em></div>
+            <div><span class="n">4</span><span>Lead routing</span><span class="tb"><i style="width:33%"></i></span><b>6</b><em>↑ 2%</em></div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="layer" id="s5">
+    <div class="cap display kin" id="cap5" style="left:0;right:0;top:92px;text-align:center">Then it tells you the <mark class="hl" id="hl5">next move.</mark></div>
+    <div class="act" id="act">
+      <div class="r1"><span class="pos">POSITIONING</span><span>Proposed 27 Sep</span><span class="sp"></span><b>Priority 92</b></div>
+      <h3>Make “simpler than HubSpot” explicit on your homepage.</h3>
+      <p class="d">7 of 12 signals name unused complexity as the reason to switch. Your hero talks about “powerful automation” instead.</p>
+      <div class="nowsug">
+        <div class="now"><small>NOW</small><q>"Powerful automation for modern sales teams."</q></div>
+        <div class="arr">→</div>
+        <div class="sug" id="sug"><small>SUGGESTED</small><q id="sugText"></q></div>
+      </div>
+      <div class="ft"><img src="reddit.png"><img src="hacker-news.png"><img src="bluesky.png"><span>7 signals · avg confidence 84</span><span class="sp"></span><span class="b1">Start as experiment</span><span id="accept">Accept<span id="acceptFill">Accepted ✓</span></span></div>
+    </div>
+    <div class="done" id="done"><span class="tg">DONE</span>Add a pricing comparison vs HubSpot<span class="sp"></span><span class="m">Measured · +<span id="n18">18</span>% demo clicks</span></div>
+    <svg class="cursor" id="cur5" viewBox="0 0 34 40" style="width:46px;height:54px"><path d="M3 2 L3 32 L11 25 L16 37 L22 34 L17 23 L28 23 Z" fill="#111110" stroke="#fff" stroke-width="2.4" stroke-linejoin="round"/></svg>
+    <div class="ripple" id="rip5"></div>
+  </div>
+
+  <div class="layer" id="s1">
+    <div id="field"></div>
+    <div id="scanGlow"></div><div id="scan"></div>
+    <div id="scrim" style="position:absolute;left:260px;top:120px;width:1400px;height:340px;background:radial-gradient(ellipse at 50% 50%, rgba(11,11,10,.92) 30%, rgba(11,11,10,0) 70%)"></div>
+    <div id="s1cap" class="display kin">Buyers are already saying<br>what they want.</div>
+    <div id="hero"><div class="meta"><img src="reddit.png">r/SaaS <span>· 1 day ago · 34 upvotes</span></div>
+      <div class="q">“We're paying for half of HubSpot we never use. Has anyone moved to something <mark class="hl" id="hl1">simpler</mark>?”</div></div>
+    <div id="dot"></div>
+  </div>
+
+  <div class="layer" id="s6">
+    <div id="s6a" class="display kin">The demand is already there.</div>
+    <div id="s6b" class="display kin">Find it.</div>
+    <div id="underline"></div>
+    <div id="s6c"><svg viewBox="0 0 120 118"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="#f5f4ee" stroke-width="16"/></svg>wanterest<span class="url">wanterest.com</span></div>
+  </div>
+
+  <div id="flash"></div>
+  <div id="vig"></div>
+  <svg id="grain" width="1920" height="1080"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter><rect width="100%" height="100%" filter="url(#n)"/></svg>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const lerp = (a, b, p) => a + (b - a) * p;
+const E = {
+  outExpo: (p) => (p >= 1 ? 1 : 1 - Math.pow(2, -10 * p)),
+  outCubic: (p) => 1 - Math.pow(1 - p, 3),
+  inCubic: (p) => p * p * p,
+  inOutCubic: (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2),
+  inOutQuint: (p) => (p < 0.5 ? 16 * p ** 5 : 1 - Math.pow(-2 * p + 2, 5) / 2),
+  outBack: (p) => { const c = 1.9; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); },
+  spring: (p) => (p <= 0 ? 0 : 1 - Math.exp(-7 * p) * Math.cos(11 * p)),
+};
+let rnd = (() => { let s = 7; return () => ((s = (s * 16807) % 2147483647) / 2147483647); })();
+
+/* ---------- Kinetic word splitting ---------- */
+function splitWords(el) {
+  const walk = (node) => {
+    [...node.childNodes].forEach((c) => {
+      if (c.nodeType === 3) {
+        const frag = document.createDocumentFragment();
+        c.textContent.split(/(\s+)/).forEach((tok) => {
+          if (!tok) return;
+          if (/^\s+$/.test(tok)) { frag.appendChild(document.createTextNode(" ")); return; }
+          const w = document.createElement("span"); w.className = "w";
+          const i = document.createElement("span"); i.textContent = tok; w.appendChild(i); frag.appendChild(w);
+        });
+        c.replaceWith(frag);
+      } else if (c.nodeType === 1 && c.tagName !== "BR") {
+        if (c.tagName === "MARK") { const w = document.createElement("span"); w.className = "w"; const i = document.createElement("span"); c.replaceWith(w); i.appendChild(c); w.appendChild(i); }
+        else walk(c);
+      }
+    });
+  };
+  walk(el);
+  return [...el.querySelectorAll(".w > span")];
+}
+const kin = {};
+document.querySelectorAll(".kin").forEach((el) => { kin[el.id] = splitWords(el); });
+function kinetic(id, t, tin, tout, stagger = 0.06, dur = 0.55) {
+  kin[id].forEach((w, i) => {
+    const pin = E.outExpo(seg(t, tin + i * stagger, tin + i * stagger + dur));
+    const pout = E.inCubic(seg(t, tout + i * 0.025, tout + i * 0.025 + 0.28));
+    const y = (1 - pin) * 135 - pout * 135;
+    w.style.transform = `translateY(${y}%) rotate(${(1 - pin) * 6}deg)`;
+    w.style.opacity = 1 - pout;
+  });
+}
+
+/* ---------- Build scene 1 field ---------- */
+const snipText = [
+  ["reddit", "Any tool that syncs leads into our CRM automatically?"], ["hacker-news", "Every week I reconcile the same data by hand"],
+  ["bluesky", "Looking for a HubSpot alternative for a 10-person team"], ["x", "Is there something like Zapier but cheaper?"],
+  ["reddit", "Our reps hate updating the CRM manually"], ["github", "Need an inbox + CRM that actually talk to each other"],
+  ["reddit", "Paying for features nobody on the team uses"], ["hacker-news", "How do you route leads without a RevOps hire?"],
+  ["bluesky", "Switched CRMs twice this year, still not right"], ["x", "What are small teams using instead of Salesforce?"],
+  ["reddit", "Reporting takes me a full day every month"], ["hacker-news", "Would pay for something that just watches the inbox"],
+  ["bluesky", "Comparing Zapier vs newer lead-sync tools"], ["reddit", "Recommendations for a lighter-weight CRM?"],
+  ["x", "Our stack has 11 tools and none of them sync"], ["github", "Webhook to CRM keeps dropping contacts"],
+  ["reddit", "Is HubSpot worth it under 50 people?"], ["hacker-news", "Spreadsheets are our CRM and it's breaking"],
+  ["bluesky", "Anyone automate invoice matching?"], ["reddit", "Tired of copy-pasting leads from forms"],
+  ["x", "Need fewer tools, not more"], ["hacker-news", "Show HN alternatives for pipeline tracking?"],
+  ["reddit", "What's the simplest CRM sync you've used?"], ["bluesky", "Pricing jumped again. Time to switch?"],
+];
+const field = $("field");
+const snips = snipText.map(([src, txt], i) => {
+  const el = document.createElement("div"); el.className = "snip";
+  el.innerHTML = `<img src="${src}.png">${txt}`; field.appendChild(el);
+  const row = i % 8, col = Math.floor(i / 8);
+  return { el, x: -300 + col * 760 + rnd() * 420, y: 70 + row * 125 + rnd() * 50, z: -900 + rnd() * 1000, v: 40 + rnd() * 70, ph: rnd() * 6 };
+});
+
+/* ---------- Scene 3 cards ---------- */
+const cardData = [
+  { src: "reddit", where: "r/sales", age: "7h", badge: ["hi", "HIGH INTENT"], s: 4, score: 88, t: "Asking for one tool that watches inbox and CRM together", q: "“Looking for a tool that can watch our inbox and CRM together. Recommendations?”", tags: ["CRM sync", "Inbox"], saved: true },
+  { src: "reddit", where: "r/SaaS", age: "1d", badge: ["sw", "SWITCHING"], s: 5, score: 91, t: "Paying for HubSpot features they never use, wants simpler", q: "“We're paying for half of HubSpot we never use. Has anyone moved to something simpler?”", tags: ["HubSpot alternative", "Pricing"] },
+  { src: "hacker-news", where: "Hacker News", age: "1d", badge: ["pr", "PROBLEM"], s: 4, score: 81, t: "Reconciles the same invoices across three spreadsheets weekly", q: "“Every week I reconcile the same invoices across three spreadsheets by hand.”", tags: ["Manual ops"] },
+  { src: "bluesky", where: "Bluesky", age: "2d", badge: ["al", "ALTERNATIVE"], s: 3, score: 67, t: "Comparing Zapier with newer lead-sync tools", q: "“Comparing Zapier vs a few newer tools for syncing leads into our CRM.”", tags: ["Zapier", "Lead sync"] },
+];
+const cardsEl = $("cards");
+const cards = cardData.map((c) => {
+  const el = document.createElement("div"); el.className = "card";
+  el.innerHTML = `<div class="r1"><img src="${c.src}.png">${c.where}<span class="age">${c.age}</span><span class="sp"></span><span class="badge ${c.badge[0]}">${c.badge[1]}</span><span class="bars">${[0,1,2,3,4].map(() => "<i></i>").join("")}</span><span class="score">0</span></div>
+    <div class="t">${c.t}</div><div class="qq">${c.q}</div><div class="tags">${c.tags.map((x) => `<span class="tag">${x}</span>`).join("")}</div>
+    <div class="acts"><b>${c.saved ? "■ Saved" : "▢ Save"}</b><span>Dismiss</span></div>`;
+  cardsEl.appendChild(el);
+  return { el, c, bars: [...el.querySelectorAll(".bars i")], score: el.querySelector(".score"), badge: el.querySelector(".badge") };
+});
+
+/* ---------- Wordmark letters ---------- */
+const wm = $("wordmark");
+const letters = "wanterest".split("").map((ch) => { const s = document.createElement("span"); s.textContent = ch; wm.appendChild(s); return s; });
+const wpath = $("wpath"); const WLEN = wpath.getTotalLength();
+wpath.style.strokeDasharray = WLEN;
+
+const SUG = "“Everything your CRM should sync. Nothing you'll never use.”";
+const show = (el, on) => { el.style.visibility = on ? "visible" : "hidden"; };
+
+/* =================== RENDER =================== */
+window.render = function (t) {
+  /* ---- Scene 1 (0 – 3.0) ---- */
+  const s1on = t < 3.55;
+  show($("s1"), s1on);
+  if (s1on) {
+    const scanX = lerp(-200, 2150, E.inOutCubic(seg(t, 0.95, 1.85)));
+    $("scan").style.transform = `translateX(${scanX}px)`; $("scan").style.opacity = seg(t, 0.9, 1.0) * (1 - seg(t, 1.8, 1.95));
+    $("scanGlow").style.transform = `translateX(${scanX - 420}px)`; $("scanGlow").style.opacity = seg(t, 0.9, 1.0) * (1 - seg(t, 1.8, 1.95));
+    const camZ = lerp(0, 260, E.outCubic(seg(t, 0, 3)));
+    snips.forEach((s) => {
+      const x = s.x + s.v * t + Math.sin(t * 1.3 + s.ph) * 12;
+      const y = s.y + Math.cos(t * 1.1 + s.ph) * 8;
+      const z = s.z + camZ;
+      const scanned = scanX > x + 200 ? seg(scanX - x - 200, 0, 380) : 0;
+      const depthBlur = Math.abs(z + 250) / 110;
+      s.el.style.transform = `translate3d(${x}px, ${y}px, ${z}px)`;
+      s.el.style.filter = `blur(${(depthBlur + scanned * 10).toFixed(2)}px)`;
+      s.el.style.opacity = (0.35 + 0.65 * clamp(1 - Math.abs(z + 200) / 900)) * (1 - scanned * 0.75) * seg(t, 0, 0.25);
+    });
+    kinetic("s1cap", t, 0.05, 2.5, 0.05, 0.5);
+    // hero quote: emerges from the field after the scan, lands centre
+    const hp = E.inOutQuint(seg(t, 1.35, 2.05));
+    const collapse = E.inCubic(seg(t, 2.62, 2.9));
+    const hx = lerp(1400, 960, hp), hy = lerp(820, 640, hp);
+    const hs = lerp(0.42, 1, hp) * (1 - collapse);
+    const hero = $("hero");
+    hero.style.transform = `translate(-50%, -50%) translate(${hx - 960}px, ${hy}px) scale(${Math.max(hs, 0.001)}) rotate(${(1 - hp) * -4}deg)`;
+    hero.style.opacity = seg(t, 1.3, 1.5);
+    hero.style.filter = `blur(${((1 - hp) * 6).toFixed(2)}px)`;
+    $("hl1").style.setProperty("--hl", E.outExpo(seg(t, 2.12, 2.42)));
+    const dp = seg(t, 2.86, 2.98);
+    $("dot").style.transform = `scale(${E.outBack(dp) * (1 + 0.5 * seg(t, 2.95, 3.05))})`;
+    $("dot").style.opacity = dp > 0 ? 1 : 0;
+    // cream world bursts out of the dot
+    const wipe = E.outExpo(seg(t, 2.98, 3.5));
+    $("s1").style.clipPath = wipe > 0 ? `circle(${(1 - wipe) * 1300}px at 960px 640px)` : "none";
+    if (wipe > 0) $("s1").style.clipPath = `path(evenodd, "M0 0H1920V1080H0Z M${960 - wipe * 1300} 640a${wipe * 1300} ${wipe * 1300} 0 1 0 ${wipe * 2600} 0a${wipe * 1300} ${wipe * 1300} 0 1 0 ${-wipe * 2600} 0Z")`;
+  }
+
+  /* ---- Scene 2 (3.0 – 5.72) ---- */
+  const s2on = t >= 2.9 && t < 6.4;
+  show($("s2"), t >= 2.9);
+  if (t >= 2.9) {
+    $("grid").style.transform = `translate(${-t * 14}px, ${-t * 9}px)`;
+    $("grid").style.opacity = 0.6 + 0.4 * seg(t, 3, 4);
+  }
+  if (s2on) {
+    const draw = E.inOutCubic(seg(t, 3.05, 3.55));
+    wpath.style.strokeDashoffset = WLEN * (1 - draw);
+    letters.forEach((l, i) => {
+      const p = E.outExpo(seg(t, 3.3 + i * 0.035, 3.3 + i * 0.035 + 0.5));
+      l.style.transform = `translateY(${(1 - p) * 60}px)`; l.style.opacity = p;
+    });
+    const up = E.inOutQuint(seg(t, 3.78, 4.25));
+    const out = E.inCubic(seg(t, 5.4, 5.75));
+    const bs = lerp(1, 0.62, up) * (1 - out * 0.3);
+    $("brand").style.transform = `translate(-50%, -50%) translateY(${lerp(0, -170, up) - out * 400}px) scale(${bs * (1 + 0.04 * E.outBack(seg(t, 3.0, 3.35)) - 0.04 * seg(t, 3.0, 3.35))})`;
+    $("brand").style.opacity = 1 - out;
+    kinetic("s2head", t, 4.0, 5.38, 0.07, 0.55);
+  } else { $("brand").style.opacity = 0; kin.s2head.forEach((w) => (w.style.transform = "translateY(110%)")); }
+
+  /* ---- Scene 3 (5.72 – 10.1) ---- */
+  const s3on = t >= 5.35 && t < 10.55;
+  show($("s3"), s3on);
+  if (s3on) {
+    const rise = E.outExpo(seg(t, 5.42, 6.4));
+    const push = E.inOutQuint(seg(t, 8.45, 9.45));
+    const whip = E.inCubic(seg(t, 10.08, 10.4));
+    // camera: whole window, then push into the detail panel (app coords 980, 470)
+    const s0 = 1.14, s1 = 2.0;
+    const sc = lerp(s0, s1, push);
+    const fx = lerp(960 - s0 * 590, 1180 - s1 * 980, push);
+    const fy = lerp(222, 540 - s1 * 460, push) + (1 - rise) * 700;
+    const drift = t * 6;
+    const win = $("win3");
+    win.style.transform = `translate(${fx - drift - whip * 2600}px, ${fy}px) perspective(2200px) rotateX(${(1 - rise) * 38}deg) rotateZ(${(1 - rise) * -4}deg) scale(${sc})`;
+    win.style.opacity = seg(t, 5.42, 5.6);
+    $("s3").style.filter = whip > 0 ? `blur(${whip * 14}px)` : "none";
+    kinetic("cap3", t, 5.9, 8.4, 0.06, 0.55);
+    $("hl3").style.setProperty("--hl", E.outExpo(seg(t, 6.45, 6.8)));
+    cards.forEach((k, i) => {
+      const a = 5.95 + i * 0.11;
+      const p = E.outExpo(seg(t, a, a + 0.6));
+      k.el.style.transform = `translateY(${(1 - p) * 60}px) scale(${lerp(0.96, 1, p)})`;
+      k.el.style.opacity = p;
+      const sp = E.outCubic(seg(t, a + 0.15, a + 0.85));
+      k.score.textContent = Math.round(k.c.score * sp);
+      k.bars.forEach((b, j) => b.classList.toggle("f", j < Math.round(k.c.s * sp)));
+      const bp = E.outBack(seg(t, a + 0.25, a + 0.6));
+      k.badge.style.transform = `scale(${bp})`;
+    });
+    // cursor path to r/SaaS card (app coords)
+    const cp = E.inOutCubic(seg(t, 6.95, 7.6));
+    const cx = lerp(1130, 470, cp) + Math.sin(cp * Math.PI) * 60, cy = lerp(780, 440, cp);
+    const press = seg(t, 7.62, 7.7) - seg(t, 7.7, 7.82);
+    $("cur3").style.transform = `translate(${cx}px, ${cy}px) scale(${1 - press * 0.15})`;
+    $("cur3").style.opacity = seg(t, 6.95, 7.05) * (1 - seg(t, 8.3, 8.45));
+    const rp = seg(t, 7.66, 8.1);
+    $("rip3").style.transform = `translate(${cx}px, ${cy}px) scale(${0.2 + rp * 1.2})`; $("rip3").style.opacity = rp > 0 ? (1 - rp) : 0;
+    cards[1].el.classList.toggle("sel", t >= 7.68);
+    if (t >= 7.68) cards[1].el.style.transform += ` scale(${1 - 0.015 * (1 - seg(t, 7.68, 7.9))})`;
+    const dp = E.outExpo(seg(t, 7.72, 8.3));
+    $("detail").style.transform = `translateX(${(1 - dp) * 60}px)`; $("detail").style.opacity = dp;
+    $("hlD").style.setProperty("--hl", E.outExpo(seg(t, 9.0, 9.35)));
+    // dim the rest of the UI as we push in so the panel reads
+    $("cards").style.opacity = 1 - 0.55 * push;
+  }
+
+  /* ---- Scene 4 (10.1 – 14.45) ---- */
+  const s4on = t >= 10.05 && t < 14.7;
+  show($("s4"), s4on);
+  if (s4on) {
+    const inn = E.outExpo(seg(t, 10.12, 10.75));
+    const out = E.inCubic(seg(t, 14.08, 14.4));
+    $("s4").style.filter = (1 - inn) > 0.01 || out > 0 ? `blur(${(1 - inn) * 16 + out * 10}px)` : "none";
+    const board = $("board");
+    const drift = E.outCubic(seg(t, 10.1, 14.45));
+    board.style.transform = `translateX(${(1 - inn) * 2400}px) scale(${lerp(0.97, 1.02, drift) * (1 - out * 0.08)})`;
+    board.style.transformOrigin = "50% 40%";
+    board.style.opacity = 1 - out;
+    kinetic("cap4", t, 10.35, 14.02, 0.06, 0.55);
+    $("hl4").style.setProperty("--hl", E.outExpo(seg(t, 10.9, 11.25)));
+    $("n48").textContent = Math.round(48 * E.outCubic(seg(t, 10.4, 11.2)));
+    [["ic1", 10.45], ["ic2", 10.55], ["ic3", 10.65]].forEach(([id, a]) => {
+      const p = E.outExpo(seg(t, a, a + 0.7));
+      $(id).style.transform = `translateY(${(1 - p) * 90}px)`; $(id).style.opacity = p;
+    });
+    $("n31").textContent = Math.round(31 * E.outCubic(seg(t, 10.8, 11.6)));
+    [...$("spark").children].forEach((b, i) => { b.style.transform = `scaleY(${E.outBack(seg(t, 10.8 + i * 0.07, 11.3 + i * 0.07))})`; });
+    const gp = E.outExpo(seg(t, 11.0, 11.8));
+    $("g1").style.transform = `scaleX(${gp})`; $("g2").style.transform = `scaleX(${E.outExpo(seg(t, 11.2, 12.0))})`;
+    $("n42").textContent = Math.round(42 * gp) + "%"; $("n12").textContent = Math.round(12 * E.outExpo(seg(t, 11.2, 12.0))) + "%";
+    $("n30").textContent = Math.round(30 * E.outCubic(seg(t, 11.4, 12.1)));
+    [...$("themes").children].forEach((r, i) => {
+      const p = E.outExpo(seg(t, 10.95 + i * 0.09, 11.55 + i * 0.09));
+      r.style.transform = `translateX(${(1 - p) * 40}px)`; r.style.opacity = p;
+      r.querySelector(".tb i").style.transform = `scaleX(${E.outExpo(seg(t, 11.1 + i * 0.09, 11.9 + i * 0.09))})`;
+    });
+    $("mkt").style.clipPath = `inset(0 ${(1 - E.outExpo(seg(t, 10.2, 10.9))) * 100}% 0 0 round 22px)`;
+  }
+
+  /* ---- Scene 5 (14.45 – 17.19) ---- */
+  const s5on = t >= 14.35 && t < 17.8;
+  show($("s5"), s5on);
+  if (s5on) {
+    const inn = E.outExpo(seg(t, 14.42, 15.12));
+    $("act").style.transform = `perspective(2000px) translateY(${(1 - inn) * 260}px) rotateX(${(1 - inn) * 24}deg) scale(${lerp(0.9, 1, inn)})`;
+    $("act").style.opacity = seg(t, 14.42, 14.56);
+    kinetic("cap5", t, 14.55, 99, 0.06, 0.55);
+    $("hl5").style.setProperty("--hl", E.outExpo(seg(t, 15.0, 15.35)));
+    const n = Math.round(SUG.length * seg(t, 15.05, 15.85));
+    $("sugText").innerHTML = SUG.slice(0, n) + (t < 16.0 && Math.floor(t * 4) % 2 === 0 || (t >= 15.05 && t < 15.85) ? '<span class="caret"></span>' : "");
+    $("sug").style.boxShadow = `inset 0 0 0 2px #111110, 0 0 0 ${6 * E.outExpo(seg(t, 15.85, 16.2)) * (1 - seg(t, 16.2, 16.8))}px rgba(215,255,61,.6)`;
+    // cursor → Accept button (stage coords)
+    const cp = E.inOutCubic(seg(t, 15.45, 16.1));
+    const cx = lerp(1480, 1528, cp) + Math.sin(cp * Math.PI) * -80, cy = lerp(1120, 752, cp);
+    const press = seg(t, 16.12, 16.2) - seg(t, 16.2, 16.32);
+    $("cur5").style.transform = `translate(${cx}px, ${cy}px) scale(${1 - press * 0.15})`;
+    $("cur5").style.opacity = seg(t, 15.45, 15.5);
+    const rp = seg(t, 16.15, 16.6);
+    $("rip5").style.transform = `translate(${cx + 6}px, ${cy + 4}px) scale(${0.3 + rp * 1.4})`; $("rip5").style.opacity = rp > 0 ? 1 - rp : 0;
+    $("accept").style.transform = `scale(${1 - press * 0.06})`;
+    $("acceptFill").style.clipPath = `circle(${E.outExpo(seg(t, 16.17, 16.55)) * 160}px at 50% 50%)`;
+    const dn = E.outExpo(seg(t, 16.35, 16.95));
+    $("done").style.transform = `translateY(${(1 - dn) * 120}px)`; $("done").style.opacity = dn;
+    $("n18").textContent = Math.round(18 * E.outCubic(seg(t, 16.45, 17.0)));
+  }
+
+  /* ---- Scene 6 (17.19 – 20) ---- */
+  const s6on = t >= 17.15;
+  show($("s6"), s6on);
+  if (s6on) {
+    const w = E.inOutQuint(seg(t, 17.15, 17.62));
+    $("s6").style.clipPath = `circle(${w * 2300}px at 1540px 750px)`;
+    kinetic("s6a", t, 17.42, 99, 0.07, 0.6);
+    kinetic("s6b", t, 18.05, 99, 0.1, 0.7);
+    $("s6b").style.transform = `scale(${1 + 0.03 * E.outCubic(seg(t, 18.05, 20))})`;
+    $("underline").style.transform = `scaleX(${E.outExpo(seg(t, 18.35, 18.95))})`;
+    const lp = E.outExpo(seg(t, 18.7, 19.3));
+    $("s6c").style.transform = `translateX(-50%) translateY(${(1 - lp) * 40}px)`; $("s6c").style.opacity = lp;
+  }
+
+  // Beat flashes on the big cuts
+  const fl = Math.max(0.35 * (1 - seg(t, 3.0, 3.25)) * (t >= 3.0 ? 1 : 0), 0.18 * (1 - seg(t, 17.6, 17.9)) * (t >= 17.6 ? 1 : 0));
+  $("flash").style.opacity = fl;
+  $("vig").style.opacity = t < 3 || t > 17.2 ? 1 : 0.6;
+};
+window.ready = Promise.all([document.fonts.ready, ...[...document.images].map((i) => i.complete ? 1 : new Promise((r) => (i.onload = i.onerror = r)))]);
+render(0);
+</script>
+</body>
+</html>
