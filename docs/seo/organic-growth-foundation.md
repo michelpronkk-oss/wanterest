@@ -45,13 +45,17 @@ Google, Bing, and other crawlers are allowed by the canonical wildcard rule for 
 
 Robots rules manage crawling, not confidentiality or guaranteed de-indexing. Admin remains protected by server-side auth and the hostname/MFA/membership controls. Do not rely on robots.txt to secure data. Google documents that a crawler must be able to fetch a page to observe its `noindex` directive; host authentication and private route authorization remain primary.
 
-## Later Organic Intelligence work
+## SEO-2 readiness work
 
-The local checkout and the available user attachments did not include the referenced SEO & Organic Intelligence Master Plan or its nine template family names. Those names must be brought into the repository before they are mapped; this document does not invent them.
+The standalone **SEO & Organic Intelligence Growth System / Futureproof SEO Master Plan** was not present in the repository or supplied attachment set. The SEO-2 brief does define the nine page families and readiness requirements used in this phase; this implementation does not infer additional strategy beyond that brief. Keep the missing full plan visible as an input to later family design and launch calibration.
 
-The next Organic Intelligence milestone is architecture and validation only until the approved source plan and the independently validated public-safe projection are available. It must reuse Wanterest's relational evidence graph and preserve source, time, confidence, and derivation provenance. Before publication, each page must pass privacy, source independence/diversity, truth, freshness, uniqueness, and human-review gates. Unsupported or stale claims should be reviewed, downgraded, or noindexed rather than given an artificial freshness date. No generated market/demand/company/drift/geography pages are enabled in this release. A later first cohort remains a manually reviewed 20–50 pages after Layer 13B.2/13B.3 and the public-safe projection have been independently validated.
+SEO-2 adds typed, deterministic maturity, family-specific eligibility, public-safe projection, canonical identity, uniqueness, freshness/decay, and publication-review contracts. It also adds a private Admin readiness page. The reviewed public-safe production projection and its read adapter do not exist, so that page reports an unavailable feed, presents no candidate rows, and shows no example metrics. Production workspace-owned demand is excluded from public SEO evaluation; global source conversations are not a publication projection because they retain original body and author fields.
 
-SEO-1 now supplies the private Search Console read path and deterministic opportunity report. The future Organic Intelligence milestone still requires the missing master plan and nine template family names, approved source/retention decisions, and independently validated public-safe evidence contracts. Do not alter discovery, qualification, Actions, Trigger.dev routing, billing, or Layer 13B without a separate architecture decision.
+SEO-1 remains a private Search Console read path. Its opportunity report may reprioritize an already-eligible candidate after settled/non-branded signals are available; it cannot create, qualify, or rescue an ineligible candidate. No live combination is shown while the public-safe candidate feed is absent.
+
+No candidate intelligence route, sitemap entry, indexing request, publication action, migration, or new public template is enabled by SEO-2. A first 20–50 page cohort remains blocked until the public-safe projection, evidence independence calculations, Layer 13B.2/13B.3 privacy and runtime contracts, retention/methodology decisions, and human review process are independently validated. Do not alter discovery, qualification, Actions, Trigger.dev routing, billing, or 13B.1 lifecycle authority in this work.
+
+See [SEO-2 foundation and current blockers](./seo2-foundation.md) for the implementation map and verification boundary.
 
 ## Official crawler references
 

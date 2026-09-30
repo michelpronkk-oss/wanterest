@@ -30,6 +30,13 @@ describe("Admin hostname routing", () => {
     expect(resolveAdminHostRequest({ hostname: "app.wanterest.com", pathname: "/admin-internal/search-console", isVercel: true, vercelEnvironment: "production" }))
       .toEqual({ kind: "blocked" });
   });
+
+  it("rewrites Organic Readiness to its private implementation on the Admin hostname only", () => {
+    expect(resolveAdminHostRequest({ hostname: "admin.wanterest.com", pathname: "/publication-readiness", isVercel: true, vercelEnvironment: "production" }))
+      .toEqual({ kind: "admin", rewritePath: "/admin-internal/publication-readiness" });
+    expect(resolveAdminHostRequest({ hostname: "app.wanterest.com", pathname: "/publication-readiness", isVercel: true, vercelEnvironment: "production" }))
+      .toEqual({ kind: "customer" });
+  });
   it.each(["preview", "development", ""])("denies admin routes on Vercel %s deployments", (vercelEnvironment) => {
     expect(resolveAdminHostRequest({ hostname: "admin.wanterest.com", pathname: "/login", isVercel: true, vercelEnvironment }))
       .toEqual({ kind: "blocked" });

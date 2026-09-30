@@ -214,6 +214,17 @@
 @media (max-width: 680px) {.admin-scope .section-title-row { flex-direction: column; }.admin-scope .metric-card { min-height: 119px; }.admin-scope .metric-card p { font-size: 11px; }.admin-scope .metric-card .source-stamp { display: flex; flex-direction: column; align-items: flex-start; }.admin-scope .metric-card .source-stamp time { margin: 0; }.admin-scope .traffic-panel, .admin-scope .operations-teaser { min-height: 0; }.admin-scope .lifecycle-panel, .admin-scope .incident-panel, .admin-scope .system-map-panel { padding: 16px; }.admin-scope .table-filters select { flex: 1; min-width: 0; }.admin-scope .filter-button { flex: 1; }.admin-scope .incident-facts > div { grid-template-columns: minmax(115px,.7fr) 1fr; gap: 4px 12px; }.admin-scope .incident-facts strong { grid-column: 2; grid-row: 1; }.admin-scope .incident-facts small { grid-column: 2; }.admin-scope .pipeline-node { min-height: 63px; }.admin-scope .map-column-heading { flex-direction: column; }
 }
 
+/* SEO-2 readiness remains an unavailable state until a reviewed public projection exists. */
+.admin-scope .readiness-family-list, .admin-scope .readiness-policy-list { margin: 0; padding: 0; }
+.admin-scope .readiness-family-list { list-style: none; }
+.admin-scope .readiness-family-list li { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); }
+.admin-scope .readiness-family-list li:last-child { border-bottom: 0; }
+.admin-scope .readiness-policy-list { padding-left: 19px; color: var(--secondary); }
+.admin-scope .readiness-policy-list li + li { margin-top: 10px; }
+@media (max-width: 680px) {
+  .admin-scope .readiness-family-list li { align-items: flex-start; flex-direction: column; gap: 8px; }
+}
+
 /* Private, server-rendered Search Console intelligence */
 .admin-scope .seo-setup-mark { display: grid; place-items: center; border: 1px solid #deded4; color: #727269; }
 .admin-scope .seo-setup-panel h2 { margin: 0; font-family: var(--font-archivo), sans-serif; }

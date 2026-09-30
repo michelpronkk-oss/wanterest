@@ -5264,7 +5264,7 @@ than trusting the CTA or browser state. The typed homepage projection is intenti
 13B.1 seam for Early Access, Priority, invited, Founding 25, Early 100, and normal-member share-card states;
 image rendering and premium homepage redesign are out of scope.
 
-### 13B.1 — Dynamic Share Card Engine (`layer13b1_dynamic_share_card_engine_v1`) — INTEGRATED, MIGRATION NOT YET APPLIED
+### 13B.1 — Dynamic Share Card Engine (`layer13b1_dynamic_share_card_engine_v1`) — INTEGRATED, PRODUCTION MIGRATION APPLIED
 
 13B.1 is an additive, consent-first distribution layer over existing authoritative waitlist, referral,
 admission, cohort, and 13A.4 public-profile state. It does not assign cohorts, verify applications, grant
@@ -5285,6 +5285,50 @@ rechecks active Priority/pass visibility, and derives the current 13A.6 CTA. It 
 invite tokens, workspace IDs, internal review state, billing, team data, or intelligence. Public image/page
 routes are dynamic and no-store under Wanterest control; external social caches may retain already-fetched
 previews. Future intelligence-card adapters are reserved for 13B.2/13B.3.
+
+**Production verification.** Current production migration history records `20261101000000` for 13B.1
+and `20261102000000` for the Admin foundation. A read-only catalog inspection confirmed RLS on the
+share-card tables, no `anon` or `authenticated` table grants, the intended service-role table access,
+the append-only event trigger, and the narrow public `get_public_share_card` RPC. The public RPC was
+not called with a real slug during the inspection, and no production publish/revoke operation was
+performed; end-to-end public content review remains a separate verification step.
+
+### SEO-2 — Organic Intelligence Readiness (approved architecture, publication disabled)
+
+**Decision.** SEO-2 may build deterministic, typed readiness contracts over the existing evidence
+graph, a private Admin inspection surface, and read-only calibration tooling. It does not add public
+intelligence routes, an SEO CMS, a persistence schema, sitemap entries, indexing requests, or
+publication actions. Keyword and Search Console demand are prioritization signals only; neither can
+create a candidate or override evidence eligibility.
+
+The planned flow is raw/source evidence → normalized public entities → demand/supply/context →
+maturity and confidence → allowlisted public-safe projection → family-specific eligibility →
+canonical identity → future renderer. In the current schema, `conversations` are global canonical
+records but still retain raw body and author fields; they are not a publication projection.
+`demand_clusters`, `demand_gaps`, `demand_drifts`, observations, and concept market states carry
+`workspace_id` and remain tenant-scoped. Those rows are excluded from public SEO candidates. No
+production relation currently owns an explicitly reviewed public-safe intelligence projection.
+
+The readiness policy takes independently calculated episode count, distinct-author and source-family
+breadth, time buckets, freshness, duplication, concentration, truth, safety, uniqueness, and claim
+specifics as separate inputs. Missing dimensions stay unavailable and fail closed. The policy does
+not derive independent demand from raw mention volume. Families 3–8 have separate conservative
+threshold contracts; the existing marketing/access/share families are reused and are not cloned as
+new page families.
+
+The typed projection is an explicit allowlist for already-reviewed paraphrases, safe source
+attribution, methodology, and decision reasons. It does not read provider payloads or tenant-owned
+data. Canonical identity rules use stable object identity, collision checks, recorded aliases, and
+merged-object resolution; route patterns are specifications only until separately approved. Claim
+freshness uses family-specific meaningful-evidence timestamps. The state machine does not approve or
+publish automatically; any future approval/publish operation must be human-attributed and audited.
+
+Search Console opportunities can sort already-eligible candidates for review, with provisional and
+unavailable data preserved as such. They cannot change an eligibility decision. The Admin readiness
+page is private, read-only, and reports the absent projection as a blocker; it does not show examples,
+invent metrics, or expose an auto-publish control. Until the projection and 13B.2/13B.3 privacy,
+retention, and runtime contracts are independently validated, the public candidate set remains
+unavailable and the sitemap stays unchanged.
 
 ## Admin Control Plane v1 — isolated application
 
@@ -5325,12 +5369,12 @@ private grants, RLS, Auth foreign-key behavior and the append-only audit trigger
 grant and the separate Admin Vercel deployment remain independent approval steps. Preview deploys
 have no production mutation path.
 
-Integration (Board 15 artwork): the migration is `20261101000000_layer13b1_dynamic_share_card_engine_v1.sql`,
-ordered after the last applied migration and not yet applied to production. Until it is, every journey surface
-degrades to "Sharing isn't available right now" because the engine query fails closed. Snapshots are snake_case
-JSON (`display_name`, `identity_label`, `identity_number`, `monogram`, `admitted_on`, ...), matching the public
-RPC projection. The Priority snapshot carries the applicant's verified Early Access number ("Early access #0184 ·
-moved up the queue"); cohort snapshots carry the persisted 13A.4 monogram and the UTC cohort assignment date.
+Integration (Board 15 artwork): migration `20261101000000_layer13b1_dynamic_share_card_engine_v1.sql` is recorded
+in the current production history. Snapshots are snake_case JSON (`display_name`, `identity_label`, `identity_number`,
+`monogram`, `admitted_on`, ...), matching the public RPC projection. The Priority snapshot carries the applicant's
+verified Early Access number ("Early access #0184 · moved up the queue"); cohort snapshots carry the persisted 13A.4
+monogram and the UTC cohort assignment date. If the engine query is unavailable, the journey surfaces fail closed
+with "Sharing isn't available right now"; no production write path was exercised in the SEO-2 inspection.
 Company logo URLs are never fetched server-side (F1.6A: no fetch); the image tile shows the monogram. Applicant
 mutations live at `/waitlist/share-cards` because the private status cookie is scoped to `/waitlist`. One
 `ShareCardArtwork` composition renders the private previews, the public page and the 1200×630 / 1080×1350 /

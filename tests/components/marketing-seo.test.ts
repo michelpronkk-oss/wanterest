@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -48,6 +48,15 @@ describe("sitemap.xml", () => {
     for (const url of urls) {
       expect(url).not.toMatch(/\/app\/|\/login|\/signup|\/start|\/api\/|\/auth\//);
     }
+  });
+
+  it("keeps SEO-2 candidate route families out of the public App Router and sitemap", () => {
+    const candidateRoots = ["market", "demand", "companies", "trends", "markets", "research"];
+    for (const route of candidateRoots) {
+      expect(existsSync(join(root, "src/app", route))).toBe(false);
+    }
+    const urls = sitemapForHostname("www.wanterest.com").map((entry) => new URL(entry.url).pathname);
+    expect(urls).not.toEqual(expect.arrayContaining(candidateRoots.map((route) => `/${route}`)));
   });
 
   it("only assigns lastModified where a real, meaningful date is shown on the page", () => {
