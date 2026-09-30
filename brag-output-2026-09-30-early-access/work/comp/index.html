@@ -254,7 +254,7 @@ TIMES=[0.2986, 0.3389, 0.3864, 0.4426, 0.5088, 0.5869, 0.6791, 0.7879, 0.9163, 1
 window.__flapTimes=TIMES;
 
 function render(t){
-  if(!LW[0]){LW=[R.cl1.offsetWidth,R.cl2.offsetWidth,R.cl3.offsetWidth];}
+  LW=[R.cl1.offsetWidth+4,R.cl2.offsetWidth+4,R.cl3.offsetWidth+4];
   R.g1.style.transform="translate("+(Math.sin(t*.5)*30).toFixed(1)+"px,"+(Math.cos(t*.4)*20).toFixed(1)+"px) scale("+(1+.04*Math.sin(t*.7)).toFixed(3)+")";
   R.g1.style.opacity=L(.85,1,sg(t,18.8,20.2)).toFixed(3); R.g2.style.opacity=(.6+.4*Math.sin(t*.9)).toFixed(3);
   var fr=Math.floor(t*24); R.grain.style.transform="translate("+((fr*97)%256)+"px,"+((fr*53)%256)+"px)";
@@ -363,7 +363,7 @@ function render(t){
   R.eser.style.opacity=sg(t,er.ser,er.ser+.15).toFixed(3); R.elt.style.opacity=sg(t,er.lab,er.lab+.18).toFixed(3);
   [R.ewho,R.eft].forEach(function(e,i){fadeIn(e,t,er.still+i*.08)});
   [[R.bf,745,17.5,340],[R.be,1175,18.0,340]].forEach(function(b){var q=bo(sg(t,b[2],b[2]+.45));
-    C(b[0],b[3],58,b[1],960+(1-q)*20,{s:L(.85,1,q),op:sg(t,b[2],b[2]+.12)*(1-yOut),b:yOut*12})});
+    C(b[0],b[0].offsetWidth,58,b[1],960+(1-q)*20,{s:L(.85,1,q),op:sg(t,b[2],b[2]+.12)*(1-yOut),b:yOut*12})});
 
   /* ===== 7. CTA 19.0 -> 22 ===== */
   S(R.b7,{y:270,s:1+.025*cio(sg(t,19,22)),op:t>=19.0?1:0}); R.b7.style.transformOrigin="50% 50%";
@@ -373,6 +373,7 @@ function render(t){
   S(R.cta,{x:960+10,y:520+(1-ci2)*40,op:ci2,b:(1-ci2)*8});
   R.bm.style.strokeDasharray="400";R.bm.style.strokeDashoffset=(400*(1-eo(sg(t,19.6,20.2)))).toFixed(1);
   C(R.url,200,30,960,700,{op:sg(t,20.0,20.3)});
+  var cw2=R.cta.offsetWidth; R.ring.style.width=cw2+"px";
   var cp=cio(sg(t,19.85,20.4)), press=sg(t,20.5,20.56)-sg(t,20.6,20.72);
   S(R.cur,{x:L(1500,1200,cp)+Math.sin(cp*Math.PI)*-40,y:L(900,575,cp),s:1-press*.14,op:sg(t,19.85,20.0)*(1-sg(t,21.2,21.5))});
   R.cur.style.transformOrigin="4px 3px";
@@ -380,7 +381,7 @@ function render(t){
   R.ctf.style.transform="scale("+cf.toFixed(3)+")"; R.ctt.style.color=cf>.5?"#111110":"#f5f4ee";
   R.cta.style.transform+=" scale("+(1-press*.05).toFixed(3)+")";
   var rp2=co(sg(t,20.52,21.2));
-  C(R.ring,380,88,970+190,564,{s:L(1,1.5,rp2),op:rp2>0?(1-rp2)*.9:0});
+  C(R.ring,cw2,88,970+cw2/2,564,{s:L(1,1.5,rp2),op:rp2>0?(1-rp2)*.9:0});
 }
 
 var proxy={t:0}, tl=gsap.timeline({paused:true});
