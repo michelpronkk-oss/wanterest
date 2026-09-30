@@ -34,6 +34,12 @@ Private reads use one narrow authority lookup plus one bounded publication looku
 
 `supabase/migrations/20261101000000_layer13b1_dynamic_share_card_engine_v1.sql` adds the private publication/event tables, service-role publication/revocation/list RPCs, the narrow public card RPC, public event recording, RLS, grants, and append-only/update triggers. It is additive and has no backfill.
 
+## Current production verification
+
+Read-only inspection of the existing production project confirmed migration version `20261101000000` is recorded. The share-card publication/event tables exist with RLS enabled; `anon` and `authenticated` have no direct table grants; the expected service-role table access, public DTO RPC, and append-only event trigger are present. The publication table contains a row, but the inspection did not read its contents or exercise production publish/revoke operations. The public RPC was not called with a real slug, so live content privacy and page rendering were not re-certified by this catalog inspection.
+
+The remote migration history and current `main` migration inventory contain no 13B.2, 13B.3, or 13B Integration Repair migration. Those migrations exist on separate unmerged feature branches and are explicitly marked not runtime validated. No intelligence-card adapter or public SEO projection is active on `main` or in production. Keep 13B.1 identity-card authority isolated from SEO candidate publication.
+
 ## Future extension
 
 13B.2 may add intelligence-specific authority adapters and variants without changing the publication, public DTO, rendering, or consent lifecycle. 13B.3 owns any future public intelligence pages and indexing policy.
