@@ -110,10 +110,39 @@ function enrollmentFailure(reason: MfaFailureReason): EnrollmentFailure {
   return { ok: false, reason, message: safeMfaFailureMessage(reason, "enrollment") };
 }
 
-function pendingEnrollmentResult(pending: Array<{ id: string }>) {
-  if (pending.length === 1) return { ok: true as const, mode: "resume" as const, factorId: pending[0].id };
-  if (pending.length > 1) return enrollmentFailure("multiple_pending");
+type EnrollmentSuccess =
+  | { ok: true; mode: "setup"; qrCode: string; factorId: string }
+  | { ok: true; mode: "resume"; factorId: string; notice?: string }
+  | { ok: true; mode: "multiple-pending"; factorIds: string[]; notice?: string };
+
+function pendingEnrollmentResult(pending: Array<{ id: string }>, notice?: string): EnrollmentSuccess | null {
+  if (pending.length === 1) return { ok: true, mode: "resume", factorId: pending[0].id, notice };
+  if (pending.length > 1) return { ok: true, mode: "multiple-pending", factorIds: pending.map((factor) => factor.id), notice };
   return null;
+}
+
+async function prepareAuthenticatorEnrollment(session: Awaited<ReturnType<typeof requireActiveMembership>>) {
+  const { data, error } = await session.auth.mfa.enroll({
+    factorType: "totp",
+    friendlyName: ADMIN_TOTP_FRIENDLY_NAME,
+  });
+  if (!error && data?.totp?.qr_code && data.id) {
+    return { ok: true as const, mode: "setup" as const, qrCode: data.totp.qr_code, factorId: data.id };
+  }
+
+  const reason = logMfaFailure("enrollment", error);
+  if (reason === "pending_factor") {
+    // A parallel request may have created the named factor after the preceding listFactors() call.
+    const { data: refreshed, error: refreshError } = await session.auth.mfa.listFactors();
+    if (refreshError || !refreshed) {
+      logMfaFailure("factor_list", refreshError);
+      return enrollmentFailure("unavailable");
+    }
+    const recovered = pendingEnrollmentResult(findPendingAdminTotp(refreshed.all));
+    if (recovered) return recovered;
+  }
+
+  return enrollmentFailure(reason);
 }
 
 export async function startMfaEnrollment() {
@@ -126,31 +155,66 @@ export async function startMfaEnrollment() {
     return enrollmentFailure(reason);
   }
 
-  const pending = findPendingAdminTotp(listed.totp);
+  const pending = findPendingAdminTotp(listed.all);
   const existing = pendingEnrollmentResult(pending);
   if (existing) return existing;
 
-  const { data, error } = await session.auth.mfa.enroll({
-    factorType: "totp",
-    friendlyName: ADMIN_TOTP_FRIENDLY_NAME,
+  return prepareAuthenticatorEnrollment(session);
+}
+
+export async function restartMfaEnrollment(formData: FormData): Promise<EnrollmentSuccess | EnrollmentFailure> {
+  await assertAdminHostnameRequest();
+  const parsed = z.object({
+    factorId: z.string().uuid(),
+    confirmRestart: z.literal("yes"),
+  }).safeParse({
+    factorId: formData.get("factorId"),
+    confirmRestart: formData.get("confirmRestart"),
   });
-  if (!error && data?.totp?.qr_code && data.id) {
-    return { ok: true as const, mode: "setup" as const, qrCode: data.totp.qr_code, factorId: data.id };
+  if (!parsed.success) return enrollmentFailure("confirmation_required");
+
+  // Every Server Action is an untrusted entry point. Re-derive the current Auth user
+  // and active admin membership before inspecting or mutating their own factors.
+  const session = await requireActiveMembership();
+  const { data: listed, error: listError } = await session.auth.mfa.listFactors();
+  if (listError || !listed) {
+    const reason = logMfaFailure("factor_list", listError);
+    return enrollmentFailure(reason);
   }
 
-  const reason = logMfaFailure("enrollment", error);
-  if (reason === "pending_factor") {
-    // A parallel request or an earlier attempt may have created it after listFactors().
-    const { data: refreshed, error: refreshError } = await session.auth.mfa.listFactors();
-    if (refreshError || !refreshed) {
-      logMfaFailure("factor_list", refreshError);
-      return enrollmentFailure("unavailable");
-    }
-    const recovered = pendingEnrollmentResult(findPendingAdminTotp(refreshed.totp));
-    if (recovered) return recovered;
+  // Never pass a browser-provided ID to Supabase. Resolve it against this session's
+  // factor list and allow only the unverified Wanterest Admin TOTP factor.
+  const selected = findPendingAdminTotp(listed.all).find((factor) => factor.id === parsed.data.factorId);
+  if (!selected) return enrollmentFailure("factor_missing");
+
+  const { error: unenrollError } = await session.auth.mfa.unenroll({ factorId: selected.id });
+  if (unenrollError) {
+    const reason = logMfaFailure("unenrollment", unenrollError);
+    return enrollmentFailure(reason);
   }
 
-  return enrollmentFailure(reason);
+  const { data: refreshed, error: refreshError } = await session.auth.mfa.listFactors();
+  if (refreshError || !refreshed) {
+    logMfaFailure("factor_list", refreshError);
+    return enrollmentFailure("restart_incomplete");
+  }
+
+  const remaining = findPendingAdminTotp(refreshed.all);
+  if (remaining.some((factor) => factor.id === selected.id)) {
+    // Do not create a second factor while Auth still reports the old one as pending.
+    return enrollmentFailure("restart_incomplete");
+  }
+  const remainingResult = pendingEnrollmentResult(
+    remaining,
+    "The selected unfinished setup was removed. Choose one of the remaining setups, or restart only the one whose QR code you lost.",
+  );
+  if (remainingResult) return remainingResult;
+
+  const result = await prepareAuthenticatorEnrollment(session);
+  if (!result.ok) return result.reason === "pending_factor"
+    ? enrollmentFailure("restart_incomplete")
+    : result;
+  return result;
 }
 
 export type MfaVerificationFailure = {
@@ -178,10 +242,14 @@ export async function verifyMfa(formData: FormData): Promise<MfaVerificationFail
     return verificationFailure(reason);
   }
 
-  const factor = factors.totp.find((item) =>
+  const verifiedFactor = factors.totp.find((item) =>
     item.id === parsed.data.factorId &&
-    (item.status === "verified" || item.status === "unverified")
+    item.factor_type === "totp" &&
+    item.status === "verified"
   );
+  const pendingFactor = findPendingAdminTotp(factors.all)
+    .find((item) => item.id === parsed.data.factorId);
+  const factor = verifiedFactor ?? pendingFactor;
   if (!factor) return verificationFailure("factor_missing");
 
   const { data: challenge, error: challengeError } = await session.auth.mfa.challenge({ factorId: factor.id });
@@ -198,6 +266,14 @@ export async function verifyMfa(formData: FormData): Promise<MfaVerificationFail
   if (verifyError) {
     const reason = logMfaFailure("verification", verifyError);
     return verificationFailure(reason);
+  }
+
+  // Do not treat a successful factor verification as authorization until the
+  // current cookie-backed session reports the required assurance level.
+  const { data: assurance, error: assuranceError } = await session.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (assuranceError || assurance.currentLevel !== "aal2") {
+    if (assuranceError) logMfaFailure("verification", assuranceError);
+    return verificationFailure("assurance_required");
   }
 
   // Supabase SSR persists the elevated AAL2 session through the Server Action's cookie adapter.

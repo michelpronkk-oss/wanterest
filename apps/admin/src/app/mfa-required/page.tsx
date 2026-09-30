@@ -20,8 +20,8 @@ export default async function MfaRequiredPage() {
 
   const { data: factors, error: factorError } = await session.auth.mfa.listFactors();
   if (factorError || !factors) logMfaFailure("factor_list", factorError);
-  const verified = factors?.totp.filter((factor) => factor.status === "verified") ?? [];
-  const pending = factors ? findPendingAdminTotp(factors.totp) : [];
+  const verified = factors?.totp.filter((factor) => factor.factor_type === "totp" && factor.status === "verified") ?? [];
+  const pending = factors ? findPendingAdminTotp(factors.all) : [];
 
   return <AuthShell eyebrow="SECURITY CHECK" title={verified.length ? "Verify your identity." : "Set up your authenticator."} description="Admin access requires a verified authenticator before any operational data is shown." footer={<span>Your sign-in is protected by Wanterest’s access policy and verified TOTP MFA.</span>}>
     {verified.length > 0
@@ -29,9 +29,15 @@ export default async function MfaRequiredPage() {
       : factorError || !factors
         ? <MfaEnrollment initialState="unavailable" />
         : pending.length > 1
-          ? <MfaEnrollment initialState="multiple-pending" />
+          ? <MfaEnrollment
+              initialState="multiple-pending"
+              pendingFactors={pending.map((factor) => ({ id: factor.id, createdAt: factor.created_at }))}
+            />
           : pending.length === 1
-            ? <MfaEnrollment initialState="pending" pendingFactorId={pending[0].id} />
+            ? <MfaEnrollment
+              initialState="pending"
+              pendingFactors={[{ id: pending[0].id, createdAt: pending[0].created_at }]}
+            />
             : <MfaEnrollment />}
   </AuthShell>;
 }

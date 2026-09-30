@@ -68,6 +68,19 @@
 .admin-scope .qr-frame { display: grid; width: 216px; height: 216px; place-items: center; margin: 19px auto 8px; border: 1px solid var(--line); border-radius: 7px; background: white; }
 .admin-scope .qr-frame img { width: 188px; height: 188px; }
 .admin-scope .secondary-button { width: 100%; }
+.admin-scope .pending-setups { display: grid; gap: 16px; }
+.admin-scope .pending-setup { padding: 18px; border: 1px solid var(--line); border-radius: 6px; background: #fbfaf7; }
+.admin-scope .pending-setup-title { margin: 0; color: var(--ink); font-family: var(--font-sora), sans-serif; font-size: 14px; font-weight: 500; letter-spacing: -.025em; }
+.admin-scope .pending-setup-date { margin: 5px 0 0; color: var(--muted); font-size: 10px; }
+.admin-scope .pending-setup .setup-hint { margin: 10px 0 15px; text-align: left; }
+.admin-scope .text-button { padding: 8px 0; border: 0; background: transparent; color: #56574f; cursor: pointer; font: inherit; font-size: 11px; text-decoration: underline; text-underline-offset: 3px; }
+.admin-scope .text-button:hover { color: var(--ink); }
+.admin-scope .text-button:focus-visible { outline: 2px solid #9cae5c; outline-offset: 3px; }
+.admin-scope .restart-confirmation { margin-top: 11px; padding: 13px; border: 1px solid #e1e1d6; border-radius: 5px; background: #fffefa; }
+.admin-scope .confirm-restart-label { display: flex; align-items: flex-start; gap: 9px; color: #55564f; font-size: 10px; line-height: 1.55; }
+.admin-scope .confirm-restart-label input { width: 16px; height: 16px; flex: none; margin: 0; accent-color: #707d43; }
+.admin-scope .restart-actions { display: flex; align-items: center; gap: 17px; flex-wrap: wrap; }
+.admin-scope .restart-actions .auth-submit { min-height: 42px; margin-top: 13px; font-size: 11px; }
 .admin-scope .login-note { margin: 15px 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
 
 /* Read-only operational overview */
