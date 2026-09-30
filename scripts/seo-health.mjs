@@ -57,10 +57,14 @@ export async function runSeoHealth({
     }
   }
 
-  const expectedPublicUrls = PUBLIC_ROUTES.map((route) => `${origins.marketing}${route}`);
+  function publicUrlForRoute(origin, route) {
+    return route === "/" ? origin : origin + route;
+  }
+
+  const expectedPublicUrls = PUBLIC_ROUTES.map((route) => publicUrlForRoute(origins.marketing, route));
   for (const route of PUBLIC_ROUTES) {
     const id = route === "/" ? "home" : route.slice(1);
-    const expectedUrl = `${origins.marketing}${route}`;
+    const expectedUrl = publicUrlForRoute(origins.marketing, route);
     const response = await get(expectedUrl);
     if (!response) {
       record(`page:${id}:fetch`, false, "The public route did not return a response.");
