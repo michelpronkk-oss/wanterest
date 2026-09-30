@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920, height=1080">
+<title>Wanterest — An instrument, not a dashboard</title>
+<style>
+@font-face{font-family:"Archivo";font-weight:800;src:url("assets/fonts/Archivo-800.ttf") format("truetype")}
+@font-face{font-family:"Sora";font-weight:600;src:url("assets/fonts/Sora-600.ttf") format("truetype")}
+@font-face{font-family:"Inter";font-weight:400;src:url("assets/fonts/Inter-400.ttf") format("truetype")}
+@font-face{font-family:"Inter";font-weight:700;src:url("assets/fonts/Inter-700.ttf") format("truetype")}
+:root{--ink:#111110;--cream:#f7f6f1;--lime:#d7ff3d;--lime-tint:#eff9c4;--lime-ink:#3d4a0e;--muted:#66665c;--chip:#f3f2ec;--track:#ecebe3;--line:rgba(17,17,16,.08);--dark-muted:#9c9c92;--pos:#5c6b1a;--neg:#b5482f}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;background:#111110;overflow:hidden}
+body{font-family:"Inter",sans-serif;color:var(--ink)}
+#root{position:relative;width:1920px;height:1080px;overflow:hidden;background:#111110}
+.layer{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:hidden}
+.h{opacity:0}
+.abs{position:absolute}
+
+/* ---------- Scene 1: funnel ---------- */
+#s1{background:var(--ink);color:var(--cream)}
+.glow{position:absolute;border-radius:50%;background:radial-gradient(circle,rgba(215,255,61,.55) 0%,rgba(215,255,61,0) 65%);opacity:.1}
+#glowA{left:900px;top:-200px;width:1400px;height:1400px}
+.tag{position:absolute;left:150px;top:82px;font:700 22px "Inter";letter-spacing:.22em;text-transform:uppercase;color:var(--lime);display:flex;align-items:center;gap:16px}
+.tag i{width:14px;height:14px;border-radius:50%;background:var(--lime);display:block}
+.frow{position:absolute;left:150px;width:1620px;height:250px}
+.frow .num{position:absolute;left:0;top:0;font:600 200px/1 "Sora";letter-spacing:-.04em;color:var(--cream);min-width:640px}
+.frow .lab{position:absolute;left:700px;top:56px;font:700 64px/1.05 "Inter";letter-spacing:-.02em;color:var(--cream)}
+.frow .lab small{display:block;margin-top:14px;font:400 30px/1 "Inter";color:var(--dark-muted);letter-spacing:0}
+.frow .bar{position:absolute;left:0;top:222px;height:10px;border-radius:5px;background:rgba(245,244,238,.9);transform-origin:0 50%}
+.frow.hot .num{color:var(--lime)}
+.frow.hot .bar{background:var(--lime)}
+.frule{position:absolute;left:150px;width:1620px;height:2px;background:rgba(245,244,238,.12);transform-origin:0 50%}
+
+/* ---------- Wipes ---------- */
+.wipe{position:absolute;left:-300px;top:-60px;width:2520px;height:1200px;background:var(--lime);transform:skewX(-10deg);z-index:50}
+.wipe.dark{background:var(--ink)}
+
+/* ---------- App UI (scenes 2-4) ---------- */
+#s2{background:#dedcd1}
+#vp{position:absolute;left:0;top:0;width:1920px;height:950px;overflow:hidden}
+#cam{position:absolute;left:0;top:0;width:1300px;height:900px;transform-origin:0 0}
+#ui{position:absolute;left:0;top:0;width:1300px;height:900px;background:var(--cream);border-radius:22px;overflow:hidden;box-shadow:0 60px 120px -40px rgba(17,17,16,.45)}
+#side{position:absolute;left:0;top:0;width:250px;height:900px;background:#fff;border-right:1px solid var(--line)}
+.logo{position:absolute;left:24px;top:22px;display:flex;align-items:center;gap:10px;font:600 17px "Sora";letter-spacing:-.01em}
+.logo svg{width:20px;height:20px;color:var(--ink)}
+.switch{position:absolute;left:16px;top:66px;width:218px;height:54px;border:1px solid var(--line);border-radius:12px;background:#fff}
+.switch .tile{position:absolute;left:11px;top:11px;width:32px;height:32px;border-radius:9px;background:var(--ink);color:#fff;font:700 14px/32px "Inter";text-align:center}
+.switch .t1{position:absolute;left:54px;top:10px;font:700 9px "Inter";letter-spacing:.14em;color:var(--muted)}
+.switch .t2{position:absolute;left:54px;top:24px;font:700 14px "Inter"}
+.switch .chev{position:absolute;right:14px;top:18px;width:8px;height:8px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:rotate(45deg)}
+.nav{position:absolute;left:16px;width:218px;height:38px;border-radius:10px;font:400 14.5px/38px "Inter";color:#4a4a43;padding-left:46px}
+.nav svg{position:absolute;left:15px;top:11px;width:16px;height:16px;stroke:#4a4a43;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.nav b{position:absolute;right:14px;top:0;font:400 12px/38px "Inter";color:var(--muted)}
+.nav.on{background:var(--chip);box-shadow:inset 2px 0 0 var(--lime);font-weight:700;color:var(--ink)}
+.nav.on svg{stroke:var(--ink)}
+.plan{position:absolute;left:16px;top:718px;width:218px;height:96px;border:1px solid var(--line);border-radius:12px;background:var(--cream)}
+.plan .a{position:absolute;left:14px;top:14px;font:700 12.5px "Inter"}
+.plan .b{position:absolute;right:14px;top:15px;font:400 11.5px "Inter";color:var(--muted)}
+.plan .tr{position:absolute;left:14px;top:40px;width:190px;height:5px;border-radius:3px;background:#e4e3da}
+.plan .tr i{display:block;width:75%;height:100%;border-radius:3px;background:var(--ink)}
+.plan .c{position:absolute;left:14px;top:60px;font:400 11px "Inter";color:var(--muted)}
+.plan .c u{color:var(--ink);font-weight:700}
+.acct{position:absolute;left:24px;top:836px;width:200px;height:40px}
+.acct .av{position:absolute;left:0;top:4px;width:32px;height:32px;border-radius:50%;background:var(--chip);border:1px solid var(--line);font:700 13px/30px "Inter";text-align:center}
+.acct .m{position:absolute;left:44px;top:4px;font:700 13px "Inter"}
+.acct .f{position:absolute;left:44px;top:22px;font:400 11px "Inter";color:var(--muted)}
+.search{position:absolute;left:290px;top:16px;width:380px;height:34px;border:1px solid var(--line);border-radius:10px;background:#fff;font:400 12.5px/32px "Inter";color:var(--muted);padding-left:34px}
+.search:before{content:"";position:absolute;left:12px;top:10px;width:9px;height:9px;border:1.5px solid var(--muted);border-radius:50%}
+.search em{position:absolute;right:8px;top:6px;font:400 11px/20px "Inter";font-style:normal;background:var(--chip);border-radius:5px;padding:0 6px}
+.fresh{position:absolute;right:150px;top:16px;font:400 12.5px/34px "Inter";color:#4a4a43;display:flex;align-items:center;gap:8px}
+.fresh i{width:7px;height:7px;border-radius:50%;background:var(--pos);display:block}
+.btn{position:absolute;height:34px;border-radius:9px;font:700 12.5px/34px "Inter";text-align:center;white-space:nowrap}
+.btn.sec{background:#fff;border:1px solid var(--line);color:var(--ink)}
+.btn.pri{background:var(--ink);color:#fff}
+.eyebrow{position:absolute;left:290px;top:82px;font:400 12.5px "Inter";color:var(--muted)}
+.title{position:absolute;left:290px;top:100px;font:800 28px/1.2 "Archivo";letter-spacing:-.01em}
+.subt{position:absolute;left:290px;top:140px;font:400 14px "Inter";color:var(--muted)}
+.panel{position:absolute;left:290px;top:184px;width:970px;height:184px;border-radius:16px;background:var(--ink);color:var(--dark-ink,#f5f4ee);overflow:hidden}
+.panel .halo{position:absolute;left:-40px;top:-80px;width:520px;height:300px;background:radial-gradient(ellipse,rgba(215,255,61,.35),rgba(215,255,61,0) 70%);opacity:.1}
+.panel .k{position:absolute;left:28px;top:22px;font:700 11.5px "Inter";letter-spacing:.16em;color:var(--lime);display:flex;align-items:center;gap:8px}
+.panel .k i{width:7px;height:7px;border-radius:50%;background:var(--lime);display:block}
+.panel .st{position:absolute;left:28px;top:48px;width:480px;font:600 21px/1.32 "Sora";letter-spacing:-.01em;color:#f5f4ee}
+.panel .st .w{opacity:0;display:inline-block;margin-right:.26em}
+.stat{position:absolute;top:0;width:150px;height:142px;border-left:1px solid rgba(255,255,255,.09)}
+.stat .l{position:absolute;left:20px;top:22px;font:400 12px "Inter";color:var(--dark-muted)}
+.stat .n{position:absolute;left:20px;top:44px;font:600 44px/1 "Sora";letter-spacing:-.03em;color:#f5f4ee}
+.stat .n.lime{color:var(--lime)}
+.stat .s{position:absolute;left:20px;top:104px;white-space:nowrap;font:400 11.5px/1.25 "Inter";color:var(--dark-muted);width:100px}
+.stat .s.lime{color:var(--lime)}
+.pfoot{position:absolute;left:0;top:142px;width:970px;height:42px;border-top:1px solid rgba(255,255,255,.09);font:400 12px/41px "Inter";color:var(--dark-muted)}
+.pfoot span{position:absolute;top:0;white-space:nowrap}
+.pfoot i{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--pos);margin-right:8px;vertical-align:1px}
+.sec-l{position:absolute;font:700 11px "Inter";letter-spacing:.16em;color:var(--muted);text-transform:uppercase}
+.sk{position:absolute;background:var(--track);border-radius:14px;opacity:.75}
+.card{position:absolute;background:#fff;border-radius:14px;box-shadow:inset 0 0 0 1px rgba(17,17,16,.08);width:590px;height:92px}
+.card .src{position:absolute;left:18px;top:14px;display:flex;align-items:center;gap:8px;font:700 12.5px "Inter"}
+.card .src img{width:18px;height:18px;border-radius:4px;display:block}
+.card .src span{font:400 11.5px "Inter";color:var(--muted)}
+.card .ttl{position:absolute;left:18px;top:42px;font:600 14px "Sora";letter-spacing:-.005em;white-space:nowrap}
+.card .tg{position:absolute;left:18px;top:66px;display:flex;gap:6px}
+.chipx{font:400 11px/20px "Inter";background:var(--chip);border-radius:20px;padding:0 10px;color:#4a4a43;white-space:nowrap}
+.card .right{position:absolute;right:18px;top:12px;display:flex;align-items:center;gap:10px}
+.intent{font:700 9.5px/20px "Inter";letter-spacing:.1em;border-radius:20px;padding:0 10px}
+.intent.hi{background:var(--lime-tint);color:var(--lime-ink)}
+.intent.sw{background:var(--ink);color:#fff}
+.intent.pr{background:var(--chip);color:#4a4a43}
+.pips{display:flex;gap:2px}
+.pips i{width:3px;height:11px;border-radius:1px;background:var(--ink);display:block}
+.pips i.o{background:#d9d8cf}
+.score{font:600 14px "Sora";min-width:22px;text-align:right}
+.next{position:absolute;left:900px;top:424px;width:360px;height:176px;background:#fff;border-radius:14px;box-shadow:inset 0 0 0 1.5px var(--ink)}
+.next .ch{position:absolute;left:18px;top:16px;font:700 10px/20px "Inter";letter-spacing:.12em;background:var(--lime-tint);color:var(--lime-ink);border-radius:20px;padding:0 11px}
+.next .prio{position:absolute;right:18px;top:16px;font:400 11px/20px "Inter";color:var(--muted)}
+.next .hd{position:absolute;left:18px;top:48px;width:326px;font:600 16px/1.32 "Sora";letter-spacing:-.01em}
+.next .pp{position:absolute;left:18px;top:96px;width:320px;font:400 12px/1.4 "Inter";color:var(--muted)}
+.next .review{left:18px;top:132px;width:110px;height:32px;line-height:32px;font-size:12px}
+.next .dis{position:absolute;left:146px;top:132px;font:700 12px/32px "Inter";color:#4a4a43}
+.chg{position:absolute;left:900px;top:638px;width:360px;height:96px;background:#fff;border-radius:14px;box-shadow:inset 0 0 0 1px rgba(17,17,16,.08)}
+.chg .r{position:absolute;left:18px;width:324px;height:32px;font:600 13px/32px "Sora";border-bottom:1px solid var(--line)}
+.chg .r:last-child{border-bottom:0}
+.chg .r b{position:absolute;right:0;top:0;font:700 12.5px/32px "Inter";color:var(--pos)}
+.chg .r b.dn{color:var(--neg)}
+.mon{position:absolute;left:290px;top:758px;width:970px;height:128px;background:#fff;border-radius:14px;box-shadow:inset 0 0 0 1px rgba(17,17,16,.08);overflow:hidden}
+.mon .kk{position:absolute;left:24px;top:16px;font:700 11px/20px "Inter";letter-spacing:.14em;display:flex;gap:8px;align-items:center}
+.mon .kk u{text-decoration:none;font:700 9.5px/18px "Inter";letter-spacing:.1em;background:var(--lime-tint);color:var(--lime-ink);border-radius:20px;padding:0 9px}
+.mon .hd{position:absolute;left:24px;top:40px;width:420px;font:600 16px/1.3 "Sora";letter-spacing:-.01em}
+.mon .b1{left:24px;top:88px;width:138px;height:28px;line-height:28px;font-size:11.5px}
+.mon .b2{position:absolute;left:180px;top:88px;font:700 11.5px/28px "Inter";color:#4a4a43}
+.mon .div{position:absolute;left:480px;top:0;width:1px;height:128px;background:var(--line)}
+.tlw{position:absolute;top:26px;width:60px;text-align:center;font:400 11.5px "Inter";color:var(--muted)}
+.tline{position:absolute;left:526px;top:57px;width:410px;height:1.5px;background:var(--line);transform-origin:0 50%}
+.dot{position:absolute;top:51px;width:14px;height:14px;border-radius:50%;border:1.5px dashed #c9c8bd;background:#fff}
+.dot.lit{border:0;background:var(--ink);width:14px;height:14px}
+.dot .fill{position:absolute;left:0;top:0;width:14px;height:14px;border-radius:50%;background:var(--ink);opacity:0}
+.tnote{position:absolute;left:526px;top:92px;font:400 12px "Inter";color:var(--muted)}
+.tnote b{color:var(--ink)}
+.ring{position:absolute;border-radius:50%;border:3px solid var(--lime);opacity:0;pointer-events:none}
+#cursor{position:absolute;left:0;top:0;width:26px;height:26px;z-index:20;opacity:0;filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))}
+
+/* caption pill */
+#cap{position:absolute;left:0;top:950px;width:1920px;height:130px;z-index:30;display:flex;align-items:center;gap:22px;padding:0 64px;background:var(--ink);opacity:0}
+#cap:after{content:"";position:absolute;left:0;top:0;width:1920px;height:3px;background:var(--lime)}
+#cap .cn{position:relative;flex:none;width:60px;height:60px;border-radius:50%;background:var(--lime);color:var(--ink);font:800 26px/60px "Archivo";text-align:center}
+.prog{position:absolute;right:64px;top:57px;display:flex;gap:10px}
+.prog i{display:block;width:120px;height:8px;border-radius:4px;background:rgba(245,244,238,.16);position:relative;overflow:hidden}
+.prog i:after{content:"";position:absolute;left:0;top:0;bottom:0;width:100%;background:var(--lime);transform:scaleX(var(--p,0));transform-origin:0 50%}
+#cap .cn span{position:absolute;left:0;top:0;width:60px;text-align:center;opacity:0}
+#cap .ct{position:relative;height:56px;width:900px}
+#cap .ct span{position:absolute;left:0;top:0;font:600 40px/56px "Sora";letter-spacing:-.02em;color:#f5f4ee;white-space:nowrap;opacity:0}
+
+/* ---------- Scene 5 ---------- */
+#s5{background:var(--ink);color:#f5f4ee}
+#glowB{left:460px;top:-320px;width:1000px;height:1000px}
+#mark{position:absolute;left:150px;top:130px;width:230px;height:226px;overflow:visible}
+#mark polyline{fill:none;stroke:var(--lime);stroke-width:16;stroke-linejoin:miter;stroke-linecap:butt}
+.l5{position:absolute;left:150px;font:800 190px/1 "Archivo";letter-spacing:-.035em;color:#f5f4ee;white-space:nowrap}
+.l5 .hl{position:relative;color:#f5f4ee;padding:0 20px;margin-left:-20px;display:inline-block}
+.l5 .hl:before{content:"";position:absolute;left:0;right:0;top:12px;bottom:6px;background:var(--lime);z-index:-1;transform-origin:0 50%;transform:scaleX(var(--hl,0));border-radius:6px}
+.l5 .ds{position:relative;display:inline-block}
+.l5 .ds:after{content:"";position:absolute;left:-6px;right:-6px;top:56%;height:14px;background:var(--lime);transform-origin:0 50%;transform:scaleX(var(--st,0));border-radius:3px}
+.wm{position:absolute;left:150px;top:962px;display:flex;align-items:center;gap:16px;font:600 40px/1 "Sora";letter-spacing:-.02em}
+.wm svg{width:38px;height:38px;color:var(--lime)}
+.url{position:absolute;right:150px;top:970px;font:700 24px/1 "Inter";letter-spacing:.2em;color:var(--dark-muted)}
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="root" data-width="1920" data-height="1080" data-start="0" data-duration="15">
+
+  <!-- ============ SCENE 1: FUNNEL HOOK ============ -->
+  <div id="s1" class="layer clip" data-start="0" data-duration="2.9">
+    <div class="glow" id="glowA"></div>
+    <div class="tag h" id="tag1"><i></i>Scan complete · 2h ago</div>
+
+    <div class="frule h" id="fr0" style="top:150px"></div>
+    <div class="frow h" id="row1" style="top:180px">
+      <div class="num" id="n1">0</div>
+      <div class="lab">conversations read<small>across 5 sources</small></div>
+      <div class="bar" id="b1" style="width:1620px"></div>
+    </div>
+    <div class="frule h" id="fr1" style="top:452px"></div>
+    <div class="frow h" id="row2" style="top:470px">
+      <div class="num" id="n2">0</div>
+      <div class="lab">relevant<small>to your product</small></div>
+      <div class="bar" id="b2" style="width:47px"></div>
+    </div>
+    <div class="frule h" id="fr2" style="top:742px"></div>
+    <div class="frow hot h" id="row3" style="top:760px">
+      <div class="num" id="n3">0</div>
+      <div class="lab">qualified<small>≥ 0.70 confidence</small></div>
+      <div class="bar" id="b3" style="width:16px"></div>
+    </div>
+  </div>
+
+  <!-- ============ SCENES 2-4: THE INSTRUMENT ============ -->
+  <div id="s2" class="layer clip" data-start="2.3" data-duration="10.3">
+    <div id="vp"><div id="cam">
+      <div id="ui">
+        <!-- sidebar -->
+        <div id="side">
+          <div class="logo" id="lg"><svg viewBox="0 0 120 118"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-linecap="butt"/></svg>wanterest</div>
+          <div class="switch" id="sw"><div class="tile">A</div><div class="t1">AUTERIM</div><div class="t2">Auterim Flow</div><div class="chev"></div></div>
+          <div class="nav on" style="top:140px"><svg viewBox="0 0 16 16"><path d="M2 7l6-5 6 5v7H2z"/></svg>Home</div>
+          <div class="nav" style="top:182px"><svg viewBox="0 0 16 16"><path d="M1 12l4-4 3 3 7-7"/></svg>Signals<b>12</b></div>
+          <div class="nav" style="top:224px"><svg viewBox="0 0 16 16"><path d="M4 2h8v12l-4-3-4 3z"/></svg>Saved<b>3</b></div>
+          <div class="nav" style="top:266px"><svg viewBox="0 0 16 16"><path d="M3 13V8M8 13V3M13 13V6"/></svg>Insights</div>
+          <div class="nav" style="top:308px"><svg viewBox="0 0 16 16"><path d="M9 1L3 9h5l-1 6 6-8H8z"/></svg>Actions<b>1</b></div>
+          <div class="nav" style="top:350px"><svg viewBox="0 0 16 16"><path d="M6 2h4M7 2v5l-4 7h10L9 7V2"/></svg>Experiments</div>
+          <div class="nav" style="top:392px"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg>Settings</div>
+          <div class="plan" data-layout-ignore><div class="a">Free plan</div><div class="b">3 of 4 scans</div><div class="tr"><i></i></div><div class="c">Resets 1 Oct · <u>Upgrade</u></div></div>
+          <div class="acct" data-layout-ignore><div class="av">M</div><div class="m">Michel</div><div class="f">Founding · 07</div></div>
+        </div>
+
+        <!-- top -->
+        <div class="search" id="srch">Search signals, themes, actions<em>⌘K</em></div>
+        <div class="fresh"><i></i>Scanned 2h ago</div>
+        <div class="btn sec" style="left:1160px;top:16px;width:100px">↻ Rescan</div>
+        <div class="eyebrow" id="eb">Auterim Flow · Sat 27 Sep</div>
+        <div class="title" id="ti">Today</div>
+        <div class="subt" id="su">12 qualified signals from 4 sources. 5 show buying intent.</div>
+        <div class="btn pri" id="opn" style="left:1130px;top:100px;width:130px;height:36px;line-height:36px">Open signal</div>
+
+        <!-- market state panel -->
+        <div class="panel" id="panel">
+          <div class="halo" id="halo"></div>
+          <div class="k"><i></i>MARKET STATE</div>
+          <div class="st" id="st">
+            <span class="w">Teams</span><span class="w">are</span><span class="w">actively</span><span class="w">looking</span><span class="w">for</span><span class="w">a</span><span class="w">simpler</span><span class="w">CRM-sync</span><span class="w">tool.</span><span class="w">Pricing</span><span class="w">pressure</span><span class="w">against</span><span class="w">HubSpot</span><span class="w">is</span><span class="w">the</span><span class="w">fastest-rising</span><span class="w">reason.</span>
+          </div>
+          <div class="stat h" id="sa" style="left:520px"><div class="l">Qualified</div><div class="n lime" id="qa">0</div><div class="s lime">+4 since last scan</div></div>
+          <div class="stat h" id="sb" style="left:670px"><div class="l">High intent</div><div class="n" id="qb">0</div><div class="s">42% of signals</div></div>
+          <div class="stat h" id="sc" style="left:820px"><div class="l">Sources</div><div class="n" id="qc" style="font-size:36px;line-height:44px;white-space:nowrap">4 of 5</div><div class="s">X pending</div></div>
+          <div class="pfoot h" id="pf"><span style="left:28px"><i></i>Scan complete · 2h ago</span><span style="left:232px">1,284 conversations read</span><span style="left:440px">37 relevant</span><span style="right:28px;color:#f5f4ee;font-weight:700">View evidence →</span></div>
+        </div>
+
+        <!-- section labels -->
+        <div class="sec-l" style="left:290px;top:396px">Strongest signals</div>
+        <div class="sec-l" style="left:830px;top:396px;color:var(--ink);letter-spacing:0;font-size:12px;text-transform:none">All 12 →</div>
+        <div class="sec-l" style="left:900px;top:396px">Recommended next move</div>
+        <div class="sec-l" style="left:900px;top:616px">What changed</div>
+
+        <!-- skeletons -->
+        <div class="sk" id="sk1" style="left:290px;top:424px;width:590px;height:92px"></div>
+        <div class="sk" id="sk2" style="left:290px;top:526px;width:590px;height:92px"></div>
+        <div class="sk" id="sk3" style="left:290px;top:628px;width:590px;height:92px"></div>
+        <div class="sk" id="sk4" style="left:900px;top:424px;width:360px;height:176px"></div>
+        <div class="sk" id="sk5" style="left:900px;top:638px;width:360px;height:96px"></div>
+        <div class="sk" id="sk6" style="left:290px;top:758px;width:970px;height:128px"></div>
+
+        <!-- signal cards -->
+        <div class="card h" id="c1" style="left:290px;top:424px">
+          <div class="src"><img src="assets/img/reddit.png" alt="">r/sales <span>7h</span></div>
+          <div class="right"><div class="intent hi">HIGH INTENT</div><div class="pips"><i></i><i></i><i></i><i></i><i class="o"></i></div><div class="score">88</div></div>
+          <div class="ttl">Asking for one tool that watches inbox and CRM together</div>
+          <div class="tg"><span class="chipx">CRM sync</span><span class="chipx">Inbox</span></div>
+        </div>
+        <div class="card h" id="c2" style="left:290px;top:526px">
+          <div class="src"><img src="assets/img/reddit.png" alt="">r/SaaS <span>1d</span></div>
+          <div class="right"><div class="intent sw">SWITCHING</div><div class="pips"><i></i><i></i><i></i><i></i><i></i></div><div class="score" id="sc91">91</div></div>
+          <div class="ttl">Paying for HubSpot features they never use, wants simpler</div>
+          <div class="tg"><span class="chipx">HubSpot alternative</span><span class="chipx">Pricing</span></div>
+        </div>
+        <div class="card h" id="c3" style="left:290px;top:628px">
+          <div class="src"><img src="assets/img/hacker-news.png" alt="">Hacker News <span>1d</span></div>
+          <div class="right"><div class="intent pr">PROBLEM</div><div class="pips"><i></i><i></i><i></i><i></i><i class="o"></i></div><div class="score">81</div></div>
+          <div class="ttl">Reconciles the same invoices across three spreadsheets weekly</div>
+          <div class="tg"><span class="chipx">Manual ops</span></div>
+        </div>
+
+        <!-- next move -->
+        <div class="next h" id="nx">
+          <div class="ch">POSITIONING</div><div class="prio">Priority 1 of 1</div>
+          <div class="hd">Make “simpler than HubSpot” explicit on your homepage.</div>
+          <div class="pp">7 signals cite unused complexity as the reason to switch.</div>
+          <div class="btn pri review" id="rev">Review action</div><div class="dis">Dismiss</div>
+        </div>
+        <div class="ring" id="ring" style="left:936px;top:558px;width:72px;height:28px;border-radius:14px"></div>
+
+        <!-- what changed -->
+        <div class="chg h" id="cg">
+          <div class="r" style="top:0"><span>Pricing pressure</span><b id="d1">↑ 0%</b></div>
+          <div class="r" style="top:32px"><span>Workflow simplicity</span><b id="d2">↑ 0%</b></div>
+          <div class="r" style="top:64px"><span>Manual reconciliation</span><b class="dn" id="d3">↓ 0%</b></div>
+        </div>
+
+        <!-- monitoring -->
+        <div class="mon h" id="mn">
+          <div class="kk">AUTOMATIC MONITORING <u>PRO</u></div>
+          <div class="hd">Know the day demand moves, not the day you check.</div>
+          <div class="btn pri b1">Turn on monitoring</div><div class="b2">Compare plans</div>
+          <div class="div"></div>
+          <div class="tlw" style="left:496px">Mon</div><div class="tlw" style="left:562px">Tue</div><div class="tlw" style="left:628px">Wed</div><div class="tlw" style="left:694px">Thu</div><div class="tlw" style="left:760px">Fri</div><div class="tlw" style="left:826px">Sat</div><div class="tlw" style="left:892px">Sun</div>
+          <div class="tline" id="tl"></div>
+          <div class="dot" style="left:519px"><div class="fill"></div></div><div class="dot" style="left:585px"><div class="fill"></div></div><div class="dot" style="left:651px"><div class="fill"></div></div><div class="dot" style="left:717px"><div class="fill"></div></div><div class="dot" style="left:783px"><div class="fill"></div></div><div class="dot" style="left:849px"><div class="fill"></div></div><div class="dot" style="left:915px"><div class="fill"></div></div>
+          <div class="tnote">Now: manual scans only. <b>With Pro: every day, automatically.</b></div>
+        </div>
+
+        <svg id="cursor" viewBox="0 0 24 24"><path d="M3 2l16 9-7 2-3 7z" fill="#111110" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </div>
+    </div></div>
+
+    <div id="cap" data-layout-allow-occlusion data-layout-allow-overlap>
+      <div class="cn"><span id="cn1">01</span><span id="cn2">02</span><span id="cn3">03</span></div>
+      <div class="ct"><span id="cp1">Read the market state</span><span id="cp2">Rank by buying intent</span><span id="cp3">Make the one move</span></div>
+      <div class="prog"><i id="pg1"></i><i id="pg2"></i><i id="pg3"></i></div>
+    </div>
+  </div>
+
+  <!-- ============ SCENE 5: OUTRO ============ -->
+  <div id="s5" class="layer clip" data-start="12.5" data-duration="2.5">
+    <div class="glow" id="glowB"></div>
+    <svg id="mark" viewBox="0 0 120 118"><polyline id="markp" points="10,32 34,102 60,40 86,102 110,32"/></svg>
+    <div class="l5 h" id="l5a" style="top:400px"><span class="hl" id="hl">instrument,</span></div>
+    <div class="l5 h" id="l5b" style="top:596px">not a <span class="ds" id="ds">dashboard.</span></div>
+    <div class="wm h" id="wm"><svg viewBox="0 0 120 118"><polyline points="10,32 34,102 60,40 86,102 110,32" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-linecap="butt"/></svg>wanterest</div>
+    <div class="url h" id="url">APP.WANTEREST.COM</div>
+  </div>
+
+  <!-- wipes -->
+  <div class="wipe h" id="wp1" style="opacity:1"></div>
+  <div class="wipe dark h" id="wp2" style="opacity:1;z-index:49"></div>
+  <div class="wipe h" id="wp3" style="opacity:1"></div>
+
+  <!-- ============ AUDIO ============ -->
+  <audio id="bed" src="assets/music/bed.mp3" data-start="0" data-duration="15" data-track-index="0" data-volume="0.62" data-fade-in="0.3" data-fade-out="1.3"></audio>
+  <audio id="sfx0" src="assets/sfx/impact/impactSoft_medium_001.ogg" data-start="0.27" data-duration="1.2" data-track-index="1" data-volume="0.5"></audio>
+  <audio id="sfx1" src="assets/sfx/interface/drop_001.ogg" data-start="0.82" data-duration="1.2" data-track-index="2" data-volume="0.5"></audio>
+  <audio id="sfx2" src="assets/sfx/interface/drop_002.ogg" data-start="1.37" data-duration="1.2" data-track-index="3" data-volume="0.55"></audio>
+  <audio id="sfx3" src="assets/sfx/casino/card-slide-1.ogg" data-start="2.1" data-duration="1.2" data-track-index="4" data-volume="0.45"></audio>
+  <audio id="sfx4" src="assets/sfx/impact/impactSoft_medium_002.ogg" data-start="2.46" data-duration="1.2" data-track-index="5" data-volume="0.6"></audio>
+  <audio id="sfx5" src="assets/sfx/casino/chips-stack-2.ogg" data-start="3.55" data-duration="1.2" data-track-index="6" data-volume="0.35"></audio>
+  <audio id="sfx6" src="assets/sfx/casino/card-slide-1.ogg" data-start="5.3" data-duration="1.2" data-track-index="7" data-volume="0.4"></audio>
+  <audio id="sfx7" src="assets/sfx/casino/card-slide-1.ogg" data-start="6.28" data-duration="1.2" data-track-index="8" data-volume="0.4"></audio>
+  <audio id="sfx8" src="assets/sfx/casino/card-slide-1.ogg" data-start="6.82" data-duration="1.2" data-track-index="9" data-volume="0.4"></audio>
+  <audio id="sfx9" src="assets/sfx/casino/card-slide-1.ogg" data-start="7.35" data-duration="1.2" data-track-index="10" data-volume="0.4"></audio>
+  <audio id="sfx10" src="assets/sfx/interface/bong_001.ogg" data-start="7.79" data-duration="1.2" data-track-index="11" data-volume="0.3"></audio>
+  <audio id="sfx11" src="assets/sfx/impact/impactSoft_medium_001.ogg" data-start="9.29" data-duration="1.2" data-track-index="12" data-volume="0.55"></audio>
+  <audio id="sfx12" src="assets/sfx/interface/drop_001.ogg" data-start="9.5" data-duration="1.2" data-track-index="13" data-volume="0.5"></audio>
+  <audio id="sfx13" src="assets/sfx/ui/mouseclick1.ogg" data-start="10.93" data-duration="1.2" data-track-index="14" data-volume="0.8"></audio>
+  <audio id="sfx14" src="assets/sfx/interface/switch_002.ogg" data-start="11.5" data-duration="1.2" data-track-index="15" data-volume="0.4"></audio>
+  <audio id="sfx15" src="assets/sfx/casino/card-slide-1.ogg" data-start="12.15" data-duration="1.2" data-track-index="16" data-volume="0.45"></audio>
+  <audio id="sfx16" src="assets/sfx/impact/impactBell_heavy_000.ogg" data-start="12.6" data-duration="1.2" data-track-index="17" data-volume="0.7"></audio>
+  <audio id="sfx17" src="assets/sfx/interface/click_003.ogg" data-start="13.64" data-duration="1.2" data-track-index="18" data-volume="0.5"></audio>
+  <audio id="sfx18" src="assets/sfx/impact/impactBell_heavy_003.ogg" data-start="14.2" data-duration="0.8" data-track-index="19" data-volume="0.5"></audio>
+</div>
+
+<script src="assets/gsap.min.js"></script>
+<script>
+(function(){
+  var RMS = [0.773, 0.747, 0.739, 0.676, 0.662, 0.664, 0.641, 0.551, 0.448, 0.309, 0.19, 0.082, 0.034, 0.021, 0.091, 0.253, 0.396, 0.518, 0.668, 0.706, 0.672, 0.644, 0.628, 0.552, 0.457, 0.334, 0.226, 0.251, 0.289, 0.396, 0.491, 0.575, 0.468, 0.362, 0.243, 0.26, 0.24, 0.236, 0.284, 0.384, 0.366, 0.39, 0.461, 0.482, 0.408, 0.313, 0.222, 0.304, 0.352, 0.441, 0.536, 0.644, 0.516, 0.403, 0.316, 0.326, 0.352, 0.437, 0.553, 0.641, 0.648, 0.626, 0.612, 0.605, 0.616, 0.609, 0.607, 0.607, 0.6, 0.572, 0.561, 0.532, 0.485, 0.406, 0.315, 0.22, 0.14, 0.075, 0.042, 0.032, 0.201, 0.341, 0.484, 0.606, 0.723, 0.663, 0.627, 0.586, 0.545, 0.462, 0.358, 0.257, 0.256, 0.297, 0.383, 0.48, 0.604, 0.57, 0.464, 0.349, 0.287, 0.209, 0.16, 0.148, 0.254, 0.344, 0.42, 0.521, 0.626, 0.596, 0.485, 0.364, 0.322, 0.379, 0.426, 0.529, 0.636, 0.66, 0.565, 0.469, 0.381, 0.412, 0.437, 0.496, 0.601, 0.695, 0.673, 0.666, 0.603, 0.609, 0.58, 0.554, 0.524, 0.543, 0.481, 0.454, 0.444, 0.454, 0.441, 0.392, 0.324, 0.242, 0.143, 0.07, 0.037, 0.101, 0.243, 0.367, 0.529, 0.651, 0.699, 0.657, 0.615, 0.556, 0.493, 0.396, 0.301, 0.222, 0.218, 0.283, 0.368, 0.478, 0.576, 0.514, 0.404, 0.297, 0.273, 0.24, 0.223, 0.22, 0.324, 0.327, 0.343, 0.413, 0.48, 0.4, 0.31, 0.226, 0.246, 0.305, 0.398, 0.499, 0.594, 0.528, 0.399, 0.28, 0.249, 0.287, 0.361, 0.473, 0.583, 0.613, 0.583, 0.573, 0.556, 0.64, 0.659, 0.68, 0.689, 0.717, 0.612, 0.509, 0.431, 0.369, 0.264, 0.183, 0.164, 0.118, 0.064, 0.039, 0.028, 0.193, 0.341, 0.476, 0.599, 0.728, 0.69, 0.669, 0.654, 0.612, 0.535, 0.414, 0.291, 0.223, 0.265, 0.33, 0.429, 0.547, 0.617, 0.517, 0.41, 0.32, 0.347, 0.357, 0.453, 0.542, 0.661, 0.63, 0.611, 0.6, 0.606, 0.535, 0.444, 0.344, 0.397, 0.445, 0.519, 0.62, 0.728, 0.647, 0.541, 0.442, 0.442, 0.466, 0.527, 0.617, 0.706, 0.663, 0.565, 0.471, 0.446, 0.45, 0.532, 0.631, 0.723, 0.759, 0.738, 0.703, 0.671, 0.624, 0.525, 0.423, 0.295, 0.187, 0.097, 0.049, 0.086, 0.248, 0.408, 0.536, 0.665, 0.754, 0.694, 0.661, 0.644, 0.588, 0.478, 0.381, 0.259, 0.213, 0.287, 0.385, 0.5, 0.641, 0.658, 0.554, 0.452, 0.371, 0.299, 0.266, 0.251, 0.329, 0.403, 0.425, 0.487, 0.55, 0.485, 0.386, 0.318, 0.299, 0.376, 0.477, 0.587, 0.683, 0.672, 0.571, 0.483, 0.414, 0.425, 0.473, 0.535, 0.607, 0.661, 0.636, 0.613, 0.59, 0.623, 0.632, 0.661, 0.692, 0.714, 0.69, 0.679, 0.623, 0.565, 0.478, 0.361, 0.253, 0.171, 0.091, 0.049, 0.036, 0.157, 0.323, 0.475, 0.621, 0.76, 0.762, 0.715, 0.663, 0.582, 0.484, 0.37, 0.257, 0.17, 0.252, 0.335, 0.435, 0.56, 0.69, 0.594, 0.485, 0.376, 0.283, 0.159, 0.114, 0.134, 0.255, 0.355, 0.478, 0.606, 0.68, 0.603, 0.525, 0.442, 0.472, 0.523, 0.619, 0.702, 0.779, 0.737, 0.637, 0.542, 0.505, 0.504, 0.529, 0.614, 0.7, 0.727, 0.717, 0.654, 0.591, 0.604, 0.623, 0.628, 0.69, 0.722, 0.675, 0.641, 0.615, 0.565, 0.483, 0.387, 0.271, 0.167, 0.073, 0.042, 0.069, 0.2, 0.373, 0.52, 0.681, 0.77, 0.757, 0.716, 0.666, 0.579, 0.484, 0.375, 0.251, 0.211, 0.291, 0.412, 0.534, 0.661, 0.704, 0.588, 0.453, 0.329, 0.282, 0.222, 0.195, 0.263, 0.387, 0.427, 0.512, 0.598, 0.565, 0.449, 0.335, 0.266, 0.347, 0.441, 0.557, 0.666, 0.692, 0.567, 0.482, 0.427, 0.355];
+  var tl = gsap.timeline({paused:true});
+  var $ = function(s){return document.querySelector(s)};
+  var E = "expo.out", P = "power3.out", IO = "power3.inOut";
+
+  // ---- initial states ----
+  gsap.set("#cam",{x:115,y:-60,scale:1.3,transformOrigin:"0 0"});
+  gsap.set(".wipe",{x:-2700,opacity:1});
+  gsap.set("#wp2",{x:-2700});
+  gsap.set("#markp",{strokeDasharray:400,strokeDashoffset:400});
+  gsap.set("#cursor",{x:1250,y:880});
+
+  function counter(sel,to,t,dur,fmt,pre,suf){
+    var o={v:0}, el=$(sel);
+    tl.to(o,{v:to,duration:dur,ease:"power2.out",onUpdate:function(){
+      var n=Math.round(o.v); el.textContent=(pre||"")+(fmt?n.toLocaleString("en-US"):n)+(suf||"");
+    }},t);
+  }
+
+  // ================= SCENE 1 (0 - 2.46) =================
+  tl.fromTo("#tag1",{opacity:0,x:-30},{opacity:1,x:0,duration:.4,ease:P},0.05);
+  // beat-grid: row 1 at 0.27, row 2 at 0.82, row 3 at 1.37
+  var rows=[["#row1","#fr0","#n1","#b1",0.27,1284,true],["#row2","#fr1","#n2","#b2",0.82,37,false],["#row3","#fr2","#n3","#b3",1.37,12,false]];
+  rows.forEach(function(r){
+    var t=r[4];
+    tl.to(r[1],{opacity:1,duration:.01},t-.05);
+    tl.fromTo(r[1],{scaleX:0},{scaleX:1,duration:.45,ease:E},t-.05);
+    tl.fromTo(r[0],{opacity:0,y:70},{opacity:1,y:0,duration:.5,ease:E},t);
+    tl.fromTo(r[3],{scaleX:0},{scaleX:1,duration:.7,ease:E},t+.1);
+    counter(r[2],r[5],t,r[6]?0.6:0.42,r[6]);
+  });
+  // beat 1.90: qualified pops
+  tl.fromTo("#n3",{scale:1},{scale:1.05,duration:.12,ease:"power2.out",transformOrigin:"0 60%"},1.9);
+  tl.to("#n3",{scale:1,duration:.4,ease:"elastic.out(1,.5)"},2.02);
+  // exit push into wipe
+  tl.to("#s1",{scale:1.04,duration:.6,ease:"power1.in",transformOrigin:"50% 50%"},1.9);
+  // lime wipe covers 2.1 -> 2.42, exits 2.46 -> 2.86 (cut lands on beat 2.46)
+  tl.set("#wp1",{x:-2700},1.9);
+  tl.to("#wp1",{x:0,duration:.38,ease:"power2.in"},1.92);
+  tl.to("#wp1",{x:2700,duration:.42,ease:"power3.out"},2.46);
+
+  // ================= SCENE 2: TODAY (2.46 - 5.74) =================
+  gsap.set(["#side","#srch","#eb","#ti","#su","#opn"],{opacity:0});
+  gsap.set("#panel",{clipPath:"inset(0 100% 0 0 round 16px)"});
+  gsap.set(".sk",{opacity:0});
+  tl.fromTo("#side",{opacity:0,x:-50},{opacity:1,x:0,duration:.6,ease:P},2.5);
+  tl.to(["#srch","#eb","#su"],{opacity:1,duration:.4,stagger:.06,ease:P},2.62);
+  tl.fromTo("#ti",{opacity:0,y:20},{opacity:1,y:0,duration:.45,ease:E},2.7);
+  tl.fromTo("#opn",{opacity:0,y:10},{opacity:1,y:0,duration:.4,ease:P},2.8);
+  tl.to(".sk",{opacity:.75,duration:.5,stagger:.05,ease:"power1.out"},2.9);
+  // panel wipe-in
+  tl.to("#panel",{clipPath:"inset(0 0% 0 0 round 16px)",duration:.55,ease:"power3.inOut"},2.75);
+  // statement types word by word (beat 3.01 start)
+  var words=document.querySelectorAll("#st .w");
+  for(var i=0;i<words.length;i++){
+    tl.fromTo(words[i],{opacity:0,y:10},{opacity:1,y:0,duration:.22,ease:"power2.out"},3.01+i*.075);
+  }
+  // stats: beat-grid 3.55 / 4.10 / 4.64 (4.10 & 4.64 slightly softened)
+  tl.fromTo("#sa",{opacity:0,y:16},{opacity:1,y:0,duration:.4,ease:E},3.55);
+  counter("#qa",12,3.55,.6);
+  tl.fromTo("#sb",{opacity:0,y:16},{opacity:1,y:0,duration:.4,ease:E},4.1);
+  counter("#qb",5,4.1,.5);
+  tl.fromTo("#sc",{opacity:0,y:16},{opacity:1,y:0,duration:.4,ease:E},4.64);
+  tl.fromTo("#pf",{opacity:0},{opacity:1,duration:.4,ease:"power1.out"},4.64);
+  // camera: hero push (wide -> panel)
+  tl.to("#cam",{x:0,y:-64,scale:1.45,duration:2.7,ease:"power2.inOut"},2.55);
+  // caption pill
+  tl.fromTo("#cap",{opacity:1,y:130},{opacity:1,y:0,duration:.5,ease:E},2.9);tl.to("#pg1",{"--p":1,duration:2.6,ease:"none"},3.05);tl.to("#pg2",{"--p":1,duration:3.4,ease:"none"},5.75);tl.to("#pg3",{"--p":1,duration:3.1,ease:"none"},9.3);tl.fromTo("#cn1",{opacity:0,scale:.6},{opacity:1,scale:1,duration:.35,ease:"back.out(2)"},3.05);
+  tl.fromTo("#cp1",{opacity:0,y:14},{opacity:1,y:0,duration:.4,ease:E},3.1);
+
+  // ================= SCENE 3: SIGNALS (5.74 - 9.29) =================
+  // camera whips to the signals column, landing on the cut beat 5.74
+  tl.to("#cam",{x:-64,y:-522,scale:1.75,duration:.62,ease:IO},5.3);
+  tl.to("#cp1",{opacity:0,y:-14,duration:.25,ease:"power2.in"},5.5);
+  tl.to("#cn1",{opacity:0,duration:.2},5.5);tl.fromTo("#cn2",{opacity:0,scale:.6},{opacity:1,scale:1,duration:.35,ease:"back.out(2)"},5.75);
+  tl.fromTo("#cp2",{opacity:0,y:14},{opacity:1,y:0,duration:.4,ease:E},5.85);
+  // beat-grid: cards at 6.28, 6.82, 7.35
+  [["#c1","#sk1",6.28],["#c2","#sk2",6.82],["#c3","#sk3",7.35]].forEach(function(c){
+    tl.fromTo(c[0],{opacity:0,x:120,scale:.96},{opacity:1,x:0,scale:1,duration:.55,ease:E},c[2]);
+    tl.to(c[1],{opacity:0,duration:.2},c[2]+.1);
+  });
+  // rank: card 2 (91) lifts, the others quiet down (beat 7.79)
+  tl.to("#c2",{y:-8,scale:1.035,boxShadow:"inset 0 0 0 2px #d7ff3d, 0 30px 50px -22px rgba(17,17,16,.45)",duration:.4,ease:E,transformOrigin:"50% 50%"},7.79);
+  
+  tl.fromTo("#sc91",{scale:1},{scale:1.5,duration:.25,ease:"power2.out",transformOrigin:"100% 50%"},7.85);
+  tl.to("#sc91",{scale:1.25,duration:.3,ease:"power2.inOut"},8.1);
+
+  // ================= SCENE 4: NEXT MOVE (9.29 - 12.56) =================
+  tl.to("#cam",{x:-10,y:-395,scale:1.5,duration:.6,ease:IO},8.85);
+  
+  tl.to("#cp2",{opacity:0,y:-14,duration:.25,ease:"power2.in"},9.05);
+  tl.to("#cn2",{opacity:0,duration:.2},9.05);tl.fromTo("#cn3",{opacity:0,scale:.6},{opacity:1,scale:1,duration:.35,ease:"back.out(2)"},9.3);
+  tl.fromTo("#cp3",{opacity:0,y:14},{opacity:1,y:0,duration:.4,ease:E},9.4);
+  tl.to("#sk4",{opacity:.75,duration:.01},9.0);
+  tl.fromTo("#nx",{opacity:0,scale:.94,y:20},{opacity:1,scale:1,y:0,duration:.55,ease:E,transformOrigin:"50% 50%"},9.5);
+  tl.to("#sk4",{opacity:0,duration:.2},9.6);
+  // what changed rows tick (staggered)
+  tl.fromTo("#cg",{opacity:0,y:20},{opacity:1,y:0,duration:.45,ease:E},9.83);
+  tl.to("#sk5",{opacity:0,duration:.2},9.95);
+  counter("#d1",31,9.95,.6,false,"↑ ","%");
+  counter("#d2",12,10.1,.6,false,"↑ ","%");
+  counter("#d3",8,10.25,.6,false,"↓ ","%");
+  // cursor travels to "Review action" (972,572) and clicks on beat 10.93
+  tl.to("#cursor",{opacity:1,duration:.15},10.2);
+  tl.to("#cursor",{x:1000,y:574,duration:.7,ease:"power3.inOut"},10.2);
+  tl.to("#rev",{scale:.92,duration:.09,ease:"power2.in",transformOrigin:"50% 50%"},10.93);
+  tl.to("#rev",{scale:1,duration:.3,ease:"back.out(3)"},11.02);
+  tl.to("#cursor",{scale:.85,duration:.09,transformOrigin:"3px 2px"},10.93);
+  tl.to("#cursor",{scale:1,duration:.2},11.02);
+  tl.fromTo("#ring",{opacity:.9,scale:.8},{immediateRender:false,opacity:0,scale:2.2,duration:.6,ease:"power2.out",transformOrigin:"50% 50%"},10.93);
+  tl.to("#nx",{boxShadow:"inset 0 0 0 2px #d7ff3d, 0 0 0 6px rgba(215,255,61,.35)",duration:.25,ease:"power2.out"},10.95);
+  tl.to("#cursor",{x:1150,y:790,opacity:0,duration:.6,ease:"power2.in"},11.4);
+  // monitoring card
+  tl.fromTo("#mn",{opacity:0,y:30},{opacity:1,y:0,duration:.5,ease:E},10.93);
+  tl.to("#sk6",{opacity:0,duration:.2},11.05);
+  tl.fromTo("#tl",{scaleX:0},{scaleX:1,duration:.5,ease:"power2.out"},11.2);
+  var fills=document.querySelectorAll("#mn .dot .fill");
+  for(var d=0;d<7;d++){
+    // Mon..Sun light up in rapid sequence — every day, automatically
+    tl.fromTo(fills[d],{opacity:0,scale:.3},{opacity:1,scale:1,duration:.22,ease:"back.out(3)"},11.5+d*.11);
+  }
+  // camera settles down to catch monitoring row
+  tl.to("#cam",{x:-10,y:-395,scale:1.5,duration:2.0,ease:"none"},10.6);
+
+  // ================= SCENE 5: OUTRO (12.56 -> 15) =================
+  // lime flood up, then ink outro takes over
+  tl.set("#wp3",{x:0,y:1300},12.05);
+  tl.to("#wp3",{y:0,duration:.4,ease:"power2.in"},12.08);
+  tl.to("#wp3",{y:-1300,duration:.5,ease:"power3.out"},12.56);
+  tl.fromTo("#markp",{strokeDashoffset:400},{strokeDashoffset:0,duration:.6,ease:"power2.inOut"},12.62);
+  tl.fromTo("#mark",{y:20},{y:0,duration:.6,ease:E},12.62);
+  tl.fromTo("#l5a",{opacity:0,y:60},{opacity:1,y:0,duration:.55,ease:E},13.11);
+  tl.to("#hl",{"--hl":1,duration:.4,ease:"power3.out"},13.3);
+  tl.to("#hl",{color:"#111110",duration:.01},13.3);
+  tl.fromTo("#l5b",{opacity:0,y:60},{opacity:1,y:0,duration:.55,ease:E},13.64);
+  tl.to("#ds",{"--st":1,duration:.4,ease:"power3.inOut"},14.2);
+  tl.fromTo("#wm",{opacity:0,x:-30},{opacity:1,x:0,duration:.5,ease:E},14.2);
+  tl.fromTo("#url",{opacity:0,x:30},{opacity:1,x:0,duration:.5,ease:E},14.3);
+
+  // ================= AUDIO-REACTIVE (subtle) =================
+  function rms(t){var i=Math.max(0,Math.min(RMS.length-1,Math.round(t*30)));return RMS[i]||0}
+  for(var f=0;f<450;f++){
+    var t=f/30, r=rms(t);
+    if(t<2.9) tl.set("#glowA",{opacity:.08+.32*r,scale:1+.05*r},t);
+    if(t>=2.3&&t<6) tl.set("#halo",{opacity:.08+.5*r},t);
+    if(t>=12.5) tl.set("#glowB",{opacity:.08+.32*r,scale:1+.05*r},t);
+  }
+
+  window.__timelines = window.__timelines || {};
+  window.__timelines["root"] = tl;
+})();
+</script>
+</body>
+</html>
