@@ -61,7 +61,7 @@ These inspections were run September 30, soon after the sitemap's September 29 s
 
 - GA4: no property/read-only scope configured.
 - Bing Webmaster: no API key/site integration configured.
-- Durable Search Console credentials for a server-side Admin report: not configured. The audit used the connected read-only Search Console tool only.
+- Durable Search Console credentials for a server-side Admin report: not configured at the time of this baseline. SEO-1 now implements a private Admin read path; activation still requires the production OAuth variables described in the SEO-1 runbook.
 - Vercel Web Analytics: no supported production-project API integration configured in this repository.
 - Current Privacy and Cookie policies state that Wanterest does not use third-party website analytics or analytics cookies. Analytics tracking was not added.
 

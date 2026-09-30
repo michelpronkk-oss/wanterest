@@ -40,8 +40,8 @@ describe("root hostname Proxy", () => {
     }
   });
 
-  it("returns a non-cacheable not-found for the internal route on customer hosts", async () => {
-    const request = new NextRequest("https://app.wanterest.com/admin-internal/operations");
+  it.each(["operations", "search-console"])("returns a non-cacheable not-found for the internal %s route on customer hosts", async (route) => {
+    const request = new NextRequest("https://app.wanterest.com/admin-internal/" + route);
     const response = await proxy(request);
     expect(response.status).toBe(404);
     expect(response.headers.get("cache-control")).toContain("no-store");
@@ -49,6 +49,19 @@ describe("root hostname Proxy", () => {
     expect(createAdminProxyResponse).not.toHaveBeenCalled();
   });
 
+  it("keeps a public customer-host Search Console path out of the Admin app", async () => {
+    const request = new NextRequest("https://app.wanterest.com/search-console");
+    const response = await proxy(request);
+    expect(updateSupabaseSession).toHaveBeenCalledWith(request);
+    expect(createAdminProxyResponse).not.toHaveBeenCalled();
+    expect(await response.text()).toBe("customer");
+  });
+
+  it("rewrites the Search Console page on the Admin hostname only", async () => {
+    const request = new NextRequest("https://admin.wanterest.com/search-console");
+    await proxy(request);
+    expect(createAdminProxyResponse).toHaveBeenCalledWith(request, "/admin-internal/search-console");
+  });
   it("returns not-found for the admin host on Vercel Preview", async () => {
     process.env.VERCEL_ENV = "preview";
     const request = new NextRequest("https://admin.wanterest.com/login");

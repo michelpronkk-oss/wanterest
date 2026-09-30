@@ -7,6 +7,7 @@ const navigation = [
   { href: "/", label: "Overview", icon: "◫", permission: "operations.read" },
   { href: "/early-access", label: "Early Access", icon: "◎", permission: "lifecycle.read" },
   { href: "/operations", label: "Operations", icon: "↗", permission: "operations.read" },
+  { href: "/search-console", label: "Search Console", icon: "⌕", permission: "analytics.read" },
   { href: "/system-map", label: "System map", icon: "⌘", permission: "operations.summary.read" },
 ] as const;
 

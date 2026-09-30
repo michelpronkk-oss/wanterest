@@ -29,15 +29,7 @@ On a failure, the workflow maintains one open GitHub issue titled **SEO technica
 
 ## Search Console and opportunity reports
 
-The connected read-only Search Console tool was used to establish the initial baseline in [production-baseline-2026-09-30.md](./production-baseline-2026-09-30.md). That connector is available during this audit, but there is no durable, server-side Search Console credential or property provider configured in the application. A weekly Search Console opportunity report is therefore **not automated yet**; the API output must not be copied to a public workflow artifact or issue.
-
-To enable a private weekly report:
-
-1. Grant a dedicated OAuth principal read-only access to the verified `sc-domain:wanterest.com` Search Console property and use only the `webmasters.readonly` scope.
-2. Select an approved server-only credential store and an Admin server-side read path. Do not place tokens or service-account credentials in the browser, repository, public GitHub Actions, Preview deployments, or public issue output. The existing Vercel project serves all hosts, so any credential must be read only by the explicitly authorized Admin server code.
-3. Query finalized Search Console data by default; mark recent/incomplete windows as provisional, include the requested date range and source, and keep query-level rows inside the authenticated Admin surface.
-4. Define the report's branded/non-branded classification before presenting those comparisons. Never label an empty/partial API result as confirmed zero traffic.
-
+The Search Console intelligence integration is implemented inside the authenticated Admin surface. It uses a production-only, server-side OAuth refresh token with the read-only scope, compares finalized Pacific-time windows, and marks provisional maturity separately. Query-level data stays inside Admin. The report is generated on request; it is not persisted or scheduled until production credentials and a retention decision are in place. See [SEO-1 implementation and configuration](./search-console-intelligence.md). Do not copy API output to a public workflow artifact or issue.
 Google Search Console API access requires authorization; its query API distinguishes finalized from fresh/incomplete data. URL Inspection reports the version in Google's index, not a live indexability test. References: [Search Analytics API](https://developers.google.com/webmaster-tools/v1/searchanalytics/query), [URL Inspection API](https://developers.google.com/webmaster-tools/v1/urlInspection.index/inspect), and [URL Inspection result fields](https://developers.google.com/webmaster-tools/v1/urlInspection.index/UrlInspectionResult).
 
 ## Analytics and Bing setup still needed
@@ -59,7 +51,7 @@ The local checkout and the available user attachments did not include the refere
 
 The next Organic Intelligence milestone is architecture and validation only until the approved source plan and the independently validated public-safe projection are available. It must reuse Wanterest's relational evidence graph and preserve source, time, confidence, and derivation provenance. Before publication, each page must pass privacy, source independence/diversity, truth, freshness, uniqueness, and human-review gates. Unsupported or stale claims should be reviewed, downgraded, or noindexed rather than given an artificial freshness date. No generated market/demand/company/drift/geography pages are enabled in this release. A later first cohort remains a manually reviewed 20–50 pages after Layer 13B.2/13B.3 and the public-safe projection have been independently validated.
 
-The SEO-1 proposal is to: (1) provide the missing master plan; (2) approve an Admin-only, server-side read-only Search Console/Bing/GA4 integration and retention policy; (3) define baselines and stale/unavailable states; and (4) map the approved nine template families to existing evidence contracts before requesting any publication capability. Do not alter discovery, qualification, Actions, Trigger.dev routing, billing, or Layer 13B in that milestone without a separate architecture decision.
+SEO-1 now supplies the private Search Console read path and deterministic opportunity report. The future Organic Intelligence milestone still requires the missing master plan and nine template family names, approved source/retention decisions, and independently validated public-safe evidence contracts. Do not alter discovery, qualification, Actions, Trigger.dev routing, billing, or Layer 13B without a separate architecture decision.
 
 ## Official crawler references
 
