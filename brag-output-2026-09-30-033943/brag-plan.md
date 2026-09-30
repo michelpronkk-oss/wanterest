@@ -1,4 +1,4 @@
-# Brag Plan: Wanterest (showreel cut, 15s)
+# Brag Plan: Wanterest (showreel cut, 23s)
 
 **What it is:** Wanterest finds real buying intent in public conversations (Reddit, Hacker News, Bluesky, X, GitHub) and tells a product team the one move to make, with the evidence attached.
 **For:** builders, marketers and product teams who need the source behind every signal.
@@ -18,3 +18,14 @@
 | 3 | Today window rises; signals lift out; 91 in focus | 5.5-9.0 |
 | 4 | Recommended next move, cursor clicks Review action | 9.0-11.9 |
 | 5 | Know what buyers want next. + wordmark | 11.9-15 |
+
+## v2 extension (after the "Review action" click)
+| # | Scene | Time |
+|---|---|---|
+| 4b | Next-move card morphs into the Action detail; the 7 evidence posts fly into its evidence row. "Homepage positioning experiment", Current vs Proposed headline, 7 qualified signals · switching intent, Launch experiment clicked on the beat (14.0) | 11.65-14.75 |
+| 4c | Vertical camera pan into Experiment results: control line draws first, Wanterest Action rises above the baseline; 3.8% vs 5.1%, +34% lift lands on the beat (16.5), "Measured from the demand-led change" | 14.45-18.05 |
+| 4d | Proof line: Demand → Action → Measured growth. (words on 18.0 / 18.5 / 19.0) | 18.0-20.0 |
+| 5 | Existing outro, shifted +8s | 20.0-23.0 |
+
+Audio v2: original score (work/score.py), 120 BPM deep house in F minor, arranged to picture: filtered intro -> drop on "Found." -> arp enters with the app window -> breath under the morph -> stripped, precise ticking under the results with a rising line tone -> bloom on +34% -> stabs on the proof words -> final Db major 9 under the end card. Loudness-normalized to -14 LUFS.
+Experiment copy and numbers are the ones supplied for the launch video (illustrative).
