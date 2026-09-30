@@ -107,7 +107,7 @@ export const researchReadinessSchema = z.object({
 
 export const uniquenessStateSchema = z.enum(["unique", "duplicate", "merged", "unverified", "review"]);
 export const privacyStateSchema = z.enum(["approved", "blocked", "unverified"]);
-export const copyrightStateSchema = z.enum(["paraphrase_approved", "excerpt_approved", "blocked", "unverified"]);
+export const copyrightStateSchema = z.enum(["aggregate_approved", "paraphrase_approved", "excerpt_approved", "blocked", "unverified"]);
 
 export const organicReadinessCandidateSchema = z.object({
   objectId: z.string().uuid(),

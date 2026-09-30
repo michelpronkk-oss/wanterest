@@ -9,6 +9,7 @@ const roleLabels = {
   operations_admin: "Operations Admin",
   support: "Support",
   read_only_analyst: "Read-only Analyst",
+  organic_reviewer: "Organic Reviewer",
 } as const;
 
 export type AdminRole = keyof typeof roleLabels;
@@ -29,6 +30,7 @@ const rolePermissions: Record<AdminRole, ReadonlySet<string>> = {
   operations_admin: new Set(["operations.read", "operations.summary.read", "analytics.read", "lifecycle.read", "billing.read"]),
   support: new Set(["analytics.read", "lifecycle.read"]),
   read_only_analyst: new Set(["operations.summary.read", "analytics.read", "lifecycle.read", "billing.read"]),
+  organic_reviewer: new Set(["operations.summary.read", "organic_intelligence.review"]),
 };
 
 export async function getAdminContext(): Promise<AdminContext | null> {
