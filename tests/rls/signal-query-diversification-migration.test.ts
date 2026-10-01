@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const sql = readFileSync(path.resolve(process.cwd(), "supabase/migrations/20261107000000_signal_query_diversification_v1.sql"), "utf8").toLowerCase();
+const v11Sql = readFileSync(path.resolve(process.cwd(), "supabase/migrations/20261109000000_signal_query_exploration_v11.sql"), "utf8").toLowerCase();
 
 describe("Signal Throughput V1 migration contract", () => {
   it("is the next forward migration and only adds private telemetry dimensions", () => {
@@ -62,17 +63,57 @@ describe("Signal Throughput V1 migration contract", () => {
   });
 });
 
+describe("Signal Throughput V1.1 migration contract", () => {
+  it("is additive after 20261108000000 and stores bounded reasons/states only", () => {
+    const migrationDir = path.resolve(process.cwd(), "supabase/migrations");
+    const migrationNames = readFileSync(path.resolve(migrationDir, "20261109000000_signal_query_exploration_v11.sql"), "utf8");
+    expect(migrationNames).toContain("Signal Throughput V1.1");
+    expect(v11Sql).toContain("add column selection_reason text");
+    expect(v11Sql).toContain("add column novelty_state text");
+    expect(v11Sql).toContain("signal_query_exploration_v1_1");
+    expect(v11Sql).toContain("new_independent_evidence_eligible_roots integer");
+    expect(v11Sql).toContain("count(ar.conversation_id) filter (");
+    expect(v11Sql).toContain("ar.scan_root_owner_rank = 1 and not ar.was_known_before_scan and ar.evidence_eligible is true");
+    expect(v11Sql).toContain("drop function public.signal_query_novelty_history(uuid, uuid, timestamptz, integer)");
+    expect(v11Sql).toContain("'cold_start_exploration'");
+    expect(v11Sql).toContain("'unseen_variant_exploration'");
+    expect(v11Sql).toContain("'recency_rotation'");
+    expect(v11Sql).toContain("to service_role");
+    expect(v11Sql).not.toMatch(/\b(drop table|delete from|truncate)\b/);
+    expect(v11Sql).not.toMatch(/\b(raw_content|author_name|author_id|query_text|cursor_value|payload_json)\b/);
+  });
+
+  it("preserves service-only invoker history permissions and empty search path", () => {
+    expect(v11Sql).toContain("security invoker");
+    expect(v11Sql).toContain("set search_path = ''");
+    expect(v11Sql).toContain("revoke all on function public.signal_query_novelty_history(uuid, uuid, timestamptz, integer)");
+    expect(v11Sql).toContain("from public, anon, authenticated");
+    expect(v11Sql).toContain("grant execute on function public.signal_query_novelty_history(uuid, uuid, timestamptz, integer)");
+    expect(v11Sql).not.toMatch(/\bsecurity definer\b/);
+    expect(v11Sql).not.toMatch(/grant\s+[^;]*\bon\s+table\s+public\.(source_query_executions|product_query_result_outcomes)\s+to\s+(public|anon|authenticated)/);
+  });
+});
+
 describe("Signal Throughput V1 wiring boundaries", () => {
   const scan = readFileSync(path.resolve(process.cwd(), "src/server/modules/onboarding/initial-scan.service.ts"), "utf8");
   const execution = readFileSync(path.resolve(process.cwd(), "src/server/modules/operations/query-planning.execution.ts"), "utf8");
   const telemetry = readFileSync(path.resolve(process.cwd(), "src/server/modules/operations/source-execution-telemetry.repository.ts"), "utf8");
   const admin = readFileSync(path.resolve(process.cwd(), "apps/admin/src/server/operations.ts"), "utf8");
+  const plannerService = readFileSync(path.resolve(process.cwd(), "src/server/modules/operations/signal-query-diversification.service.ts"), "utf8");
 
   it("gates the planner treatment behind the exact server-side flag and leaves selection/backlog semantics separate", () => {
     expect(scan).toContain("signalQueryDiversificationEnabled()");
+    expect(scan).toContain("signalQueryExplorationV11Enabled()");
     expect(scan).toContain("buildSignalDiversifiedQueryPlan");
     expect(scan).toContain("enqueueCapSuppressed");
     expect(scan).not.toContain("SIGNAL_QUERY_DIVERSIFICATION_V1_ENABLED=true");
+  });
+
+  it("keeps V1's selected plan unchanged when V1.1 is disabled or history is unavailable", () => {
+    expect(plannerService).toContain("const v1 = diversifySignalQueries({ ...args, historyState: input.historyState });");
+    expect(plannerService).toContain("if (input.explorationV11Enabled && input.historyState === \"available\")");
+    expect(plannerService).toContain("return v1;");
+    expect(plannerService).not.toContain("NEXT_PUBLIC_SIGNAL_QUERY_EXPLORATION_V11_ENABLED");
   });
 
   it("records typed dimensions and evidence eligibility without exposing fingerprints in the Admin view", () => {
@@ -80,9 +121,14 @@ describe("Signal Throughput V1 wiring boundaries", () => {
     expect(execution).toContain("queryVariantVersion: query.query_variant_version");
     expect(telemetry).toContain("intent_family: input.intentFamily");
     expect(telemetry).toContain("query_variant_version: input.queryVariantVersion");
+    expect(telemetry).toContain("selection_reason: input.selectionReason");
+    expect(telemetry).toContain("novelty_state: input.noveltyState");
     expect(telemetry).toContain("evidence_eligible: row.evidenceEligible ?? null");
     expect(admin).toContain("signal_query_novelty_history");
     expect(admin).not.toContain("query_plan_fingerprint");
     expect(admin).not.toContain("query_text");
+    expect(admin).toContain("signalQueryExplorationV11");
+    expect(admin).toContain("exploration:input_reference->result->queryPlanning->signalQueryExplorationV11");
+    expect(admin).toContain("familyCoverageHistoryBySource");
   });
 });

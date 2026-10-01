@@ -40,6 +40,8 @@ export function toSourceDiscoveryRequest(input: SourceQueryExecutionInput): Sour
     queryIntent: query.intent_type,
     ...(query.intent_family ? { intentFamily: query.intent_family } : {}),
     ...(query.query_variant_version ? { queryVariantVersion: query.query_variant_version } : {}),
+    ...(query.selection_reason ? { querySelectionReason: query.selection_reason } : {}),
+    ...(query.novelty_state ? { queryNoveltyState: query.novelty_state } : {}),
   };
 
   if (sourcePlan.source_key === "x") {

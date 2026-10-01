@@ -1,7 +1,7 @@
 import "server-only";
 
 import { deterministicUuid } from "@/server/modules/ingestion/hash";
-import type { QueryIntentFamily, QueryVariantVersion } from "./query-planning.schemas";
+import type { QueryIntentFamily, QueryPlannerNoveltyState, QuerySelectionReason, QueryVariantVersion } from "./query-planning.schemas";
 
 type Row = Record<string, unknown>;
 type DatabaseError = { code?: string; message?: string } | null;
@@ -66,6 +66,8 @@ export type SourceQueryExecutionAttribution = {
   queryFamily: string;
   intentFamily: QueryIntentFamily;
   queryVariantVersion: QueryVariantVersion;
+  selectionReason: QuerySelectionReason | null;
+  noveltyState: QueryPlannerNoveltyState | null;
   demandSurface: string;
   pagesRequested: number;
   pagesCompleted: number;
@@ -101,6 +103,8 @@ export async function persistSourceQueryExecution(clientValue: unknown, input: S
     query_family: input.queryFamily,
     intent_family: input.intentFamily,
     query_variant_version: input.queryVariantVersion,
+    selection_reason: input.selectionReason,
+    novelty_state: input.noveltyState,
     demand_surface: input.demandSurface,
     pages_requested: input.pagesRequested,
     pages_completed: input.pagesCompleted,
