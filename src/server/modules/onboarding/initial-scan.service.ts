@@ -28,6 +28,9 @@ import {
 } from "@/server/modules/ingestion/public-ingestion.service";
 import { persistProductQueryResultOutcomes } from "@/server/modules/operations/source-execution-telemetry.repository";
 import { sourceExecutionObservabilityEnabled } from "@/server/modules/operations/source-execution-telemetry.config";
+import { signalQueryDiversificationEnabled } from "@/server/modules/operations/signal-query-diversification.config";
+import { buildSignalDiversifiedQueryPlan } from "@/server/modules/operations/signal-query-diversification.service";
+import { listSignalQueryNoveltyHistory } from "@/server/modules/operations/signal-query-novelty.repository";
 import { enqueueCapSuppressed } from "@/server/modules/operations/evaluation-backlog.repository";
 import { SupabaseIntelligenceRepository } from "@/server/modules/intelligence/intelligence.repository";
 import { IntelligenceService } from "@/server/modules/intelligence/intelligence.service";
@@ -1221,6 +1224,21 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       };
       queryPlan = buildQueryPlanV8(queryPlanningInput);
       diagnostics.push({ sourceKey: "query-planning", state: "planned", message: `${queryPlan.diagnostics.query_count} semantic quer${queryPlan.diagnostics.query_count === 1 ? "y" : "ies"} across ${queryPlan.diagnostics.source_count} source${queryPlan.diagnostics.source_count === 1 ? "" : "s"}.` });
+      if (signalQueryDiversificationEnabled()) {
+        let history: Awaited<ReturnType<typeof listSignalQueryNoveltyHistory>> = [];
+        let historyState: "available" | "unavailable" = "unavailable";
+        if (sourceExecutionObservabilityEnabled()) {
+          try {
+            history = await listSignalQueryNoveltyHistory({ client, workspaceId: product.workspace_id, productId: product.id });
+            historyState = "available";
+          } catch {
+            // Bounded deterministic cold-start selection remains safe when history is unavailable.
+          }
+        }
+        const diversified = buildSignalDiversifiedQueryPlan({ planningInput: queryPlanningInput, history, historyState });
+        queryPlan = diversified.plan;
+        diagnostics.push({ sourceKey: "signal-query-diversification", state: "resolved", message: JSON.stringify(diversified.summary).slice(0, 500) });
+      }
     } catch (error) {
       diagnostics.push({ sourceKey: "query-planning", state: "fallback", message: safeSummary(error) });
     }
@@ -1360,14 +1378,22 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       diagnostics.push({ sourceKey: "cross-product-routing-shadow", state: "skipped", message: "Shadow routing is disabled or the workspace is not allowlisted." });
     }
     let candidateResult: CandidateProcessingResult;
+    const evidenceEligibilityByConversation = new Map<string, boolean>();
     const newSignalEvaluationIds: string[] = [];
     if (options.candidateExecutor) {
       candidateResult = await options.candidateExecutor({ product, profileId: profile.id, normalizedSourceItemIds: [...new Set(normalizedSourceItemIds)], conversationIds: [...new Set(conversationIds)], provenance: uniqueProvenance(scanProvenance), traceId, maxLlmEvaluations: scanBudget.maxLlmEvaluationsPerScan, jobRunId: job.id });
+      for (const candidate of candidateResult.candidateSelection?.selected ?? []) evidenceEligibilityByConversation.set(candidate.conversationId, true);
+      for (const candidate of candidateResult.candidateSelection?.evaluationCapDiagnostics.suppressedCandidates ?? []) evidenceEligibilityByConversation.set(candidate.conversationId, true);
       diagnostics.push(...candidateResult.diagnostics);
     } else {
     const rows = await loadRows(client, [...new Set(normalizedSourceItemIds)], [...new Set(conversationIds)]);
     const sourceById = new Map(rows.sourceItems.map((item) => [item.id, item]));
     const selection = selectScanCandidates({ conversations: rows.conversations, sourceById, max: scanBudget.maxLlmEvaluationsPerScan, provenance: scanProvenance });
+    const evidenceEligibleIds = new Set([
+      ...selection.conversations.map((item) => item.id),
+      ...selection.capSuppressed.map((item) => item.conversation.id),
+    ]);
+    for (const conversation of rows.conversations) evidenceEligibilityByConversation.set(conversation.id, evidenceEligibleIds.has(conversation.id));
     const intelligence = new IntelligenceService(intelligenceRepository);
     const classifier = new FixtureConversationAnalysisEngine();
     const matcher = new FixtureProductMatchingEngine();
@@ -1493,6 +1519,9 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
           qualificationStatus: outcome?.qualificationStatus ?? null,
           evaluationId: outcome?.evaluationId ?? null,
           signalId: outcome?.evaluationId ? signalByEvaluation.get(outcome.evaluationId) ?? null : null,
+          evidenceEligible: evidenceEligibilityByConversation.has(attribution.conversationId)
+            ? evidenceEligibilityByConversation.get(attribution.conversationId)!
+            : null,
         }];
       });
       try {

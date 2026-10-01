@@ -9,6 +9,8 @@ type StuckJob = { id: string; jobType: string; startedAt: string | null; created
 type Source = { sourceKey: string; state: "healthy" | "degraded" | "blocked" | "paused" | "disabled" | "stale" | "unknown"; lastCheckedAt: string | null; lastSuccessAt: string | null; lastFailureAt: string | null; latencyMs: number | null; errorCode: string | null; failureCount: number | null; nextRetryAt: string | null };
 type MonitoringSummary = { enabledSchedules: number; disabledSchedules: number; statusCounts: Record<string, number>; lastCycleAt: string | null; lastSuccessAt: string | null; lastFailureAt: string | null };
 type ProviderExecution = { sourceKey: string; plannedQueries: number; executedQueries: number; executions: number; successful: number; failed: number; rateLimitedExecutions: number; skippedQueries: number; providerResults: number; rawSnapshotsInserted: number; uniqueRoots: number; duplicateRoots: number; qualifiedRoots: number; pages: number; continuations: number; retries: number; lowestRateLimitRemaining: number | null; longestRetryAfterHintMs: number | null; averageRuntimeMs: number | null };
+type QueryNoveltyBucket = { sourceKey: string; intentFamily: string; variantVersion: string; executions: number; providerResults: number; rawSnapshotsInserted: number; rawSnapshotsDuplicate: number; uniqueProviderItems: number; normalizedItems: number; attributableResults: number; rootAttributions: number; independentRoots: number; newRootAttributions: number; firstSeenRoots: number; repeatedRoots: number; sameScanDuplicates: number; evidenceEligibleRoots: number; evidenceEligibilityKnownRoots: number; evaluatedRoots: number; qualifiedRoots: number; newIndependentQualifiedRoots: number; signals: number; newRootRate: number | null; eligibleRootRate: number | null; qualifiedRootRate: number | null };
+type QueryNovelty = { rangeStart: string; rangeEnd: string; executions: number; sources: string[]; intentFamilies: string[]; providerResults: number; rawSnapshotsInserted: number; rawSnapshotsDuplicate: number; uniqueProviderItems: number; normalizedItems: number; attributableResults: number; independentRoots: number; firstSeenRoots: number; newRootAttributions: number; repeatedRoots: number; sameScanDuplicates: number; evidenceEligibleRoots: number; evidenceEligibilityKnownRoots: number; evaluatedRoots: number; qualifiedRoots: number; newIndependentQualifiedRoots: number; newRootRate: number | null; eligibleRootRate: number | null; qualifiedRootRate: number | null; truncated: boolean; buckets: QueryNoveltyBucket[]; latestExecutionAt: string | null };
 type SignalLifecycleCounts = { active: number; saved: number; dismissed: number; archived: number; invalidated: number; retracted: number };
 type EvaluationBacklog = { enqueued: number; pending: number; processing: number; succeeded: number; skipped: number; failed: number; exhausted: number; oldestPendingAt: string | null; evaluated24h: number; qualified24h: number; evaluatedHour: number; qualifiedHour: number; averageWaitSeconds: number | null; averageAttempts: number | null };
 
@@ -43,6 +45,7 @@ export type OperationsSnapshot = {
   monitoring: Availability<MonitoringSummary>;
   pipelineState: "disabled" | "unavailable" | "available";
   pipeline: Availability<{ providers: ProviderExecution[]; roots: number; qualifiedRoots: number; rangeStart: string }>;
+  queryNovelty: Availability<QueryNovelty>;
   signalLifecycle: Availability<SignalLifecycleCounts>;
   evaluationBacklog: Availability<EvaluationBacklog>;
   lastSuccessAt: string | null;
@@ -65,6 +68,7 @@ const unavailable: OperationsSnapshot = {
   monitoring: { value: null, source: "Supabase · monitoring_schedules" },
   pipelineState: "unavailable",
   pipeline: { value: null, source: "Supabase · source execution attribution · trailing 7 days" },
+  queryNovelty: { value: null, source: "Supabase · private signal query novelty history · trailing 7 days" },
   signalLifecycle: { value: null, source: "Supabase · signals · all time" },
   evaluationBacklog: { value: null, source: "Supabase · evaluation_backlog_summary · current state / trailing 24 hours" },
   lastSuccessAt: null,
@@ -80,6 +84,7 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
     trigger,
     pipelineState: telemetryEnabled ? "unavailable" : "disabled",
     pipeline: { value: null, source: telemetryEnabled ? "Supabase · source execution attribution · trailing 7 days" : "Server configuration · source execution observability disabled" },
+    queryNovelty: { value: null, source: telemetryEnabled ? "Supabase · private signal query novelty history · trailing 7 days" : "Server configuration · source execution observability disabled" },
   };
 
   const checkedAt = new Date();
@@ -100,12 +105,17 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
     client.from("signals").select("lifecycle_status").limit(10001),
   ]);
   const disabledTelemetryRead = { data: null, error: null } as const;
+  const queryNoveltyStart = new Date(checkedAt.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const noveltyHistoryPromise = telemetryEnabled && typeof client.rpc === "function"
+    ? client.rpc("signal_query_novelty_history", { p_workspace_id: null, p_product_id: null, p_since: queryNoveltyStart, p_max_scans: 12 })
+    : Promise.resolve(disabledTelemetryRead);
   const [executionRows, pageRows, queryRows, outcomeRows] = telemetryEnabled ? await Promise.all([
     client.from("source_query_executions").select("id,source_key,execution_status,provider_results_returned,raw_snapshots_inserted,continuation_count,duration_ms,created_at").gte("created_at", weekStart).order("created_at", { ascending: false }).limit(5001),
     client.from("source_query_execution_pages").select("id,execution_id,attempt_count,continuation_followed,duration_ms,rate_limit_remaining,retry_after_ms").gte("observed_at", weekStart).limit(15001),
     client.from("query_yield_artifacts").select("source_key,execution_status").gte("created_at", weekStart).limit(5001),
     client.from("product_query_result_outcomes").select("source_query_result_attribution_id,conversation_id,qualification_status,created_at").gte("created_at", weekStart).limit(5001),
   ]) : [disabledTelemetryRead, disabledTelemetryRead, disabledTelemetryRead, disabledTelemetryRead];
+  const noveltyHistory = await noveltyHistoryPromise;
 
   const pageIdsForResults = (pageRows.data ?? []).map((row) => String(row.id));
   const resultRows = !telemetryEnabled
@@ -236,6 +246,120 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
     if (status in counts) counts[status] += 1;
     return counts;
   }, { active: 0, saved: 0, dismissed: 0, archived: 0, invalidated: 0, retracted: 0 });
+  const queryNoveltyValue: QueryNovelty | null = !telemetryEnabled || noveltyHistory.error
+    ? null
+    : (() => {
+      const rows = Array.isArray(noveltyHistory.data) ? noveltyHistory.data as Array<Record<string, unknown>> : null;
+      if (!rows || rows.length > 20_000) return null;
+      const grouped = new Map<string, QueryNoveltyBucket>();
+      let executions = 0;
+      let firstSeenRoots = 0;
+      let newRootAttributions = 0;
+      let repeatedRoots = 0;
+      let sameScanDuplicates = 0;
+      let truncated = false;
+      let providerResults = 0;
+      let rawSnapshotsInserted = 0;
+      let rawSnapshotsDuplicate = 0;
+      let uniqueProviderItems = 0;
+      let normalizedItems = 0;
+      let attributableResults = 0;
+      let independentRoots = 0;
+      let evidenceEligibleRoots = 0;
+      let evidenceEligibilityKnownRoots = 0;
+      let evaluatedRoots = 0;
+      let qualifiedRoots = 0;
+      let newIndependentQualifiedRoots = 0;
+      let latestExecutionAt: string | null = null;
+      const sources = new Set<string>();
+      const families = new Set<string>();
+      for (const row of rows) {
+        const numeric = ["provider_results", "raw_snapshots_inserted", "raw_snapshots_duplicate", "unique_provider_items", "normalized_items", "attributable_results", "unique_roots", "independent_roots", "new_root_attributions", "new_independent_roots", "known_root_attributions", "duplicate_root_attributions", "evidence_eligible_roots", "evidence_eligibility_known_roots", "evaluated_roots", "qualified_roots", "new_independent_qualified_roots", "signal_roots"];
+        if (numeric.some((field) => !Number.isSafeInteger(row[field]) || Number(row[field]) < 0)
+          || typeof row.source_key !== "string" || typeof row.intent_family !== "string"
+          || typeof row.query_variant_version !== "string" || typeof row.completed_at !== "string"
+          || typeof row.history_truncated !== "boolean"
+          || !Number.isFinite(Date.parse(row.completed_at))) return null;
+        const sourceKey = row.source_key;
+        const intentFamily = row.intent_family;
+        const variantVersion = row.query_variant_version;
+        const key = `${sourceKey}\u0000${intentFamily}\u0000${variantVersion}`;
+        const bucket = grouped.get(key) ?? { sourceKey, intentFamily, variantVersion, executions: 0, providerResults: 0, rawSnapshotsInserted: 0, rawSnapshotsDuplicate: 0, uniqueProviderItems: 0, normalizedItems: 0, attributableResults: 0, rootAttributions: 0, independentRoots: 0, newRootAttributions: 0, firstSeenRoots: 0, repeatedRoots: 0, sameScanDuplicates: 0, evidenceEligibleRoots: 0, evidenceEligibilityKnownRoots: 0, evaluatedRoots: 0, qualifiedRoots: 0, newIndependentQualifiedRoots: 0, signals: 0, newRootRate: null, eligibleRootRate: null, qualifiedRootRate: null };
+        bucket.executions += 1;
+        bucket.providerResults += Number(row.provider_results);
+        bucket.rawSnapshotsDuplicate += Number(row.raw_snapshots_duplicate);
+        bucket.rawSnapshotsInserted += Number(row.raw_snapshots_inserted);
+        bucket.uniqueProviderItems += Number(row.unique_provider_items);
+        bucket.normalizedItems += Number(row.normalized_items);
+        bucket.attributableResults += Number(row.attributable_results);
+        bucket.rootAttributions += Number(row.unique_roots);
+        bucket.independentRoots += Number(row.independent_roots);
+        bucket.newRootAttributions += Number(row.new_root_attributions);
+        bucket.firstSeenRoots += Number(row.new_independent_roots);
+        bucket.repeatedRoots += Number(row.known_root_attributions);
+        bucket.sameScanDuplicates += Number(row.duplicate_root_attributions);
+        bucket.evidenceEligibleRoots += Number(row.evidence_eligible_roots);
+        bucket.evidenceEligibilityKnownRoots += Number(row.evidence_eligibility_known_roots);
+        bucket.evaluatedRoots += Number(row.evaluated_roots);
+        bucket.qualifiedRoots += Number(row.qualified_roots);
+        bucket.newIndependentQualifiedRoots += Number(row.new_independent_qualified_roots);
+        bucket.signals += Number(row.signal_roots);
+        bucket.newRootRate = bucket.attributableResults > 0 ? bucket.firstSeenRoots / bucket.attributableResults : null;
+        bucket.eligibleRootRate = bucket.evidenceEligibilityKnownRoots > 0 ? bucket.evidenceEligibleRoots / bucket.evidenceEligibilityKnownRoots : null;
+        bucket.qualifiedRootRate = bucket.evaluatedRoots > 0 ? bucket.qualifiedRoots / bucket.evaluatedRoots : null;
+        grouped.set(key, bucket);
+        executions += 1;
+        providerResults += Number(row.provider_results);
+        rawSnapshotsInserted += Number(row.raw_snapshots_inserted);
+        rawSnapshotsDuplicate += Number(row.raw_snapshots_duplicate);
+        uniqueProviderItems += Number(row.unique_provider_items);
+        normalizedItems += Number(row.normalized_items);
+        attributableResults += Number(row.attributable_results);
+        independentRoots += Number(row.independent_roots);
+        evidenceEligibleRoots += Number(row.evidence_eligible_roots);
+        evidenceEligibilityKnownRoots += Number(row.evidence_eligibility_known_roots);
+        evaluatedRoots += Number(row.evaluated_roots);
+        qualifiedRoots += Number(row.qualified_roots);
+        newIndependentQualifiedRoots += Number(row.new_independent_qualified_roots);
+        firstSeenRoots += Number(row.new_independent_roots);
+        newRootAttributions += Number(row.new_root_attributions);
+        repeatedRoots += Number(row.known_root_attributions);
+        sameScanDuplicates += Number(row.duplicate_root_attributions);
+        truncated ||= row.history_truncated;
+        sources.add(sourceKey);
+        families.add(intentFamily);
+        if (!latestExecutionAt || row.completed_at > latestExecutionAt) latestExecutionAt = row.completed_at;
+      }
+      return {
+        rangeStart: queryNoveltyStart,
+        rangeEnd: checkedAt.toISOString(),
+        providerResults,
+        rawSnapshotsInserted,
+        rawSnapshotsDuplicate,
+        uniqueProviderItems,
+        normalizedItems,
+        attributableResults,
+        independentRoots,
+        executions,
+        sources: [...sources].sort(),
+        intentFamilies: [...families].sort(),
+        firstSeenRoots,
+        newRootAttributions,
+        repeatedRoots,
+        sameScanDuplicates,
+        evidenceEligibleRoots,
+        evidenceEligibilityKnownRoots,
+        evaluatedRoots,
+        qualifiedRoots,
+        newIndependentQualifiedRoots,
+        newRootRate: attributableResults > 0 ? firstSeenRoots / attributableResults : null,
+        eligibleRootRate: evidenceEligibilityKnownRoots > 0 ? evidenceEligibleRoots / evidenceEligibilityKnownRoots : null,
+        qualifiedRootRate: evaluatedRoots > 0 ? qualifiedRoots / evaluatedRoots : null,
+        truncated,
+        buckets: [...grouped.values()].sort((left, right) => right.executions - left.executions || left.sourceKey.localeCompare(right.sourceKey) || left.intentFamily.localeCompare(right.intentFamily)).slice(0, 80),
+        latestExecutionAt,
+      };
+    })();
   const hasDataError = Boolean(jobCount.error || recentJobs.error || healthRows.error || controlRows.error || stuckRows.error || stuckCount.error || monitoringRows.error || signalRows.error || (telemetryEnabled && (executionRows.error || pageRows.error || queryRows.error || resultRows.error || outcomeRows.error)));
   const state = hasDataError || failures > 0 || triggerFailures > 0 ? "degraded" : "unknown";
   return {
@@ -254,6 +378,7 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
     monitoring: { value: monitoringValue, source: "Supabase · monitoring_schedules · current recorded state" },
     pipelineState: !telemetryEnabled ? "disabled" : pipelineValue === null ? "unavailable" : "available",
     pipeline: { value: pipelineValue, source: telemetryEnabled ? "Supabase · source execution and product outcome attribution · trailing 7 days" : "Server configuration · source execution observability disabled" },
+    queryNovelty: { value: queryNoveltyValue, source: telemetryEnabled ? "Supabase · signal_query_novelty_history RPC · trailing 7 days · bounded recent scans" : "Server configuration · source execution observability disabled" },
     signalLifecycle: { value: signalLifecycleValue, source: "Supabase · signals · all time" },
     evaluationBacklog: { value: backlogValue, source: "Supabase · evaluation_backlog_summary · current state / trailing 24 hours" },
     lastSuccessAt: successfulJobs.error ? null : successfulJobs.data?.completed_at ?? null,

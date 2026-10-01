@@ -12,7 +12,7 @@ describe("source execution telemetry repository", () => {
     const client = { from(table: string) { return { upsert(values: unknown, options?: unknown) { writes.push({ table, values, options }); return Promise.resolve({ data: [], error: null }); } }; } };
     await persistSourceQueryExecution(client, {
       id: uuid, executionKey: "a".repeat(64), parentJobRunId: uuid,
-      queryPlanFingerprint: "b".repeat(64), sourceKey: "github", queryFamily: "pain", demandSurface: "pain_first",
+      queryPlanFingerprint: "b".repeat(64), sourceKey: "github", queryFamily: "pain", intentFamily: "pain_frustration", queryVariantVersion: "signal_query_diversification_v1", demandSurface: "pain_first",
       pagesRequested: 1, pagesCompleted: 1, continuationCount: 0, stopReason: "no_cursor", executionStatus: "completed_with_results",
       providerResultsReturned: 1, rawSnapshotsAccepted: 1, rawSnapshotsInserted: 1, rawSnapshotsDuplicate: 0,
       uniqueProviderItems: 1, duplicateProviderItems: 0, normalizedItems: 1, uniqueRoots: 1, duplicateRoots: 0,
@@ -23,6 +23,7 @@ describe("source execution telemetry repository", () => {
     await persistProductQueryResultOutcomes(client, [{
       sourceResultAttributionId: uuid, conversationId: uuid, workspaceId: uuid, productId: uuid, matchJobRunId: uuid, attemptNumber: 1,
       selected: true, evaluated: true, qualificationStatus: "qualified", evaluationId: uuid, signalId: uuid,
+      evidenceEligible: true,
     }]);
 
     const serialized = JSON.stringify(writes);
@@ -32,7 +33,8 @@ describe("source execution telemetry repository", () => {
     expect(serialized).toContain("query_plan_fingerprint");
     expect(serialized).toContain("cursor_requested");
     expect(serialized).not.toMatch(/query_text|normalized_query|cursor_value|author_name|payload_json|provider_body/i);
-    expect((writes.at(-1)?.values as Array<Record<string, unknown>>)[0]).toMatchObject({ selected: true, evaluated: true, qualification_status: "qualified" });
+    expect((writes[0]?.values as Record<string, unknown>)).toMatchObject({ intent_family: "pain_frustration", query_variant_version: "signal_query_diversification_v1" });
+    expect((writes.at(-1)?.values as Array<Record<string, unknown>>)[0]).toMatchObject({ selected: true, evaluated: true, qualification_status: "qualified", evidence_eligible: true });
     expect(writes.at(-1)?.options).toEqual({ onConflict: "workspace_id,product_id,match_job_run_id,attempt_number,source_query_result_attribution_id", ignoreDuplicates: true });
   });
 });

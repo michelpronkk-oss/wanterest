@@ -29,6 +29,7 @@ import {
   type SourceQueryPageAttribution,
   type SourceQueryResultAttribution,
 } from "@/server/modules/operations/source-execution-telemetry.repository";
+import { queryIntentFamilySchema, queryVariantVersionSchema } from "@/server/modules/operations/query-planning.schemas";
 import { sourceExecutionObservabilityEnabled } from "@/server/modules/operations/source-execution-telemetry.config";
 
 export type { SourceQueryResultAttribution };
@@ -599,7 +600,7 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
     }
     const errorCode = errorCodeOf(queryError);
     const safeErrorCode = errorCode && /^[A-Z0-9_-]{1,80}$/.test(errorCode) ? errorCode : null;
-    if (input.operationalContext && pageObservations.length) {
+    if (input.operationalContext) {
       const sourceCounts = pageObservations.reduce((counts, page) => ({
         providerResultsReturned: counts.providerResultsReturned + page.providerResultsReturned,
         rawSnapshotsAccepted: counts.rawSnapshotsAccepted + page.rawSnapshotsAccepted,
@@ -612,6 +613,8 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
       const summary: SourceQueryExecutionAttribution = {
         id: executionId, executionKey, parentJobRunId: input.operationalContext.jobRunId, queryPlanFingerprint: sha256Json(queryPlanId), sourceKey: input.sourceKey,
         queryFamily: typeof metadata.queryFamily === "string" ? metadata.queryFamily.trim().slice(0, 80) || "fallback" : "fallback",
+        intentFamily: queryIntentFamilySchema.safeParse(metadata.intentFamily).success ? queryIntentFamilySchema.parse(metadata.intentFamily) : "unclassified",
+        queryVariantVersion: queryVariantVersionSchema.safeParse(metadata.queryVariantVersion).success ? queryVariantVersionSchema.parse(metadata.queryVariantVersion) : "legacy",
         demandSurface: typeof metadata.demandSurface === "string" ? metadata.demandSurface.trim().slice(0, 80) || "unknown" : "unknown",
         pagesRequested: maxPages, pagesCompleted, continuationCount: continuationsFollowed,
         stopReason: queryError ? "error" : cursor ? "page_cap_reached" : rawItems ? "no_cursor" : "zero_results",

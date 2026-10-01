@@ -38,6 +38,8 @@ export function toSourceDiscoveryRequest(input: SourceQueryExecutionInput): Sour
     competitorSpecific: query.competitor_specific,
     discoveryIntent: query.metadata.discovery_intent ?? null,
     queryIntent: query.intent_type,
+    ...(query.intent_family ? { intentFamily: query.intent_family } : {}),
+    ...(query.query_variant_version ? { queryVariantVersion: query.query_variant_version } : {}),
   };
 
   if (sourcePlan.source_key === "x") {

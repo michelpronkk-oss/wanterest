@@ -20,6 +20,56 @@ export default async function OperationsPage() {
         <a className="text-link" href="https://cloud.trigger.dev/projects/proj_cxghokhenspxdbmgrczh" target="_blank" rel="noreferrer">Open Wanterest in Trigger.dev <span aria-hidden="true">↗</span></a>
       </section>
 
+      <section className="panel operations-measurement" aria-labelledby="query-novelty-heading">
+        <div className="panel-heading"><div><p className="eyebrow">QUERY DIVERSIFICATION V1</p><h2 id="query-novelty-heading">Novelty by provider and intent</h2></div><span className="panel-meta">Private aggregates · trailing 7 days</span></div>
+        {snapshot.pipelineState === "disabled" ? <DataState state="unavailable" detail="Server-side source execution telemetry is disabled. Query novelty is not being read or written." /> : snapshot.queryNovelty.value === null ? <DataState state="unavailable" detail="Query novelty history could not be read or validated. Counts remain unavailable." /> : snapshot.queryNovelty.value.executions === 0 ? <DataState state="empty" detail="No query execution history is recorded in this period." /> : <>
+          <div className="ops-stat-grid ops-stat-grid-six" aria-label="Query novelty summary">
+            <Stat label="Executions" value={snapshot.queryNovelty.value.executions} detail="Persisted query attempts" />
+            <Stat label="Providers" value={snapshot.queryNovelty.value.sources.length} detail="Providers with attributed rows" />
+            <Stat label="Intent families" value={snapshot.queryNovelty.value.intentFamilies.length} detail="Profile-supported taxonomy labels" />
+            <Stat label="Independent roots" value={snapshot.queryNovelty.value.independentRoots} detail="Unique roots summed per product scan in this window" />
+            <Stat label="New independent roots" value={snapshot.queryNovelty.value.firstSeenRoots} detail="First-seen in bounded 90-day product history" />
+            <Stat label="New root attributions" value={snapshot.queryNovelty.value.newRootAttributions} detail="New within 90-day history; may repeat across queries" />
+            <Stat label="Prior / same-scan repeats" value={`${formatNumber(snapshot.queryNovelty.value.repeatedRoots)} / ${formatNumber(snapshot.queryNovelty.value.sameScanDuplicates)}`} detail="Previously seen in 90 days / multi-query attribution" />
+            <Stat label="Evidence-eligible / known" value={`${formatNumber(snapshot.queryNovelty.value.evidenceEligibleRoots)} / ${formatNumber(snapshot.queryNovelty.value.evidenceEligibilityKnownRoots)}`} detail="Evidence-filter survival on known roots" />
+            <Stat label="Evaluated / qualified" value={`${formatNumber(snapshot.queryNovelty.value.evaluatedRoots)} / ${formatNumber(snapshot.queryNovelty.value.qualifiedRoots)}`} detail="Qualification outcomes on evaluated roots" />
+            <Stat label="New independent qualified roots" value={snapshot.queryNovelty.value.newIndependentQualifiedRoots} detail="First-seen roots that qualified in this window" />
+            <Stat label="New root rate" value={formatRate(snapshot.queryNovelty.value.newRootRate)} detail="First-seen within 90 days / attributable results" />
+            <Stat label="Eligible root rate" value={formatRate(snapshot.queryNovelty.value.eligibleRootRate)} detail="Evidence-eligible / known roots" />
+            <Stat label="Qualified root rate" value={formatRate(snapshot.queryNovelty.value.qualifiedRootRate)} detail="Qualified / evaluated roots" />
+          </div>
+          {snapshot.queryNovelty.value.truncated && <p className="ops-measurement-note ops-novelty-truncated" role="status">This is a bounded recent sample. The private history read reached its 1,000 product-scan limit, so older scan records are not included in these aggregates.</p>}
+          <div className="ops-provider-list ops-novelty-list">
+            {snapshot.queryNovelty.value.buckets.slice(0, 12).map((bucket) => <article className="ops-provider" key={`${bucket.sourceKey}:${bucket.intentFamily}:${bucket.variantVersion}`}>
+              <div className="ops-provider-heading"><h3>{bucket.sourceKey} · {bucket.intentFamily.replaceAll("_", " ")}</h3><span>{bucket.variantVersion.replaceAll("_", " ")}</span></div>
+              <dl className="ops-provider-stats">
+                <Metric label="Executions" value={bucket.executions} />
+                <Metric label="Provider results" value={bucket.providerResults} />
+                <Metric label="Raw snapshots inserted" value={bucket.rawSnapshotsInserted} />
+                <Metric label="Previously seen raw snapshots" value={bucket.rawSnapshotsDuplicate} />
+                <Metric label="Unique provider items" value={bucket.uniqueProviderItems} />
+                <Metric label="Normalized items" value={bucket.normalizedItems} />
+                <Metric label="Attributable results" value={bucket.attributableResults} />
+                <Metric label="Root attributions" value={bucket.rootAttributions} />
+                <Metric label="Independent roots" value={bucket.independentRoots} />
+                <Metric label="New within 90-day history" value={bucket.newRootAttributions} />
+                <Metric label="First-seen roots" value={bucket.firstSeenRoots} />
+                <Metric label="Prior / same-scan repeats" value={`${formatNumber(bucket.repeatedRoots)} / ${formatNumber(bucket.sameScanDuplicates)}`} />
+                <Metric label="Evidence-eligible independent roots" value={bucket.evidenceEligibilityKnownRoots === 0 ? "Not observed" : `${formatNumber(bucket.evidenceEligibleRoots)} / ${formatNumber(bucket.evidenceEligibilityKnownRoots)} known`} />
+                <Metric label="Evaluated / qualified independent roots" value={`${formatNumber(bucket.evaluatedRoots)} / ${formatNumber(bucket.qualifiedRoots)}`} />
+                <Metric label="New independent qualified roots" value={bucket.newIndependentQualifiedRoots} />
+                <Metric label="New root rate" value={formatRate(bucket.newRootRate)} />
+                <Metric label="Eligible root rate" value={formatRate(bucket.eligibleRootRate)} />
+                <Metric label="Qualified root rate" value={formatRate(bucket.qualifiedRootRate)} />
+                <Metric label="Signals" value={bucket.signals} />
+              </dl>
+            </article>)}
+          </div>
+          <p className="ops-measurement-note">First-seen roots are assigned once per product scan. New root attributions can include one root returned by multiple queries; query IDs, fingerprints and search text are not shown. Query executions: {formatDate(snapshot.queryNovelty.value.rangeStart)} – {formatDate(snapshot.queryNovelty.value.rangeEnd)} · latest observed {formatDate(snapshot.queryNovelty.value.latestExecutionAt)}.</p>
+        </>}
+        <SourceStamp source={snapshot.queryNovelty.source} range="Trailing 7 days · up to 12 scans per product · bounded private RPC" refreshedAt={snapshot.checkedAt} />
+      </section>
+
       <section className="panel operations-measurement" aria-labelledby="measurement-heading">
         <div className="panel-heading"><div><p className="eyebrow">QUERY → ROOT → QUALIFICATION</p><h2 id="measurement-heading">Provider execution yield</h2></div><span className="panel-meta">Attributed records · trailing 7 days</span></div>
         {snapshot.pipelineState === "disabled" ? <DataState state="unavailable" detail="Server-side source execution telemetry is disabled. No query, page or outcome attribution is being read or written." /> : snapshot.pipeline.value === null ? <DataState state="unavailable" detail="Query, page or product outcome attribution could not be read. Metrics remain unavailable until every required source is readable." /> : snapshot.pipeline.value.providers.length === 0 ? <DataState state="empty" detail="No provider execution attribution has been recorded in this period." /> : <>
@@ -131,5 +181,6 @@ function Metric({ label, value }: { label: string; value: string | number }) {
 }
 
 function formatNumber(value: number) { return new Intl.NumberFormat("en").format(value); }
+function formatRate(value: number | null) { return value === null ? "Not observed" : `${(value * 100).toFixed(1)}%`; }
 function formatDate(value: string | null) { return value ? new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(value)) + " UTC" : "Not observed"; }
 function displayState(value: string) { return ({ blocked: "Critical", degraded: "Degraded", disabled: "Intentionally disabled", paused: "Paused", stale: "Stale", unknown: "Unknown", healthy: "Healthy" } as Record<string, string>)[value] ?? "Unknown"; }

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { deterministicUuid } from "@/server/modules/ingestion/hash";
+import type { QueryIntentFamily, QueryVariantVersion } from "./query-planning.schemas";
 
 type Row = Record<string, unknown>;
 type DatabaseError = { code?: string; message?: string } | null;
@@ -63,6 +64,8 @@ export type SourceQueryExecutionAttribution = {
   queryPlanFingerprint: string;
   sourceKey: string;
   queryFamily: string;
+  intentFamily: QueryIntentFamily;
+  queryVariantVersion: QueryVariantVersion;
   demandSurface: string;
   pagesRequested: number;
   pagesCompleted: number;
@@ -96,6 +99,8 @@ export async function persistSourceQueryExecution(clientValue: unknown, input: S
     query_plan_fingerprint: input.queryPlanFingerprint,
     source_key: input.sourceKey,
     query_family: input.queryFamily,
+    intent_family: input.intentFamily,
+    query_variant_version: input.queryVariantVersion,
     demand_surface: input.demandSurface,
     pages_requested: input.pagesRequested,
     pages_completed: input.pagesCompleted,
@@ -174,6 +179,7 @@ export type ProductQueryResultOutcome = {
   qualificationStatus: "qualified" | "weak_candidate" | "rejected" | null;
   evaluationId: string | null;
   signalId: string | null;
+  evidenceEligible?: boolean | null;
 };
 
 export async function persistProductQueryResultOutcomes(clientValue: unknown, rows: ProductQueryResultOutcome[]): Promise<void> {
@@ -194,6 +200,7 @@ export async function persistProductQueryResultOutcomes(clientValue: unknown, ro
       qualification_status: row.qualificationStatus,
       product_match_evaluation_id: row.evaluationId,
       signal_id: row.signalId,
+      evidence_eligible: row.evidenceEligible ?? null,
     })), { onConflict: "workspace_id,product_id,match_job_run_id,attempt_number,source_query_result_attribution_id", ignoreDuplicates: true }));
     if (result.error) throw new Error(`Product query outcome telemetry could not be persisted (${result.error.code ?? "database_error"}).`);
   }
