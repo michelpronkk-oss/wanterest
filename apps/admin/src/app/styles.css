@@ -549,6 +549,7 @@
 .admin-scope .ops-provider-stats dt { color: var(--muted); font-size: 10px; line-height: 1.4; }
 .admin-scope .ops-provider-stats dd { margin: 3px 0 0; color: var(--ink); font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .admin-scope .ops-measurement-note, .admin-scope .ops-monitor-dates { color: var(--muted); font-size: 11px; line-height: 1.65; }
+.admin-scope .ops-novelty-truncated { margin: 0 0 18px; padding: 12px 14px; border-left: 3px solid #9b7543; background: #f4efe5; color: #655132; }
 .admin-scope .ops-attention-count { color: #8a5744; font-size: 12px; font-weight: 600; }
 .admin-scope .ops-status-list { margin: 16px 0; padding: 0; list-style: none; }
 .admin-scope .ops-status-list li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); color: var(--secondary); font-size: 12px; text-transform: capitalize; }

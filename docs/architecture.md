@@ -5429,3 +5429,71 @@ Claims use database row locks, bounded batches, leases, retry backoff, and termi
 exhaustion states. The service-role-only table has RLS enabled. Admin Operations reads aggregate
 counts only after server-side `operations.read` authorization. Pending work remains visible if
 arrival exceeds capacity. No recurring schedule or acquisition expansion is authorized.
+
+## 13. Signal Throughput V1 — bounded query diversification
+
+**Objective and frozen contracts.** Signal Throughput V1 improves the number of new,
+independent, evidence-eligible roots found by the existing approved providers under the
+existing per-provider and scan-wide query/candidate budgets. It replaces repetitive query
+variants inside those fixed slots; it does not add calls, sources, pages, cursor continuations,
+lookback, cadence, or monitoring. Provider execution adapters and syntax remain authoritative.
+Candidate evidence filters, root identity/dedupe, provenance, synchronous evaluation cap,
+durable backlog, qualification thresholds, signal lifecycle, source rights, and plan entitlements
+remain frozen.
+
+**Typed intent and grounded variants.** The planner carries a closed `intent_family` vocabulary:
+pain/frustration, unmet need, feature request, workaround/manual workflow, switching, replacement/
+substitute, alternative search, comparison/versus, purchase/adoption, cancellation/abandonment,
+missing integration, pricing/willingness-to-pay friction, workflow inefficiency, competitor
+complaint, category dissatisfaction, and job-to-be-done. These labels refine the existing
+provider-neutral query families; they do not introduce provider syntax. A family is generated
+only when the existing structured product profile contains supporting evidence. In particular,
+the planner does not turn absent cancellation, integration, pricing, or competitor evidence into
+generic keyword combinations. Per-provider allowlists and adapter capabilities decide which
+grounded existing candidate families can run.
+
+**Deterministic selection and cold start.** The treatment starts from the current v8 candidate
+pool and current v8 provider plan, including v8 deduplication and competitor allocation. It
+selects the same number of queries per provider, preserves the same total candidate budget, and
+reallocates no provider budget. Confidence remains the planner's existing relevance score.
+Provider-specific intent preferences are deterministic tie-breaks within the existing candidate
+pool. When history is absent or insufficient, selection favors distinct supported intent families
+in confidence order; it does not suppress zero-result or newly introduced candidates. The current
+planner remains the exact path when `SIGNAL_QUERY_DIVERSIFICATION_V1_ENABLED` is absent or false.
+
+**Novelty and deprioritization.** Private query-execution telemetry links stable query
+fingerprints and typed intent metadata to provider roots and product outcome rows. Across the
+bounded 90-day history, a root is counted new only on its first observed product scan, regardless
+of which provider or query first attributed it. New-root attributions remain visible for each
+query that found it; scan-level independent and qualification totals assign one deterministic
+owner within that product scan. Results distinguish first-seen roots, new/repeated query
+attributions, same-scan duplicate attributions, evidence-eligible roots, evaluated roots,
+qualified roots, and first-seen qualified roots; unknown outcome coverage stays unknown.
+Query-family/provider aggregates are observational. An exact query becomes eligible for
+bounded deprioritization only after three consecutive completed executions each with roots, at
+least ten attributable roots in total, and a new-root rate at or below 10% across that streak.
+This threshold is intentionally well below the observed 23.5% cross-scan new-root rate in
+Baseline #2. The effect is a bounded ranking penalty, never exclusion or permanent deletion; the
+query remains recoverable and can run when supported alternatives are exhausted. New variants
+are cold-started independently.
+
+**Privacy and operations.** New taxonomy and outcome fields extend only the existing
+service-role-only source execution/outcome telemetry. No provider query text, root IDs, cursor,
+author data, product context, or raw payload is returned by the aggregate history RPC or Admin
+Operations view. Telemetry tables retain RLS, no PUBLIC/anon/authenticated grants, and least
+service-role access. The RPC is `SECURITY INVOKER`, uses an empty search path, and is executable
+only by `service_role`; Admin reads remain server-side behind the existing `operations.read`
+authorization. If the history RPC or telemetry is unavailable, the treatment uses deterministic
+cold-start coverage and reports history unavailable; the feature flag remains off by default.
+
+**Release and experiment.** The forward migration adds only private query taxonomy/outcome
+columns, bounded history indexes, and the service-only aggregate RPC. It is rehearsed locally on
+the production-shaped schema through `20261106000000`; production application and feature-flag
+activation require separate approvals. The first production comparison keeps the current planner
+as control and enables this treatment for one preselected product and one manually requested scan,
+with identical routes, providers, query/page budgets, qualification, provenance, dedupe, and
+backlog rules. Primary success is evidence-eligible independent new roots per executed query;
+qualified new roots per executed query are secondary. Roll back by disabling the server-side flag
+if the treatment exceeds a per-provider query count/budget, worsens evidence-filter survival by
+more than 20 percentage points, or introduces any source, authorization, provenance, or lifecycle
+regression. No production experiment is part of this implementation.

@@ -7,7 +7,31 @@ import type { JsonObject } from "../../db/database.helpers";
 import type { SourceRoutingCostClass, SourceRoutingPlan, SourceRoutingPriority, SourceRoutingScanMode } from "./source-routing.schemas";
 
 export const queryPlanningVersion = "query_planning_v7" as const;
+export const signalQueryDiversificationVersion = "signal_query_diversification_v1" as const;
+export const queryVariantVersionSchema = z.enum(["legacy", signalQueryDiversificationVersion]);
+export type QueryVariantVersion = z.infer<typeof queryVariantVersionSchema>;
 export type QueryPlanningVersion = typeof queryPlanningVersion | "query_planning_v8";
+
+export const queryIntentFamilySchema = z.enum([
+  "pain_frustration",
+  "unmet_need",
+  "feature_request",
+  "workaround_manual_workflow",
+  "switching_intent",
+  "replacement_substitute",
+  "alternative_search",
+  "comparison_versus",
+  "purchase_adoption",
+  "cancellation_abandonment",
+  "missing_integration",
+  "pricing_wtp_friction",
+  "workflow_inefficiency",
+  "competitor_complaint",
+  "category_dissatisfaction",
+  "job_to_be_done",
+  "unclassified",
+]);
+export type QueryIntentFamily = z.infer<typeof queryIntentFamilySchema>;
 
 export const demandSurfaceSchema = z.enum(["direct_product", "competitor_pain", "alternative_search", "category_demand", "job_demand", "pain_first", "feature_demand", "switching", "substitute_displacement", "commercial_pain"]);
 export type DemandSurface = z.infer<typeof demandSurfaceSchema>;
@@ -55,6 +79,10 @@ export type QueryPlanReasonCode = z.infer<typeof queryPlanReasonCodeSchema>;
 export type QueryPlanQuery = {
   query_id: string;
   query_family: QueryFamily;
+  /** Fine-grained, profile-grounded taxonomy. Absent on the unchanged v7/v8 path. */
+  intent_family?: QueryIntentFamily;
+  /** Set only for treatment queries selected by Signal Throughput V1. */
+  query_variant_version?: QueryVariantVersion;
   demand_surface: DemandSurface;
   competitor_specific: boolean;
   intent_type: BuyingIntentType;
