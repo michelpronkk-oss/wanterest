@@ -79,8 +79,11 @@ describe("query_yield_artifacts ACL hardening", () => {
     expect(migration).not.toContain("source_query_executions");
   });
 
-  it("is the single forward migration after the production 20261107000000 head", () => {
+  it("keeps ACL hardening at 080 and places V1.1 immediately after it", () => {
     const forward = readdirSync(migrationDir).filter((name) => /^2026110[8-9]|^202611[1-9]/.test(name)).sort();
-    expect(forward).toEqual(["20261108000000_query_yield_artifacts_acl_hardening.sql"]);
+    expect(forward).toEqual([
+      "20261108000000_query_yield_artifacts_acl_hardening.sql",
+      "20261109000000_signal_query_exploration_v11.sql",
+    ]);
   });
 });
