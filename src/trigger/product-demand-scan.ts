@@ -18,6 +18,7 @@ import { ingestPublicPartition } from "@/server/modules/ingestion/public-ingesti
 import { rebuildDemandIntelligenceForScan } from "@/server/modules/demand-intelligence/demand.orchestration";
 import { generateActionsForScan } from "@/server/modules/actions/action.orchestration";
 import { X_COMPETITOR_PAIN_RETRIEVAL_TEMPLATE_VERSION } from "@/server/providers/source/x/x.query";
+import { processEvaluationBacklogTask } from "./evaluation-backlog";
 
 const sourceTaskInputSchema = z.object({
   workspaceId: z.string().uuid(),
@@ -51,6 +52,7 @@ const candidateTaskInputSchema = z.object({
     }).optional(),
   })).max(4000).optional(),
   maxLlmEvaluations: z.number().int().nonnegative().max(500),
+  jobRunId: z.string().uuid().optional(),
   traceId: z.string().trim().min(1).max(120),
 });
 
@@ -168,7 +170,7 @@ export const productDemandScanTask = schemaTask({
           }
         : undefined;
       const candidateExecutor = input.jobRunId
-        ? async (candidate: { product: { workspace_id: string; id: string }; profileId: string; normalizedSourceItemIds: string[]; conversationIds: string[]; provenance: ScanDiscoveryProvenance[]; traceId: string; maxLlmEvaluations: number }) => {
+        ? async (candidate: { product: { workspace_id: string; id: string }; profileId: string; normalizedSourceItemIds: string[]; conversationIds: string[]; provenance: ScanDiscoveryProvenance[]; traceId: string; maxLlmEvaluations: number; jobRunId: string }) => {
             const child = await processProductCandidatesTask.triggerAndWait({
               workspaceId: candidate.product.workspace_id,
               productId: candidate.product.id,
@@ -177,6 +179,7 @@ export const productDemandScanTask = schemaTask({
               conversationIds: candidate.conversationIds,
               provenance: candidate.provenance,
               maxLlmEvaluations: candidate.maxLlmEvaluations,
+              jobRunId: candidate.jobRunId,
               traceId: candidate.traceId,
             });
             if (!child.ok) throw new Error("Candidate processing task failed.");
@@ -197,7 +200,11 @@ export const productDemandScanTask = schemaTask({
             return child.output;
           }
         : undefined;
-      return executeProductDemandScan(input, ctx.run.id, { sourceBatchExecutor, candidateExecutor, demandExecutor, actionsExecutor });
+      const result = await executeProductDemandScan(input, ctx.run.id, { sourceBatchExecutor, candidateExecutor, demandExecutor, actionsExecutor });
+      if ((result.candidateSelection?.maxEvaluations ?? 0) > 0 && (result.candidateSelection?.evaluationCapDiagnostics.suppressedCount ?? 0) > 0) {
+        await processEvaluationBacklogTask.trigger({});
+      }
+      return result;
     } catch (error) {
       return nonRetryable(error);
     }

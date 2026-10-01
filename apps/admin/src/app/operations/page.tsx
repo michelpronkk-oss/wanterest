@@ -90,6 +90,22 @@ export default async function OperationsPage() {
         <SourceStamp source="Supabase production · source_health + source_controls" range="Current recorded state · freshness threshold 24 hours" refreshedAt={snapshot.checkedAt} />
       </section>
 
+      <section className="panel" aria-labelledby="evaluation-backlog-heading"><div className="panel-heading"><div><p className="eyebrow">BOUNDED EVALUATION</p><h2 id="evaluation-backlog-heading">Evaluation backlog</h2></div><span className="panel-meta">Private queue · current state</span></div>
+        {snapshot.evaluationBacklog.value === null ? <DataState state="unavailable" detail="The private evaluation backlog could not be read. Queue depth and throughput are unavailable." /> : <>
+          <div className="ops-stat-grid">
+            <Stat label="Pending" value={snapshot.evaluationBacklog.value.pending} detail="Eligible roots awaiting evaluation" />
+            <Stat label="Processing" value={snapshot.evaluationBacklog.value.processing} detail="Currently leased work" />
+            <Stat label="Succeeded" value={snapshot.evaluationBacklog.value.succeeded} detail="Completed queue items" />
+            <Stat label="Skipped" value={snapshot.evaluationBacklog.value.skipped} detail="Invalid or obsolete at revalidation" />
+            <Stat label="Failed" value={snapshot.evaluationBacklog.value.failed} detail={`${snapshot.evaluationBacklog.value.exhausted} exhausted after bounded retries`} />
+            <Stat label="Evaluated · 24h" value={snapshot.evaluationBacklog.value.evaluated24h} detail="Completed queue evaluations" />
+            <Stat label="Qualified · 24h" value={snapshot.evaluationBacklog.value.qualified24h} detail="Canonical qualified evaluations" />
+          </div>
+          <p className="ops-monitor-dates">Oldest pending · {formatDate(snapshot.evaluationBacklog.value.oldestPendingAt)}<br />Evaluated / qualified · last hour · {formatNumber(snapshot.evaluationBacklog.value.evaluatedHour)} / {formatNumber(snapshot.evaluationBacklog.value.qualifiedHour)}<br />Average queue wait · {snapshot.evaluationBacklog.value.averageWaitSeconds === null ? "Not observed" : `${Math.round(snapshot.evaluationBacklog.value.averageWaitSeconds / 60)} min`} · Average attempts · {snapshot.evaluationBacklog.value.averageAttempts === null ? "Not observed" : snapshot.evaluationBacklog.value.averageAttempts.toFixed(1)}</p>
+        </>}
+        <SourceStamp source={snapshot.evaluationBacklog.source} range="Current queue state · completed throughput trailing 24 hours" refreshedAt={snapshot.checkedAt} />
+      </section>
+
       <section className="panel" aria-labelledby="lifecycle-heading"><div className="panel-heading"><div><p className="eyebrow">LIFECYCLE AUTHORITY</p><h2 id="lifecycle-heading">Signal records</h2></div><span className="panel-meta">signals · all time</span></div>
         {snapshot.signalLifecycle.value === null ? <DataState state="unavailable" detail="Signal lifecycle records could not be read." /> : <div className="ops-stat-grid ops-stat-grid-six">
           <Stat label="Active" value={snapshot.signalLifecycle.value.active} detail="Current active records" />

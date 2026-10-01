@@ -5413,3 +5413,19 @@ invalidate affected candidate evaluations and write a system audit event. No pub
 sitemap entry, indexable page, automatic approval, or publication behavior is part of this
 phase. The SEO-2.6 migration is forward-only and remains unapplied until its SQL is independently
 validated against a production-shaped schema and receives release approval.
+
+## 12. Bounded evaluation backlog
+
+The scan keeps its synchronous cap and deterministic candidate selection. Only post-filter,
+deduplicated roots omitted solely by that cap enter a private durable queue. Queue rows retain
+product, profile, root, and evidence references plus a fingerprint of selection inputs, without
+provider payloads or author data. Identical inputs converge on one row. A changed profile or
+source fingerprint is distinct work. Workers revalidate product, source, provenance, profile,
+and existing signal state before reusing canonical analysis, matching, qualification, ranking,
+and signal services. The canonical output fingerprint prevents duplicate evaluation rows.
+Queue processing cannot fetch providers or launch scans.
+
+Claims use database row locks, bounded batches, leases, retry backoff, and terminal skip or
+exhaustion states. The service-role-only table has RLS enabled. Admin Operations reads aggregate
+counts only after server-side `operations.read` authorization. Pending work remains visible if
+arrival exceeds capacity. No recurring schedule or acquisition expansion is authorized.

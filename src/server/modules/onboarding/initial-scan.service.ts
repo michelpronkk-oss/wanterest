@@ -28,6 +28,7 @@ import {
 } from "@/server/modules/ingestion/public-ingestion.service";
 import { persistProductQueryResultOutcomes } from "@/server/modules/operations/source-execution-telemetry.repository";
 import { sourceExecutionObservabilityEnabled } from "@/server/modules/operations/source-execution-telemetry.config";
+import { enqueueCapSuppressed } from "@/server/modules/operations/evaluation-backlog.repository";
 import { SupabaseIntelligenceRepository } from "@/server/modules/intelligence/intelligence.repository";
 import { IntelligenceService } from "@/server/modules/intelligence/intelligence.service";
 import { qualificationFromEvidence, readBusinessClassification, readDemandProfileV2, readDemandProfileV2RoutingModel } from "@/server/modules/intelligence";
@@ -270,6 +271,8 @@ export type CandidateProcessingResult = {
   evaluations: number;
   rankings: number;
   signals: number;
+  backlogEnqueued?: number;
+  backlogEligible?: number;
   /** Qualified signals created by this scan; existing signal refreshes are excluded. */
   newSignals?: number;
   evaluationIds: string[];
@@ -526,6 +529,7 @@ export function selectScanCandidates(input: { conversations: ConversationRow[]; 
   const duplicateSuppressedCount = Math.max(0, eligibleInputCount - ranked.length);
   return {
     conversations: selected.map((item) => item.conversation),
+    capSuppressed: evaluationCapSuppressed,
     diagnostics: {
       version: "candidate_selection_v3",
       availableCount: eligibleInputCount,
@@ -567,7 +571,7 @@ export type InitialScanExecutionOptions = {
   triggerRunId?: string;
   sourceExecutor?: (input: SourceExecutionInput) => Promise<SourceExecutionResult>;
   sourceBatchExecutor?: (inputs: SourceExecutionInput[]) => Promise<SourceExecutionBatchResult[]>;
-  candidateExecutor?: (input: { product: ProductRow; profileId: string; normalizedSourceItemIds: string[]; conversationIds: string[]; provenance: ScanDiscoveryProvenance[]; traceId: string; maxLlmEvaluations: number }) => Promise<CandidateProcessingResult>;
+  candidateExecutor?: (input: { product: ProductRow; profileId: string; normalizedSourceItemIds: string[]; conversationIds: string[]; provenance: ScanDiscoveryProvenance[]; traceId: string; maxLlmEvaluations: number; jobRunId: string }) => Promise<CandidateProcessingResult>;
   demandExecutor?: (input: { product: ProductRow; evaluationIds: string[]; signalIds: Array<string | null>; traceId: string }) => Promise<DemandRebuildResult>;
   actionsExecutor?: (input: { product: ProductRow; traceId: string }) => Promise<ActionGenerationForScanResult>;
   onProgress?: (progress: ScanProgress) => Promise<void>;
@@ -805,7 +809,7 @@ export async function executeSourceDiscovery(input: SourceExecutionInput): Promi
   });
 }
 
-export async function processScanCandidates(input: { product: ProductRow; profileId: string; normalizedSourceItemIds: string[]; conversationIds: string[]; provenance?: ScanDiscoveryProvenance[]; traceId: string; maxLlmEvaluations?: number }): Promise<CandidateProcessingResult> {
+export async function processScanCandidates(input: { product: ProductRow; profileId: string; normalizedSourceItemIds: string[]; conversationIds: string[]; provenance?: ScanDiscoveryProvenance[]; traceId: string; maxLlmEvaluations?: number; jobRunId?: string }): Promise<CandidateProcessingResult> {
   const client = createSupabaseServiceClient();
   const rows = await loadRows(client, [...new Set(input.normalizedSourceItemIds)], [...new Set(input.conversationIds)]);
   const sourceById = new Map(rows.sourceItems.map((item) => [item.id, item]));
@@ -1014,6 +1018,16 @@ export async function processScanCandidates(input: { product: ProductRow; profil
     }
   }
   const qualificationRows = evaluations.map((evaluation) => qualificationFromEvidence(evaluation.evidence)).filter((value): value is NonNullable<typeof value> => Boolean(value));
+  const backlogEnqueued = await enqueueCapSuppressed(client, {
+    productId: input.product.id, productName: input.product.name, workspaceId: input.product.workspace_id,
+    profileId: input.profileId, jobRunId: input.jobRunId,
+    classifierVersionId: classifierVersion.id, matcherVersionId: matcherVersion.id, groundingEnabled,
+    candidates: (input.maxLlmEvaluations ?? rows.conversations.length) > 0 ? selection.capSuppressed.map((item, index) => ({
+      conversation: item.conversation, source: item.source, score: item.score,
+      rank: selection.conversations.length + index + 1,
+      provenance: (input.provenance ?? []).filter((entry) => entry.conversationId === item.conversation.id),
+    })) : [],
+  });
   const rejectionReasonDistribution: Record<string, number> = {};
   const intentDistribution: Record<string, number> = {};
   for (const qualification of qualificationRows) {
@@ -1026,6 +1040,8 @@ export async function processScanCandidates(input: { product: ProductRow; profil
     evaluations: evaluations.length,
     rankings: rankings.length,
     signals: signals.length,
+    backlogEnqueued,
+    backlogEligible: (input.maxLlmEvaluations ?? rows.conversations.length) > 0 ? selection.capSuppressed.length : 0,
     evaluationIds: evaluations.map((evaluation) => evaluation.id),
     signalIds: signalIdsByEvaluation,
     candidateReviews: candidateReviewsFromRows(evaluations, rows.conversations, sourceById),
@@ -1346,7 +1362,7 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
     let candidateResult: CandidateProcessingResult;
     const newSignalEvaluationIds: string[] = [];
     if (options.candidateExecutor) {
-      candidateResult = await options.candidateExecutor({ product, profileId: profile.id, normalizedSourceItemIds: [...new Set(normalizedSourceItemIds)], conversationIds: [...new Set(conversationIds)], provenance: uniqueProvenance(scanProvenance), traceId, maxLlmEvaluations: scanBudget.maxLlmEvaluationsPerScan });
+      candidateResult = await options.candidateExecutor({ product, profileId: profile.id, normalizedSourceItemIds: [...new Set(normalizedSourceItemIds)], conversationIds: [...new Set(conversationIds)], provenance: uniqueProvenance(scanProvenance), traceId, maxLlmEvaluations: scanBudget.maxLlmEvaluationsPerScan, jobRunId: job.id });
       diagnostics.push(...candidateResult.diagnostics);
     } else {
     const rows = await loadRows(client, [...new Set(normalizedSourceItemIds)], [...new Set(conversationIds)]);
@@ -1404,6 +1420,17 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       }
     }
 
+    const backlogEnqueued = await enqueueCapSuppressed(client, {
+      productId: product.id, productName: product.name, workspaceId: product.workspace_id,
+      profileId: profile.id, jobRunId: job.id,
+      classifierVersionId: classifierVersion.id, matcherVersionId: matcherVersion.id,
+      groundingEnabled: evidenceFidelityGroundingEnabled({ env: process.env, workspaceId: product.workspace_id }),
+      candidates: scanBudget.maxLlmEvaluationsPerScan > 0 ? selection.capSuppressed.map((item, index) => ({
+        conversation: item.conversation, source: item.source, score: item.score,
+        rank: selection.conversations.length + index + 1,
+        provenance: scanProvenance.filter((entry) => entry.conversationId === item.conversation.id),
+      })) : [],
+    });
     const qualificationRows = evaluations.map((evaluation) => qualificationFromEvidence(evaluation.evidence)).filter((value): value is NonNullable<typeof value> => Boolean(value));
     const rejectionReasonDistribution: Record<string, number> = {};
     const intentDistribution: Record<string, number> = {};
@@ -1417,6 +1444,8 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
       evaluations: evaluations.length,
       rankings: rankings.length,
       signals: signals.length,
+      backlogEnqueued,
+      backlogEligible: scanBudget.maxLlmEvaluationsPerScan > 0 ? selection.capSuppressed.length : 0,
       newSignals: newSignalEvaluationIds.length,
       evaluationIds: evaluations.map((evaluation) => evaluation.id),
       signalIds: signalIdsByEvaluation,
