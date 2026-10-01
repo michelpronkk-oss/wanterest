@@ -29,7 +29,7 @@ import {
   type SourceQueryPageAttribution,
   type SourceQueryResultAttribution,
 } from "@/server/modules/operations/source-execution-telemetry.repository";
-import { queryIntentFamilySchema, queryVariantVersionSchema } from "@/server/modules/operations/query-planning.schemas";
+import { queryIntentFamilySchema, queryNoveltyStateSchema, querySelectionReasonSchema, queryVariantVersionSchema } from "@/server/modules/operations/query-planning.schemas";
 import { sourceExecutionObservabilityEnabled } from "@/server/modules/operations/source-execution-telemetry.config";
 
 export type { SourceQueryResultAttribution };
@@ -615,6 +615,8 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
         queryFamily: typeof metadata.queryFamily === "string" ? metadata.queryFamily.trim().slice(0, 80) || "fallback" : "fallback",
         intentFamily: queryIntentFamilySchema.safeParse(metadata.intentFamily).success ? queryIntentFamilySchema.parse(metadata.intentFamily) : "unclassified",
         queryVariantVersion: queryVariantVersionSchema.safeParse(metadata.queryVariantVersion).success ? queryVariantVersionSchema.parse(metadata.queryVariantVersion) : "legacy",
+        selectionReason: querySelectionReasonSchema.safeParse(metadata.querySelectionReason).success ? querySelectionReasonSchema.parse(metadata.querySelectionReason) : null,
+        noveltyState: queryNoveltyStateSchema.safeParse(metadata.queryNoveltyState).success ? queryNoveltyStateSchema.parse(metadata.queryNoveltyState) : null,
         demandSurface: typeof metadata.demandSurface === "string" ? metadata.demandSurface.trim().slice(0, 80) || "unknown" : "unknown",
         pagesRequested: maxPages, pagesCompleted, continuationCount: continuationsFollowed,
         stopReason: queryError ? "error" : cursor ? "page_cap_reached" : rawItems ? "no_cursor" : "zero_results",

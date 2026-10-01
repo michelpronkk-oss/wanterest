@@ -138,18 +138,57 @@ describe("admin operations snapshot", () => {
     vi.stubEnv("SOURCE_EXECUTION_OBSERVABILITY_ENABLED", "true");
     const now = new Date().toISOString();
     const rpc = vi.fn(async (name: string) => name === "signal_query_novelty_history"
-      ? { data: [{ execution_id: "exec-private", scan_job_run_id: "run-private", source_key: "github", query_family: "feature_requirement", intent_family: "missing_integration", query_variant_version: "signal_query_diversification_v1", query_plan_fingerprint: "a".repeat(64), execution_status: "completed_with_results", provider_results: 4, raw_snapshots_inserted: 3, raw_snapshots_duplicate: 1, unique_provider_items: 3, normalized_items: 2, attributable_results: 3, unique_roots: 2, independent_roots: 2, new_root_attributions: 1, new_independent_roots: 1, known_root_attributions: 1, duplicate_root_attributions: 0, evidence_eligible_roots: 1, evidence_eligibility_known_roots: 2, evaluated_roots: 1, qualified_roots: 0, new_independent_qualified_roots: 0, signal_roots: 0, history_truncated: true, completed_at: now }], error: null }
+      ? { data: [{ execution_id: "exec-private", scan_job_run_id: "run-private", source_key: "github", query_family: "feature_requirement", intent_family: "missing_integration", query_variant_version: "signal_query_exploration_v1_1", selection_reason: "unseen_variant_exploration", novelty_state: "cold_start", query_plan_fingerprint: "a".repeat(64), execution_status: "completed_with_results", provider_results: 4, raw_snapshots_inserted: 3, raw_snapshots_duplicate: 1, unique_provider_items: 3, normalized_items: 2, attributable_results: 3, unique_roots: 2, independent_roots: 2, new_root_attributions: 1, new_independent_roots: 1, known_root_attributions: 1, duplicate_root_attributions: 0, evidence_eligible_roots: 1, new_independent_evidence_eligible_roots: 1, evidence_eligibility_known_roots: 2, evaluated_roots: 1, qualified_roots: 0, new_independent_qualified_roots: 0, signal_roots: 0, history_truncated: true, completed_at: now }], error: null }
       : { data: { enqueued: 0, pending: 0, processing: 0, succeeded: 0, skipped: 0, failed: 0, exhausted: 0, oldest_pending_at: null, evaluated_24h: 0, qualified_24h: 0, evaluated_hour: 0, qualified_hour: 0, average_wait_seconds: null, average_attempts: null }, error: null });
     vi.mocked(createAdminServiceClient).mockReturnValue({ from: (table: string) => queryFor(table, {}), rpc } as never);
 
     const { getOperationsSnapshot } = await import("../../apps/admin/src/server/operations");
     const result = await getOperationsSnapshot();
-    expect(result.queryNovelty.value).toMatchObject({ executions: 1, firstSeenRoots: 1, independentRoots: 2, newRootAttributions: 1, repeatedRoots: 1, sameScanDuplicates: 0, attributableResults: 3, newRootRate: 1 / 3, eligibleRootRate: 1 / 2, qualifiedRootRate: 0, newIndependentQualifiedRoots: 0 });
+    expect(result.queryNovelty.value).toMatchObject({ executions: 1, firstSeenRoots: 1, newIndependentEvidenceEligibleRoots: 1, independentRoots: 2, newRootAttributions: 1, repeatedRoots: 1, sameScanDuplicates: 0, attributableResults: 3, newRootRate: 1 / 3, eligibleRootRate: 1 / 2, qualifiedRootRate: 0, newIndependentQualifiedRoots: 0 });
     expect(result.queryNovelty.value?.truncated).toBe(true);
-    expect(result.queryNovelty.value?.buckets[0]).toMatchObject({ sourceKey: "github", intentFamily: "missing_integration", variantVersion: "signal_query_diversification_v1", providerResults: 4, rawSnapshotsInserted: 3, rawSnapshotsDuplicate: 1, uniqueProviderItems: 3, normalizedItems: 2, attributableResults: 3, rootAttributions: 2, independentRoots: 2, newRootRate: 1 / 3, eligibleRootRate: 1 / 2, qualifiedRootRate: 0, evidenceEligibleRoots: 1, evidenceEligibilityKnownRoots: 2, newIndependentQualifiedRoots: 0 });
+    expect(result.queryNovelty.value?.buckets[0]).toMatchObject({ sourceKey: "github", intentFamily: "missing_integration", variantVersion: "signal_query_exploration_v1_1", selectionReason: "unseen_variant_exploration", noveltyState: "cold_start", providerResults: 4, rawSnapshotsInserted: 3, rawSnapshotsDuplicate: 1, uniqueProviderItems: 3, normalizedItems: 2, attributableResults: 3, rootAttributions: 2, independentRoots: 2, newRootRate: 1 / 3, eligibleRootRate: 1 / 2, qualifiedRootRate: 0, evidenceEligibleRoots: 1, newIndependentEvidenceEligibleRoots: 1, evidenceEligibilityKnownRoots: 2, newIndependentQualifiedRoots: 0 });
     expect(JSON.stringify(result.queryNovelty.value)).not.toContain("query_plan_fingerprint");
     expect(JSON.stringify(result.queryNovelty.value)).not.toContain("exec-private");
     expect(rpc).toHaveBeenCalledWith("signal_query_novelty_history", expect.objectContaining({ p_workspace_id: null, p_product_id: null, p_max_scans: 12 }));
+  });
+
+  it("projects V1.1 planner diagnostics as bounded counts without returning scan query details", async () => {
+    vi.stubEnv("SOURCE_EXECUTION_OBSERVABILITY_ENABLED", "true");
+    const now = new Date().toISOString();
+    const privateScanResult = {
+      finalQueries: [{ id: "private-query-id", query_text: "private search text" }],
+      queryPlanning: { signalQueryExplorationV11: {
+        historyState: "available", queryCountBefore: 14, queryCountAfter: 14, candidateCount: 46, unselectedCandidateCount: 32,
+        recentlyExecutedCandidateCount: 14, previouslyExecutedCandidateCount: 14, unseenCandidateCount: 32, rotatedSelectionCount: 11,
+        immediatelyRepeatedCandidateCount: 3, immediatelyRepeatedSelectionCount: 0,
+        persistentLowNoveltyCandidateCount: 0, recentZeroNoveltyCandidateCount: 2,
+        selectedReasonCounts: { recency_rotation: 9, recent_zero_novelty_rotation: 2, default_rank: 3 },
+        noveltyStateCounts: { cold_start: 32, insufficient_history: 14 },
+        candidatePoolBySource: { github: { validCandidates: 7, selected: 3, unselected: 4 } },
+        familyCoverageBySource: { github: 3 },
+        familyCoverageHistoryBySource: { github: { zeroScansCandidates: 4, oneScanCandidates: 2, twoScansCandidates: 1, threeScansCandidates: 0 } },
+      } },
+    };
+    const responses = {
+      "job_runs:completed_at,exploration:input_reference->result->queryPlanning->signalQueryExplorationV11": { data: [{ completed_at: now, exploration: { ...privateScanResult.queryPlanning.signalQueryExplorationV11, query_id: "private-query-id", query_text: "private search text" } }], error: null },
+    };
+    vi.mocked(createAdminServiceClient).mockReturnValue({ from: (table: string) => queryFor(table, responses), rpc: vi.fn(async () => ({ data: [], error: null })) } as never);
+
+    const { getOperationsSnapshot } = await import("../../apps/admin/src/server/operations");
+    const result = await getOperationsSnapshot();
+    expect(result.queryExplorationState).toBe("available");
+    expect(result.queryExploration.value).toMatchObject({
+      candidateCount: 46, unselectedCandidateCount: 32, recentlyExecutedCandidateCount: 14, previouslyExecutedCandidateCount: 14, unseenCandidateCount: 32,
+      rotatedSelectionCount: 11, immediatelyRepeatedCandidateCount: 3, immediatelyRepeatedSelectionCount: 0,
+      recentZeroNoveltyCandidateCount: 2,
+      candidatePoolBySource: [{ sourceKey: "github", validCandidates: 7, selected: 3, unselected: 4 }],
+      familyCoverageHistoryBySource: [{ sourceKey: "github", zeroScansCandidates: 4, oneScanCandidates: 2, twoScansCandidates: 1, threeScansCandidates: 0 }],
+      noveltyStateCounts: [{ state: "cold_start", count: 32 }, { state: "insufficient_history", count: 14 }],
+    });
+    const serialized = JSON.stringify(result.queryExploration.value);
+    expect(serialized).not.toContain("private-query-id");
+    expect(serialized).not.toContain("private search text");
+    expect(serialized).not.toContain("query_text");
   });
 
   it("marks the attribution read unavailable when new telemetry tables cannot be read", async () => {

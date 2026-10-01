@@ -5461,6 +5461,26 @@ pool. When history is absent or insufficient, selection favors distinct supporte
 in confidence order; it does not suppress zero-result or newly introduced candidates. The current
 planner remains the exact path when `SIGNAL_QUERY_DIVERSIFICATION_V1_ENABLED` is absent or false.
 
+**V1.1 exploration is independently gated.** `SIGNAL_QUERY_EXPLORATION_V11_ENABLED` defaults off
+and is evaluated only when the V1 flag is also enabled. It reuses the same V8 candidate pool,
+provider plan, provider set, query slots, candidate allocation, and adapter syntax. It cannot add a
+query, source, page, continuation, lookback, or scan. A replay of the V1 replication reconstructed
+46 valid candidates across the six already selected providers: 14 selected and 32 unselected. The
+V1 policy replay matched all 14 executed query fingerprints; each selected query had only one V1
+observation, while the alternatives had none. This proves the V8 pool already contains bounded
+alternatives and that V1's missing recency and exploration signals explain the repeat.
+
+V1.1 keeps raw confidence as a quality gate: exploration is limited to candidates within 0.10 of
+the highest-confidence candidate for that provider. Within that band, deterministic ranking
+temporarily rotates a successful query that returned roots but no new independent roots; then
+prefers cold-start candidates, less-recent execution, under-covered intent families, and candidates
+without persistent low novelty. Historical evidence-eligible yield and provider-specific intent
+order are later tie-breaks. Persistent low novelty retains V1's existing
+three-result-bearing-executions, ten-root minimum, and 10% new-root-rate threshold; that policy is
+not weakened, and no candidate is ever excluded. With unavailable history, V1.1 falls back to V1.
+History with no matching execution is `cold_start`; one or two matching executions are
+`insufficient_history`.
+
 **Novelty and deprioritization.** Private query-execution telemetry links stable query
 fingerprints and typed intent metadata to provider roots and product outcome rows. Across the
 bounded 90-day history, a root is counted new only on its first observed product scan, regardless
@@ -5477,6 +5497,10 @@ Baseline #2. The effect is a bounded ranking penalty, never exclusion or permane
 query remains recoverable and can run when supported alternatives are exhausted. New variants
 are cold-started independently.
 
+V1.1 records the bounded selection reason and novelty state per execution and extends the private
+history aggregate with first-seen evidence-eligible independent roots. Admin displays only
+provider/intent/variant/reason/state aggregates; it never displays fingerprints or query text.
+
 **Privacy and operations.** New taxonomy and outcome fields extend only the existing
 service-role-only source execution/outcome telemetry. No provider query text, root IDs, cursor,
 author data, product context, or raw payload is returned by the aggregate history RPC or Admin
@@ -5486,9 +5510,10 @@ only by `service_role`; Admin reads remain server-side behind the existing `oper
 authorization. If the history RPC or telemetry is unavailable, the treatment uses deterministic
 cold-start coverage and reports history unavailable; the feature flag remains off by default.
 
-**Release and experiment.** The forward migration adds only private query taxonomy/outcome
-columns, bounded history indexes, and the service-only aggregate RPC. It is rehearsed locally on
-the production-shaped schema through `20261106000000`; production application and feature-flag
+**Release and experiment.** The forward migration adds only private query taxonomy/outcome/selection
+telemetry columns, bounded history indexes, and the service-only aggregate RPC. V1.1 adds one
+additive migration after `20261108000000`; it remains unapplied by this local implementation and
+has contract tests but no PostgreSQL runtime rehearsal yet. Production application and feature-flag
 activation require separate approvals. The first production comparison keeps the current planner
 as control and enables this treatment for one preselected product and one manually requested scan,
 with identical routes, providers, query/page budgets, qualification, provenance, dedupe, and

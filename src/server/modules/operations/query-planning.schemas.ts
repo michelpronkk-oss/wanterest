@@ -8,8 +8,17 @@ import type { SourceRoutingCostClass, SourceRoutingPlan, SourceRoutingPriority, 
 
 export const queryPlanningVersion = "query_planning_v7" as const;
 export const signalQueryDiversificationVersion = "signal_query_diversification_v1" as const;
-export const queryVariantVersionSchema = z.enum(["legacy", signalQueryDiversificationVersion]);
+export const signalQueryExplorationV11Version = "signal_query_exploration_v1_1" as const;
+export const queryVariantVersionSchema = z.enum(["legacy", signalQueryDiversificationVersion, signalQueryExplorationV11Version]);
 export type QueryVariantVersion = z.infer<typeof queryVariantVersionSchema>;
+export const querySelectionReasonSchema = z.enum([
+  "v1_confidence_family_diversity", "cold_start_exploration", "unseen_variant_exploration",
+  "recency_rotation", "recent_zero_novelty_rotation", "intent_coverage", "historical_yield",
+  "default_rank", "persistent_low_novelty_penalty", "history_unavailable_fallback",
+]);
+export type QuerySelectionReason = z.infer<typeof querySelectionReasonSchema>;
+export const queryNoveltyStateSchema = z.enum(["cold_start", "insufficient_history", "observed", "low_novelty", "history_unavailable"]);
+export type QueryPlannerNoveltyState = z.infer<typeof queryNoveltyStateSchema>;
 export type QueryPlanningVersion = typeof queryPlanningVersion | "query_planning_v8";
 
 export const queryIntentFamilySchema = z.enum([
@@ -83,6 +92,9 @@ export type QueryPlanQuery = {
   intent_family?: QueryIntentFamily;
   /** Set only for treatment queries selected by Signal Throughput V1. */
   query_variant_version?: QueryVariantVersion;
+  /** Set on V1/V1.1 selected queries; safe bounded reason only. */
+  selection_reason?: QuerySelectionReason;
+  novelty_state?: QueryPlannerNoveltyState;
   demand_surface: DemandSurface;
   competitor_specific: boolean;
   intent_type: BuyingIntentType;

@@ -21,7 +21,7 @@ export default async function OperationsPage() {
       </section>
 
       <section className="panel operations-measurement" aria-labelledby="query-novelty-heading">
-        <div className="panel-heading"><div><p className="eyebrow">QUERY DIVERSIFICATION V1</p><h2 id="query-novelty-heading">Novelty by provider and intent</h2></div><span className="panel-meta">Private aggregates · trailing 7 days</span></div>
+        <div className="panel-heading"><div><p className="eyebrow">QUERY EXPLORATION V1 / V1.1</p><h2 id="query-novelty-heading">Novelty and selection by provider</h2></div><span className="panel-meta">Private aggregates · trailing 7 days</span></div>
         {snapshot.pipelineState === "disabled" ? <DataState state="unavailable" detail="Server-side source execution telemetry is disabled. Query novelty is not being read or written." /> : snapshot.queryNovelty.value === null ? <DataState state="unavailable" detail="Query novelty history could not be read or validated. Counts remain unavailable." /> : snapshot.queryNovelty.value.executions === 0 ? <DataState state="empty" detail="No query execution history is recorded in this period." /> : <>
           <div className="ops-stat-grid ops-stat-grid-six" aria-label="Query novelty summary">
             <Stat label="Executions" value={snapshot.queryNovelty.value.executions} detail="Persisted query attempts" />
@@ -29,6 +29,7 @@ export default async function OperationsPage() {
             <Stat label="Intent families" value={snapshot.queryNovelty.value.intentFamilies.length} detail="Profile-supported taxonomy labels" />
             <Stat label="Independent roots" value={snapshot.queryNovelty.value.independentRoots} detail="Unique roots summed per product scan in this window" />
             <Stat label="New independent roots" value={snapshot.queryNovelty.value.firstSeenRoots} detail="First-seen in bounded 90-day product history" />
+            <Stat label="New eligible independent roots" value={snapshot.queryNovelty.value.newIndependentEvidenceEligibleRoots} detail="First-seen roots that survived unchanged evidence filters" />
             <Stat label="New root attributions" value={snapshot.queryNovelty.value.newRootAttributions} detail="New within 90-day history; may repeat across queries" />
             <Stat label="Prior / same-scan repeats" value={`${formatNumber(snapshot.queryNovelty.value.repeatedRoots)} / ${formatNumber(snapshot.queryNovelty.value.sameScanDuplicates)}`} detail="Previously seen in 90 days / multi-query attribution" />
             <Stat label="Evidence-eligible / known" value={`${formatNumber(snapshot.queryNovelty.value.evidenceEligibleRoots)} / ${formatNumber(snapshot.queryNovelty.value.evidenceEligibilityKnownRoots)}`} detail="Evidence-filter survival on known roots" />
@@ -40,9 +41,11 @@ export default async function OperationsPage() {
           </div>
           {snapshot.queryNovelty.value.truncated && <p className="ops-measurement-note ops-novelty-truncated" role="status">This is a bounded recent sample. The private history read reached its 1,000 product-scan limit, so older scan records are not included in these aggregates.</p>}
           <div className="ops-provider-list ops-novelty-list">
-            {snapshot.queryNovelty.value.buckets.slice(0, 12).map((bucket) => <article className="ops-provider" key={`${bucket.sourceKey}:${bucket.intentFamily}:${bucket.variantVersion}`}>
+            {snapshot.queryNovelty.value.buckets.slice(0, 16).map((bucket) => <article className="ops-provider" key={`${bucket.sourceKey}:${bucket.intentFamily}:${bucket.variantVersion}:${bucket.selectionReason ?? "unrecorded"}:${bucket.noveltyState ?? "unrecorded"}`}>
               <div className="ops-provider-heading"><h3>{bucket.sourceKey} · {bucket.intentFamily.replaceAll("_", " ")}</h3><span>{bucket.variantVersion.replaceAll("_", " ")}</span></div>
               <dl className="ops-provider-stats">
+                <Metric label="Selection reason" value={bucket.selectionReason?.replaceAll("_", " ") ?? "Not recorded"} />
+                <Metric label="Novelty state" value={bucket.noveltyState?.replaceAll("_", " ") ?? "Not recorded"} />
                 <Metric label="Executions" value={bucket.executions} />
                 <Metric label="Provider results" value={bucket.providerResults} />
                 <Metric label="Raw snapshots inserted" value={bucket.rawSnapshotsInserted} />
@@ -54,6 +57,7 @@ export default async function OperationsPage() {
                 <Metric label="Independent roots" value={bucket.independentRoots} />
                 <Metric label="New within 90-day history" value={bucket.newRootAttributions} />
                 <Metric label="First-seen roots" value={bucket.firstSeenRoots} />
+                <Metric label="First-seen evidence-eligible roots" value={bucket.newIndependentEvidenceEligibleRoots} />
                 <Metric label="Prior / same-scan repeats" value={`${formatNumber(bucket.repeatedRoots)} / ${formatNumber(bucket.sameScanDuplicates)}`} />
                 <Metric label="Evidence-eligible independent roots" value={bucket.evidenceEligibilityKnownRoots === 0 ? "Not observed" : `${formatNumber(bucket.evidenceEligibleRoots)} / ${formatNumber(bucket.evidenceEligibilityKnownRoots)} known`} />
                 <Metric label="Evaluated / qualified independent roots" value={`${formatNumber(bucket.evaluatedRoots)} / ${formatNumber(bucket.qualifiedRoots)}`} />
@@ -68,6 +72,42 @@ export default async function OperationsPage() {
           <p className="ops-measurement-note">First-seen roots are assigned once per product scan. New root attributions can include one root returned by multiple queries; query IDs, fingerprints and search text are not shown. Query executions: {formatDate(snapshot.queryNovelty.value.rangeStart)} – {formatDate(snapshot.queryNovelty.value.rangeEnd)} · latest observed {formatDate(snapshot.queryNovelty.value.latestExecutionAt)}.</p>
         </>}
         <SourceStamp source={snapshot.queryNovelty.source} range="Trailing 7 days · up to 12 scans per product · bounded private RPC" refreshedAt={snapshot.checkedAt} />
+      </section>
+
+      <section className="panel operations-measurement" aria-labelledby="v11-diagnostics-heading">
+        <div className="panel-heading"><div><p className="eyebrow">BOUNDED PLANNER EXPLORATION</p><h2 id="v11-diagnostics-heading">V1.1 candidate rotation</h2></div><span className="panel-meta">Latest completed scan · count-only read</span></div>
+        {snapshot.queryExplorationState === "disabled" ? <DataState state="unavailable" detail="Source execution observability is disabled. No planner candidate diagnostics are being read." />
+          : snapshot.queryExplorationState === "unavailable" ? <DataState state="unavailable" detail="The latest bounded planner diagnostics could not be read or validated." />
+            : snapshot.queryExploration.value === null ? <DataState state="empty" detail="No completed V1.1 planner result was observed in the trailing seven days." /> : <>
+              <div className="ops-stat-grid ops-stat-grid-six" aria-label="V1.1 planner exploration counts">
+                <Stat label="Valid candidates" value={snapshot.queryExploration.value.candidateCount} detail="Existing V8 candidate pool only" />
+                <Stat label="Unselected candidates" value={snapshot.queryExploration.value.unselectedCandidateCount} detail="Valid pool members outside current slots" />
+                <Stat label="Recently executed candidates" value={snapshot.queryExploration.value.recentlyExecutedCandidateCount} detail="Fingerprint observed within the seven-day freshness window" />
+                <Stat label="Previously executed" value={snapshot.queryExploration.value.previouslyExecutedCandidateCount} detail="Known V1 or V1.1 fingerprints" />
+                <Stat label="Unseen candidates" value={snapshot.queryExploration.value.unseenCandidateCount} detail="No matching V1/V1.1 execution history" />
+                <Stat label="Rotated selections" value={snapshot.queryExploration.value.rotatedSelectionCount} detail="Selected outside the V1 slot baseline" />
+                <Stat label="Immediate repeats" value={snapshot.queryExploration.value.immediatelyRepeatedSelectionCount} detail={`Selected from the latest provider scan; ${formatNumber(snapshot.queryExploration.value.immediatelyRepeatedCandidateCount)} candidates had immediate history`} />
+                <Stat label="Persistent low-novelty candidates" value={snapshot.queryExploration.value.persistentLowNoveltyCandidateCount} detail="Conservative multi-run signal; candidates remain selectable" />
+                <Stat label="Recent zero-root candidates" value={snapshot.queryExploration.value.recentZeroNoveltyCandidateCount} detail="Temporary rotation signal after a successful run with roots but no new independent roots" />
+                <Stat label="Query slots" value={`${snapshot.queryExploration.value.queryCountAfter} / ${snapshot.queryExploration.value.queryCountBefore}`} detail="Before / after V1.1; slot count must stay equal" />
+              </div>
+              <div className="ops-provider-list ops-novelty-list">
+                {snapshot.queryExploration.value.candidatePoolBySource.map((provider) => <article className="ops-provider" key={provider.sourceKey}>
+                  <div className="ops-provider-heading"><h3>{provider.sourceKey}</h3><span>{provider.validCandidates} valid candidates</span></div>
+                  <dl className="ops-provider-stats">
+                    <Metric label="Selected / unselected" value={`${formatNumber(provider.selected)} / ${formatNumber(provider.unselected)}`} />
+                    <Metric label="Selected intent families" value={snapshot.queryExploration.value!.familyCoverageBySource.find((row) => row.sourceKey === provider.sourceKey)?.families ?? "Not observed"} />
+                    <Metric label="Candidates covered 0 / 1 / 2 / 3+ recent scans" value={(() => {
+                      const coverage = snapshot.queryExploration.value!.familyCoverageHistoryBySource.find((row) => row.sourceKey === provider.sourceKey);
+                      return coverage ? `${coverage.zeroScansCandidates} / ${coverage.oneScanCandidates} / ${coverage.twoScansCandidates} / ${coverage.threeScansCandidates}` : "Not observed";
+                    })()} />
+                  </dl>
+                </article>)}
+              </div>
+              <p className="ops-measurement-note">Selection reasons: {snapshot.queryExploration.value.selectedReasonCounts.length ? snapshot.queryExploration.value.selectedReasonCounts.map(({ reason, count }) => `${reason.replaceAll("_", " ")} ${formatNumber(count)}`).join(" · ") : "None recorded"}. Candidate history: {snapshot.queryExploration.value.noveltyStateCounts.length ? snapshot.queryExploration.value.noveltyStateCounts.map(({ state, count }) => `${state.replaceAll("_", " ")} ${formatNumber(count)}`).join(" · ") : "None recorded"}. The projection excludes query text, query IDs, fingerprints and provider content.</p>
+              <p className="ops-measurement-note">Latest V1.1 scan completed {formatDate(snapshot.queryExploration.value.completedAt)} · selected {formatNumber(snapshot.queryExploration.value.queryCountAfter)} of {formatNumber(snapshot.queryExploration.value.queryCountBefore)} planned slots.</p>
+            </>}
+        <SourceStamp source={snapshot.queryExploration.source} range="Latest 12 successful scans · trailing 7 days · bounded aggregate projection" refreshedAt={snapshot.checkedAt} />
       </section>
 
       <section className="panel operations-measurement" aria-labelledby="measurement-heading">

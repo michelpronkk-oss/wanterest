@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { SignalQueryHistoryRow } from "./signal-query-diversification.policy";
+import { queryNoveltyStateSchema, querySelectionReasonSchema, queryVariantVersionSchema } from "./query-planning.schemas";
 
 type RpcClient = {
   rpc(name: "signal_query_novelty_history", args: {
@@ -18,22 +19,38 @@ function parseHistoryRows(value: unknown): SignalQueryHistoryRow[] {
     const row = entry as Record<string, unknown>;
     if (typeof row.query_plan_fingerprint !== "string" || !/^[0-9a-f]{64}$/.test(row.query_plan_fingerprint)
       || typeof row.scan_job_run_id !== "string"
-      || typeof row.query_variant_version !== "string"
+      || typeof row.source_key !== "string"
+      || typeof row.query_family !== "string"
+      || typeof row.intent_family !== "string"
+      || !queryVariantVersionSchema.safeParse(row.query_variant_version).success
+      || (row.selection_reason !== null && !querySelectionReasonSchema.safeParse(row.selection_reason).success)
+      || (row.novelty_state !== null && !queryNoveltyStateSchema.safeParse(row.novelty_state).success)
       || typeof row.execution_status !== "string"
       || !Number.isSafeInteger(row.unique_roots) || Number(row.unique_roots) < 0
       || !Number.isSafeInteger(row.new_root_attributions) || Number(row.new_root_attributions) < 0
       || !Number.isSafeInteger(row.new_independent_roots) || Number(row.new_independent_roots) < 0
+      || !Number.isSafeInteger(row.evidence_eligible_roots) || Number(row.evidence_eligible_roots) < 0
+      || !Number.isSafeInteger(row.evidence_eligibility_known_roots) || Number(row.evidence_eligibility_known_roots) < 0
+      || !Number.isSafeInteger(row.new_independent_evidence_eligible_roots) || Number(row.new_independent_evidence_eligible_roots) < 0
       || typeof row.completed_at !== "string" || !Number.isFinite(Date.parse(row.completed_at))) {
       throw new Error("Signal-query history is unavailable.");
     }
     return {
       scanRunId: row.scan_job_run_id,
+      sourceKey: row.source_key,
+      queryFamily: row.query_family,
+      intentFamily: row.intent_family,
       queryPlanFingerprint: row.query_plan_fingerprint,
-      queryVariantVersion: row.query_variant_version,
+      queryVariantVersion: queryVariantVersionSchema.parse(row.query_variant_version),
+      selectionReason: row.selection_reason as string | null,
+      noveltyState: row.novelty_state as string | null,
       executionStatus: row.execution_status,
       uniqueRoots: Number(row.unique_roots),
       newRootAttributions: Number(row.new_root_attributions),
       newIndependentRoots: Number(row.new_independent_roots),
+      evidenceEligibleRoots: Number(row.evidence_eligible_roots),
+      evidenceEligibilityKnownRoots: Number(row.evidence_eligibility_known_roots),
+      newIndependentEvidenceEligibleRoots: Number(row.new_independent_evidence_eligible_roots),
       completedAt: row.completed_at,
     };
   });

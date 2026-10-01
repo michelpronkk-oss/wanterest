@@ -9,10 +9,101 @@ type StuckJob = { id: string; jobType: string; startedAt: string | null; created
 type Source = { sourceKey: string; state: "healthy" | "degraded" | "blocked" | "paused" | "disabled" | "stale" | "unknown"; lastCheckedAt: string | null; lastSuccessAt: string | null; lastFailureAt: string | null; latencyMs: number | null; errorCode: string | null; failureCount: number | null; nextRetryAt: string | null };
 type MonitoringSummary = { enabledSchedules: number; disabledSchedules: number; statusCounts: Record<string, number>; lastCycleAt: string | null; lastSuccessAt: string | null; lastFailureAt: string | null };
 type ProviderExecution = { sourceKey: string; plannedQueries: number; executedQueries: number; executions: number; successful: number; failed: number; rateLimitedExecutions: number; skippedQueries: number; providerResults: number; rawSnapshotsInserted: number; uniqueRoots: number; duplicateRoots: number; qualifiedRoots: number; pages: number; continuations: number; retries: number; lowestRateLimitRemaining: number | null; longestRetryAfterHintMs: number | null; averageRuntimeMs: number | null };
-type QueryNoveltyBucket = { sourceKey: string; intentFamily: string; variantVersion: string; executions: number; providerResults: number; rawSnapshotsInserted: number; rawSnapshotsDuplicate: number; uniqueProviderItems: number; normalizedItems: number; attributableResults: number; rootAttributions: number; independentRoots: number; newRootAttributions: number; firstSeenRoots: number; repeatedRoots: number; sameScanDuplicates: number; evidenceEligibleRoots: number; evidenceEligibilityKnownRoots: number; evaluatedRoots: number; qualifiedRoots: number; newIndependentQualifiedRoots: number; signals: number; newRootRate: number | null; eligibleRootRate: number | null; qualifiedRootRate: number | null };
-type QueryNovelty = { rangeStart: string; rangeEnd: string; executions: number; sources: string[]; intentFamilies: string[]; providerResults: number; rawSnapshotsInserted: number; rawSnapshotsDuplicate: number; uniqueProviderItems: number; normalizedItems: number; attributableResults: number; independentRoots: number; firstSeenRoots: number; newRootAttributions: number; repeatedRoots: number; sameScanDuplicates: number; evidenceEligibleRoots: number; evidenceEligibilityKnownRoots: number; evaluatedRoots: number; qualifiedRoots: number; newIndependentQualifiedRoots: number; newRootRate: number | null; eligibleRootRate: number | null; qualifiedRootRate: number | null; truncated: boolean; buckets: QueryNoveltyBucket[]; latestExecutionAt: string | null };
+type QueryNoveltyBucket = { sourceKey: string; intentFamily: string; variantVersion: string; selectionReason: string | null; noveltyState: string | null; executions: number; providerResults: number; rawSnapshotsInserted: number; rawSnapshotsDuplicate: number; uniqueProviderItems: number; normalizedItems: number; attributableResults: number; rootAttributions: number; independentRoots: number; newRootAttributions: number; firstSeenRoots: number; newIndependentEvidenceEligibleRoots: number; repeatedRoots: number; sameScanDuplicates: number; evidenceEligibleRoots: number; evidenceEligibilityKnownRoots: number; evaluatedRoots: number; qualifiedRoots: number; newIndependentQualifiedRoots: number; signals: number; newRootRate: number | null; eligibleRootRate: number | null; qualifiedRootRate: number | null };
+type QueryNovelty = { rangeStart: string; rangeEnd: string; executions: number; sources: string[]; intentFamilies: string[]; providerResults: number; rawSnapshotsInserted: number; rawSnapshotsDuplicate: number; uniqueProviderItems: number; normalizedItems: number; attributableResults: number; independentRoots: number; firstSeenRoots: number; newIndependentEvidenceEligibleRoots: number; newRootAttributions: number; repeatedRoots: number; sameScanDuplicates: number; evidenceEligibleRoots: number; evidenceEligibilityKnownRoots: number; evaluatedRoots: number; qualifiedRoots: number; newIndependentQualifiedRoots: number; newRootRate: number | null; eligibleRootRate: number | null; qualifiedRootRate: number | null; truncated: boolean; buckets: QueryNoveltyBucket[]; latestExecutionAt: string | null };
+type QueryExplorationDiagnostics = {
+  completedAt: string | null;
+  queryCountBefore: number;
+  queryCountAfter: number;
+  candidateCount: number;
+  unselectedCandidateCount: number;
+  recentlyExecutedCandidateCount: number;
+  previouslyExecutedCandidateCount: number;
+  unseenCandidateCount: number;
+  rotatedSelectionCount: number;
+  immediatelyRepeatedCandidateCount: number;
+  immediatelyRepeatedSelectionCount: number;
+  persistentLowNoveltyCandidateCount: number;
+  recentZeroNoveltyCandidateCount: number;
+  selectedReasonCounts: Array<{ reason: string; count: number }>;
+  noveltyStateCounts: Array<{ state: string; count: number }>;
+  candidatePoolBySource: Array<{ sourceKey: string; validCandidates: number; selected: number; unselected: number }>;
+  familyCoverageBySource: Array<{ sourceKey: string; families: number }>;
+  familyCoverageHistoryBySource: Array<{ sourceKey: string; zeroScansCandidates: number; oneScanCandidates: number; twoScansCandidates: number; threeScansCandidates: number }>;
+};
 type SignalLifecycleCounts = { active: number; saved: number; dismissed: number; archived: number; invalidated: number; retracted: number };
 type EvaluationBacklog = { enqueued: number; pending: number; processing: number; succeeded: number; skipped: number; failed: number; exhausted: number; oldestPendingAt: string | null; evaluated24h: number; qualified24h: number; evaluatedHour: number; qualifiedHour: number; averageWaitSeconds: number | null; averageAttempts: number | null };
+
+const selectionReasons = new Set([
+  "v1_confidence_family_diversity", "cold_start_exploration", "unseen_variant_exploration", "recency_rotation",
+  "recent_zero_novelty_rotation", "intent_coverage", "historical_yield", "default_rank",
+  "persistent_low_novelty_penalty", "history_unavailable_fallback",
+]);
+const noveltyStates = new Set(["cold_start", "insufficient_history", "observed", "low_novelty", "history_unavailable"]);
+
+function safeCountRecord(value: unknown, allowed?: Set<string>): Array<{ key: string; count: number }> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length > 40 || entries.some(([key, count]) => (allowed && !allowed.has(key)) || !Number.isSafeInteger(count) || Number(count) < 0)) return null;
+  return entries.map(([key, count]) => ({ key, count: Number(count) })).sort((left, right) => left.key.localeCompare(right.key));
+}
+
+function explorationDiagnostics(value: unknown, completedAt: unknown): QueryExplorationDiagnostics | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const result = value as Record<string, unknown>;
+  const integerFields = ["queryCountBefore", "queryCountAfter", "candidateCount", "unselectedCandidateCount", "recentlyExecutedCandidateCount", "previouslyExecutedCandidateCount", "unseenCandidateCount", "rotatedSelectionCount", "immediatelyRepeatedCandidateCount", "immediatelyRepeatedSelectionCount", "persistentLowNoveltyCandidateCount", "recentZeroNoveltyCandidateCount"] as const;
+  if (result.historyState !== "available" || integerFields.some((key) => !Number.isSafeInteger(result[key]) || Number(result[key]) < 0)) return null;
+  const selectedReasonCounts = safeCountRecord(result.selectedReasonCounts, selectionReasons);
+  const noveltyStateCounts = safeCountRecord(result.noveltyStateCounts, noveltyStates);
+  if (!selectedReasonCounts || !noveltyStateCounts) return null;
+  if (!result.candidatePoolBySource || typeof result.candidatePoolBySource !== "object" || Array.isArray(result.candidatePoolBySource)
+    || !result.familyCoverageBySource || typeof result.familyCoverageBySource !== "object" || Array.isArray(result.familyCoverageBySource)
+    || !result.familyCoverageHistoryBySource || typeof result.familyCoverageHistoryBySource !== "object" || Array.isArray(result.familyCoverageHistoryBySource)) return null;
+  const sourceEntries = Object.entries(result.candidatePoolBySource as Record<string, unknown>);
+  const familyEntries = Object.entries(result.familyCoverageBySource as Record<string, unknown>);
+  const familyHistoryEntries = Object.entries(result.familyCoverageHistoryBySource as Record<string, unknown>);
+  if (sourceEntries.length > 30 || familyEntries.length > 30 || familyHistoryEntries.length > 30) return null;
+  const candidatePoolBySource: QueryExplorationDiagnostics["candidatePoolBySource"] = [];
+  for (const [sourceKey, raw] of sourceEntries) {
+    if (!/^[a-z][a-z0-9_-]{0,63}$/.test(sourceKey) || !raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    const row = raw as Record<string, unknown>;
+    if (["validCandidates", "selected", "unselected"].some((key) => !Number.isSafeInteger(row[key]) || Number(row[key]) < 0)
+      || Number(row.selected) > Number(row.validCandidates) || Number(row.unselected) !== Number(row.validCandidates) - Number(row.selected)) return null;
+    candidatePoolBySource.push({ sourceKey, validCandidates: Number(row.validCandidates), selected: Number(row.selected), unselected: Number(row.unselected) });
+  }
+  const familyCoverageBySource: QueryExplorationDiagnostics["familyCoverageBySource"] = [];
+  for (const [sourceKey, families] of familyEntries) {
+    if (!/^[a-z][a-z0-9_-]{0,63}$/.test(sourceKey) || !Number.isSafeInteger(families) || Number(families) < 0) return null;
+    familyCoverageBySource.push({ sourceKey, families: Number(families) });
+  }
+  const familyCoverageHistoryBySource: QueryExplorationDiagnostics["familyCoverageHistoryBySource"] = [];
+  for (const [sourceKey, raw] of familyHistoryEntries) {
+    if (!/^[a-z][a-z0-9_-]{0,63}$/.test(sourceKey) || !raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    const row = raw as Record<string, unknown>;
+    const keys = ["zeroScansCandidates", "oneScanCandidates", "twoScansCandidates", "threeScansCandidates"] as const;
+    if (keys.some((key) => !Number.isSafeInteger(row[key]) || Number(row[key]) < 0)) return null;
+    const candidatePool = candidatePoolBySource.find((candidate) => candidate.sourceKey === sourceKey);
+    if (!candidatePool || keys.reduce((total, key) => total + Number(row[key]), 0) !== candidatePool.validCandidates) return null;
+    familyCoverageHistoryBySource.push({ sourceKey, zeroScansCandidates: Number(row.zeroScansCandidates), oneScanCandidates: Number(row.oneScanCandidates), twoScansCandidates: Number(row.twoScansCandidates), threeScansCandidates: Number(row.threeScansCandidates) });
+  }
+  if (familyCoverageHistoryBySource.length !== candidatePoolBySource.length) return null;
+  const completed = typeof completedAt === "string" && Number.isFinite(Date.parse(completedAt)) ? completedAt : null;
+  return {
+    completedAt: completed,
+    queryCountBefore: Number(result.queryCountBefore), queryCountAfter: Number(result.queryCountAfter),
+    candidateCount: Number(result.candidateCount), unselectedCandidateCount: Number(result.unselectedCandidateCount),
+    recentlyExecutedCandidateCount: Number(result.recentlyExecutedCandidateCount),
+    previouslyExecutedCandidateCount: Number(result.previouslyExecutedCandidateCount), unseenCandidateCount: Number(result.unseenCandidateCount),
+    rotatedSelectionCount: Number(result.rotatedSelectionCount), immediatelyRepeatedCandidateCount: Number(result.immediatelyRepeatedCandidateCount),
+    immediatelyRepeatedSelectionCount: Number(result.immediatelyRepeatedSelectionCount), persistentLowNoveltyCandidateCount: Number(result.persistentLowNoveltyCandidateCount),
+    recentZeroNoveltyCandidateCount: Number(result.recentZeroNoveltyCandidateCount),
+    selectedReasonCounts: selectedReasonCounts.map(({ key, count }) => ({ reason: key, count })),
+    noveltyStateCounts: noveltyStateCounts.map(({ key, count }) => ({ state: key, count })),
+    candidatePoolBySource: candidatePoolBySource.sort((left, right) => left.sourceKey.localeCompare(right.sourceKey)),
+    familyCoverageBySource: familyCoverageBySource.sort((left, right) => left.sourceKey.localeCompare(right.sourceKey)),
+    familyCoverageHistoryBySource: familyCoverageHistoryBySource.sort((left, right) => left.sourceKey.localeCompare(right.sourceKey)),
+  };
+}
 
 function backlogSummary(value: unknown): EvaluationBacklog | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -46,6 +137,8 @@ export type OperationsSnapshot = {
   pipelineState: "disabled" | "unavailable" | "available";
   pipeline: Availability<{ providers: ProviderExecution[]; roots: number; qualifiedRoots: number; rangeStart: string }>;
   queryNovelty: Availability<QueryNovelty>;
+  queryExplorationState: "disabled" | "unavailable" | "empty" | "available";
+  queryExploration: Availability<QueryExplorationDiagnostics>;
   signalLifecycle: Availability<SignalLifecycleCounts>;
   evaluationBacklog: Availability<EvaluationBacklog>;
   lastSuccessAt: string | null;
@@ -69,6 +162,8 @@ const unavailable: OperationsSnapshot = {
   pipelineState: "unavailable",
   pipeline: { value: null, source: "Supabase · source execution attribution · trailing 7 days" },
   queryNovelty: { value: null, source: "Supabase · private signal query novelty history · trailing 7 days" },
+  queryExplorationState: "unavailable",
+  queryExploration: { value: null, source: "Supabase · completed product scans · bounded aggregate diagnostics" },
   signalLifecycle: { value: null, source: "Supabase · signals · all time" },
   evaluationBacklog: { value: null, source: "Supabase · evaluation_backlog_summary · current state / trailing 24 hours" },
   lastSuccessAt: null,
@@ -85,6 +180,8 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
     pipelineState: telemetryEnabled ? "unavailable" : "disabled",
     pipeline: { value: null, source: telemetryEnabled ? "Supabase · source execution attribution · trailing 7 days" : "Server configuration · source execution observability disabled" },
     queryNovelty: { value: null, source: telemetryEnabled ? "Supabase · private signal query novelty history · trailing 7 days" : "Server configuration · source execution observability disabled" },
+    queryExplorationState: telemetryEnabled ? "unavailable" : "disabled",
+    queryExploration: { value: null, source: telemetryEnabled ? "Supabase · completed product scans · bounded aggregate diagnostics" : "Server configuration · source execution observability disabled" },
   };
 
   const checkedAt = new Date();
@@ -93,7 +190,7 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
   const periodStart = new Date(checkedAt.getTime() - 24 * 60 * 60 * 1000).toISOString();
   const weekStart = new Date(checkedAt.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const stuckBefore = new Date(checkedAt.getTime() - 30 * 60 * 1000).toISOString();
-  const [jobCount, recentJobs, successfulJobs, healthRows, controlRows, stuckRows, stuckCount, monitoringRows, signalRows] = await Promise.all([
+  const [jobCount, recentJobs, successfulJobs, healthRows, controlRows, stuckRows, stuckCount, monitoringRows, signalRows, explorationScanRows] = await Promise.all([
     client.from("job_runs").select("id", { count: "exact", head: true }).gte("created_at", periodStart),
     client.from("job_runs").select("id,status,job_type,created_at,trace_id,attempt_count,error_code").gte("created_at", periodStart).order("created_at", { ascending: false }).limit(12),
     client.from("job_runs").select("completed_at").eq("status", "succeeded").not("completed_at", "is", null).order("completed_at", { ascending: false }).limit(1).maybeSingle(),
@@ -103,6 +200,9 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
     client.from("job_runs").select("id", { count: "exact", head: true }).eq("status", "running").lt("created_at", stuckBefore),
     client.from("monitoring_schedules").select("enabled,current_status,last_cycle_at,last_success_at,last_failure_at").limit(5001),
     client.from("signals").select("lifecycle_status").limit(10001),
+    telemetryEnabled
+      ? client.from("job_runs").select("completed_at,exploration:input_reference->result->queryPlanning->signalQueryExplorationV11").eq("job_type", "product-demand-scan").eq("status", "succeeded").gte("completed_at", weekStart).order("completed_at", { ascending: false }).limit(12)
+      : Promise.resolve({ data: null, error: null }),
   ]);
   const disabledTelemetryRead = { data: null, error: null } as const;
   const queryNoveltyStart = new Date(checkedAt.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -116,6 +216,9 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
     client.from("product_query_result_outcomes").select("source_query_result_attribution_id,conversation_id,qualification_status,created_at").gte("created_at", weekStart).limit(5001),
   ]) : [disabledTelemetryRead, disabledTelemetryRead, disabledTelemetryRead, disabledTelemetryRead];
   const noveltyHistory = await noveltyHistoryPromise;
+  const latestExploration = telemetryEnabled && !explorationScanRows.error
+    ? (explorationScanRows.data ?? []).map((row) => explorationDiagnostics(row.exploration, row.completed_at)).find((row): row is QueryExplorationDiagnostics => row !== null) ?? null
+    : null;
 
   const pageIdsForResults = (pageRows.data ?? []).map((row) => String(row.id));
   const resultRows = !telemetryEnabled
@@ -265,6 +368,7 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
       let normalizedItems = 0;
       let attributableResults = 0;
       let independentRoots = 0;
+      let newIndependentEvidenceEligibleRoots = 0;
       let evidenceEligibleRoots = 0;
       let evidenceEligibilityKnownRoots = 0;
       let evaluatedRoots = 0;
@@ -274,17 +378,21 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
       const sources = new Set<string>();
       const families = new Set<string>();
       for (const row of rows) {
-        const numeric = ["provider_results", "raw_snapshots_inserted", "raw_snapshots_duplicate", "unique_provider_items", "normalized_items", "attributable_results", "unique_roots", "independent_roots", "new_root_attributions", "new_independent_roots", "known_root_attributions", "duplicate_root_attributions", "evidence_eligible_roots", "evidence_eligibility_known_roots", "evaluated_roots", "qualified_roots", "new_independent_qualified_roots", "signal_roots"];
+        const numeric = ["provider_results", "raw_snapshots_inserted", "raw_snapshots_duplicate", "unique_provider_items", "normalized_items", "attributable_results", "unique_roots", "independent_roots", "new_root_attributions", "new_independent_roots", "known_root_attributions", "duplicate_root_attributions", "evidence_eligible_roots", "new_independent_evidence_eligible_roots", "evidence_eligibility_known_roots", "evaluated_roots", "qualified_roots", "new_independent_qualified_roots", "signal_roots"];
         if (numeric.some((field) => !Number.isSafeInteger(row[field]) || Number(row[field]) < 0)
           || typeof row.source_key !== "string" || typeof row.intent_family !== "string"
           || typeof row.query_variant_version !== "string" || typeof row.completed_at !== "string"
+          || (row.selection_reason !== null && typeof row.selection_reason !== "string")
+          || (row.novelty_state !== null && typeof row.novelty_state !== "string")
           || typeof row.history_truncated !== "boolean"
           || !Number.isFinite(Date.parse(row.completed_at))) return null;
         const sourceKey = row.source_key;
         const intentFamily = row.intent_family;
         const variantVersion = row.query_variant_version;
-        const key = `${sourceKey}\u0000${intentFamily}\u0000${variantVersion}`;
-        const bucket = grouped.get(key) ?? { sourceKey, intentFamily, variantVersion, executions: 0, providerResults: 0, rawSnapshotsInserted: 0, rawSnapshotsDuplicate: 0, uniqueProviderItems: 0, normalizedItems: 0, attributableResults: 0, rootAttributions: 0, independentRoots: 0, newRootAttributions: 0, firstSeenRoots: 0, repeatedRoots: 0, sameScanDuplicates: 0, evidenceEligibleRoots: 0, evidenceEligibilityKnownRoots: 0, evaluatedRoots: 0, qualifiedRoots: 0, newIndependentQualifiedRoots: 0, signals: 0, newRootRate: null, eligibleRootRate: null, qualifiedRootRate: null };
+        const selectionReason = typeof row.selection_reason === "string" ? row.selection_reason : null;
+        const noveltyState = typeof row.novelty_state === "string" ? row.novelty_state : null;
+        const key = `${sourceKey}\u0000${intentFamily}\u0000${variantVersion}\u0000${selectionReason ?? "unrecorded"}\u0000${noveltyState ?? "unrecorded"}`;
+        const bucket = grouped.get(key) ?? { sourceKey, intentFamily, variantVersion, selectionReason, noveltyState, executions: 0, providerResults: 0, rawSnapshotsInserted: 0, rawSnapshotsDuplicate: 0, uniqueProviderItems: 0, normalizedItems: 0, attributableResults: 0, rootAttributions: 0, independentRoots: 0, newRootAttributions: 0, firstSeenRoots: 0, newIndependentEvidenceEligibleRoots: 0, repeatedRoots: 0, sameScanDuplicates: 0, evidenceEligibleRoots: 0, evidenceEligibilityKnownRoots: 0, evaluatedRoots: 0, qualifiedRoots: 0, newIndependentQualifiedRoots: 0, signals: 0, newRootRate: null, eligibleRootRate: null, qualifiedRootRate: null };
         bucket.executions += 1;
         bucket.providerResults += Number(row.provider_results);
         bucket.rawSnapshotsDuplicate += Number(row.raw_snapshots_duplicate);
@@ -296,6 +404,7 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
         bucket.independentRoots += Number(row.independent_roots);
         bucket.newRootAttributions += Number(row.new_root_attributions);
         bucket.firstSeenRoots += Number(row.new_independent_roots);
+        bucket.newIndependentEvidenceEligibleRoots += Number(row.new_independent_evidence_eligible_roots);
         bucket.repeatedRoots += Number(row.known_root_attributions);
         bucket.sameScanDuplicates += Number(row.duplicate_root_attributions);
         bucket.evidenceEligibleRoots += Number(row.evidence_eligible_roots);
@@ -316,6 +425,7 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
         normalizedItems += Number(row.normalized_items);
         attributableResults += Number(row.attributable_results);
         independentRoots += Number(row.independent_roots);
+        newIndependentEvidenceEligibleRoots += Number(row.new_independent_evidence_eligible_roots);
         evidenceEligibleRoots += Number(row.evidence_eligible_roots);
         evidenceEligibilityKnownRoots += Number(row.evidence_eligibility_known_roots);
         evaluatedRoots += Number(row.evaluated_roots);
@@ -344,6 +454,7 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
         sources: [...sources].sort(),
         intentFamilies: [...families].sort(),
         firstSeenRoots,
+        newIndependentEvidenceEligibleRoots,
         newRootAttributions,
         repeatedRoots,
         sameScanDuplicates,
@@ -360,7 +471,7 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
         latestExecutionAt,
       };
     })();
-  const hasDataError = Boolean(jobCount.error || recentJobs.error || healthRows.error || controlRows.error || stuckRows.error || stuckCount.error || monitoringRows.error || signalRows.error || (telemetryEnabled && (executionRows.error || pageRows.error || queryRows.error || resultRows.error || outcomeRows.error)));
+  const hasDataError = Boolean(jobCount.error || recentJobs.error || healthRows.error || controlRows.error || stuckRows.error || stuckCount.error || monitoringRows.error || signalRows.error || (telemetryEnabled && (executionRows.error || pageRows.error || queryRows.error || resultRows.error || outcomeRows.error || explorationScanRows.error)));
   const state = hasDataError || failures > 0 || triggerFailures > 0 ? "degraded" : "unknown";
   return {
     checkedAt: checkedAt.toISOString(),
@@ -379,6 +490,8 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
     pipelineState: !telemetryEnabled ? "disabled" : pipelineValue === null ? "unavailable" : "available",
     pipeline: { value: pipelineValue, source: telemetryEnabled ? "Supabase · source execution and product outcome attribution · trailing 7 days" : "Server configuration · source execution observability disabled" },
     queryNovelty: { value: queryNoveltyValue, source: telemetryEnabled ? "Supabase · signal_query_novelty_history RPC · trailing 7 days · bounded recent scans" : "Server configuration · source execution observability disabled" },
+    queryExplorationState: !telemetryEnabled ? "disabled" : explorationScanRows.error ? "unavailable" : latestExploration ? "available" : "empty",
+    queryExploration: { value: latestExploration, source: telemetryEnabled ? "Supabase · completed product-demand-scan result · latest 7 days · count-only projection" : "Server configuration · source execution observability disabled" },
     signalLifecycle: { value: signalLifecycleValue, source: "Supabase · signals · all time" },
     evaluationBacklog: { value: backlogValue, source: "Supabase · evaluation_backlog_summary · current state / trailing 24 hours" },
     lastSuccessAt: successfulJobs.error ? null : successfulJobs.data?.completed_at ?? null,
