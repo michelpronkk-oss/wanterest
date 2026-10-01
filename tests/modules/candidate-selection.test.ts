@@ -37,6 +37,8 @@ describe("candidate selection v2", () => {
     expect(first.diagnostics.selectedBySource).toMatchObject({ github: expect.any(Number), "hacker-news": expect.any(Number), x: expect.any(Number) });
     expect(first.diagnostics.evaluationCapDiagnostics).toMatchObject({ availableCount: 25, evaluatedCount: 15, suppressedCount: 10, suppressedScoreRange: { min: expect.any(Number), max: expect.any(Number) } });
     expect(first.diagnostics.evaluationCapDiagnostics.suppressedCandidates).toHaveLength(10);
+    expect(first.capSuppressed).toHaveLength(10);
+    expect(new Set(first.capSuppressed.map((item) => item.conversation.id)).size).toBe(10);
   });
 
   it("reports cap-suppressed candidates with bounded provenance metadata without evaluating them", () => {
@@ -46,6 +48,7 @@ describe("candidate selection v2", () => {
     expect(result.conversations).toHaveLength(2);
     expect(result.diagnostics.evaluationCapDiagnostics.suppressedCount).toBe(1);
     expect(result.diagnostics.evaluationCapDiagnostics.suppressedCandidates[0]).toMatchObject({ conversationId: "c", source: "github", surfaces: ["pain_first"], queryPlanIds: ["query-c"], reason: "evaluation_cap" });
+    expect(result.capSuppressed.map((item) => item.conversation.id)).toEqual(["c"]);
   });
 
   it("uses current scan provenance for cached and multiply discovered conversations", () => {

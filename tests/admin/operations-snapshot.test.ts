@@ -29,6 +29,19 @@ function queryFor(table: string, responses: Record<string, unknown>) {
 describe("admin operations snapshot", () => {
   beforeEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks(); });
 
+  it("shows an empty backlog as measured zero and unavailable as unknown", async () => {
+    const from = (table: string) => queryFor(table, {});
+    const rpc = vi.fn(async () => ({ data: { enqueued: 0, pending: 0, processing: 0, succeeded: 0, skipped: 0, failed: 0,
+      exhausted: 0, oldest_pending_at: null, evaluated_24h: 0, qualified_24h: 0, evaluated_hour: 0,
+      qualified_hour: 0, average_wait_seconds: null, average_attempts: null }, error: null }));
+    vi.mocked(createAdminServiceClient).mockReturnValue({ from, rpc } as never);
+    const { getOperationsSnapshot } = await import("../../apps/admin/src/server/operations");
+    expect((await getOperationsSnapshot()).evaluationBacklog.value).toMatchObject({ pending: 0, qualified24h: 0 });
+    expect(rpc).toHaveBeenCalledWith("evaluation_backlog_summary");
+    rpc.mockResolvedValueOnce({ data: null, error: { code: "42P01" } } as never);
+    expect((await getOperationsSnapshot()).evaluationBacklog.value).toBeNull();
+  });
+
   it("keeps disabled sources distinct and marks stale health unknown", async () => {
     const now = Date.now();
     const responses = {

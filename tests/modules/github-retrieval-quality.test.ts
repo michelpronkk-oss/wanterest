@@ -158,6 +158,7 @@ describe("GitHub retrieval precision gate", () => {
     const result = selectScanCandidates({ conversations: [item.conversation], sourceById: new Map([[item.source.id, item.source]]), max: 15, provenance: [item.provenance] });
     expect(result.conversations).toHaveLength(0);
     expect(result.diagnostics.suppressedByReason.github_job_evidence_mismatch).toBe(1);
+    expect(result.capSuppressed).toHaveLength(0);
     expect(result.githubJobEvidenceAlignment).toMatchObject({ inspectedCount: 1, alignedCount: 0, mismatchCount: 1, subreasonCounts: { [subreason]: 1 } });
     expect(result.githubJobEvidenceAlignment?.mismatches[0]).toMatchObject({ conversationId: item.conversation.id, subreason, buyerContextMatched: false });
   });

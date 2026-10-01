@@ -10,6 +10,22 @@ type Source = { sourceKey: string; state: "healthy" | "degraded" | "blocked" | "
 type MonitoringSummary = { enabledSchedules: number; disabledSchedules: number; statusCounts: Record<string, number>; lastCycleAt: string | null; lastSuccessAt: string | null; lastFailureAt: string | null };
 type ProviderExecution = { sourceKey: string; plannedQueries: number; executedQueries: number; executions: number; successful: number; failed: number; rateLimitedExecutions: number; skippedQueries: number; providerResults: number; rawSnapshotsInserted: number; uniqueRoots: number; duplicateRoots: number; qualifiedRoots: number; pages: number; continuations: number; retries: number; lowestRateLimitRemaining: number | null; longestRetryAfterHintMs: number | null; averageRuntimeMs: number | null };
 type SignalLifecycleCounts = { active: number; saved: number; dismissed: number; archived: number; invalidated: number; retracted: number };
+type EvaluationBacklog = { enqueued: number; pending: number; processing: number; succeeded: number; skipped: number; failed: number; exhausted: number; oldestPendingAt: string | null; evaluated24h: number; qualified24h: number; evaluatedHour: number; qualifiedHour: number; averageWaitSeconds: number | null; averageAttempts: number | null };
+
+function backlogSummary(value: unknown): EvaluationBacklog | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const keys = ["enqueued", "pending", "processing", "succeeded", "skipped", "failed", "exhausted", "evaluated_24h", "qualified_24h", "evaluated_hour", "qualified_hour"] as const;
+  if (keys.some((key) => !Number.isSafeInteger(row[key]) || Number(row[key]) < 0)) return null;
+  if (row.oldest_pending_at !== null && typeof row.oldest_pending_at !== "string") return null;
+  if (row.average_wait_seconds !== null && (typeof row.average_wait_seconds !== "number" || !Number.isFinite(row.average_wait_seconds))) return null;
+  if (row.average_attempts !== null && (typeof row.average_attempts !== "number" || !Number.isFinite(row.average_attempts))) return null;
+  return { enqueued: Number(row.enqueued), pending: Number(row.pending), processing: Number(row.processing),
+    succeeded: Number(row.succeeded), skipped: Number(row.skipped), failed: Number(row.failed), exhausted: Number(row.exhausted),
+    oldestPendingAt: row.oldest_pending_at as string | null, evaluated24h: Number(row.evaluated_24h), qualified24h: Number(row.qualified_24h),
+    evaluatedHour: Number(row.evaluated_hour), qualifiedHour: Number(row.qualified_hour),
+    averageWaitSeconds: row.average_wait_seconds as number | null, averageAttempts: row.average_attempts as number | null };
+}
 
 export type OperationsSnapshot = {
   checkedAt: string | null;
@@ -28,6 +44,7 @@ export type OperationsSnapshot = {
   pipelineState: "disabled" | "unavailable" | "available";
   pipeline: Availability<{ providers: ProviderExecution[]; roots: number; qualifiedRoots: number; rangeStart: string }>;
   signalLifecycle: Availability<SignalLifecycleCounts>;
+  evaluationBacklog: Availability<EvaluationBacklog>;
   lastSuccessAt: string | null;
   trigger: TriggerRunsSnapshot;
 };
@@ -49,6 +66,7 @@ const unavailable: OperationsSnapshot = {
   pipelineState: "unavailable",
   pipeline: { value: null, source: "Supabase · source execution attribution · trailing 7 days" },
   signalLifecycle: { value: null, source: "Supabase · signals · all time" },
+  evaluationBacklog: { value: null, source: "Supabase · evaluation_backlog_summary · current state / trailing 24 hours" },
   lastSuccessAt: null,
   trigger: { state: "unavailable", checkedAt: null, runs: null, routingRuns: null, source: "Trigger.dev · production environment" },
 };
@@ -65,6 +83,8 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
   };
 
   const checkedAt = new Date();
+  const backlogResult = typeof client.rpc === "function" ? await client.rpc("evaluation_backlog_summary") : { data: null, error: { message: "RPC unavailable" } };
+  const backlogValue = backlogResult.error ? null : backlogSummary(backlogResult.data);
   const periodStart = new Date(checkedAt.getTime() - 24 * 60 * 60 * 1000).toISOString();
   const weekStart = new Date(checkedAt.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const stuckBefore = new Date(checkedAt.getTime() - 30 * 60 * 1000).toISOString();
@@ -235,6 +255,7 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
     pipelineState: !telemetryEnabled ? "disabled" : pipelineValue === null ? "unavailable" : "available",
     pipeline: { value: pipelineValue, source: telemetryEnabled ? "Supabase · source execution and product outcome attribution · trailing 7 days" : "Server configuration · source execution observability disabled" },
     signalLifecycle: { value: signalLifecycleValue, source: "Supabase · signals · all time" },
+    evaluationBacklog: { value: backlogValue, source: "Supabase · evaluation_backlog_summary · current state / trailing 24 hours" },
     lastSuccessAt: successfulJobs.error ? null : successfulJobs.data?.completed_at ?? null,
     trigger,
   };

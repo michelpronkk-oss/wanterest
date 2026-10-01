@@ -75,6 +75,7 @@ describe("X competitor_pain retained-evidence alignment", () => {
     expect(result.xCompetitorEvidenceAlignment).toMatchObject({ inspectedCount: 1, alignedCount: 0, mismatchCount: 1, provenanceMissingCount: 0, bindingMatched: false, boundMatches: [] });
     expect(result.xCompetitorEvidenceAlignment.mismatches[0]).toMatchObject({ reason: "x_competitor_evidence_mismatch", subreason: "competitor_displacement_not_bound", competitor: "Jira" });
     expect(result.diagnostics.suppressedByReason.x_competitor_evidence_mismatch).toBe(1);
+    expect(result.capSuppressed).toHaveLength(0);
   });
 
   it("matches case-insensitively and across normalized whitespace", () => {
