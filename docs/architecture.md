@@ -5610,3 +5610,74 @@ schema; a future rights/retention decision must define those before indefinite r
 redistribution is considered. This local foundation performs no backfill, deletion, publishing,
 scheduling, acquisition expansion, or qualification change. It reuses the released schema and
 requires no migration.
+
+## 16. Market Partitions + Source Coverage Model V1
+
+**Two partition concepts stay separate.** The released `market_partitions` key is one literal,
+provider-executed retrieval request and may contain search text derived from a tenant query. It is
+private operational identity. It is not a market/category, reusable acquisition surface, product,
+or workspace identity. Market Coverage V1 adds a different, tenant-free identity composed only of
+reviewed `vertical_key`, public taxonomy `market_key`, source family, optional geography/language,
+and optional surface subtype. Its versioned key excludes product/workspace IDs, literal query text,
+freshness, yield, rights status, and other mutable measurements. Product interest is an independent
+many-to-many relation and does not trigger duplicate acquisition.
+
+**Family and role are independent dimensions.** The versioned source-family vocabulary covers
+social, community forums, developer surfaces, reviews, alternative comparison, video,
+first-party company material, launch directories, broad web, editorial news, commercial
+enrichment, search intent, marketplaces, local directories, maps/reviews, and owned surveys,
+support, CRM, and forms. Providers are not families, and a provider/family does not prove an
+evidence role. Role must come from explicit reviewed evidence classification: demand, supply,
+context, or owned/private. Global public coverage requirements allow only demand, supply, and
+context; their observation role may be null/unknown. Database constraints reject owned-family
+partitions and owned/private roles at the global persistence boundary. High-volume context or
+supply never contributes to demand coverage.
+
+**Coverage states replace a percentage.** Requirements declare relevance, availability, rights,
+minimum independent canonical roots, freshness days, provider-concentration limit, duplicate-root
+limit, and a named policy version. The deterministic states are unknown, unavailable, inactive,
+undercovered, observed, healthy, stale, and concentrated. Unknown rights or nullable permission
+fields hide observed counts and never imply coverage permission. An unavailable/inactive source is
+not counted as covered. Rights booleans keep acquisition, durable analysis, public projection, and
+raw retention separate; public projection eligibility is not inferred from permission to analyze.
+There is no percentage, composite coverage score, claim about the fraction of a market/internet
+observed, or automatic acquisition decision.
+
+**Concentration uses canonical roots.** Coverage aggregates join the released
+`conversation_source_items` and `source_items` tables; no new evidence corpus or copied content is
+created. Independent volume is distinct `conversation_id` within an explicit 30-day observation
+window. Provider diversity is distinct provider identity within a family/role slice. Repeated-root
+ratio uses distinct provider/root attributions above distinct canonical roots; repeated observation
+rows are reported separately from distinct provider-native source items. Month and geography
+coverage derive only from present timestamps/codes, while missing values remain explicit counts or
+unknown partition dimensions. Author diversity is not computed until a reviewed privacy/rights
+policy permits it.
+
+**Connector envelope and vertical profiles.** A server-only normalized metadata envelope allows
+provider/family, role, provider-native/canonical identity, URL and timestamps, language, optional
+geography/confidence, canonical thread identity, permission-gated author identity, engagement
+counts, rights/retention references, public-projection eligibility, raw-content policy, cost, and
+rate-limit state. Unknown provider fields stay null. It intentionally contains no raw body or
+payload. The generic identity and state contracts can represent future ecommerce and local-business
+profiles using configuration plus later connectors; no ecommerce/local behavior is implemented.
+The initial SaaS template has no persisted market/category instance and marks every source-rights
+state unknown until reviewed. Provider-to-family candidates in the source map are inventory only,
+not approved classifications or rights grants.
+
+**Market Memory and privacy.** Coverage observations reference `(conversation_id, source_item_id)`
+in the canonical conversation/source-item join and contain only role, optional geography/language,
+observation time, and policy references. Shared public Market Memory remains the only global public
+corpus. Existing workspace-scoped source/private data remains in its current tables. Product
+interests use `(workspace_id, product_id)` with the product composite FK and a coverage-partition
+FK; the relation is private, and all new tables are service-role-only with RLS enabled and no
+browser grants/policies. No scan, scheduler, adapter, source mapping, product fanout, qualification,
+backlog, dedupe, lifecycle, or publishing code is changed. A service-only invoker RPC returns
+aggregate coverage components to the separately permission-checked Admin Operations page; absent
+tables/configuration display as unavailable/empty, never as invented zero coverage.
+
+**Later phases.** A manual refresh can later resolve a product's interested reusable coverage
+partitions into a durable background job, update shared canonical Market Memory once, and update
+private product interpretation incrementally. A future continuous acquisition scheduler may use
+freshness, gaps, novelty, source importance, market activity, provider economics, source health,
+interested products, and plan entitlement; V1 computes none of that priority and starts no
+scheduler. Production migration application requires a separate review/release.
