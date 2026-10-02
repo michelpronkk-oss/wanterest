@@ -9,6 +9,8 @@ type StuckJob = { id: string; jobType: string; startedAt: string | null; created
 type Source = { sourceKey: string; state: "healthy" | "degraded" | "blocked" | "paused" | "disabled" | "stale" | "unknown"; lastCheckedAt: string | null; lastSuccessAt: string | null; lastFailureAt: string | null; latencyMs: number | null; errorCode: string | null; failureCount: number | null; nextRetryAt: string | null };
 type MonitoringSummary = { enabledSchedules: number; disabledSchedules: number; statusCounts: Record<string, number>; lastCycleAt: string | null; lastSuccessAt: string | null; lastFailureAt: string | null };
 type ProviderExecution = { sourceKey: string; plannedQueries: number; executedQueries: number; executions: number; successful: number; failed: number; rateLimitedExecutions: number; skippedQueries: number; providerResults: number; rawSnapshotsInserted: number; uniqueRoots: number; duplicateRoots: number; qualifiedRoots: number; pages: number; continuations: number; retries: number; lowestRateLimitRemaining: number | null; longestRetryAfterHintMs: number | null; averageRuntimeMs: number | null };
+type PaginationContinuationProvider = { sourceKey: string; baseRequests: number; eligible: number; attempted: number; continuationRequests: number; failures: number; results: number; uniqueProviderItems: number; duplicateProviderItems: number; inserted: number; reused: number; independentRoots: number; firstSeenRootsInExecution: number; repeatedRootAttributions: number; evidenceEligibleRoots: number; firstSeenEvidenceEligibleRoots: number; evidenceEligibilityKnownRoots: number; decisionReasons: Array<{ reason: string; count: number }>; continuationStatuses: Record<string, number> };
+type PaginationContinuationSummary = { baseRequests: number; eligible: number; attempted: number; continuationRequests: number; failures: number; results: number; uniqueProviderItems: number; duplicateProviderItems: number; inserted: number; reused: number; independentRoots: number; firstSeenRootsInExecution: number; repeatedRootAttributions: number; evidenceEligibleRoots: number; firstSeenEvidenceEligibleRoots: number; evidenceEligibilityKnownRoots: number; decisionReasons: Array<{ reason: string; count: number }>; continuationStatuses: Record<string, number>; providers: PaginationContinuationProvider[] };
 type QueryNoveltyBucket = { sourceKey: string; intentFamily: string; variantVersion: string; selectionReason: string | null; noveltyState: string | null; executions: number; providerResults: number; rawSnapshotsInserted: number; rawSnapshotsDuplicate: number; uniqueProviderItems: number; normalizedItems: number; attributableResults: number; rootAttributions: number; independentRoots: number; newRootAttributions: number; firstSeenRoots: number; newIndependentEvidenceEligibleRoots: number; repeatedRoots: number; sameScanDuplicates: number; evidenceEligibleRoots: number; evidenceEligibilityKnownRoots: number; evaluatedRoots: number; qualifiedRoots: number; newIndependentQualifiedRoots: number; signals: number; newRootRate: number | null; eligibleRootRate: number | null; qualifiedRootRate: number | null };
 type QueryNovelty = { rangeStart: string; rangeEnd: string; executions: number; sources: string[]; intentFamilies: string[]; providerResults: number; rawSnapshotsInserted: number; rawSnapshotsDuplicate: number; uniqueProviderItems: number; normalizedItems: number; attributableResults: number; independentRoots: number; firstSeenRoots: number; newIndependentEvidenceEligibleRoots: number; newRootAttributions: number; repeatedRoots: number; sameScanDuplicates: number; evidenceEligibleRoots: number; evidenceEligibilityKnownRoots: number; evaluatedRoots: number; qualifiedRoots: number; newIndependentQualifiedRoots: number; newRootRate: number | null; eligibleRootRate: number | null; qualifiedRootRate: number | null; truncated: boolean; buckets: QueryNoveltyBucket[]; latestExecutionAt: string | null };
 type QueryExplorationDiagnostics = {
@@ -136,6 +138,8 @@ export type OperationsSnapshot = {
   monitoring: Availability<MonitoringSummary>;
   pipelineState: "disabled" | "unavailable" | "available";
   pipeline: Availability<{ providers: ProviderExecution[]; roots: number; qualifiedRoots: number; rangeStart: string }>;
+  paginationState: "disabled" | "unavailable" | "empty" | "available";
+  pagination: Availability<PaginationContinuationSummary>;
   queryNovelty: Availability<QueryNovelty>;
   queryExplorationState: "disabled" | "unavailable" | "empty" | "available";
   queryExploration: Availability<QueryExplorationDiagnostics>;
@@ -161,6 +165,8 @@ const unavailable: OperationsSnapshot = {
   monitoring: { value: null, source: "Supabase · monitoring_schedules" },
   pipelineState: "unavailable",
   pipeline: { value: null, source: "Supabase · source execution attribution · trailing 7 days" },
+  paginationState: "unavailable",
+  pagination: { value: null, source: "Supabase · Pagination V1 per-page telemetry · trailing 7 days" },
   queryNovelty: { value: null, source: "Supabase · private signal query novelty history · trailing 7 days" },
   queryExplorationState: "unavailable",
   queryExploration: { value: null, source: "Supabase · completed product scans · bounded aggregate diagnostics" },
@@ -179,6 +185,8 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
     trigger,
     pipelineState: telemetryEnabled ? "unavailable" : "disabled",
     pipeline: { value: null, source: telemetryEnabled ? "Supabase · source execution attribution · trailing 7 days" : "Server configuration · source execution observability disabled" },
+    paginationState: telemetryEnabled ? "unavailable" : "disabled",
+    pagination: { value: null, source: telemetryEnabled ? "Supabase · Pagination V1 per-page telemetry · trailing 7 days" : "Server configuration · source execution observability disabled" },
     queryNovelty: { value: null, source: telemetryEnabled ? "Supabase · private signal query novelty history · trailing 7 days" : "Server configuration · source execution observability disabled" },
     queryExplorationState: telemetryEnabled ? "unavailable" : "disabled",
     queryExploration: { value: null, source: telemetryEnabled ? "Supabase · completed product scans · bounded aggregate diagnostics" : "Server configuration · source execution observability disabled" },
@@ -213,8 +221,11 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
     client.from("source_query_executions").select("id,source_key,execution_status,provider_results_returned,raw_snapshots_inserted,continuation_count,duration_ms,created_at").gte("created_at", weekStart).order("created_at", { ascending: false }).limit(5001),
     client.from("source_query_execution_pages").select("id,execution_id,attempt_count,continuation_followed,duration_ms,rate_limit_remaining,retry_after_ms").gte("observed_at", weekStart).limit(15001),
     client.from("query_yield_artifacts").select("source_key,execution_status").gte("created_at", weekStart).limit(5001),
-    client.from("product_query_result_outcomes").select("source_query_result_attribution_id,conversation_id,qualification_status,created_at").gte("created_at", weekStart).limit(5001),
+    client.from("product_query_result_outcomes").select("source_query_result_attribution_id,conversation_id,workspace_id,product_id,qualification_status,evidence_eligible,created_at").gte("created_at", weekStart).limit(5001),
   ]) : [disabledTelemetryRead, disabledTelemetryRead, disabledTelemetryRead, disabledTelemetryRead];
+  const paginationRows = telemetryEnabled
+    ? await client.from("source_query_execution_pages").select("id,execution_id,page_number,provider_results_returned,raw_snapshots_accepted,raw_snapshots_inserted,raw_snapshots_duplicate,unique_provider_items,duplicate_provider_items,unique_roots,duplicate_roots,cursor_requested,pagination_policy_version,continuation_eligible,continuation_reason,continuation_attempted,continuation_status").gte("observed_at", weekStart).limit(15001)
+    : disabledTelemetryRead;
   const noveltyHistory = await noveltyHistoryPromise;
   const latestExploration = telemetryEnabled && !explorationScanRows.error
     ? (explorationScanRows.data ?? []).map((row) => explorationDiagnostics(row.exploration, row.completed_at)).find((row): row is QueryExplorationDiagnostics => row !== null) ?? null
@@ -226,7 +237,7 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
     : pageRows.error
     ? { data: null, error: pageRows.error }
     : pageIdsForResults.length
-      ? await client.from("source_query_result_attributions").select("id,page_id,conversation_id").in("page_id", pageIdsForResults).limit(5001)
+      ? await client.from("source_query_result_attributions").select("id,page_id,conversation_id,first_root_in_execution").in("page_id", pageIdsForResults).limit(5001)
       : { data: [], error: null };
 
   const recentJobRows = recentJobs.error ? null : (recentJobs.data ?? []).map((row) => ({
@@ -342,6 +353,135 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
       averageRuntimeMs: stats.runtimeCount ? Math.round(stats.runtimeTotal / stats.runtimeCount) : null,
     }));
     return { providers, roots: new Set(providers.flatMap((provider) => [...(aggregate.get(provider.sourceKey)?.roots ?? [])])).size, qualifiedRoots: new Set(providers.flatMap((provider) => [...(aggregate.get(provider.sourceKey)?.qualified ?? [])])).size, rangeStart: weekStart };
+  })();
+
+  const paginationValue = !telemetryEnabled || paginationRows.error ? null : (() => {
+    if ((paginationRows.data?.length ?? 0) > 15000 || executionRows.error || pageRows.error || resultRows.error || outcomeRows.error
+      || (executionRows.data?.length ?? 0) > 5000 || (pageRows.data?.length ?? 0) > 15000
+      || (resultRows.data?.length ?? 0) > 5000 || (outcomeRows.data?.length ?? 0) > 5000) return null;
+    const executions = executionRows.data ?? [];
+    const pages = paginationRows.data ?? [];
+    const results = resultRows.data ?? [];
+    const outcomes = outcomeRows.data ?? [];
+    const executionById = new Map(executions.map((row) => [String(row.id), String(row.source_key)]));
+    const pageById = new Map(pages.map((row) => [String(row.id), {
+      executionId: String(row.execution_id),
+      sourceKey: executionById.get(String(row.execution_id)) ?? null,
+      pageNumber: Number(row.page_number),
+      policyVersion: row.pagination_policy_version,
+    }]));
+    const resultById = new Map(results.map((row) => [String(row.id), {
+      pageId: String(row.page_id),
+      conversationId: typeof row.conversation_id === "string" ? row.conversation_id : null,
+      firstRootInExecution: row.first_root_in_execution === true,
+    }]));
+    const summary: PaginationContinuationSummary = {
+      baseRequests: 0, eligible: 0, attempted: 0, continuationRequests: 0, failures: 0,
+      results: 0, uniqueProviderItems: 0, duplicateProviderItems: 0, inserted: 0, reused: 0, independentRoots: 0, firstSeenRootsInExecution: 0,
+      repeatedRootAttributions: 0, evidenceEligibleRoots: 0, firstSeenEvidenceEligibleRoots: 0,
+      evidenceEligibilityKnownRoots: 0, decisionReasons: [], continuationStatuses: {}, providers: [],
+    };
+    const providerStats = new Map<string, PaginationContinuationProvider>();
+    const decisionReasons = new Map<string, number>();
+    const continuationStatuses = new Map<string, number>();
+    const v1PageNumbersByExecution = new Map<string, Set<number>>();
+    const knownEligibleRootsByProvider = new Map<string, Set<string>>();
+    const eligibleRootsByProvider = new Map<string, Set<string>>();
+    const firstSeenEligibleRootsByProvider = new Map<string, Set<string>>();
+    const provider = (sourceKey: string) => {
+      let stats = providerStats.get(sourceKey);
+      if (!stats) {
+        stats = { sourceKey, baseRequests: 0, eligible: 0, attempted: 0, continuationRequests: 0, failures: 0, results: 0, uniqueProviderItems: 0, duplicateProviderItems: 0, inserted: 0, reused: 0, independentRoots: 0, firstSeenRootsInExecution: 0, repeatedRootAttributions: 0, evidenceEligibleRoots: 0, firstSeenEvidenceEligibleRoots: 0, evidenceEligibilityKnownRoots: 0, decisionReasons: [], continuationStatuses: {} };
+        providerStats.set(sourceKey, stats);
+        knownEligibleRootsByProvider.set(sourceKey, new Set());
+        eligibleRootsByProvider.set(sourceKey, new Set());
+        firstSeenEligibleRootsByProvider.set(sourceKey, new Set());
+      }
+      return stats;
+    };
+    for (const page of pages) {
+      if (page.pagination_policy_version !== "signal_pagination_depth_v1") continue;
+      const pageNumber = Number(page.page_number);
+      const executionId = String(page.execution_id);
+      const sourceKey = executionById.get(executionId);
+      const integerFields = ["provider_results_returned", "raw_snapshots_accepted", "raw_snapshots_inserted", "raw_snapshots_duplicate", "unique_provider_items", "duplicate_provider_items", "unique_roots", "duplicate_roots"] as const;
+      if (!sourceKey || !Number.isSafeInteger(pageNumber) || pageNumber < 1 || pageNumber > 2
+        || integerFields.some((field) => !Number.isSafeInteger(page[field]) || Number(page[field]) < 0)) return null;
+      const pageNumbers = v1PageNumbersByExecution.get(executionId) ?? new Set<number>();
+      if (pageNumbers.has(pageNumber)) return null;
+      pageNumbers.add(pageNumber);
+      v1PageNumbersByExecution.set(executionId, pageNumbers);
+      const stats = provider(sourceKey);
+      if (pageNumber === 1) {
+        if (!new Set(["not_attempted", "received", "empty", "repetitive", "failed"]).has(String(page.continuation_status))
+          || typeof page.continuation_eligible !== "boolean"
+          || typeof page.continuation_reason !== "string"
+          || (page.continuation_attempted === true && page.continuation_eligible !== true)) return null;
+        summary.baseRequests += 1;
+        stats.baseRequests += 1;
+        if (page.continuation_eligible === true) { summary.eligible += 1; stats.eligible += 1; }
+        if (page.continuation_attempted === true) { summary.attempted += 1; stats.attempted += 1; }
+        if (page.continuation_status === "failed") { summary.failures += 1; stats.failures += 1; }
+        if (typeof page.continuation_reason === "string") {
+          decisionReasons.set(page.continuation_reason, (decisionReasons.get(page.continuation_reason) ?? 0) + 1);
+          const providerReasons = new Map(stats.decisionReasons.map((row) => [row.reason, row.count]));
+          providerReasons.set(page.continuation_reason, (providerReasons.get(page.continuation_reason) ?? 0) + 1);
+          stats.decisionReasons = [...providerReasons].map(([reason, count]) => ({ reason, count })).sort((left, right) => left.reason.localeCompare(right.reason));
+        }
+        if (typeof page.continuation_status === "string") {
+          continuationStatuses.set(page.continuation_status, (continuationStatuses.get(page.continuation_status) ?? 0) + 1);
+          stats.continuationStatuses[page.continuation_status] = (stats.continuationStatuses[page.continuation_status] ?? 0) + 1;
+        }
+        continue;
+      }
+      if (page.cursor_requested !== true || page.continuation_eligible !== null || page.continuation_reason !== null
+        || page.continuation_attempted !== false || page.continuation_status !== null) return null;
+      summary.continuationRequests += 1;
+      stats.continuationRequests += 1;
+      summary.results += Number(page.provider_results_returned);
+      stats.results += Number(page.provider_results_returned);
+      summary.uniqueProviderItems += Number(page.unique_provider_items);
+      stats.uniqueProviderItems += Number(page.unique_provider_items);
+      summary.duplicateProviderItems += Number(page.duplicate_provider_items);
+      stats.duplicateProviderItems += Number(page.duplicate_provider_items);
+      summary.inserted += Number(page.raw_snapshots_inserted);
+      stats.inserted += Number(page.raw_snapshots_inserted);
+      summary.reused += Number(page.raw_snapshots_duplicate);
+      stats.reused += Number(page.raw_snapshots_duplicate);
+      summary.independentRoots += Number(page.unique_roots);
+      summary.firstSeenRootsInExecution += Number(page.unique_roots);
+      stats.independentRoots += Number(page.unique_roots);
+      stats.firstSeenRootsInExecution += Number(page.unique_roots);
+      summary.repeatedRootAttributions += Number(page.duplicate_roots);
+      stats.repeatedRootAttributions += Number(page.duplicate_roots);
+    }
+    for (const outcome of outcomes) {
+      if (typeof outcome.evidence_eligible !== "boolean" || typeof outcome.conversation_id !== "string") continue;
+      const attribution = resultById.get(String(outcome.source_query_result_attribution_id));
+      if (!attribution) continue;
+      const page = pageById.get(attribution.pageId);
+      if (!page || page.policyVersion !== "signal_pagination_depth_v1" || page.pageNumber <= 1 || !page.sourceKey) continue;
+      const rootKey = `${page.executionId}:${String(outcome.workspace_id)}:${String(outcome.product_id)}:${attribution.conversationId}`;
+      knownEligibleRootsByProvider.get(page.sourceKey)!.add(rootKey);
+      if (outcome.evidence_eligible === true) {
+        eligibleRootsByProvider.get(page.sourceKey)!.add(rootKey);
+        if (attribution.firstRootInExecution) firstSeenEligibleRootsByProvider.get(page.sourceKey)!.add(rootKey);
+      }
+    }
+    for (const [sourceKey, stats] of providerStats) {
+      stats.evidenceEligibilityKnownRoots = knownEligibleRootsByProvider.get(sourceKey)!.size;
+      stats.evidenceEligibleRoots = eligibleRootsByProvider.get(sourceKey)!.size;
+      stats.firstSeenEvidenceEligibleRoots = firstSeenEligibleRootsByProvider.get(sourceKey)!.size;
+      summary.evidenceEligibilityKnownRoots += stats.evidenceEligibilityKnownRoots;
+      summary.evidenceEligibleRoots += stats.evidenceEligibleRoots;
+      summary.firstSeenEvidenceEligibleRoots += stats.firstSeenEvidenceEligibleRoots;
+    }
+    summary.decisionReasons = [...decisionReasons].map(([reason, count]) => ({ reason, count })).sort((left, right) => left.reason.localeCompare(right.reason));
+    summary.continuationStatuses = Object.fromEntries([...continuationStatuses].sort(([left], [right]) => left.localeCompare(right)));
+    if (summary.attempted !== summary.continuationRequests
+      || [...v1PageNumbersByExecution.values()].some((pageNumbers) => pageNumbers.has(2) && !pageNumbers.has(1))) return null;
+    summary.providers = [...providerStats.values()].sort((left, right) => left.sourceKey.localeCompare(right.sourceKey));
+    return summary;
   })();
 
   const signalLifecycleValue: SignalLifecycleCounts | null = signalRows.error || (signalRows.data?.length ?? 0) > 10000 ? null : (signalRows.data ?? []).reduce((counts, row) => {
@@ -489,6 +629,8 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
     monitoring: { value: monitoringValue, source: "Supabase · monitoring_schedules · current recorded state" },
     pipelineState: !telemetryEnabled ? "disabled" : pipelineValue === null ? "unavailable" : "available",
     pipeline: { value: pipelineValue, source: telemetryEnabled ? "Supabase · source execution and product outcome attribution · trailing 7 days" : "Server configuration · source execution observability disabled" },
+    paginationState: !telemetryEnabled ? "disabled" : paginationRows.error || paginationValue === null ? "unavailable" : paginationValue.baseRequests === 0 ? "empty" : "available",
+    pagination: { value: paginationValue, source: telemetryEnabled ? "Supabase · Pagination V1 per-page counts and root outcomes · trailing 7 days · query-local novelty" : "Server configuration · source execution observability disabled" },
     queryNovelty: { value: queryNoveltyValue, source: telemetryEnabled ? "Supabase · signal_query_novelty_history RPC · trailing 7 days · bounded recent scans" : "Server configuration · source execution observability disabled" },
     queryExplorationState: !telemetryEnabled ? "disabled" : explorationScanRows.error ? "unavailable" : latestExploration ? "available" : "empty",
     queryExploration: { value: latestExploration, source: telemetryEnabled ? "Supabase · completed product-demand-scan result · latest 7 days · count-only projection" : "Server configuration · source execution observability disabled" },

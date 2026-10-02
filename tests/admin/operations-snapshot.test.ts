@@ -111,8 +111,8 @@ describe("admin operations snapshot", () => {
         { id: "page-2", execution_id: "exec-2", attempt_count: 2, continuation_followed: false, duration_ms: 100, rate_limit_remaining: 0, retry_after_ms: 30000 },
       ], error: null },
       "query_yield_artifacts:source_key,execution_status": { data: [{ source_key: "github", execution_status: "completed_with_results" }, { source_key: "github", execution_status: "disabled" }], error: null },
-      "source_query_result_attributions:id,page_id,conversation_id": { data: [{ id: "attr-1", page_id: "page-1", conversation_id: "conv-1" }, { id: "attr-2", page_id: "page-1", conversation_id: "conv-1" }, { id: "attr-3", page_id: "page-1", conversation_id: "conv-2" }], error: null },
-      "product_query_result_outcomes:source_query_result_attribution_id,conversation_id,qualification_status,created_at": { data: [{ source_query_result_attribution_id: "attr-1", conversation_id: "conv-1", qualification_status: "qualified", created_at: week }], error: null },
+      "source_query_result_attributions:id,page_id,conversation_id,first_root_in_execution": { data: [{ id: "attr-1", page_id: "page-1", conversation_id: "conv-1", first_root_in_execution: true }, { id: "attr-2", page_id: "page-1", conversation_id: "conv-1", first_root_in_execution: false }, { id: "attr-3", page_id: "page-1", conversation_id: "conv-2", first_root_in_execution: true }], error: null },
+      "product_query_result_outcomes:source_query_result_attribution_id,conversation_id,workspace_id,product_id,qualification_status,evidence_eligible,created_at": { data: [{ source_query_result_attribution_id: "attr-1", conversation_id: "conv-1", qualification_status: "qualified", evidence_eligible: true, workspace_id: "ws", product_id: "product", created_at: week }], error: null },
       "signals:lifecycle_status": { data: [{ lifecycle_status: "invalidated" }, { lifecycle_status: "archived" }], error: null },
     };
     vi.mocked(createAdminServiceClient).mockReturnValue({ from: (table: string) => queryFor(table, responses) } as never);
@@ -132,6 +132,62 @@ describe("admin operations snapshot", () => {
     expect(result.stuckJobs.value).toHaveLength(1);
     expect(result.monitoring.value).toMatchObject({ enabledSchedules: 0, disabledSchedules: 1, statusCounts: { paused: 1 } });
     expect(result.signalLifecycle.value).toMatchObject({ archived: 1, invalidated: 1, active: 0 });
+  });
+
+  it("projects private Pagination V1 request, novelty, root and known-eligibility counts only", async () => {
+    vi.stubEnv("SOURCE_EXECUTION_OBSERVABILITY_ENABLED", "true");
+    const week = new Date(Date.now() - 60_000).toISOString();
+    const responses = {
+      "source_query_executions:id,source_key,execution_status,provider_results_returned,raw_snapshots_inserted,continuation_count,duration_ms,created_at": { data: [{ id: "exec-hn", source_key: "hacker-news", created_at: week, query_plan_fingerprint: "private-fingerprint-marker" }], error: null },
+      "source_query_execution_pages:id,execution_id,attempt_count,continuation_followed,duration_ms,rate_limit_remaining,retry_after_ms": { data: [
+        { id: "page-hn-1", execution_id: "exec-hn", attempt_count: 1, continuation_followed: true },
+        { id: "page-hn-2", execution_id: "exec-hn", attempt_count: 1, continuation_followed: false },
+      ], error: null },
+      "source_query_execution_pages:id,execution_id,page_number,provider_results_returned,raw_snapshots_accepted,raw_snapshots_inserted,raw_snapshots_duplicate,unique_provider_items,duplicate_provider_items,unique_roots,duplicate_roots,cursor_requested,pagination_policy_version,continuation_eligible,continuation_reason,continuation_attempted,continuation_status": { data: [
+        { id: "page-hn-1", execution_id: "exec-hn", page_number: 1, provider_results_returned: 2, raw_snapshots_accepted: 2, raw_snapshots_inserted: 2, raw_snapshots_duplicate: 0, unique_provider_items: 2, duplicate_provider_items: 0, unique_roots: 2, duplicate_roots: 0, cursor_requested: false, pagination_policy_version: "signal_pagination_depth_v1", continuation_eligible: true, continuation_reason: "eligible_high_novelty", continuation_attempted: true, continuation_status: "received" },
+        { id: "page-hn-2", execution_id: "exec-hn", page_number: 2, provider_results_returned: 3, raw_snapshots_accepted: 3, raw_snapshots_inserted: 2, raw_snapshots_duplicate: 1, unique_provider_items: 2, duplicate_provider_items: 1, unique_roots: 1, duplicate_roots: 2, cursor_requested: true, pagination_policy_version: "signal_pagination_depth_v1", continuation_eligible: null, continuation_reason: null, continuation_attempted: false, continuation_status: null },
+      ], error: null },
+      "source_query_result_attributions:id,page_id,conversation_id,first_root_in_execution": { data: [
+        { id: "attr-new", page_id: "page-hn-2", conversation_id: "conv-new", first_root_in_execution: true },
+        { id: "attr-repeat", page_id: "page-hn-2", conversation_id: "conv-old", first_root_in_execution: false },
+      ], error: null },
+      "product_query_result_outcomes:source_query_result_attribution_id,conversation_id,workspace_id,product_id,qualification_status,evidence_eligible,created_at": { data: [
+        { source_query_result_attribution_id: "attr-new", conversation_id: "conv-new", workspace_id: "ws", product_id: "prod", evidence_eligible: true, created_at: week },
+        { source_query_result_attribution_id: "attr-repeat", conversation_id: "conv-old", workspace_id: "ws", product_id: "prod", evidence_eligible: null, created_at: week },
+      ], error: null },
+    };
+    vi.mocked(createAdminServiceClient).mockReturnValue({ from: (table: string) => queryFor(table, responses) } as never);
+
+    const { getOperationsSnapshot } = await import("../../apps/admin/src/server/operations");
+    const result = await getOperationsSnapshot();
+
+    expect(result.paginationState).toBe("available");
+    expect(result.pagination.value).toMatchObject({
+      baseRequests: 1, eligible: 1, attempted: 1, continuationRequests: 1, failures: 0,
+      results: 3, uniqueProviderItems: 2, duplicateProviderItems: 1, inserted: 2, reused: 1,
+      independentRoots: 1, firstSeenRootsInExecution: 1, repeatedRootAttributions: 2,
+      evidenceEligibleRoots: 1, firstSeenEvidenceEligibleRoots: 1, evidenceEligibilityKnownRoots: 1,
+      decisionReasons: [{ reason: "eligible_high_novelty", count: 1 }], continuationStatuses: { received: 1 },
+      providers: [expect.objectContaining({ sourceKey: "hacker-news", uniqueProviderItems: 2, independentRoots: 1 })],
+    });
+    expect(JSON.stringify(result.pagination.value)).not.toContain("private-fingerprint-marker");
+  });
+
+  it("keeps existing Operations data readable when the forward pagination columns are not deployed", async () => {
+    vi.stubEnv("SOURCE_EXECUTION_OBSERVABILITY_ENABLED", "true");
+    const responses = {
+      "source_query_execution_pages:id,execution_id,page_number,provider_results_returned,raw_snapshots_accepted,raw_snapshots_inserted,raw_snapshots_duplicate,unique_provider_items,duplicate_provider_items,unique_roots,duplicate_roots,cursor_requested,pagination_policy_version,continuation_eligible,continuation_reason,continuation_attempted,continuation_status": { data: null, error: { code: "42703" } },
+      "source_query_executions:id,source_key,execution_status,provider_results_returned,raw_snapshots_inserted,continuation_count,duration_ms,created_at": { data: [], error: null },
+      "source_query_execution_pages:id,execution_id,attempt_count,continuation_followed,duration_ms,rate_limit_remaining,retry_after_ms": { data: [], error: null },
+    };
+    vi.mocked(createAdminServiceClient).mockReturnValue({ from: (table: string) => queryFor(table, responses) } as never);
+
+    const { getOperationsSnapshot } = await import("../../apps/admin/src/server/operations");
+    const result = await getOperationsSnapshot();
+
+    expect(result.paginationState).toBe("unavailable");
+    expect(result.pagination.value).toBeNull();
+    expect(result.pipelineState).toBe("available");
   });
 
   it("aggregates only private novelty dimensions and never returns fingerprints", async () => {

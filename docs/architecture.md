@@ -5522,3 +5522,52 @@ qualified new roots per executed query are secondary. Roll back by disabling the
 if the treatment exceeds a per-provider query count/budget, worsens evidence-filter survival by
 more than 20 percentage points, or introduces any source, authorization, provenance, or lifecycle
 regression. No production experiment is part of this implementation.
+
+## 14. Signal Throughput Pagination / Depth V1
+
+Pagination Depth V1 is an independently gated, adaptive continuation layer that runs only after
+the already-selected V1/V1.1 query reaches the existing provider adapter. It does not create or
+rewrite query slots, query text, provider routes, lookback windows, or cadence. With
+`SIGNAL_PAGINATION_DEPTH_V1_ENABLED` unset or false, the released cursor behavior is unchanged.
+
+The initial adapter allowlist is intentionally limited to Hacker News Search v2 (Algolia), where
+the production request mode is explicitly `algolia_search_v2`. One successful first page must
+yield at least one inserted raw snapshot, distinct provider-native IDs within that page, complete
+canonical root attribution, and no majority repeat among its attributed roots before the query may
+spend one continuation. Inserted raw snapshots are not misrepresented as first-seen provider
+identities across historical scans.
+The continuation is a single additional provider page; the source’s existing request page cap is
+clamped to two for this opt-in path. HN Algolia is page-indexed, date-windowed, and supplies stable
+provider item IDs. Its continuation is persisted through the regular raw-ingestion, normalization,
+canonicalization, and provenance pipeline.
+
+Other currently routed adapters remain on their exact released path in this first version:
+GitHub’s active combined issues/discussions request has no shared cursor; Discourse may fan one
+query across up to three instances and also performs bounded topic expansion; Stack Exchange
+repeats its configured answer/comment expansion allowance on a page call; X uses billable search
+batches; and YouTube has a separate daily search-call bucket. These are excluded until their full
+request envelope and provider-specific cost budgets can be bounded together. The V1.1 treatment is
+an input to policy design, not a provider-quality verdict.
+
+Continuation decisions are count-based and independent of qualification or signal creation. The
+gate is first-page accepted/inserted native evidence, canonical root attribution, and a bounded
+within-query root-repeat ratio. Page two is the hard stop; it is classified as empty, useful, or
+repetitive and is never followed recursively. A continuation error is a warning on a partial
+successful acquisition, not a failure of the first page or scan. Existing page/result attribution
+provides query-local first-root flags; the Operations view labels these as first seen within that
+query execution, not first observed across historical scans.
+
+Per-page telemetry adds only a policy version, a closed eligibility reason, an attempted flag, and
+a closed continuation status to the existing private page table. Results, inserted/reused raw
+counts, independent/duplicate roots, and query-local first-root counts reuse existing page and
+result-attribution rows. Evidence-eligible continuation roots are derived after matching by
+joining existing result outcomes; if the outcome is absent it remains unknown. RLS, service-role
+only access, server-side Admin authorization, and the no-query-text/no-cursor/no-payload boundary
+remain unchanged. The forward-only migration follows `20261109000000`; it is local-only until
+separately rehearsed and approved.
+
+Two V1.1 telemetry discrepancies remain separate follow-up debt: `rotatedSelectionCount` counts
+selected IDs absent from baseline `query_id`s, not fingerprint set changes; and the candidate-
+executor branch records eligibility only for selected and evaluation-cap-suppressed roots, leaving
+filter-excluded roots null. Pagination uses explicit page-local outcome semantics and does not
+interpret either V1.1 count as a continuation input.
