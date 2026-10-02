@@ -64,6 +64,7 @@ describe("Phase 2 ingestion pipeline", () => {
     expect(repository.provenance.length).toBeGreaterThanOrEqual(15);
 
     const changed = [...repository.sourceItems.values()].find((row) => row.external_id === "same-id-changed");
+    expect([...repository.sourceItems.values()].filter((row) => row.external_id === "same-id-changed")).toHaveLength(1);
     const changedRawVersions = [...repository.rawItems.values()]
       .filter((row) => row.external_id === "same-id-changed")
       .sort((left, right) => left.fetched_at.localeCompare(right.fetched_at));
@@ -115,5 +116,57 @@ describe("Phase 2 ingestion pipeline", () => {
 
     await service.discoverSource("fixture", { limit: 1 });
     expect(repository.health.get("fixture:test")?.degradation_state).toBe("healthy");
+  });
+
+  it("stores shared public metadata without query, cursor, or workspace context while preserving canonical hints", async () => {
+    const repository = new InMemoryIngestionRepository();
+    const boundaryAdapter: SourceAdapter = {
+      key: "boundary",
+      capabilities: { supportsSearch: true, supportsIncrementalCursor: false, supportsThreadExpansion: false },
+      discover: async () => ({
+        items: [{
+          sourceKey: "boundary",
+          externalId: "public-item-1",
+          fetchedAt: "2026-09-20T00:00:00.000Z",
+          payload: { title: "Public request", body: "A public description." },
+          requestMetadata: { provider: "boundary-test", query: "private product query", workspaceId: "workspace-secret" },
+          cursorContext: { rootExternalId: "public-root-1", query: "private product query", providerCursor: "cursor-secret" },
+        }],
+        diagnostics: { accepted: 1, rejected: 0, messages: [] },
+      }),
+      normalize: (raw) => ({
+        sourceKey: "boundary",
+        externalId: raw.externalId,
+        externalConversationId: "public-root-1",
+        canonicalUrl: "https://example.test/public-item-1",
+        title: "Public request",
+        body: "A public description.",
+        capturedAt: raw.fetchedAt,
+        metadata: {
+          sourceCategory: "public_discussion",
+          query: typeof raw.requestMetadata.query === "string" ? raw.requestMetadata.query : null,
+          workspaceId: typeof raw.requestMetadata.workspaceId === "string" ? raw.requestMetadata.workspaceId : null,
+        },
+        status: "active",
+      }),
+      healthCheck: async () => ({ sourceKey: "boundary", ok: true, latencyMs: 0, degradationState: "healthy" }),
+    };
+    const service = new IngestionService(repository, new Map([[boundaryAdapter.key, boundaryAdapter]]));
+
+    const discovery = await service.discoverSource("boundary", {
+      query: "private product query",
+      requestMetadata: { queryFamily: "pain", g2ScanContext: { productId: "private-product" } },
+    });
+    const raw = repository.rawItems.get(discovery.rawSourceItemIds[0]!);
+    expect(raw?.request_metadata).toEqual({ provider: "boundary-test", retrievalQueryPresent: true });
+    expect(raw?.cursor_context).toEqual({ rootExternalId: "public-root-1" });
+    expect(raw?.payload_json).toEqual({ title: "Public request", body: "A public description." });
+
+    const normalized = await service.normalizeRawSourceItem(raw!.id, "boundary-v1");
+    const sourceItem = repository.sourceItems.get(normalized.sourceItemId);
+    expect(sourceItem?.metadata).toMatchObject({ sourceCategory: "public_discussion", retrievalQueryPresent: true });
+    expect(sourceItem?.metadata).not.toHaveProperty("query");
+    expect(sourceItem?.metadata).not.toHaveProperty("workspaceId");
+    expect(JSON.stringify({ raw: raw?.request_metadata, cursor: raw?.cursor_context, item: sourceItem?.metadata })).not.toMatch(/private product query|workspace-secret|cursor-secret|private-product/i);
   });
 });

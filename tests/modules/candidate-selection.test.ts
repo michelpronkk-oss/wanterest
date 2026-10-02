@@ -71,4 +71,19 @@ describe("candidate selection v2", () => {
     const selected = selectScanCandidates({ conversations, sourceById, max: 2, provenance });
     expect(selected.conversations.map((row) => row.id)).toEqual(["a", "b"]);
   });
+
+  it("preserves query-evidence selection weight through the safe presence marker", () => {
+    const conversations = ["query-backed", "plain"].map((id) => ({ id, primary_source_item_id: id, published_at: "2026-01-01" } as ConversationRow));
+    const sourceById = new Map(conversations.map(({ id }) => [id, {
+      id,
+      source_key: "fixture",
+      title: "Workflow request",
+      body: "A detailed workflow request with the same public evidence length.",
+      metadata: { retrievalQueryPresent: id === "query-backed" },
+    } as unknown as SourceItemRow]));
+
+    const result = selectScanCandidates({ conversations, sourceById, max: 1 });
+    expect(result.conversations.map((row) => row.id)).toEqual(["query-backed"]);
+    expect(result.diagnostics.selected[0]?.score).toBeGreaterThan(0.5);
+  });
 });

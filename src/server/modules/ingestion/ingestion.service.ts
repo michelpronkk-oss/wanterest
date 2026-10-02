@@ -26,6 +26,7 @@ import { contentHash, deterministicUuid, normalizedUrl, sha256Json } from "./has
 import { replayInputSchema, type ReplayInput } from "./ingestion.schemas";
 import type { IngestionRepository } from "./ingestion.repository";
 import { sourceExecutionObservabilityEnabled } from "../operations/source-execution-telemetry.config";
+import { publicEvidenceMetadata, requestUsedRetrievalQuery } from "./public-evidence-boundary";
 
 export type SourceControlGate = { assertDiscoverable(sourceKey: string): Promise<void> };
 
@@ -105,6 +106,7 @@ export class IngestionService {
     const started = Date.now();
     try {
       const page = await adapter.discover(request);
+      const retrievalQueryPresent = requestUsedRetrievalQuery(request);
       let rawInserted = 0;
       let rawDuplicates = 0;
       let rejected = 0;
@@ -134,8 +136,8 @@ export class IngestionService {
           payload_uri: raw.payloadUri ?? null,
           payload_hash: payloadHash,
           fetch_job_run_id: job.id,
-          request_metadata: raw.requestMetadata,
-          cursor_context: raw.cursorContext,
+          request_metadata: jsonObject(publicEvidenceMetadata(raw.requestMetadata, { retrievalQueryPresent })),
+          cursor_context: jsonObject(publicEvidenceMetadata(raw.cursorContext, { recordRetrievalQueryPresence: false })),
         };
         const evidence: EvidenceNodeInsert = {
           id: evidenceNodeId,
@@ -217,7 +219,9 @@ export class IngestionService {
       // the source item so page reads do not repeatedly resolve the same public field.
       const enrichedCandidate = {
         ...candidate,
-        metadata: enrichSourceMetadata(candidate.metadata, { sourceKey: candidate.sourceKey, language: candidate.language ?? null }),
+        metadata: enrichSourceMetadata(jsonObject(publicEvidenceMetadata(candidate.metadata, {
+          retrievalQueryPresent: jsonObject(raw.request_metadata).retrievalQueryPresent === true,
+        })), { sourceKey: candidate.sourceKey, language: candidate.language ?? null }),
       };
       const normalizedContentHash = contentHash(enrichedCandidate);
       const input: SourceItemInsert = {
