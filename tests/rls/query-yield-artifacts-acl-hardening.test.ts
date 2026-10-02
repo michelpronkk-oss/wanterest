@@ -85,6 +85,7 @@ describe("query_yield_artifacts ACL hardening", () => {
       "20261108000000_query_yield_artifacts_acl_hardening.sql",
       "20261109000000_signal_query_exploration_v11.sql",
       "20261110000000_signal_pagination_depth_v1.sql",
+      "20261111000000_market_coverage_model_v1.sql",
     ]);
   });
 });

@@ -1,12 +1,15 @@
 import { ConsoleShell, DataState, PageHeading, SourceStamp } from "@admin/components/console-shell";
 import { requireAdminPermission } from "@admin/server/auth";
 import { getOperationsSnapshot } from "@admin/server/operations";
+import { MarketCoveragePanel } from "@admin/components/market-coverage-panel";
+import { getMarketCoverageAdminSnapshot } from "@admin/server/market-coverage";
 
 export const dynamic = "force-dynamic";
 
 export default async function OperationsPage() {
   const context = await requireAdminPermission("operations.read");
   const snapshot = await getOperationsSnapshot();
+  const marketCoverage = await getMarketCoverageAdminSnapshot();
   const latestRoutingRun = snapshot.trigger.routingRuns?.[0] ?? null;
   const failedRoutingRuns = snapshot.trigger.routingRuns?.filter((run) => ["FAILED", "CRASHED", "SYSTEM_FAILURE", "TIMED_OUT"].includes(run.status)).length ?? null;
   return (
@@ -19,6 +22,8 @@ export default async function OperationsPage() {
         <div className="incident-facts"><div><span>Latest observed production run</span><strong>{latestRoutingRun ? latestRoutingRun.status.toLowerCase().replaceAll("_", " ") : "Unavailable"}</strong><small>{latestRoutingRun ? formatDate(latestRoutingRun.finishedAt ?? latestRoutingRun.createdAt) : "Trigger.dev read not connected"}</small></div><div><span>Failed runs · last 24 hours</span><strong>{failedRoutingRuns === null ? "Unavailable" : formatNumber(failedRoutingRuns)}</strong><small>{snapshot.trigger.source}</small></div><div><span>Read timestamp</span><strong>{formatDate(snapshot.trigger.checkedAt)}</strong><small>Unknown when the production read is not configured</small></div></div>
         <a className="text-link" href="https://cloud.trigger.dev/projects/proj_cxghokhenspxdbmgrczh" target="_blank" rel="noreferrer">Open Wanterest in Trigger.dev <span aria-hidden="true">↗</span></a>
       </section>
+
+      <MarketCoveragePanel snapshot={marketCoverage} />
 
       <section className="panel operations-measurement" aria-labelledby="query-novelty-heading">
         <div className="panel-heading"><div><p className="eyebrow">QUERY EXPLORATION V1 / V1.1</p><h2 id="query-novelty-heading">Novelty and selection by provider</h2></div><span className="panel-meta">Private aggregates · trailing 7 days</span></div>

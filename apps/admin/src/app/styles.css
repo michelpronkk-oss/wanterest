@@ -554,6 +554,21 @@
 .admin-scope .ops-status-list { margin: 16px 0; padding: 0; list-style: none; }
 .admin-scope .ops-status-list li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); color: var(--secondary); font-size: 12px; text-transform: capitalize; }
 .admin-scope .ops-status-list strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.admin-scope .market-coverage-panel { margin-top: 24px; }
+.admin-scope .market-coverage-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.admin-scope .market-coverage-card { min-width: 0; padding: 17px; border: 1px solid var(--line); background: var(--paper); }
+.admin-scope .market-coverage-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 13px; border-bottom: 1px solid var(--line); }
+.admin-scope .market-coverage-card-heading > div { display: grid; gap: 5px; }
+.admin-scope .market-coverage-card-heading strong { color: var(--ink); font-size: 14px; font-weight: 650; text-transform: capitalize; }
+.admin-scope .market-coverage-card-heading small, .admin-scope .market-coverage-note { color: var(--muted); font-size: 11px; line-height: 1.55; text-transform: capitalize; }
+.admin-scope .market-coverage-state { flex: none; padding: 5px 8px; border: 1px solid #deddd4; border-radius: 3px; background: #f1f0e9; color: var(--secondary); font-size: 10px; font-weight: 700; text-transform: capitalize; }
+.admin-scope .market-coverage-state.healthy { border-color: #d7e4bd; background: #eef4e1; color: #4b642e; }
+.admin-scope .market-coverage-state.stale, .admin-scope .market-coverage-state.concentrated { border-color: #e6d7ba; background: #f5efe3; color: #765d32; }
+.admin-scope .market-coverage-state.unavailable { border-color: #e7d1ca; background: #f8eeeb; color: #8b4d40; }
+.admin-scope .market-coverage-card dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; margin: 15px 0; }
+.admin-scope .market-coverage-card dt { color: var(--muted); font-size: 10px; line-height: 1.45; }
+.admin-scope .market-coverage-card dd { margin: 4px 0 0; color: var(--ink); font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.admin-scope .market-coverage-note { margin: 0; padding-top: 12px; border-top: 1px solid var(--line); }
 @media (max-width: 980px) { .admin-scope .ops-provider-list { grid-template-columns: 1fr; } }
 @media (max-width: 680px) {
   .admin-scope .ops-stat-grid, .admin-scope .ops-stat-grid-six { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -562,6 +577,8 @@
   .admin-scope .ops-stat > strong { font-size: 21px; }
   .admin-scope .ops-provider-heading { align-items: flex-start; flex-direction: column; gap: 5px; }
   .admin-scope .ops-provider-heading span { text-align: left; }
+  .admin-scope .market-coverage-grid { grid-template-columns: 1fr; }
+  .admin-scope .market-coverage-card { padding: 14px; }
 }
 
 /* Topology: providers, ordered transformations, shared dependencies */
