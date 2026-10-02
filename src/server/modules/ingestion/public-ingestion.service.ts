@@ -31,6 +31,15 @@ import {
 } from "@/server/modules/operations/source-execution-telemetry.repository";
 import { queryIntentFamilySchema, queryNoveltyStateSchema, querySelectionReasonSchema, queryVariantVersionSchema } from "@/server/modules/operations/query-planning.schemas";
 import { sourceExecutionObservabilityEnabled } from "@/server/modules/operations/source-execution-telemetry.config";
+import { signalPaginationDepthV1Enabled } from "@/server/modules/operations/signal-pagination-depth.config";
+import {
+  classifySignalPaginationContinuation,
+  decideSignalPaginationContinuation,
+  signalPaginationDepthV1MaxContinuationsPerScan,
+  signalPaginationDepthV1MaxPagesPerQuery,
+  signalPaginationDepthV1Version,
+  supportsSignalPaginationDepthV1,
+} from "@/server/modules/operations/signal-pagination-depth.policy";
 
 export type { SourceQueryResultAttribution };
 
@@ -296,6 +305,11 @@ type PageResultObservation = {
 
 type PageObservation = {
   pageNumber: number;
+  paginationPolicyVersion: typeof signalPaginationDepthV1Version | null;
+  continuationEligible: boolean | null;
+  continuationReason: string | null;
+  continuationAttempted: boolean;
+  continuationStatus: "not_attempted" | "received" | "empty" | "repetitive" | "failed" | null;
   sourceJobRunId: string | null;
   cursorRequested: boolean;
   providerResultsReturned: number;
@@ -386,12 +400,16 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
   const resultAttributions: SourceQueryResultAttribution[] = [];
   let failedQueryCount = 0;
   let firstQueryErrorCode: string | null = null;
+  let continuationBudgetRemaining = Math.min(signalPaginationDepthV1MaxContinuationsPerScan, input.requests.length);
   if (input.sourceKey === "x" && input.operationalContext?.workspaceId) logXDiscoveryOverride(input.operationalContext.workspaceId, input.requests);
   for (const rawRequest of input.requests) {
     const parsedRequest = sourceDiscoveryRequestSchema.parse(rawRequest);
     let request = parsedRequest;
     let metadata = request.requestMetadata as Record<string, unknown>;
-    const maxPages = Math.min(3, Math.max(1, typeof metadata.maxPages === "number" ? Math.floor(metadata.maxPages) : 1));
+    const configuredMaxPages = Math.min(3, Math.max(1, typeof metadata.maxPages === "number" ? Math.floor(metadata.maxPages) : 1));
+    let maxPages = configuredMaxPages;
+    let paginationDepthV1Active = false;
+    let continuationFailed = false;
     let cursor = request.cursor;
     let rawItems = 0;
     let normalizedItems = 0;
@@ -409,6 +427,13 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
     try {
       request = input.sourceKey === "stack-exchange" ? prepareStackExchangeFeatureRequest(parsedRequest) : parsedRequest;
       metadata = request.requestMetadata as Record<string, unknown>;
+      paginationDepthV1Active = Boolean(
+        captureSourceTelemetry
+        && input.operationalContext
+        && signalPaginationDepthV1Enabled()
+        && supportsSignalPaginationDepthV1(input.sourceKey, metadata),
+      );
+      if (paginationDepthV1Active) maxPages = Math.min(configuredMaxPages, signalPaginationDepthV1MaxPagesPerQuery);
       // Stage 2B: identity is derived once per request (before per-page cursor
       // assignment and operational scoping) so it can never depend on paging,
       // the job run, or workspace context. Persistence failure is caught and
@@ -439,8 +464,14 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
         const scopedRequest = input.operationalContext
           ? requestScopedToScan(pageRequest, input.operationalContext.jobRunId, input.sourceKey, input.operationalContext.workspaceId)
           : sourceDiscoveryRequestSchema.parse(pageRequest);
+        const adapterRequest = paginationDepthV1Active
+          ? sourceDiscoveryRequestSchema.parse({
+            ...scopedRequest,
+            requestMetadata: { ...(scopedRequest.requestMetadata ?? {}), maxPages: 1 },
+          })
+          : scopedRequest;
         try {
-          const discovery = await ingestion.discoverSource(input.sourceKey, scopedRequest, input.traceId);
+          const discovery = await ingestion.discoverSource(input.sourceKey, adapterRequest, input.traceId);
           rawSourceItemIds.push(...discovery.rawSourceItemIds);
           rawItems += discovery.rawSourceItemIds.length;
           rawInserted += discovery.rawInserted;
@@ -499,6 +530,11 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
           const observedAt = new Date().toISOString();
           pageObservations.push({
             pageNumber: page,
+            paginationPolicyVersion: paginationDepthV1Active ? signalPaginationDepthV1Version : null,
+            continuationEligible: null,
+            continuationReason: null,
+            continuationAttempted: false,
+            continuationStatus: null,
             sourceJobRunId: typeof discovery.jobRunId === "string" ? discovery.jobRunId : null,
             cursorRequested,
             providerResultsReturned: discovery.rawSourceItemIds.length + (discovery.rejected ?? 0),
@@ -522,28 +558,88 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
           if (typeof discovery.estimatedCost === "number") { estimatedCost = (estimatedCost ?? 0) + discovery.estimatedCost; queryCost = (queryCost ?? 0) + discovery.estimatedCost; }
           if (typeof discovery.rateLimit?.remaining === "number") rateLimitRemaining = discovery.rateLimit.remaining;
           if (discovery.providerMetrics) mergeProviderMetrics(providerMetrics, discovery.providerMetrics);
-          cursor = nextCursor ?? undefined;
-          if (!cursor) break;
-          continuations += 1;
+          if (paginationDepthV1Active && page === 1) {
+            const firstPage = pageObservations[pageObservations.length - 1];
+            if (firstPage) {
+              const attributableResults = firstPage.items.filter((item) => item.conversationId !== null).length;
+              const independentRoots = new Set(firstPage.items.flatMap((item) => item.conversationId ? [item.conversationId] : [])).size;
+              const uniqueProviderItems = new Set(firstPage.items.map((item) => item.providerItemFingerprint)).size;
+              const decision = decideSignalPaginationContinuation({
+                failed: false,
+                cursorAvailable: Boolean(nextCursor),
+                pageBudget: maxPages,
+                acceptedItems: firstPage.rawSnapshotsAccepted,
+                insertedRawItems: firstPage.rawSnapshotsInserted,
+                uniqueProviderItems,
+                attributableResults,
+                independentRoots,
+                repeatedRootAttributions: Math.max(0, attributableResults - independentRoots),
+                rateLimitRemaining: firstPage.rateLimitRemaining,
+                continuationBudgetRemaining,
+              });
+              firstPage.continuationEligible = decision.eligible;
+              firstPage.continuationReason = decision.reason;
+              firstPage.continuationStatus = decision.status;
+              if (decision.eligible) {
+                firstPage.continuationAttempted = true;
+                continuationBudgetRemaining -= 1;
+                continuations += 1;
+              }
+            }
+            cursor = nextCursor ?? undefined;
+            if (!firstPage?.continuationEligible) break;
+          } else if (paginationDepthV1Active && page === 2) {
+            // Pagination V1 has exactly one optional continuation step. Even
+            // when page two offers another cursor, never request page three.
+            cursor = nextCursor ?? undefined;
+            break;
+          } else {
+            cursor = nextCursor ?? undefined;
+            if (!cursor) break;
+            continuations += 1;
+          }
         } catch (error) {
-          if (captureSourceTelemetry) pageObservations.push({
-            pageNumber: page,
-            sourceJobRunId: null,
-            cursorRequested,
-            providerResultsReturned: 0,
-            rawSnapshotsAccepted: 0,
-            rawSnapshotsInserted: 0,
-            rawSnapshotsDuplicate: 0,
-            normalizedItems: 0,
-            rateLimitRemaining: null,
-            retryAfterMs: null,
-            attemptCount: 1,
-            durationMs: Date.now() - pageStartedAt,
-            observedAt: new Date().toISOString(),
-            continuationAvailable: false,
-            failed: true,
-            items: [],
-          });
+          if (captureSourceTelemetry) {
+            pageObservations.push({
+              pageNumber: page,
+              paginationPolicyVersion: paginationDepthV1Active ? signalPaginationDepthV1Version : null,
+              continuationEligible: null,
+              continuationReason: null,
+              continuationAttempted: false,
+              continuationStatus: null,
+              sourceJobRunId: null,
+              cursorRequested,
+              providerResultsReturned: 0,
+              rawSnapshotsAccepted: 0,
+              rawSnapshotsInserted: 0,
+              rawSnapshotsDuplicate: 0,
+              normalizedItems: 0,
+              rateLimitRemaining: null,
+              retryAfterMs: null,
+              attemptCount: 1,
+              durationMs: Date.now() - pageStartedAt,
+              observedAt: new Date().toISOString(),
+              continuationAvailable: false,
+              failed: true,
+              items: [],
+            });
+          }
+          if (paginationDepthV1Active && page === 1) {
+            const firstPage = pageObservations[pageObservations.length - 1];
+            if (firstPage) {
+              firstPage.continuationEligible = false;
+              firstPage.continuationReason = "first_page_failed";
+              firstPage.continuationStatus = "not_attempted";
+            }
+          }
+          if (paginationDepthV1Active && page === 2) {
+            const firstPage = pageObservations.find((observation) => observation.pageNumber === 1);
+            if (firstPage) firstPage.continuationStatus = "failed";
+            continuationFailed = true;
+            cursor = undefined;
+            diagnostics.push(`optional provider continuation warning: ${queryFailureDiagnostic(error, request, input.sourceKey)}`);
+            break;
+          }
           throw error;
         }
       }
@@ -552,6 +648,25 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
       failedQueryCount += 1;
       firstQueryErrorCode ??= errorCodeOf(error);
       diagnostics.push(queryFailureDiagnostic(error, request, input.sourceKey));
+    }
+    if (paginationDepthV1Active && !continuationFailed) {
+      const firstPage = pageObservations.find((page) => page.pageNumber === 1);
+      const continuationPage = pageObservations.find((page) => page.pageNumber === 2);
+      if (firstPage?.continuationAttempted && continuationPage) {
+        const firstPageProviderItems = new Set(firstPage.items.map((item) => item.providerItemFingerprint));
+        const firstPageRoots = new Set(firstPage.items.flatMap((item) => item.conversationId ? [item.conversationId] : []));
+        const newProviderItems = new Set(continuationPage.items
+          .map((item) => item.providerItemFingerprint)
+          .filter((fingerprint) => !firstPageProviderItems.has(fingerprint))).size;
+        const firstSeenRootsInExecution = new Set(continuationPage.items
+          .flatMap((item) => item.conversationId && !firstPageRoots.has(item.conversationId) ? [item.conversationId] : [])).size;
+        firstPage.continuationStatus = classifySignalPaginationContinuation({
+          providerResultsReturned: continuationPage.providerResultsReturned,
+          acceptedItems: continuationPage.rawSnapshotsAccepted,
+          newProviderItems,
+          firstSeenRootsInExecution,
+        });
+      }
     }
     const executionStatus: QueryYieldExecutionStatus = queryError ? errorCodeOf(queryError) === "RATE_LIMITED" ? "rate_limited" : "provider_error" : rawItems ? "completed_with_results" : "completed_zero_results";
 
@@ -589,7 +704,13 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
       const continuationFollowed = pageIndex < pageObservations.length - 1 && page.continuationAvailable && pageObservations[pageIndex + 1]?.cursorRequested === true;
       const stopReason: SourceQueryPageAttribution["stopReason"] = continuationFollowed ? "continuation_followed" : page.failed ? "error" : page.continuationAvailable ? "page_cap_reached" : page.providerResultsReturned === 0 ? "zero_results" : "no_cursor";
       persistedPages.push({
-        id: pageId, pageNumber: page.pageNumber, sourceJobRunId: page.sourceJobRunId,
+        id: pageId, pageNumber: page.pageNumber,
+        paginationPolicyVersion: page.paginationPolicyVersion,
+        continuationEligible: page.continuationEligible,
+        continuationReason: page.continuationReason,
+        continuationAttempted: page.continuationAttempted,
+        continuationStatus: page.continuationStatus,
+        sourceJobRunId: page.sourceJobRunId,
         cursorRequested: page.cursorRequested, providerResultsReturned: page.providerResultsReturned,
         rawSnapshotsAccepted: page.rawSnapshotsAccepted, rawSnapshotsInserted: page.rawSnapshotsInserted, rawSnapshotsDuplicate: page.rawSnapshotsDuplicate,
         normalizedItems: page.normalizedItems, uniqueProviderItems: pageUniqueProviderItems, duplicateProviderItems: pageDuplicateProviderItems,
@@ -619,7 +740,7 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
         noveltyState: queryNoveltyStateSchema.safeParse(metadata.queryNoveltyState).success ? queryNoveltyStateSchema.parse(metadata.queryNoveltyState) : null,
         demandSurface: typeof metadata.demandSurface === "string" ? metadata.demandSurface.trim().slice(0, 80) || "unknown" : "unknown",
         pagesRequested: maxPages, pagesCompleted, continuationCount: continuationsFollowed,
-        stopReason: queryError ? "error" : cursor ? "page_cap_reached" : rawItems ? "no_cursor" : "zero_results",
+        stopReason: queryError || continuationFailed ? "error" : cursor ? "page_cap_reached" : rawItems ? "no_cursor" : "zero_results",
         executionStatus, providerResultsReturned: sourceCounts.providerResultsReturned, rawSnapshotsAccepted: sourceCounts.rawSnapshotsAccepted,
         rawSnapshotsInserted: sourceCounts.rawSnapshotsInserted, rawSnapshotsDuplicate: sourceCounts.rawSnapshotsDuplicate,
         uniqueProviderItems: providerItemsSeen.size, duplicateProviderItems: Math.max(0, sourceCounts.rawSnapshotsAccepted - providerItemsSeen.size),
@@ -648,7 +769,7 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
       pagesRequested: maxPages,
       pagesCompleted,
       cursorContinuationCount: boundedCursorContinuationCount(continuations, maxPages),
-      continuationStoppedReason: queryError ? "error" : cursor ? "page_cap_reached" : rawItems ? "no_cursor" : "zero_results",
+      continuationStoppedReason: queryError || continuationFailed ? "error" : cursor ? "page_cap_reached" : rawItems ? "no_cursor" : "zero_results",
       executionStatus,
       rawItems,
       normalizedItems,

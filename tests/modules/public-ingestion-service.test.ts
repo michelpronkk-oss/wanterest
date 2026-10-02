@@ -142,6 +142,118 @@ describe("ingestPublicPartition (Stage 2A shared public-ingestion boundary)", ()
     expect(result.conversationIds).toEqual(["conv-1", "conv-2", "conv-3"]);
   });
 
+  it("keeps Pagination V1 after the selected query and allows one HN Algolia continuation only", async () => {
+    vi.stubEnv("SIGNAL_PAGINATION_DEPTH_V1_ENABLED", "true");
+    vi.stubEnv("SOURCE_EXECUTION_OBSERVABILITY_ENABLED", "true");
+    discoverSourceMock
+      .mockResolvedValueOnce(discoveryPage({
+        rawSourceItemIds: ["hn-1", "hn-2"], rawInserted: 2, nextCursor: "algolia-page-1",
+        rawItemObservations: [
+          { rawSourceItemId: "hn-1", providerItemFingerprint: "native-1", inserted: true },
+          { rawSourceItemId: "hn-2", providerItemFingerprint: "native-2", inserted: true },
+        ],
+      }))
+      .mockResolvedValueOnce(discoveryPage({
+        rawSourceItemIds: ["hn-2", "hn-3"], rawInserted: 1, rawDuplicates: 1, nextCursor: "algolia-page-2",
+        rawItemObservations: [
+          { rawSourceItemId: "hn-2", providerItemFingerprint: "native-2", inserted: false },
+          { rawSourceItemId: "hn-3", providerItemFingerprint: "native-3", inserted: true },
+        ],
+      }))
+      .mockResolvedValueOnce(discoveryPage({ rawSourceItemIds: ["hn-4"], rawInserted: 1 }));
+    replayDetailedMock
+      .mockResolvedValueOnce(replayResult({ rawSourceItemIds: ["hn-1", "hn-2"], normalizedSourceItemIds: ["n-1", "n-2"], canonicalizedConversationIds: ["root-1", "root-2"] }))
+      .mockResolvedValueOnce(replayResult({ rawSourceItemIds: ["hn-2", "hn-3"], normalizedSourceItemIds: ["n-2", "n-3"], canonicalizedConversationIds: ["root-2", "root-3"] }));
+
+    const result = await ingestPublicPartition({
+      sourceKey: "hacker-news",
+      requests: [req({ query: "selected V1.1 query remains byte-for-byte", requestMetadata: { maxPages: 3, executionMode: "algolia_search_v2", queryPlanId: "selected-query-id" } })],
+      traceId: "trace-pagination",
+      operationalContext: { jobRunId: "scan-job", workspaceId: "workspace" },
+    });
+
+    expect(discoverSourceMock).toHaveBeenCalledTimes(2);
+    expect(replayDetailedMock).toHaveBeenCalledTimes(2);
+    expect(discoverSourceMock.mock.calls[0]?.[1]).toMatchObject({ query: "selected V1.1 query remains byte-for-byte", requestMetadata: { maxPages: 1 } });
+    expect(discoverSourceMock.mock.calls[1]?.[1]).toMatchObject({ cursor: "algolia-page-1", query: "selected V1.1 query remains byte-for-byte", requestMetadata: { maxPages: 1 } });
+    expect(result.queryCount).toBe(1);
+    expect(result.queryTelemetry[0]).toMatchObject({ pagesRequested: 2, pagesCompleted: 2, cursorContinuationCount: 1, executionStatus: "completed_with_results" });
+    expect(result.resultAttributions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ rawSourceItemId: "hn-2", conversationId: "root-2", firstProviderItemInExecution: false, firstRootInExecution: false }),
+      expect.objectContaining({ rawSourceItemId: "hn-3", conversationId: "root-3", firstProviderItemInExecution: true, firstRootInExecution: true }),
+    ]));
+  });
+
+  it("preserves successful page-one acquisition when the optional continuation fails", async () => {
+    vi.stubEnv("SIGNAL_PAGINATION_DEPTH_V1_ENABLED", "true");
+    vi.stubEnv("SOURCE_EXECUTION_OBSERVABILITY_ENABLED", "true");
+    discoverSourceMock
+      .mockResolvedValueOnce(discoveryPage({
+        rawSourceItemIds: ["hn-1", "hn-2"], rawInserted: 2, nextCursor: "algolia-page-1",
+        rawItemObservations: [
+          { rawSourceItemId: "hn-1", providerItemFingerprint: "native-1", inserted: true },
+          { rawSourceItemId: "hn-2", providerItemFingerprint: "native-2", inserted: true },
+        ],
+      }))
+      .mockRejectedValueOnce(Object.assign(new Error("continuation failed"), { code: "PROVIDER_TIMEOUT" }));
+    replayDetailedMock.mockResolvedValueOnce(replayResult({ rawSourceItemIds: ["hn-1", "hn-2"], normalizedSourceItemIds: ["n-1", "n-2"], canonicalizedConversationIds: ["root-1", "root-2"] }));
+
+    const result = await ingestPublicPartition({
+      sourceKey: "hacker-news",
+      requests: [req({ query: "unchanged selected query", requestMetadata: { maxPages: 2, executionMode: "algolia_search_v2", queryPlanId: "selected-query-id" } })],
+      traceId: "trace-pagination-failure",
+      operationalContext: { jobRunId: "scan-job", workspaceId: "workspace" },
+    });
+
+    expect(result.rawSourceItemIds).toEqual(["hn-1", "hn-2"]);
+    expect(result.conversationIds).toEqual(["root-1", "root-2"]);
+    expect(result.failedQueryCount).toBeUndefined();
+    expect(result.errorCode).toBeUndefined();
+    expect(result.queryTelemetry[0]).toMatchObject({ pagesCompleted: 1, executionStatus: "completed_with_results", continuationStoppedReason: "error" });
+    expect(result.diagnostics.some((message) => message.startsWith("optional provider continuation warning:"))).toBe(true);
+  });
+
+  it("keeps the released HN cursor behavior when Pagination V1 is unset or false", async () => {
+    vi.stubEnv("SIGNAL_PAGINATION_DEPTH_V1_ENABLED", "false");
+    vi.stubEnv("SOURCE_EXECUTION_OBSERVABILITY_ENABLED", "true");
+    discoverSourceMock
+      .mockResolvedValueOnce(discoveryPage({ rawSourceItemIds: ["hn-1"], rawInserted: 1, nextCursor: "algolia-page-1" }))
+      .mockResolvedValueOnce(discoveryPage({ rawSourceItemIds: ["hn-2"], rawInserted: 1 }));
+    replayDetailedMock.mockResolvedValue(replayResult({ normalizedSourceItemIds: ["norm"], canonicalizedConversationIds: ["root"] }));
+
+    const result = await ingestPublicPartition({
+      sourceKey: "hacker-news",
+      requests: [req({ requestMetadata: { maxPages: 2, executionMode: "algolia_search_v2" } })],
+      traceId: "trace-pagination-off",
+      operationalContext: { jobRunId: "scan-job", workspaceId: "workspace" },
+    });
+
+    expect(discoverSourceMock).toHaveBeenCalledTimes(2);
+    expect(discoverSourceMock.mock.calls[0]?.[1].requestMetadata?.maxPages).toBe(2);
+    expect(result.queryCount).toBe(1);
+    expect(result.queryTelemetry[0]).toMatchObject({ pagesRequested: 2, pagesCompleted: 2, cursorContinuationCount: 1 });
+  });
+
+  it("leaves providers without safe Pagination V1 support on the released cursor loop", async () => {
+    vi.stubEnv("SIGNAL_PAGINATION_DEPTH_V1_ENABLED", "true");
+    vi.stubEnv("SOURCE_EXECUTION_OBSERVABILITY_ENABLED", "true");
+    discoverSourceMock
+      .mockResolvedValueOnce(discoveryPage({ rawSourceItemIds: ["gh-1"], rawInserted: 1, nextCursor: "cursor-2", rawItemObservations: [{ rawSourceItemId: "gh-1", providerItemFingerprint: "gh-item-1", inserted: true }] }))
+      .mockResolvedValueOnce(discoveryPage({ rawSourceItemIds: ["gh-2"], rawInserted: 1, nextCursor: "cursor-3", rawItemObservations: [{ rawSourceItemId: "gh-2", providerItemFingerprint: "gh-item-2", inserted: true }] }));
+    replayDetailedMock.mockResolvedValue(replayResult({ normalizedSourceItemIds: ["norm"], canonicalizedConversationIds: ["root"] }));
+
+    await ingestPublicPartition({
+      sourceKey: "github",
+      requests: [req({ requestMetadata: { maxPages: 2 } })],
+      traceId: "trace-legacy-depth",
+      operationalContext: { jobRunId: "scan-job", workspaceId: "workspace" },
+    });
+
+    expect(discoverSourceMock).toHaveBeenCalledTimes(2);
+    expect(discoverSourceMock.mock.calls[0]?.[1].requestMetadata?.maxPages).toBe(2);
+    expect(discoverSourceMock.mock.calls[1]?.[1].cursor).toBe("cursor-2");
+  });
+
   it("records per-query unique provider items and independent roots without persisting content or cursor values", async () => {
     vi.stubEnv("SOURCE_EXECUTION_OBSERVABILITY_ENABLED", "true");
     discoverSourceMock

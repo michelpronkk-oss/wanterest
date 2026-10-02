@@ -23,6 +23,11 @@ async function execute(query: Query): Promise<DatabaseResult> {
 export type SourceQueryPageAttribution = {
   id: string;
   pageNumber: number;
+  paginationPolicyVersion: "signal_pagination_depth_v1" | null;
+  continuationEligible: boolean | null;
+  continuationReason: string | null;
+  continuationAttempted: boolean;
+  continuationStatus: "not_attempted" | "received" | "empty" | "repetitive" | "failed" | null;
   sourceJobRunId: string | null;
   cursorRequested: boolean;
   providerResultsReturned: number;
@@ -132,6 +137,11 @@ export async function persistSourceQueryExecution(clientValue: unknown, input: S
       id: page.id,
       execution_id: input.id,
       page_number: page.pageNumber,
+      pagination_policy_version: page.paginationPolicyVersion,
+      continuation_eligible: page.continuationEligible,
+      continuation_reason: page.continuationReason,
+      continuation_attempted: page.continuationAttempted,
+      continuation_status: page.continuationStatus,
       source_job_run_id: page.sourceJobRunId,
       cursor_requested: page.cursorRequested,
       provider_results_returned: page.providerResultsReturned,

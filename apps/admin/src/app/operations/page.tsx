@@ -144,6 +144,44 @@ export default async function OperationsPage() {
           <p className="ops-measurement-note">Planned query records come from persisted initial-scan query artifacts. Executions and pages come from provider-call telemetry. Qualified roots are canonical conversation IDs linked to product evaluations; they are not visitor analytics or a cross-product qualification rate.</p>
         </>}
         <SourceStamp source={snapshot.pipeline.source} range="Trailing 7 days · UTC" refreshedAt={snapshot.checkedAt} />
+        <div className="ops-continuation" aria-labelledby="pagination-heading">
+          <div className="panel-heading"><div><p className="eyebrow">ADAPTIVE DEPTH · COUNTS ONLY</p><h3 id="pagination-heading">Pagination V1 continuation yield</h3></div><span className="panel-meta">Trailing 7 days</span></div>
+          {snapshot.paginationState === "disabled" ? <DataState state="unavailable" detail="Source execution telemetry is disabled, so continuation activity is not being read." />
+            : snapshot.paginationState === "unavailable" ? <DataState state="unavailable" detail="Pagination V1 decision telemetry is unavailable. Existing provider execution metrics remain separate." />
+              : snapshot.paginationState === "empty" ? <DataState state="empty" detail="No Pagination V1 page decisions were recorded in this period." />
+                : snapshot.pagination.value === null ? <DataState state="unavailable" detail="Pagination V1 telemetry could not be reconciled." /> : <>
+                  <div className="ops-stat-grid" aria-label="Pagination continuation totals">
+                    <Stat label="Base requests" value={snapshot.pagination.value.baseRequests} detail="One selected provider query, page one" />
+                    <Stat label="Eligible queries" value={snapshot.pagination.value.eligible} detail="Passed the first-page novelty gate" />
+                    <Stat label="Provider requests" value={snapshot.pagination.value.baseRequests + snapshot.pagination.value.continuationRequests} detail={`${snapshot.pagination.value.baseRequests} base + ${snapshot.pagination.value.continuationRequests} continuation`} />
+                    <Stat label="Continuation failures" value={snapshot.pagination.value.failures} detail="Optional page-two requests only" />
+                    <Stat label="Continuation results" value={snapshot.pagination.value.results} detail="Provider-returned page-two results" />
+                    <Stat label="New / repeated provider items" value={`${formatNumber(snapshot.pagination.value.uniqueProviderItems)} / ${formatNumber(snapshot.pagination.value.duplicateProviderItems)}`} detail="Unique native items / page-two repeats within the query" />
+                    <Stat label="New / reused raw" value={`${formatNumber(snapshot.pagination.value.inserted)} / ${formatNumber(snapshot.pagination.value.reused)}`} detail="Persisted / already-known raw snapshots" />
+                    <Stat label="Independent roots" value={snapshot.pagination.value.independentRoots} detail="First attributed on page two within the query execution" />
+                    <Stat label="Repeated root attributions" value={snapshot.pagination.value.repeatedRootAttributions} detail="Page-two roots already seen on page one or repeated there" />
+                    <Stat label="Evidence-eligible roots" value={`${formatNumber(snapshot.pagination.value.evidenceEligibleRoots)} / ${formatNumber(snapshot.pagination.value.evidenceEligibilityKnownRoots)} known`} detail="Unknown outcome rows are not counted as ineligible" />
+                    <Stat label="First-seen eligible roots" value={snapshot.pagination.value.firstSeenEvidenceEligibleRoots} detail="Eligible roots first attributed on page two in that query" />
+                  </div>
+                  <div className="ops-provider-list">
+                    {snapshot.pagination.value.providers.map((provider) => <article className="ops-provider" key={provider.sourceKey}>
+                      <div className="ops-provider-heading"><h4>{provider.sourceKey}</h4><span>{formatNumber(provider.continuationRequests)} continuation requests</span></div>
+                      <dl className="ops-provider-stats">
+                        <Metric label="Base / eligible / attempted" value={`${provider.baseRequests} / ${provider.eligible} / ${provider.attempted}`} />
+                        <Metric label="Failures" value={provider.failures} />
+                        <Metric label="Results / inserted / reused" value={`${provider.results} / ${provider.inserted} / ${provider.reused}`} />
+                        <Metric label="New roots / repeated attributions" value={`${provider.firstSeenRootsInExecution} / ${provider.repeatedRootAttributions}`} />
+                        <Metric label="Eligible / known outcomes" value={`${provider.evidenceEligibleRoots} / ${provider.evidenceEligibilityKnownRoots}`} />
+                        <Metric label="First-seen eligible roots" value={provider.firstSeenEvidenceEligibleRoots} />
+                        <Metric label="Novel root yield / continuation" value={provider.continuationRequests ? `${(provider.firstSeenRootsInExecution / provider.continuationRequests).toFixed(2)}` : "Not applicable"} />
+                      </dl>
+                    </article>)}
+                  </div>
+                  <p className="ops-measurement-note">Continuation decisions: {snapshot.pagination.value.decisionReasons.length ? snapshot.pagination.value.decisionReasons.map(({ reason, count }) => `${reason.replaceAll("_", " ")} ${formatNumber(count)}`).join(" · ") : "None recorded"}. Page-two outcomes: {Object.entries(snapshot.pagination.value.continuationStatuses).map(([status, count]) => `${status.replaceAll("_", " ")} ${formatNumber(count)}`).join(" · ") || "None recorded"}.</p>
+                  <p className="ops-measurement-note">“First-seen” here means first attributed within that provider-query execution, not first observed across production history. Query text, cursors, payloads, author data and product context are not projected.</p>
+                </>}
+          <SourceStamp source={snapshot.pagination.source} range="Pagination V1 pages and linked outcomes · trailing 7 days · UTC" refreshedAt={snapshot.checkedAt} />
+        </div>
       </section>
 
       <div className="operations-grid">

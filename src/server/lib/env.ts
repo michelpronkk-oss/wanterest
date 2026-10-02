@@ -80,6 +80,9 @@ const serverEnvSchema = publicEnvSchema.extend({
   // Layer 12A.1: signal supply telemetry facts (observational only; never
   // changes discovery, selection, qualification or clustering). Trigger. Defaults off.
   SIGNAL_SUPPLY_TELEMETRY_ENABLED: z.enum(["true", "false"]).optional(),
+  // Signal Throughput Pagination / Depth V1: one novelty-gated HN Algolia
+  // continuation after the selected V1/V1.1 query. Server/Trigger only. Defaults off.
+  SIGNAL_PAGINATION_DEPTH_V1_ENABLED: z.enum(["true", "false"]).optional(),
   // Layer 12A.2: planner-seeded shared market partitions + explicit partition
   // interests (persistence only; no extra foreground provider/model calls).
   // Read in Vercel and Trigger (scans run in both). Defaults off.
@@ -188,6 +191,7 @@ export function getServerEnv(): ServerEnv {
     GEOGRAPHY_V2_ENABLED: process.env.GEOGRAPHY_V2_ENABLED,
     EXPERIMENT_MEASUREMENT_ENABLED: process.env.EXPERIMENT_MEASUREMENT_ENABLED,
     SIGNAL_SUPPLY_TELEMETRY_ENABLED: process.env.SIGNAL_SUPPLY_TELEMETRY_ENABLED,
+    SIGNAL_PAGINATION_DEPTH_V1_ENABLED: process.env.SIGNAL_PAGINATION_DEPTH_V1_ENABLED,
     SUPPLY_PARTITION_SEEDING_ENABLED: process.env.SUPPLY_PARTITION_SEEDING_ENABLED,
     CROSS_PRODUCT_ROUTING_MODE: process.env.CROSS_PRODUCT_ROUTING_MODE,
     CROSS_PRODUCT_ROUTING_WORKSPACE_IDS: process.env.CROSS_PRODUCT_ROUTING_WORKSPACE_IDS,
