@@ -190,7 +190,12 @@ describe("adaptive allocator policy", () => {
     const input = { plan: plan(), mode: "active" as const, sourceStates: [state("github"), state("x")], rotationSeed: "scan-deterministic", now, history: [history("q-high", { marketPartitionKey: "github|pain|one", qualifiedInfluencedCount: 2 }), history("q-high", { marketPartitionKey: "github|pain|two", qualifiedInfluencedCount: 0 })] };
     const first = buildAdaptiveAllocatorPlan(input);
     const second = buildAdaptiveAllocatorPlan(input);
-    expect(first).toEqual(second);
+    // Wall-clock duration is volatile telemetry and does not affect the allocation.
+    const withoutRuntimeMeasurement = (result: typeof first) => ({
+      ...result,
+      telemetry: { ...result.telemetry, computationDurationMs: 0 },
+    });
+    expect(withoutRuntimeMeasurement(first)).toEqual(withoutRuntimeMeasurement(second));
     expect(first.telemetry.warnings).toContain("Partition identity is not available before provider request construction; partition allocation remains observational in V1.");
   });
 
