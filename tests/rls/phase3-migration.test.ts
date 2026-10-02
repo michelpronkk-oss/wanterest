@@ -16,6 +16,8 @@ describe("Phase 3 intelligence migration contract", () => {
 
   it("preserves immutable evaluation and ranking history with tenant-safe relationships", () => {
     expect(migration).toContain("unique (workspace_id, product_id, conversation_id)");
+    expect(migration).toContain("conversation_id uuid not null references public.conversations(id) on delete cascade");
+    expect(migration).toContain("create policy product_matches_member_select on public.product_matches for select to authenticated using (public.is_workspace_member(workspace_id))");
     expect(migration).toContain("unique (product_match_id, match_engine_version_id, input_fingerprint)");
     expect(migration).toContain("unique (product_match_evaluation_id, ranking_engine_version_id, input_fingerprint)");
     expect(migration).toContain("foreign key (workspace_id, product_match_id)");

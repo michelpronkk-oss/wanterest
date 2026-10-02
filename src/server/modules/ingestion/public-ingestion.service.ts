@@ -1,9 +1,5 @@
 import "server-only";
 
-import type { SupabaseClient } from "@supabase/supabase-js";
-
-import type { Database } from "@/server/db/database.types";
-import { AppError } from "@/server/lib/errors";
 import { createSupabaseServiceClient } from "@/server/providers/supabase/service";
 import { SourceControlService, SupabaseSourceControlStore } from "@/server/modules/operations/source-control.service";
 import { SupabaseIngestionRepository } from "@/server/modules/ingestion/ingestion.repository";
@@ -16,7 +12,6 @@ import type { GithubPainEvidenceAlignmentQuery } from "@/server/modules/operatio
 import { boundedCursorContinuationCount, type QueryYieldExecutionStatus, type QueryYieldStopReason, type QueryYieldTelemetry } from "@/server/modules/operations/query-yield-telemetry";
 import { sourceDiscoveryRequestSchema, type SourceDiscoveryRequest } from "@/server/providers/source/contracts";
 import { prepareStackExchangeFeatureRequest } from "@/server/providers/source/stack-exchange";
-import { g2MappingsFromSourceFilters, g2SourceFiltersWithMappings, type G2ProductMapping } from "@/server/providers/source/g2/product-resolution";
 import { deriveMarketPartitionIdentity } from "@/server/modules/ingestion/market-partition-identity";
 import { MarketPartitionRepository } from "@/server/modules/ingestion/market-partition.repository";
 import { sha256Json } from "@/server/modules/ingestion/hash";
@@ -42,8 +37,6 @@ import {
 } from "@/server/modules/operations/signal-pagination-depth.policy";
 
 export type { SourceQueryResultAttribution };
-
-type Client = SupabaseClient<Database>;
 
 /**
  * Stage 2A shared public-ingestion boundary (Wanterest 1B).
@@ -224,32 +217,6 @@ function logXDiscoveryOverride(workspaceId: string, requests: SourceDiscoveryReq
     maxPosts: override.maxPostsPerScan,
     postReadCostUsd: getXRuntimeConfig().postReadCostUsd,
   });
-}
-
-function g2ContextFromRequests(requests: SourceDiscoveryRequest[]): { workspaceId: string; productId: string } | null {
-  for (const request of requests) {
-    const context = objectValue(request.requestMetadata.g2ScanContext);
-    if (typeof context.workspaceId === "string" && typeof context.productId === "string") return { workspaceId: context.workspaceId, productId: context.productId };
-  }
-  return null;
-}
-
-/**
- * Persists resolved G2 product mappings for reuse on the next scan. This is the
- * one place shared ingestion still writes workspace/product-scoped state, and it
- * does so using workspace/product identifiers carried in the request's own
- * `g2ScanContext` metadata (set by product-aware query planning upstream) -
- * never from a required top-level parameter on the ingestion contract itself.
- */
-export async function persistG2Resolutions(client: Client, context: { workspaceId: string; productId: string }, resolutions: SourceExecutionResult["resolutions"]): Promise<void> {
-  if (!resolutions?.length) return;
-  const existing = await client.from("discovery_strategies").select("filters").eq("workspace_id", context.workspaceId).eq("product_id", context.productId).eq("source_key", "g2").eq("strategy_version", 1).maybeSingle();
-  if (existing.error) throw new AppError("INTERNAL_ERROR", "G2 source metadata could not be loaded.", 500, { providerMessage: existing.error.message });
-  const mappings = g2MappingsFromSourceFilters(existing.data?.filters);
-  for (const resolution of resolutions) mappings[resolution.targetKey] = resolution as G2ProductMapping;
-  const filters = g2SourceFiltersWithMappings(existing.data?.filters, mappings);
-  const saved = await client.from("discovery_strategies").upsert({ workspace_id: context.workspaceId, product_id: context.productId, source_key: "g2", strategy_version: 1, filters, is_active: true }, { onConflict: "workspace_id,product_id,source_key,strategy_version" }).select("id").single();
-  if (saved.error) throw new AppError("INTERNAL_ERROR", "G2 source metadata could not be stored.", 500, { providerMessage: saved.error.message });
 }
 
 /**
@@ -780,10 +747,6 @@ export async function ingestPublicPartition(input: PublicIngestionInput): Promis
       rawNewItems: queryRawInserted,
       discoveryProvenance,
     }));
-  }
-  if (input.sourceKey === "g2") {
-    const context = g2ContextFromRequests(input.requests);
-    if (context) await persistG2Resolutions(client, context, resolutions);
   }
   return {
     sourceKey: input.sourceKey,

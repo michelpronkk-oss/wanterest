@@ -16,7 +16,6 @@ import { getInternalXQueryBudgetOverride } from "@/server/providers/source/x/x.i
 import {
   ingestPublicPartition,
   objectValue,
-  persistG2Resolutions,
   provenanceForReplay,
   safeSummary,
   uniqueProvenance,
@@ -26,6 +25,7 @@ import {
   type SourceExecutionResult,
   type SourceQueryResultAttribution,
 } from "@/server/modules/ingestion/public-ingestion.service";
+import { persistG2Resolutions } from "@/server/modules/onboarding/g2-resolution-persistence.service";
 import { persistProductQueryResultOutcomes } from "@/server/modules/operations/source-execution-telemetry.repository";
 import { sourceExecutionObservabilityEnabled } from "@/server/modules/operations/source-execution-telemetry.config";
 import { signalQueryDiversificationEnabled, signalQueryExplorationV11Enabled } from "@/server/modules/operations/signal-query-diversification.config";
@@ -506,12 +506,12 @@ export function selectScanCandidates(input: { conversations: ConversationRow[]; 
     const text = `${source.title ?? ""} ${source.body ?? conversation.body ?? ""}`.replace(/\s+/g, " ").trim();
     const fingerprint = text.toLowerCase().slice(0, 400);
     const metadata = objectValue(source.metadata);
-    const query = typeof metadata.query === "string" ? metadata.query.toLowerCase() : "";
+    const queryPresent = metadata.retrievalQueryPresent === true || typeof metadata.query === "string";
     const surfaces = [...new Set(provenanceEntries.map((entry) => entry.demandSurface))].sort();
     const queryPlanIds = [...new Set(provenanceEntries.map((entry) => entry.queryPlanId))].sort();
     const discoverySource = provenanceEntries[0]?.source ?? source.source_key;
     const surface = surfaces[0] ?? "unknown";
-    const score = Math.round(Math.min(1, text.length / 280) * 45 + (source.title ? 15 : 0) + (query ? 20 : 0) + (conversation.published_at ? 10 : 0) + 10) / 100;
+    const score = Math.round(Math.min(1, text.length / 280) * 45 + (source.title ? 15 : 0) + (queryPresent ? 20 : 0) + (conversation.published_at ? 10 : 0) + 10) / 100;
     const existing = deduped.get(fingerprint);
     if (!existing || score > existing.score || (score === existing.score && conversation.id.localeCompare(existing.conversation.id) < 0)) deduped.set(fingerprint, { conversation, source, discoverySource, surface, surfaces, queryPlanIds, score });
   }
@@ -798,19 +798,24 @@ async function loadRows(client: Client, sourceItemIds: string[], conversationIds
 }
 
 /**
- * Executes only provider discovery plus the existing raw -> normalized -> canonical
- * replay for one source. Stage 2A compatibility wrapper: the actual discovery loop
- * now lives in the shared public-ingestion boundary (`ingestPublicPartition`),
- * which never requires workspaceId/productId itself - this wrapper exists only so
- * existing callers keyed to a job run keep their exact prior contract unchanged.
+ * Executes shared provider discovery and canonical replay for one source, then
+ * persists any product-owned resolution side effects with explicit trusted scope.
+ * The shared public-ingestion boundary itself never requires workspace/product IDs.
  */
 export async function executeSourceDiscovery(input: SourceExecutionInput): Promise<SourceExecutionResult> {
-  return ingestPublicPartition({
+  const result = await ingestPublicPartition({
     sourceKey: input.sourceKey,
     requests: input.requests,
     traceId: input.traceId,
     operationalContext: { jobRunId: input.jobRunId, workspaceId: input.workspaceId },
   });
+  if (input.sourceKey === "g2" && result.resolutions?.length) {
+    await persistG2Resolutions(createSupabaseServiceClient(), {
+      workspaceId: input.workspaceId,
+      productId: input.productId,
+    }, result.resolutions);
+  }
+  return result;
 }
 
 export async function processScanCandidates(input: { product: ProductRow; profileId: string; normalizedSourceItemIds: string[]; conversationIds: string[]; provenance?: ScanDiscoveryProvenance[]; traceId: string; maxLlmEvaluations?: number; jobRunId?: string }): Promise<CandidateProcessingResult> {
@@ -1284,17 +1289,9 @@ export async function runInitialScan(product: ProductRow, traceId = getTraceId()
     await setScanJob(client, job.id, { status: "running", phase: "planning", scanMode, progress: { stage: "planning", percent: 25, currentLabel: "Choosing the best sources" } });
     await setScanJob(client, job.id, { status: "running", phase: "discovering", scanMode, progress: { stage: "discovering", percent: 40, currentLabel: "Finding conversations" } });
     const plannedSourceKeys = routingPlan ? routedSourceKeys : sourceKeys;
-    // Stage 2A: the direct-execution mode (no Trigger executor supplied) no longer
-    // has its own inline discovery-loop implementation. It defaults to calling the
-    // same shared public-ingestion boundary that the Trigger-backed executor calls,
-    // so there is exactly one discovery-loop implementation in the codebase.
-    const sourceExecutor = options.sourceExecutor
-      ?? ((execInput: SourceExecutionInput) => ingestPublicPartition({
-        sourceKey: execInput.sourceKey,
-        requests: execInput.requests,
-        traceId: execInput.traceId,
-        operationalContext: { jobRunId: execInput.jobRunId, workspaceId: execInput.workspaceId },
-      }));
+    // Direct execution uses the same product wrapper as Trigger. Both delegate all
+    // public retrieval and canonicalization to the single shared ingestion loop.
+    const sourceExecutor = options.sourceExecutor ?? executeSourceDiscovery;
     const sourceBatchExecutor = options.sourceBatchExecutor;
     if (sourceBatchExecutor || sourceExecutor) {
       const sourceInputs: Array<{ input: SourceExecutionInput; fallback: boolean; candidateBudget: number }> = [];

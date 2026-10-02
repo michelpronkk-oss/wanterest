@@ -5571,3 +5571,42 @@ selected IDs absent from baseline `query_id`s, not fingerprint set changes; and 
 executor branch records eligibility only for selected and evaluation-cap-suppressed roots, leaving
 filter-excluded roots null. Pagination uses explicit page-local outcome semantics and does not
 interpret either V1.1 count as a continuation input.
+
+## 15. Market Memory Foundation / Shared Public Ingestion V1 (local candidate)
+
+The global `raw_source_items`, `source_items`, `conversations`,
+`conversation_source_items`, `evidence_nodes`, and `evidence_provenance` tables remain the
+single public evidence lineage. Provider identity is `(source_key, external_id)` on
+`source_items`; raw snapshots are content-versioned; `conversations.conversation_key` is the
+canonical root identity. `product_matches` and every downstream evaluation, signal, observation,
+action, and experiment remain separate workspace-owned relationships to those global roots.
+No second evidence corpus or broad product fanout is introduced.
+
+The provider-discovery loop remains `ingestPublicPartition`, which has no product/workspace
+storage owner. Its product-demand-scan wrapper is responsible for product-only effects such as
+persisting G2 product-resolution mappings. Public raw/canonical metadata drops query text,
+cursor/token contents, scan identifiers, and workspace-scoped strategy context before persistence.
+When existing selection logic needs to know whether retrieval was query-backed, it receives only
+the boolean `retrievalQueryPresent`; exact query provenance remains in the private source execution
+telemetry and operational job records. Market-partition retrieval specifications and job inputs
+remain private operational records, not reusable evidence metadata. Public evidence payloads remain
+service-role-only.
+
+First-seen identity is the persisted `created_at` of the provider-native source item or canonical
+conversation. It is not reset on repeated upsert and is never synthesized from a later read. Raw
+snapshot `fetched_at` describes that immutable snapshot, while repeated retrieval and reuse history
+comes from existing `source_query_result_attributions` joined to page `observed_at` and execution
+IDs. When source execution observability was disabled or attribution is absent, last-retrieved and
+reuse counts are explicitly unavailable/partial; the model does not report fabricated zeroes.
+Cross-product reference counts may be computed server-side from `product_matches`, but the
+aggregate must not return workspace or product identifiers or matching rationale.
+
+Current source categories and language are provider-derived metadata. Product relevance,
+qualification, rationale, strategy, CRM/support evidence, lifecycle state, actions, experiments,
+and product-intent provenance remain workspace-scoped and are not copied into shared memory.
+There is no shared neutral topic/problem interpretation yet. Provider rights, raw retention class,
+retraction state, and public-projection eligibility are not fully represented in the current
+schema; a future rights/retention decision must define those before indefinite raw retention or
+redistribution is considered. This local foundation performs no backfill, deletion, publishing,
+scheduling, acquisition expansion, or qualification change. It reuses the released schema and
+requires no migration.

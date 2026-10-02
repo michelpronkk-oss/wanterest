@@ -12,6 +12,7 @@ describe("Signal Lifecycle V1 migration contract", () => {
     expect(migration).toContain("add constraint signals_lifecycle_status_check");
     expect(migration).toContain("'invalidated', 'retracted'");
     expect(migration).not.toContain("delete from public.signals");
+    expect(migration).not.toMatch(/\bdelete\s+from\s+public\.(raw_source_items|source_items|conversations)\b/i);
   });
 
   it("invalidates only the exact confirmed Jira signal and conversation", () => {

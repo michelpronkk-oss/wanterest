@@ -9,12 +9,12 @@ import {
 } from "@/server/modules/operations/product-demand-scan.service";
 import { demandTaskInputSchema, productDemandScanInputSchema } from "@/server/modules/operations/product-demand-scan.schemas";
 import {
+  executeSourceDiscovery,
   getScanProduct,
   processScanCandidates,
   type SourceExecutionBatchResult,
   type ScanDiscoveryProvenance,
 } from "@/server/modules/onboarding/initial-scan.service";
-import { ingestPublicPartition } from "@/server/modules/ingestion/public-ingestion.service";
 import { rebuildDemandIntelligenceForScan } from "@/server/modules/demand-intelligence/demand.orchestration";
 import { generateActionsForScan } from "@/server/modules/actions/action.orchestration";
 import { X_COMPETITOR_PAIN_RETRIEVAL_TEMPLATE_VERSION } from "@/server/providers/source/x/x.query";
@@ -82,13 +82,15 @@ export const discoverProductSourceTask = schemaTask({
   schema: sourceTaskInputSchema,
   run: async (input) => {
     try {
-      // Stage 2A: delegates directly into the shared public-ingestion boundary
-      // rather than a per-scan wrapper - this task is orchestration only.
-      return ingestPublicPartition({
+      // Product-owned state (such as G2 resolution mappings) is persisted by the
+      // product wrapper after shared public evidence ingestion completes.
+      return executeSourceDiscovery({
         sourceKey: input.sourceKey,
+        productId: input.productId,
         requests: input.requests,
         traceId: input.traceId,
-        operationalContext: { jobRunId: input.jobRunId, workspaceId: input.workspaceId },
+        workspaceId: input.workspaceId,
+        jobRunId: input.jobRunId,
       });
     } catch (error) {
       return nonRetryable(error);
